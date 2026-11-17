@@ -59,6 +59,14 @@ describe("Where the page goes", () => {
     }
   });
 
+  it("names the size the page lays out at when one was picked, and none when it fills its box", () => {
+    add(`<div id="box"></div>`);
+    const box = at(document.getElementById("box")!, PAGE);
+    expect(placementOf(box, "")).toEqual({ viewport: VIEWPORT, rect: PAGE, holes: [] });
+    expect(placementOf(box, "")).not.toHaveProperty("page");
+    expect(placementOf(box, "", { width: 1280, height: 800 })).toEqual({ viewport: VIEWPORT, rect: PAGE, holes: [], page: { width: 1280, height: 800 } });
+  });
+
   it("covers its box, with a hole for a toast drawn over it and none for a menu beside it", () => {
     add(`<main><div id="box"></div></main><div class="toast">Copied</div><div class="menu" role="menu"></div>`);
     const box = at(document.getElementById("box")!, PAGE);

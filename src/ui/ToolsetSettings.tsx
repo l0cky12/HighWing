@@ -20,6 +20,8 @@ import {
   type WriteSupport,
 } from "../hermes/toolsets";
 import { clockTime, errorText } from "../hermes/values";
+import { en } from "../i18n/en";
+import type { Catalogue } from "../i18n/locale";
 
 const onOff = (on: boolean) => (on ? "on" : "off");
 
@@ -41,14 +43,12 @@ function chatHas(t: Toolset, read: ChatTools | undefined): "all" | "none" | { so
   return n === t.tools.length ? "all" : n === 0 ? "none" : { some: n };
 }
 
-/** One caution, as the confirmation says it. */
-function cautionText(c: Caution, t: Toolset): string {
-  if (c.kind === "install") return `Hermes starts installing ${c.keys.join(", ")} on the server when ${t.label} is turned on, in the background, because it isn't installed there yet.`;
-  if (c.kind === "noMcp")
-    return `This profile has MCP servers turned off for ${t.platformLabel} with no_mcp. Hermes clears no_mcp whenever it saves a toolset change, so new chats would be offered the profile's MCP servers again.`;
-  if (c.kind === "everywhere")
-    return `This profile's agent.disabled_toolsets turns ${t.label} off on every platform. Turning it on here removes it from that list, so Hermes's other chats that list it, such as Telegram or Discord, get it back too.`;
-  return `This app couldn't check ${c.what}.`;
+/** One caution, as the confirmation says it, in the catalogue's `toolsets.caution` words: English unless `w` is given. */
+export function cautionText(c: Caution, t: Pick<Toolset, "label" | "platformLabel">, w: Catalogue["toolsets"]["caution"] = en.toolsets.caution): string {
+  if (c.kind === "install") return w.install(c.keys.join(", "), t.label);
+  if (c.kind === "noMcp") return w.noMcp(t.platformLabel);
+  if (c.kind === "everywhere") return w.everywhere(t.label);
+  return w.unchecked(c.what);
 }
 
 /** Why a change the owner started wasn't asked about or sent: Hermes's list changed under it. */

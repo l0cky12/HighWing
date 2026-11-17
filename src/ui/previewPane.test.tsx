@@ -27,6 +27,7 @@ import {
   type WebPages,
 } from "./tauriPreview";
 import { Main } from "../App";
+import { DEVICES } from "./PageViewport";
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }));
 
@@ -1919,5 +1920,183 @@ describe("Annotating a page in the Preview (issue #96)", () => {
     await user.click(within(card).getByRole("button", { name: "Add to message" }));
     await waitFor(() => expect(annotator.staged).toEqual([{ stillPath: "/c/1/1/still.png", n: 1, rect: { x: 100, y: 60, width: 120, height: 100 }, scale: 2 }]));
     await waitFor(() => expect(document.querySelector<HTMLTextAreaElement>("textarea[data-composer]")!.value).toContain("Region: The app can't read this page on Windows"));
+  });
+});
+
+describe("The page's size: Responsive or a device's", () => {
+  const SITE = "https://app.example/";
+  /** The Preview's box below its toolbar, as the size fields and the fit read it. */
+  const BODY = { width: 480, height: 683 };
+  afterEach(() => vi.restoreAllMocks());
+  const stubBody = () => {
+    const side = (key: "width" | "height") =>
+      function (this: HTMLElement) {
+        return this.classList.contains("preview-body") ? BODY[key] : 0;
+      };
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(side("width"));
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(side("height"));
+  };
+  const device = () => within(pane()).getByRole<HTMLSelectElement>("combobox", { name: "Device" });
+  const side = (name: "Width" | "Height") => within(pane()).getByRole<HTMLInputElement>("textbox", { name });
+  const frameBox = () => pane().querySelector<HTMLElement>(".preview-web-frame")!;
+  async function openSite(s: Awaited<ReturnType<typeof signedIn>>) {
+    await s.user.click(screen.getByRole("button", { name: "Open the side panel" }));
+    await s.user.click(screen.getByRole("button", { name: "Preview" }));
+    await s.user.type(address(), `${SITE}{Enter}`);
+  }
+  async function onLinux(over: Parameters<typeof signedIn>[0] = {}) {
+    stubBody();
+    const s = await withView(over);
+    await openSite(s);
+    await act(async () => s.view.land(1));
+    return s;
+  }
+  const typeSide = async (user: ReturnType<typeof userEvent.setup>, name: "Width" | "Height", text: string) => {
+    await user.clear(side(name));
+    if (text) await user.type(side(name), text);
+    await user.keyboard("{Enter}");
+  };
+
+  it("offers Responsive and the seventeen devices under Standard, and fills the box until one is picked", async () => {
+    const { view } = await onLinux();
+    expect(device().value).toBe("");
+    const options = [...device().options].map((o) => [o.parentElement?.tagName === "OPTGROUP" ? (o.parentElement as HTMLOptGroupElement).label : "", o.text]);
+    expect(options).toEqual([["", "Responsive"], ...DEVICES.map((d) => ["Standard", `${d.name} (${d.width} × ${d.height})`])]);
+    expect([side("Width").value, side("Width").placeholder, side("Height").value, side("Height").placeholder]).toEqual(["", "480", "", "683"]);
+    expect(view.placed.get(1)).toEqual({ rect: BOX, holes: [], viewport: VIEWPORT });
+  });
+
+  it("lays the page out at each device's size, scaled down to fit, and never loads it again", async () => {
+    const { view, user } = await onLinux();
+    for (const d of DEVICES) {
+      await user.selectOptions(device(), d.name);
+      await waitFor(() => expect(view.placed.get(1)).toEqual({ rect: BOX, holes: [], viewport: VIEWPORT, page: { width: d.width, height: d.height } }));
+      const scale = Math.min(1, (BODY.width - 16) / d.width, (BODY.height - 16) / d.height);
+      expect([device().value, side("Width").value, side("Height").value]).toEqual([d.name, String(d.width), String(d.height)]);
+      expect([frameBox().style.width, frameBox().style.height]).toEqual([`${d.width * scale}px`, `${d.height * scale}px`]);
+      const shown = within(pane()).queryByTitle(`Scaled to fit the Preview. The page still lays out at ${d.width} × ${d.height}.`);
+      expect(shown?.textContent ?? null, d.name).toBe(scale < 1 ? `${Math.round(scale * 100)}%` : null);
+    }
+    expect(view.asked).toEqual([[1, `go ${SITE}`]]);
+    expect([view.made, view.closed]).toEqual([1, []]);
+  });
+
+  it("takes a typed size as Responsive at that size, and Responsive picked again gives the page its box back", async () => {
+    const { view, user } = await onLinux();
+    await user.selectOptions(device(), "iPhone SE");
+    await typeSide(user, "Width", "747");
+    expect(device().selectedOptions[0].text).toBe("Responsive");
+    await waitFor(() => expect(view.placed.get(1)?.page).toEqual({ width: 747, height: 667 }));
+    await typeSide(user, "Height", "818");
+    await waitFor(() => expect(view.placed.get(1)?.page).toEqual({ width: 747, height: 818 }));
+    expect([device().selectedOptions[0].text, side("Width").value, side("Height").value]).toEqual(["Responsive", "747", "818"]);
+
+    // Leaving a field applies it, as Enter does.
+    await user.clear(side("Width"));
+    await user.type(side("Width"), "800");
+    await user.tab();
+    await waitFor(() => expect(view.placed.get(1)?.page).toEqual({ width: 800, height: 818 }));
+
+    // The typed size reads Responsive, and picking Responsive (the visible one, a change from it) still clears it.
+    expect(device().value).not.toBe("");
+    await user.selectOptions(device(), "");
+    await waitFor(() => expect(view.placed.get(1)).toEqual({ rect: BOX, holes: [], viewport: VIEWPORT }));
+    expect([device().value, side("Width").value, side("Height").value, frameBox().style.width]).toEqual(["", "", "", ""]);
+
+    // From Responsive, one side typed keeps the box's other side.
+    await typeSide(user, "Height", "500");
+    await waitFor(() => expect(view.placed.get(1)?.page).toEqual({ width: 480, height: 500 }));
+    expect(view.asked).toEqual([[1, `go ${SITE}`]]);
+  });
+
+  it("turns down a side that isn't a whole number in bounds, keeps the size it had, and puts it back on Escape", async () => {
+    const { view, user } = await onLinux();
+    await typeSide(user, "Width", "747");
+    await typeSide(user, "Height", "818");
+    await waitFor(() => expect(view.placed.get(1)?.page).toEqual({ width: 747, height: 818 }));
+    for (const bad of ["", "0", "-5", "12.5", "1e3", "NaN", "Infinity", "49", "10000", "400px", "0400"]) {
+      await typeSide(user, "Width", bad);
+      expect(side("Width").getAttribute("aria-invalid"), bad).toBe("true");
+      expect(side("Width").value).toBe(bad);
+      await user.tab();
+      expect(view.placed.get(1)?.page, bad).toEqual({ width: 747, height: 818 });
+      await user.click(side("Width"));
+      await user.keyboard("{Escape}");
+      expect([side("Width").value, side("Width").getAttribute("aria-invalid")]).toEqual(["747", null]);
+    }
+    expect(paneOpen()).toBe(true);
+
+    // A draft left invalid goes when a device is picked: the fields show the size that applies.
+    await typeSide(user, "Width", "12.5");
+    await user.tab();
+    await user.selectOptions(device(), "Surface Duo");
+    expect([side("Width").value, side("Width").getAttribute("aria-invalid"), side("Height").value]).toEqual(["540", null, "720"]);
+  });
+
+  it("keeps the size through the page's own moves, Back and a new address, in the same view", async () => {
+    const { view, user } = await onLinux();
+    await user.selectOptions(device(), "iPad Mini");
+    await act(async () => view.say(1, at("https://app.example/next")));
+    await waitFor(() => expect(address().value).toBe("https://app.example/next"));
+    await user.click(button("Back"));
+    await user.clear(address());
+    await user.type(address(), "https://other.example/{Enter}");
+    await act(async () => view.land(1));
+    expect(device().value).toBe("iPad Mini");
+    await waitFor(() => expect(view.placed.get(1)?.page).toEqual({ width: 768, height: 1024 }));
+    expect(view.made).toBe(1);
+  });
+
+  it("ends an annotation whose still was taken at another size, and deletes a still that comes after the change", async () => {
+    URL.createObjectURL = () => "blob:still";
+    URL.revokeObjectURL = () => {};
+    const annotator = theAnnotator(SITE);
+    const { user } = await onLinux({ web: Object.assign(theWeb(), { annotate: annotator }) });
+    await user.click(button("Annotate"));
+    await screen.findByRole("dialog", { name: "Annotate the page" });
+    await user.selectOptions(device(), "Pixel 7");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Annotate the page" })).toBeNull());
+    await waitFor(() => expect(annotator.discarded).toEqual(["/c/1/1/still.png"]));
+
+    let finish = () => {};
+    const still = annotator.still;
+    annotator.still = (source) => new Promise<void>((r) => (finish = r)).then(() => still(source));
+    await user.click(button("Annotate"));
+    await user.selectOptions(device(), "iPhone SE");
+    await act(async () => finish());
+    await waitFor(() => expect(annotator.discarded).toEqual(["/c/1/1/still.png", "/c/1/2/still.png"]));
+    expect(screen.queryByRole("dialog", { name: "Annotate the page" })).toBeNull();
+  });
+
+  it("draws a framed page (Windows) at the size picked with a transform, in the same frame and sandbox", async () => {
+    stubBody();
+    vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+    const s = await signedIn();
+    await openSite(s);
+    const frame = await waitFor(() => pane().querySelector<HTMLIFrameElement>("iframe.preview-frame")!);
+    await s.user.selectOptions(device(), "Nest Hub Max");
+    const scaled = pane().querySelector<HTMLIFrameElement>("iframe.preview-frame")!;
+    expect(scaled).toBe(frame);
+    expect([scaled.getAttribute("src"), scaled.getAttribute("sandbox"), scaled.getAttribute("referrerpolicy")]).toEqual([SITE, "allow-scripts allow-forms", "no-referrer"]);
+    expect([scaled.style.width, scaled.style.height, scaled.style.transform]).toEqual(["1280px", "800px", "scale(0.3625)"]);
+    expect([frameBox().style.width, frameBox().style.height]).toEqual(["464px", "290px"]);
+    await s.user.selectOptions(device(), "");
+    expect([scaled.style.width, scaled.style.transform, frameBox().style.width]).toEqual(["", "", ""]);
+    expect(pane().querySelector("iframe.preview-frame")).toBe(frame);
+  });
+
+  it("takes a framed page's still (Windows) in the page's own CSS pixels when it is drawn scaled", async () => {
+    stubBody();
+    vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+    URL.createObjectURL = () => "blob:still";
+    URL.revokeObjectURL = () => {};
+    const annotator = theAnnotator(SITE);
+    const s = await signedIn({ web: Object.assign(theWeb(), { annotate: annotator }) });
+    await openSite(s);
+    fireEvent.load(await waitFor(() => pane().querySelector<HTMLIFrameElement>("iframe.preview-frame")!));
+    await s.user.selectOptions(device(), "Nest Hub Max");
+    await s.user.click(button("Annotate"));
+    await waitFor(() => expect(annotator.sources).toHaveLength(1));
+    expect(annotator.sources[0]).toMatchObject({ kind: "frame", url: SITE, page: { width: 1280, height: 800 } });
   });
 });

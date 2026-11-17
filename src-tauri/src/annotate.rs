@@ -48,8 +48,15 @@ pub enum StillSource {
     /// Linux: the Preview's own WebKitGTK view.
     View { key: String },
     /// Windows: the sandboxed frame. `rect`: the frame's box in the window's CSS pixels. `viewport`: the window's CSS
-    /// size, to work out the device scale from the capture. `url`: the address the frame shows.
-    Frame { url: String, rect: Rect, viewport: Viewport },
+    /// size, to work out the device scale from the capture. `url`: the address the frame shows. `page`: the size the
+    /// frame lays out at, when the owner picked one and it is drawn scaled to `rect` (ADR 0198).
+    Frame {
+        url: String,
+        rect: Rect,
+        viewport: Viewport,
+        #[serde(default)]
+        page: Option<Viewport>,
+    },
 }
 
 /// The app window's size in CSS pixels (`innerWidth`, `innerHeight`).
@@ -547,9 +554,20 @@ pub fn crop_frame(window: &[u8], rect: Rect, viewport: Viewport) -> Result<(Vec<
 }
 
 /// A still of the frame at `rect` (the window's CSS pixels) showing `url`, cut from `window`, a PNG of the whole
-/// window, and kept in the captures folder. The frame can't be asked about its elements.
-pub fn frame_still(captures: &Captures, window: &[u8], url: String, rect: Rect, viewport: Viewport, taken_at_ms: u64) -> Result<Still, AnnotateError> {
+/// window, and kept in the captures folder. The frame can't be asked about its elements. `page`: the size the frame lays
+/// out at, if not `rect`'s: the still is measured in the page's CSS pixels.
+pub fn frame_still(
+    captures: &Captures,
+    window: &[u8],
+    url: String,
+    rect: Rect,
+    viewport: Viewport,
+    page: Option<Viewport>,
+    taken_at_ms: u64,
+) -> Result<Still, AnnotateError> {
     let (png, scale) = crop_frame(window, rect, viewport)?;
+    let page = page.filter(|p| [p.width, p.height].iter().all(|v| v.is_finite() && *v >= 1.0)).unwrap_or(Viewport { width: rect.width, height: rect.height });
+    let scale = scale * rect.width / page.width;
     let path = captures.write("still", &png).map_err(|e| AnnotateError::Failed(e.to_string()))?;
     Ok(Still {
         id: next_still_id(),
@@ -557,8 +575,8 @@ pub fn frame_still(captures: &Captures, window: &[u8], url: String, rect: Rect, 
         path: path.to_string_lossy().into_owned(),
         url,
         taken_at_ms,
-        width: rect.width,
-        height: rect.height,
+        width: page.width,
+        height: page.height,
         scale,
         elements: false,
     })
@@ -1032,7 +1050,8 @@ mod tests {
         fn a_frame_still_is_kept_for_regions_only_and_read_back() {
             let (_folder, captures) = captures("frame");
             let rect = Rect { x: 20.0, y: 10.0, width: 100.0, height: 80.0 };
-            let still = frame_still(&captures, &window(320, 240), "https://example.com/".into(), rect, Viewport { width: 160.0, height: 120.0 }, 5).unwrap();
+            let still =
+                frame_still(&captures, &window(320, 240), "https://example.com/".into(), rect, Viewport { width: 160.0, height: 120.0 }, None, 5).unwrap();
             let path = Path::new(&still.path);
             assert!(captures.owns(path));
             assert_eq!(path.file_name().unwrap(), "still.png");
@@ -1043,6 +1062,19 @@ mod tests {
             assert_eq!(decode(&read).dimensions(), (200, 160));
             let staged = stage(&captures, path, 1, Rect { x: 0.0, y: 0.0, width: 10.0, height: 10.0 }, still.scale).unwrap();
             assert_eq!(*open(&staged).get_pixel(1, 1), MARK);
+        }
+
+        #[test]
+        fn a_scaled_frames_still_is_in_its_pages_css_pixels() {
+            let (_folder, captures) = captures("scaled");
+            // A 1280×800 page drawn at 100×62.5 in a window captured at 2 device pixels per CSS pixel.
+            let rect = Rect { x: 20.0, y: 10.0, width: 100.0, height: 62.5 };
+            let page = Some(Viewport { width: 1280.0, height: 800.0 });
+            let still =
+                frame_still(&captures, &window(320, 240), "https://example.com/".into(), rect, Viewport { width: 160.0, height: 120.0 }, page, 5).unwrap();
+            assert_eq!((still.width, still.height), (1280.0, 800.0));
+            assert_eq!(still.scale, 2.0 * 100.0 / 1280.0);
+            assert_eq!(decode(&read_still(&captures, Path::new(&still.path)).unwrap()).dimensions(), (200, 125), "the image is the frame's box");
         }
 
         #[test]
@@ -1076,8 +1108,20 @@ mod tests {
                 url: "https://example.com/".into(),
                 rect: Rect { x: 1.0, y: 2.0, width: 3.0, height: 4.0 },
                 viewport: Viewport { width: 1280.0, height: 800.0 },
+                page: None,
             }
         );
+        let sized = json!({
+            "kind": "frame",
+            "url": "https://example.com/",
+            "rect": { "x": 1, "y": 2, "width": 3, "height": 4 },
+            "viewport": { "width": 1280, "height": 800 },
+            "page": { "width": 375, "height": 667 },
+        });
+        assert!(matches!(
+            serde_json::from_value::<StillSource>(sized).unwrap(),
+            StillSource::Frame { page: Some(Viewport { width: 375.0, height: 667.0 }), .. }
+        ));
         for bad in [
             json!({ "kind": "view", "key": "p1", "url": "x" }),
             json!({ "kind": "screen", "key": "p1" }),

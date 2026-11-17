@@ -3446,10 +3446,6 @@ export function Main({
             shownBot && {
               bot: shownBot,
               look: shownLook ?? lookShown(shownBot, botPictures),
-              activity: activityOf(shownBot, roster),
-              selected: !covering && onBotChat,
-              keys: keys.botChat[0],
-              onOpen: () => openBot(shownBot, "open"),
             }
           }
           bots={(under) =>

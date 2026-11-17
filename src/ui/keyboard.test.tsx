@@ -373,8 +373,6 @@ describe("Chat list by keyboard", () => {
     expect(focused()).toBe(button("New chat"));
     await s.user.tab();
     expect(focused()).toBe(button("Search chats"));
-    await s.user.tab();
-    expect(focused()).toBe(button("Hermes's Bot Chat"));
     // The project switcher sits under the profile's name, before the chats.
     await s.user.tab();
     expect(focused()).toBe(button(/All chats/));

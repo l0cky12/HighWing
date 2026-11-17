@@ -2906,10 +2906,6 @@ label.memory-pick { cursor: pointer; }
 .sb-needs-you-text strong { font-size: calc(13rem / 14); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sb-needs-you-text span { font-size: calc(12rem / 14); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sb-needs-you-slot .inbox-leave { margin: 6px 0 0; }
-.sb-botchat { padding: 0 10px 4px; }
-.sb-botchat-row .row-open { gap: 9px; padding-left: 9px; }
-.sb-botchat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 500; }
-.sb-botchat-row:hover .row-meta, .sb-botchat-row:focus-within .row-meta { display: flex; }
 @media (max-width: 520px) {
   .inbox { width: calc(100vw - 60px); }
 }

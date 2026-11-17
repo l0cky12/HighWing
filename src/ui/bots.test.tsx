@@ -774,15 +774,17 @@ describe("Bots mode", () => {
 describe("Chats mode", () => {
   const panel = () => document.querySelector<HTMLElement>(".sidebar")!;
   const line = () => panel().querySelector<HTMLElement>(".sb-needs-you");
-  const botChatRow = () => panel().querySelector<HTMLButtonElement>(".sb-botchat-row .row-open");
+  const botChatButtons = () => within(panel()).queryAllByRole("button", { name: /Bot Chat/ });
   const shownMode = () => within(panel()).getAllByRole("tab").find((t) => t.getAttribute("aria-selected") === "true")?.textContent;
   const waiting = (key: string, id = "rt-s") => ({ id, session_key: key, status: "waiting" as const, last_active: nowS() });
 
-  it("lays out the switch, the profile switcher, New chat and Search, the Bot Chat row, then the project switcher and the chats", async () => {
+  it("lays out the switch, the profile switcher, New chat and Search, then the project switcher and the chats, with no Bot Chat row between", async () => {
     await launch();
-    const order = [".sb-mode", ".sb-profile", ".sb-actions", ".sb-botchat", ".sb-project", ".sb-scroll"].map((sel) => panel().querySelector(sel));
+    const order = [".sb-mode", ".sb-profile", ".sb-actions", ".sb-project", ".sb-scroll"].map((sel) => panel().querySelector(sel));
     expect(order.every(Boolean)).toBe(true);
     for (let i = 1; i < order.length; i++) expect(order[i - 1]!.compareDocumentPosition(order[i]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(panel().querySelector(".sb-actions")!.nextElementSibling).toBe(panel().querySelector(".sb-project"));
+    expect(botChatButtons()).toEqual([]);
   });
 
   it("shows no needs-you line while no bot in another profile needs the owner", async () => {
@@ -864,40 +866,31 @@ describe("Chats mode", () => {
     expect(button.querySelector(".profile-id")).toBeNull();
   });
 
-  it("shows the Bot Chat row with how long ago its bot was active, out of the sections", async () => {
+  it("keeps the Bot Chat out of the panel: no row for it, and none in the sections", async () => {
     await launch();
-    expect(botChatRow()!.textContent).toMatch(/^HBot Chat\d+[mhd]$/);
-    expect(botChatRow()!.getAttribute("aria-label")).toBe("Hermes's Bot Chat");
-    expect(listTitles()).toEqual(["Disk usage"]);
+    await waitFor(() => expect(listTitles()).toEqual(["Disk usage"]));
+    expect(botChatButtons()).toEqual([]);
   });
 
-  it("shows Replying on the Bot Chat row while its bot replies, and its last message in its tip", async () => {
-    const { user } = await launch();
-    await pickProfile(user, "scribe");
-    await waitFor(() => expect(botChatRow()?.textContent).toBe("SBot ChatReplying"));
-    expect(botChatRow()!.title).toBe("Scribe's Bot Chat (Alt+B)\nRelease notes drafted: three fixes.");
-    expect(botChatRow()!.getAttribute("aria-keyshortcuts")).toBe("Alt+B");
-  });
-
-  it("shows Needs you on the Bot Chat row while its bot waits on the owner", async () => {
+  it("shows the shown profile's bot waiting on the owner on its row in Bots mode, not on the needs-you line", async () => {
     const { user } = await launch((s) => (s.liveSessions = [waiting("scribe-bot")]));
     await pickProfile(user, "scribe");
-    await waitFor(() => expect(botChatRow()?.textContent).toBe("SBot ChatNeeds you"));
+    await user.click(within(panel()).getByRole("tab", { name: /^Bots/ }));
+    await waitFor(() => expect(panel().querySelector('.bots-row[data-profile="scribe"]')?.textContent).toMatch(/Needs you/));
+    await user.click(within(panel()).getByRole("tab", { name: /^Chats/ }));
+    expect(within(panel()).getByRole("tab", { name: /^Bots/ }).getAttribute("aria-label")).toBe("Bots");
     expect(line()).toBeNull();
   });
 
-  it("opens the shown profile's Bot Chat from its row, marked selected while it is in the active pane", async () => {
+  it("opens the shown profile's Bot Chat by Alt+B and stays in Chats, with no row for it in the panel", async () => {
     const { user } = await launch();
     await pickProfile(user, "scribe");
-    await waitFor(() => expect(botChatRow()).toBeTruthy());
-    expect(botChatRow()!.getAttribute("aria-current")).toBeNull();
-    await user.click(botChatRow()!);
+    await user.click(await screen.findByText("Changelog wording"));
+    await user.keyboard("{Alt>}b{/Alt}");
     await waitFor(() => expect(screen.getByText("Draft the release notes for 0.9")).toBeTruthy());
-    await waitFor(() => expect(botChatRow()!.getAttribute("aria-current")).toBe("true"));
-    expect(botChatRow()!.closest(".row")!.classList.contains("sel")).toBe(true);
     expect(shownMode()).toBe("Chats");
-    await user.click(screen.getByText("Changelog wording"));
-    await waitFor(() => expect(botChatRow()!.getAttribute("aria-current")).toBeNull());
+    expect(botChatButtons()).toEqual([]);
+    expect(panel().querySelector(".row.sel")).toBeNull();
   });
 });
 
@@ -988,12 +981,12 @@ describe("Alt+B", () => {
     await waitFor(() => expect(screen.getByText("What should Scribe work on?")).toBeTruthy());
   });
 
-  it("goes back to the chat left from the Bot Chat row's click too", async () => {
+  it("opens the Bot Chat of the profile picked in the switcher, and goes back to the chat left in it", async () => {
     const { user } = await launch((s) => (s.liveSessions = []));
     await pickProfile(user, "scribe");
     await user.click(await screen.findByText("Changelog wording"));
     await waitFor(() => expect(head().textContent).toMatch(/^Changelog wording/));
-    await user.click(document.querySelector<HTMLElement>(".sb-botchat-row .row-open")!);
+    await altB(user);
     await waitFor(() => expect(head().textContent).toBe("SScribeBot Chat"));
     await altB(user);
     await waitFor(() => expect(head().textContent).toMatch(/^Changelog wording/));

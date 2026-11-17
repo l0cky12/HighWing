@@ -176,7 +176,7 @@ describe("Settle all, in the list", () => {
 });
 
 describe("Settle all, in the app", () => {
-  const connection = { mode: "ssh" as const, sshTarget: "liam@hermes", url: "", username: "liam" };
+  const connection = { mode: "ssh" as const, sshTarget: "lena@hermes", url: "", username: "lena" };
   const scope = () => projectScope(connection, "default");
   async function signedIn(server: FakeHermes) {
     const hermes = await connect(server.openPipe);

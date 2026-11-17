@@ -20,6 +20,7 @@ import {
 } from "../hermes/exportChat";
 import { chatImage, type ImagePage } from "../hermes/exportImage";
 import { REDACTED } from "../hermes/secrets";
+import { sentNames } from "../hermes/sentImages";
 import {
   DEFAULT_EXPIRY,
   EXPIRIES,
@@ -130,7 +131,7 @@ export function ExportChatDialog({
   const preview = useMemo(() => exportPreview(shot, draft, at, format), [shot, draft, at, format]);
   const messages = shot.items.filter(isMessage);
   const tools = shot.items.filter((i) => i.kind === "tool" || i.kind === "approval").length;
-  const attached = shot.items.reduce((n, i) => n + (i.kind === "user" ? (i.attachments?.length ?? 0) : 0), 0);
+  const attached = shot.items.reduce((n, i) => n + (i.kind === "user" ? sentNames(i).length : 0), 0);
   const chosen = messages.length - messages.filter((m) => draft.leftOut.has(m.id)).length;
   const empty = !chosen && !(draft.toolCalls && tools);
   const kind = EXPORT_FORMATS[format].kind;

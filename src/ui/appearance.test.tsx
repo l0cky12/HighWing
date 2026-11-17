@@ -199,7 +199,7 @@ describe("Settings, Appearance as cards of rows (#174, ADR 0059)", () => {
       <SettingsScreen
         status="connected"
         unsecure={false}
-        username="liam"
+        username="lena"
         passwordSaved
         profile="default"
         olderPulled={false}

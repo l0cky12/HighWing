@@ -8,7 +8,7 @@ import { connect, type Hermes } from "./transport";
 import type { Item } from "./model";
 import { localChatCache } from "./chatCache";
 
-const nas = { mode: "ssh" as const, sshTarget: "liam@nas", url: "", username: "liam" };
+const nas = { mode: "ssh" as const, sshTarget: "lena@nas", url: "", username: "lena" };
 
 const running: Hermes[] = [];
 afterEach(async () => {
@@ -149,7 +149,7 @@ describe("A dispatched task's wake turn, against the stand-in's kanban poller", 
     ]);
     expect(live.filter(([kind]) => kind === "assistant")).toHaveLength(2);
 
-    const reloaded = await connect(server.openPipe, undefined, localChatCache({ ...nas, sshTarget: "liam@reload" }));
+    const reloaded = await connect(server.openPipe, undefined, localChatCache({ ...nas, sshTarget: "lena@reload" }));
     running.push(reloaded);
     await reloaded.sync();
     await reloaded.open(id);
@@ -239,7 +239,7 @@ describe("Handed-off work that comes back", () => {
   };
   const returned = (items: Item[]) => items.filter((i): i is Extract<Item, { kind: "returned" }> => i.kind === "returned");
   const reopened = async (server: FakeHermes) => {
-    const again = await connect(server.openPipe, undefined, localChatCache({ ...nas, sshTarget: "liam@reload" }));
+    const again = await connect(server.openPipe, undefined, localChatCache({ ...nas, sshTarget: "lena@reload" }));
     running.push(again);
     await again.sync();
     await again.open("backup");

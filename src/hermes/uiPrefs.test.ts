@@ -42,7 +42,7 @@ afterEach(() => {
 
 describe("reading", () => {
   it("is the defaults when nothing is stored", () => {
-    expect(getUIPrefs()).toEqual({ theme: "system", reopenLastChat: false, checkUpdatesOnLaunch: true, lastOpenChat: {}, modelPicker: null, modelPicks: {}, modelFavorites: [], statusBar: ["context", "model", "status"], previewWidth: null, screenshotShortcut: "Ctrl+Shift+S", templates: [], terminalKind: "server", followUp: "queue", idleCompact: { enabled: false, percent: 70, idleMinutes: 15 }, chatSectionsShown: ["pinned", "inbox", "snoozed", "working", "settled"], chatSectionsCollapsed: ["snoozed", "archived", "settled"], agentOffice: "plan", officeQuality: "normal", inboxAutoDismissDays: null, messageDetails: "time", spellCheck: true, summonSelection: true, keybindings: {} });
+    expect(getUIPrefs()).toEqual({ theme: "system", reopenLastChat: false, checkUpdatesOnLaunch: true, lastOpenChat: {}, modelPicker: null, modelPicks: {}, modelFavorites: [], statusBar: ["context", "model", "status"], previewWidth: null, screenshotShortcut: "Ctrl+Shift+S", templates: [], terminalKind: "server", followUp: "queue", idleCompact: { enabled: false, percent: 70, idleMinutes: 15 }, chatSectionsShown: ["pinned", "inbox", "snoozed", "working", "settled"], chatSectionsCollapsed: ["snoozed", "archived", "settled"], chatListMode: "chats", agentOffice: "plan", officeQuality: "normal", inboxAutoDismissDays: null, messageDetails: "time", spellCheck: true, summonSelection: true, keybindings: {} });
     expect(getUIPrefs()).toEqual(DEFAULT_UI_PREFS);
   });
 
@@ -92,6 +92,7 @@ describe("reading", () => {
       // A version 1 list gains Pinned, new in version 2.
       chatSectionsShown: ["pinned", "inbox", "settled"],
       chatSectionsCollapsed: ["snoozed", "archived", "settled"],
+      chatListMode: "chats",
       agentOffice: "plan",
       officeQuality: "normal",
       inboxAutoDismissDays: null,
@@ -359,6 +360,13 @@ describe("migration", () => {
     }
   });
 
+  it("keeps the chat list's mode, and reads one it doesn't know as Chats", () => {
+    for (const [saved, read] of [["bots", "bots"], ["chats", "chats"], ["roster", "chats"], [1, "chats"]]) {
+      localStorage.setItem(UI_PREFS_KEY, JSON.stringify({ v: UI_PREFS_VERSION, chatListMode: saved }));
+      expect(getUIPrefs().chatListMode).toBe(read);
+    }
+  });
+
   it("shows Pinned, new in version 2, above the sections a version 1 document picked", () => {
     localStorage.setItem(UI_PREFS_KEY, JSON.stringify({ v: 1, chatSectionsShown: ["settled", "inbox"], chatSectionsCollapsed: ["inbox"] }));
     expect(getUIPrefs().chatSectionsShown).toEqual(["pinned", "inbox", "settled"]);
@@ -436,7 +444,7 @@ describe("Clear local cache", () => {
   it("deletes the chat lists and Saved copies and keeps the display preferences", () => {
     setUIPrefs({ theme: "dark", statusBar: ["model"], modelPicker: { provider: "anthropic", model: "claude-opus-5-5" } });
     const prefsBefore = localStorage.getItem(UI_PREFS_KEY);
-    const cache = localChatCache({ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" });
+    const cache = localChatCache({ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" });
     cache.save("default", []);
     cache.saveTranscript("default", "a", [{ kind: "user", id: "1", text: "hi" }]);
     expect(cache.bytes()).toBeGreaterThan(0);

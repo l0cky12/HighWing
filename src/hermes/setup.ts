@@ -235,7 +235,7 @@ export function explain(f: ProbeFailure, d: SignInDetails): TestOutcome & { ok: 
         if (has(/Permission denied|publickey|Too many authentication failures/))
           return out("The server didn't accept your SSH key.", [
             "Highwing runs ssh without prompts, so your key has to work without a passphrase prompt. Add it to your SSH agent with ssh-add.",
-            "Check the user name in the target, for example liam@hermes.",
+            "Check the user name in the target, for example lena@hermes.",
             checkSsh,
           ]);
         if (has(/Could not resolve hostname|Name or service not known/))

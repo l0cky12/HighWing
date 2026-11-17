@@ -48,7 +48,7 @@ for (const [name, description] of [
   ["writing", "Plain, short sentences; no filler"],
   ["notes", "Keep running notes for a chat"],
 ])
-  server.skills.add("default", { dir: `/home/liam/.hermes/skills/${name}`, source: "agent" }, skillMd(name, description));
+  server.skills.add("default", { dir: `/home/lena/.hermes/skills/${name}`, source: "agent" }, skillMd(name, description));
 server.skills.platformDisabled.default = { tui: ["notes"] };
 
 // Automations (ADR 0108): one GitHub route on a webhooks/1 server, with a made-up delivery history.
@@ -96,7 +96,7 @@ if (query.get("graph")) {
   const prompts = add("Author 20 copy-ready prompts for the onboarding flow", "done", "prometheus", { body: "task_id: assigned by the orchestrator from the onboarding plan." });
   const anchors = add("Revise the anchors in the integration playbook", "todo", "daedalus", { priority: 5, body: "Add the new endpoints and drop the retired ones." });
   const skill = add("Serve skill catalog over the gateway", "todo", "anvil", { body: "task_id: assigned by the orchestrator." });
-  const firmware = add("Explain the firmware rollout plan to the team", "done", "wazuh", { priority: 5, body: "## Objective Explain the order the switches upgrade in." });
+  const firmware = add("Explain the firmware rollout plan to the team", "done", "robin", { priority: 5, body: "## Objective Explain the order the switches upgrade in." });
   const copy = add("Correct prompt batch wording after review", "done", "prometheus", { body: "task_id: card owner asked for plainer words." });
   const specs = add("Finalize 20 feature specs for the release train", "done", "prometheus", { body: "task_id: this card closes the spec round." });
   const audit = add("Synthesize audit findings into one report", "done", "orchestrator", { body: "Combine the outputs of every audit card." });
@@ -167,8 +167,8 @@ const shots: { server: FakeHermes; hermes: typeof hermes; openInbox?: () => void
 (window as unknown as { shots: unknown }).shots = shots;
 // Settings → General's desktop parts, as the desktop app wires them: two saved connections, the tray and screenshots. The
 // tray and screenshot answers are made up, as Rust would give them on a desktop that shows tray icons.
-const current = { id: "conn-home-0001", name: "Home server", mode: "ssh" as const, sshTarget: "liam@hermes", url: "", username: "liam", addedAt: 0, lastUsedAt: Date.now() - 60e3 };
-const saved = [current, { id: "conn-work-0002", name: "Work lab", mode: "url" as const, sshTarget: "", url: "https://hermes.lab.example.net", username: "liam", addedAt: 0, lastUsedAt: Date.now() - 3 * 86400e3 }];
+const current = { id: "conn-home-0001", name: "Home server", mode: "ssh" as const, sshTarget: "lena@hermes", url: "", username: "lena", addedAt: 0, lastUsedAt: Date.now() - 60e3 };
+const saved = [current, { id: "conn-work-0002", name: "Work lab", mode: "url" as const, sshTarget: "", url: "https://hermes.lab.example.net", username: "lena", addedAt: 0, lastUsedAt: Date.now() - 3 * 86400e3 }];
 let tray = { closeToTray: false, tray: "shown" as const };
 const trayWiring = {
   status: async () => tray,
@@ -190,7 +190,7 @@ createRoot(document.getElementById("root")!).render(
     connection={current}
     saved={saved}
     onSwitchConnection={() => {}}
-    onTestConnection={async () => ({ ok: true, route: { kind: "ssh", target: "liam@hermes", local: "127.0.0.1:9119" }, version: "0.22.6", unsecure: false }) as never}
+    onTestConnection={async () => ({ ok: true, route: { kind: "ssh", target: "lena@hermes", local: "127.0.0.1:9119" }, version: "0.22.6", unsecure: false }) as never}
     tray={trayWiring as never}
     summon={{ onSummoned: (fn: (s: { fromElsewhere: boolean }) => void) => ((shots.summon = fn), () => {}), readSelection: async () => shots.selection } as never}
     screenshots={screenshots}

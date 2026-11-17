@@ -10,6 +10,7 @@ import { asError } from "./tauriPipe";
 import { LOAD_ERROR_ID } from "./transport";
 import type { ImagePage } from "./exportImage";
 import { snapshotPage } from "./snapshotPage";
+import { sentNames } from "./sentImages";
 import type { ChatUsage } from "./usage";
 
 /** Shows the Save dialog for `format` and writes `text` where the owner picks. The path saved to, or `null` if cancelled. */
@@ -109,7 +110,7 @@ function exportNotes(chat: Chat, exportedAt: Date, choice: Omit<ExportChoice, "r
     chat.running && "A reply was still being written; it is here as far as it had got.",
     left > 0 && `${left} of the chat's ${messages} messages ${left === 1 ? "was" : "were"} left out.`,
     !choice.toolCalls && chat.items.some((i) => i.kind === "tool" || i.kind === "approval") && "Tool calls and Approvals were left out.",
-    !choice.attachments && items.some((i) => i.kind === "user" && i.attachments?.length) && "The names of attached files were left out.",
+    !choice.attachments && items.some((i) => i.kind === "user" && sentNames(i).length) && "The names of attached files were left out.",
     items.some((i) => i.kind === "tool" && i.result === undefined && i.status === "done") &&
       "Hermes keeps the output of most tool calls only while the reply is running, so earlier tool calls have none.",
     chat.items.some((i) => i.kind === "error") && "Hermes Chat's own error notices are left out.",
@@ -177,7 +178,8 @@ function imagePage(chat: Chat, exportedAt: Date, choice: Omit<ExportChoice, "red
   const blocks = chosen(chat, choice).flatMap((i): ImagePage["blocks"] => {
     switch (i.kind) {
       case "user": {
-        const files = choice.attachments && i.attachments?.length ? `\n\nAttached: ${i.attachments.map(text).join(", ")}` : "";
+        const names = choice.attachments ? sentNames(i) : [];
+        const files = names.length ? `\n\nAttached: ${names.map(text).join(", ")}` : "";
         return [{ who: "You", text: text(i.text) + files }];
       }
       case "returned":
@@ -245,16 +247,18 @@ function jsonSession(chat: Chat, exportedAt: Date, choice: Omit<ExportChoice, "r
   const flushThought = () => reasoning !== undefined && assistant({ content: "" });
   for (const i of items) {
     switch (i.kind) {
-      case "user":
+      case "user": {
         flushThought();
+        const names = choice.attachments ? sentNames(i) : [];
         messages.push({
           role: "user",
           content: text(i.text),
           ...time(i.at),
           ...(i.steer && { display_kind: "steer" }),
-          ...(choice.attachments && i.attachments?.length && { attachments: i.attachments.map(text) }),
+          ...(names.length && { attachments: names.map(text) }),
         });
         break;
+      }
       case "returned":
         flushThought();
         messages.push({
@@ -353,7 +357,8 @@ const ANSWER: Record<ApprovalChoice, string> = { once: "Approved once", session:
 function block(i: Item, attachments: boolean): string[] {
   switch (i.kind) {
     case "user": {
-      const files = attachments && i.attachments?.length ? [`_Attached, not included in this file:_ ${i.attachments.map(code).join(", ")}`] : [];
+      const names = attachments ? sentNames(i) : [];
+      const files = names.length ? [`_Attached, not included in this file:_ ${names.map(code).join(", ")}`] : [];
       return [["**You:**", message(i.text), ...files].filter(Boolean).join("\n\n")];
     }
     case "returned":

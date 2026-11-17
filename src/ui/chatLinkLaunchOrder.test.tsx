@@ -26,7 +26,7 @@ vi.mock("@tauri-apps/api/core", () => ({
       case "hermes_connect": {
         const channel = args.onEvent as { onmessage: (e: PipeEvent) => void };
         pipe = await fake.openPipe((e) => channel.onmessage(e), args.profile as string);
-        return { kind: "ssh", target: "liam@hermes", addresses: [] };
+        return { kind: "ssh", target: "lena@hermes", addresses: [] };
       }
       case "hermes_send":
         return pipe!.send(args.frame as string);
@@ -60,7 +60,7 @@ afterEach(cleanup);
 
 describe("A chat link at launch with the password saved", () => {
   it("waits for the launch link before reopening anything, then opens the linked chat", async () => {
-    const connection = { mode: "ssh" as const, sshTarget: "liam@hermes", url: "", username: "liam" };
+    const connection = { mode: "ssh" as const, sshTarget: "lena@hermes", url: "", username: "lena" };
     localStorage.setItem("hermes-chat.sign-in", JSON.stringify(connection));
     keyring.set("password", "hunter2");
     // The chat that would reopen at launch without a link.

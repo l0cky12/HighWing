@@ -1,4 +1,4 @@
-// Generate with AI on the New profile form's Persona (ADR 0195). It rewrites only what the owner typed, on an explicit
+// Generate with AI on the New profile form's Persona (ADR 0197). It rewrites only what the owner typed, on an explicit
 // click, through one stateless `llm.oneshot` as the profile in use on its Text generation model. The answer is a
 // suggestion the owner can edit, then Replace persona or Discard; nothing reaches the persona box or Hermes otherwise.
 // Hermes has no cancel: Stop, a newer ask, closing the dialog and a switch of profile only drop the answer when it comes.

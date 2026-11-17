@@ -9,10 +9,10 @@ import { FakeHermes, row } from "./fakeHermes";
 import { type Item, isOutgoing } from "./model";
 import { type Hermes, connect, readSaved } from "./transport";
 
-const nas: SavedSignIn = { mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" };
+const nas: SavedSignIn = { mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" };
 /** Sent as the owner typed it, inner spaces, line break and all. */
 const TEXT = "Rotate the nginx logs,\n  then restart it ✓";
-const ROTATE = "/home/liam/rotate.sh";
+const ROTATE = "/home/lena/rotate.sh";
 
 let store: Map<string, string>;
 /** While set, writes to localStorage throw, as when it is full. */
@@ -254,6 +254,24 @@ describe("Case 3: the connection drops mid-send", () => {
     expect(chat().items.some(isOutgoing)).toBe(false);
     expect(plain(chat().items)).toHaveLength(1);
     expect(stored()).toHaveLength(1);
+    expect(submits()).toHaveLength(1);
+    expect(kept()).toEqual([]);
+  });
+
+  it.each([
+    ["alone", "", "What do you see in this image?"],
+    ["with words", "Which cable is loose?", "Which cable is loose?"],
+  ])("on reconnect, an image sent %s that Hermes stored shows from its history, with its image, not as failed", async (_, words, shown) => {
+    const { server, hermes, chat, submits } = await ready();
+    server.files = { "/home/lena/Pictures/rack.png": "\x89PNG fake" };
+    const { attachments } = await hermes().checkAttachments(["/home/lena/Pictures/rack.png"]);
+    server.dropOnPrompt = "stored";
+    expect(await hermes().send("c1", words, attachments)).toMatchObject({ delivery: "unknown" });
+
+    await hermes().reconnect();
+    await hermes().idle();
+    expect(chat().items.some(isOutgoing)).toBe(false);
+    expect(chat().items.at(-1)).toMatchObject({ kind: "user", text: shown, images: [{ path: "/hermes/images/upload_1.png" }] });
     expect(submits()).toHaveLength(1);
     expect(kept()).toEqual([]);
   });
@@ -501,7 +519,7 @@ describe("The outbox on this computer", () => {
   });
 
   it("brings in the messages the drafts store used to hold beside the composer", async () => {
-    const legacy = "hermes-chat.undelivered." + JSON.stringify(["ssh", "liam@hermes", "liam", "default", "c1"]);
+    const legacy = "hermes-chat.undelivered." + JSON.stringify(["ssh", "lena@hermes", "lena", "default", "c1"]);
     store.set(legacy, JSON.stringify([{ id: "h1", text: TEXT, delivery: "unknown", reason: "closed", at: 1 }]));
     const server = new FakeHermes();
     server.sessions = [row("c1", 0)];

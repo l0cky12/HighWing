@@ -1,4 +1,4 @@
-// New profile's Skills and Tools (ADR 0195): what the owner chose, and the stages after the create that apply it.
+// New profile's Skills and Tools (ADR 0197): what the owner chose, and the stages after the create that apply it.
 // Hermes's create sets neither: it seeds its built-in skills, all on, and its default toolsets. So the create carries
 // nothing for them, and once Hermes answers, each choice is applied to the new profile alone and read back: a skill the
 // owner turned off through Settings → Skills' switch, a toolset through Settings → Toolsets' change, one at a time. A

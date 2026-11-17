@@ -102,11 +102,11 @@ async function signedIn({ strict = false } = {}) {
   const server = new FakeHermes();
   server.sessions = [row("backup", 1, { pinned: true, title: "Nightly backup" }), row("nas", 2, { pinned: true, title: "NAS disks" })];
   server.transcripts = { backup: [{ role: "user", text: "Why did the backup fail?" }], nas: [{ role: "user", text: "Which disk is failing?" }] };
-  const hermes = await connect(server.openPipe, undefined, localChatCache({ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }));
+  const hermes = await connect(server.openPipe, undefined, localChatCache({ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }));
   running.push(hermes);
   const rust = fakeRust(server);
   const user = userEvent.setup();
-  const main = <Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} screenshots={rust.wiring} />;
+  const main = <Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} screenshots={rust.wiring} />;
   const view = render(strict ? <StrictMode>{main}</StrictMode> : main);
   await screen.findByRole("button", { name: /Nightly backup/ });
   await settle(hermes);
@@ -286,7 +286,7 @@ describe("Taking a screenshot for the composer", () => {
   it("shows what the desktop said about the capture", async () => {
     const { rust, user } = await signedIn();
     await user.keyboard("{Control>}{Shift>}s{/Shift}{/Control}");
-    await rust.land(PNG, "Your desktop also saved its own copy at /home/liam/Pictures/Screenshot.png.");
+    await rust.land(PNG, "Your desktop also saved its own copy at /home/lena/Pictures/Screenshot.png.");
     expect(await screen.findByText(/also saved its own copy/)).toBeTruthy();
     expect(chips()).toHaveLength(1);
   });
@@ -539,7 +539,7 @@ describe("A desktop without a way to take screenshots", () => {
     const rust = fakeRust(server);
     rust.wiring.support = async () => ({ ok: false, summary: "On Hyprland, Sway and other wlroots desktops, Highwing picks a region or window with slurp and grim." });
     const user = userEvent.setup();
-    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} screenshots={rust.wiring} />);
+    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} screenshots={rust.wiring} />);
     await settle(hermes);
     await user.click(screen.getByRole("button", { name: "Settings" }));
     await user.click(await screen.findByRole("button", { name: "Screenshots" }));

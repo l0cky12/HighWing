@@ -47,7 +47,7 @@ async function replying(setup: (s: FakeHermes) => void = () => {}) {
   const hermes = await connect(server.openPipe);
   running.push(hermes);
   const user = userEvent.setup();
-  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} />);
+  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} />);
   await user.click(await screen.findByRole("button", { name: /^Nightly backup/ }));
   await settle(hermes);
   await user.type(composer(), "Unlock it{Enter}");
@@ -151,8 +151,8 @@ describe("Follow-up behavior: Steer", () => {
 
   it("queues a message with files, saying a steer carries only words", async () => {
     setUIPrefs({ followUp: "steer" });
-    const s = await replying((server) => (server.files["/home/liam/df.txt"] = "sda 92%"));
-    dialog.picked = ["/home/liam/df.txt"];
+    const s = await replying((server) => (server.files["/home/lena/df.txt"] = "sda 92%"));
+    dialog.picked = ["/home/lena/df.txt"];
     await s.user.click(screen.getByRole("button", { name: "Attach files" }));
     await screen.findByText("df.txt");
     expect(keys()).toBe("Enter to queue · Shift+Enter for a new line");

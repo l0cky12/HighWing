@@ -48,7 +48,7 @@ describe("A path in running text", () => {
     "<a/b.html> a|b/c.ts",
     "C:\\Users\\me\\x.txt and C:/Users/me/x.txt",
     "$HOME/notes/x.md",
-    "liam@hermes:/srv/app/x.py",
+    "lena@hermes:/srv/app/x.py",
     "--prefix=/usr/local/bin",
     "no slash here.md",
   ])("leaves %j as text", (text) => expect(linked(text)).toEqual([]));
@@ -80,7 +80,7 @@ describe("A path in running text", () => {
 
 describe("A file Hermes hands over as `MEDIA:/path`", () => {
   it.each([
-    ["MEDIA:/home/liam/shots/chat.png", ["MEDIA:/home/liam/shots/chat.png -> /home/liam/shots/chat.png"]],
+    ["MEDIA:/home/lena/shots/chat.png", ["MEDIA:/home/lena/shots/chat.png -> /home/lena/shots/chat.png"]],
     ["Before:\nMEDIA:/srv/a/dark.png\nMEDIA:/srv/a/light.png", ["MEDIA:/srv/a/dark.png -> /srv/a/dark.png", "MEDIA:/srv/a/light.png -> /srv/a/light.png"]],
     ["Saved MEDIA:~/voice-memos/memo.ogg.", ["MEDIA:~/voice-memos/memo.ogg -> ~/voice-memos/memo.ogg"]],
     ["(MEDIA:/tmp/report)", ["MEDIA:/tmp/report -> /tmp/report"]],
@@ -90,7 +90,7 @@ describe("A file Hermes hands over as `MEDIA:/path`", () => {
   ])("links the whole tag in %j to its path", (text, paths) => expect(linked(text)).toEqual(paths));
 
   it("links a tag in a code span as it does in running text", () => {
-    expect(linked("MEDIA:/home/liam/shots/chat.png", "code")).toEqual(["MEDIA:/home/liam/shots/chat.png -> /home/liam/shots/chat.png"]);
+    expect(linked("MEDIA:/home/lena/shots/chat.png", "code")).toEqual(["MEDIA:/home/lena/shots/chat.png -> /home/lena/shots/chat.png"]);
   });
 
   it.each(["MEDIA:", "MEDIA:/", "MEDIA:shots/chat.png", "MEDIA:./chat.png", "MEDIA:https://example.com/a.png", "MEDIA://host/a.png", "MEDIA:$HOME/a.png", "XMEDIA:/srv/a/b.png"])(
@@ -114,9 +114,9 @@ describe("A path in a code span", () => {
     ["src/App.tsx:1455", ["src/App.tsx:1455 -> src/App.tsx"]],
     ["package.json:12", ["package.json:12 -> package.json"]],
     [" src/ui ", ["src/ui"]],
-    ["/home/liam/My Documents/report.md", ["/home/liam/My Documents/report.md"]],
+    ["/home/lena/My Documents/report.md", ["/home/lena/My Documents/report.md"]],
     ["~/My Projects/site/", ["~/My Projects/site/"]],
-    ["/home/liam/My Documents/report.md:12", ["/home/liam/My Documents/report.md:12 -> /home/liam/My Documents/report.md"]],
+    ["/home/lena/My Documents/report.md:12", ["/home/lena/My Documents/report.md:12 -> /home/lena/My Documents/report.md"]],
   ])("links the whole of %j", (code, paths) => expect(linked(code, "code")).toEqual(paths));
 
   it.each([

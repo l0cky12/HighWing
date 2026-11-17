@@ -30,17 +30,17 @@ function server() {
   const s = new FakeHermes();
   s.sessions = [row("backup", 1, { pinned: true, title: "Nightly backup" })];
   s.managedFiles.nodes = {
-    "/home/liam/notes.md": { text: "# Notes\nbuy milk\n" },
-    "/home/liam/.bashrc": { text: "export PATH\n" },
-    "/home/liam/projects/app/main.rs": { text: "fn main() {}\n" },
-    "/home/liam/projects/app/Cargo.toml": { text: "[package]\n" },
-    "/home/liam/latest": { link: "/home/liam/projects/app" },
-    "/home/liam/dangling": { link: "/home/liam/gone" },
-    "/home/liam/photo.png": { bytes: "\x89PNG\r\n\x1a\n" },
-    "/home/liam/huge.log": { size: 3 * MiB },
-    "/home/liam/run": { text: "#!/bin/sh\necho hi\n" },
-    "/home/liam/private": { dir: true, unreadable: true },
-    "/home/liam/private/x": { text: "x" },
+    "/home/lena/notes.md": { text: "# Notes\nbuy milk\n" },
+    "/home/lena/.bashrc": { text: "export PATH\n" },
+    "/home/lena/projects/app/main.rs": { text: "fn main() {}\n" },
+    "/home/lena/projects/app/Cargo.toml": { text: "[package]\n" },
+    "/home/lena/latest": { link: "/home/lena/projects/app" },
+    "/home/lena/dangling": { link: "/home/lena/gone" },
+    "/home/lena/photo.png": { bytes: "\x89PNG\r\n\x1a\n" },
+    "/home/lena/huge.log": { size: 3 * MiB },
+    "/home/lena/run": { text: "#!/bin/sh\necho hi\n" },
+    "/home/lena/private": { dir: true, unreadable: true },
+    "/home/lena/private/x": { text: "x" },
   };
   return s;
 }
@@ -48,7 +48,7 @@ function server() {
 async function launch(s: FakeHermes, tray = new FakeTray({ closeToTray: true, tray: "shown" })) {
   const hermes = await connect(s.openPipe);
   running.push(hermes);
-  render(<Main hermes={hermes} tray={tray} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} />);
+  render(<Main hermes={hermes} tray={tray} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} />);
   await waitFor(() => expect(hermes.hasListed()).toBe(true));
   await act(async () => void (await hermes.idle()));
   return { hermes, user: userEvent.setup() };
@@ -73,15 +73,15 @@ describe("Server files", () => {
     const { user } = await launch(s);
     await openFiles(user);
     expect(screen.getByRole("heading", { name: "Server files" })).toBeTruthy();
-    expect(document.querySelector(".files-server")?.textContent).toContain("ssh://liam@hermes");
+    expect(document.querySelector(".files-server")?.textContent).toContain("ssh://lena@hermes");
     expect(screen.queryByText("Read-only")).toBeNull();
-    expect(trail()).toEqual(["/", "home", "/liam"]);
-    expect(within(screen.getByRole("navigation", { name: "Current folder" })).getByText("liam").getAttribute("aria-current")).toBe("page");
+    expect(trail()).toEqual(["/", "home", "/lena"]);
+    expect(within(screen.getByRole("navigation", { name: "Current folder" })).getByText("lena").getAttribute("aria-current")).toBe("page");
     expect(names()).toEqual(["latest", "private", "projects", "dangling", "huge.log", "notes.md", "photo.png", "run"]);
     await user.click(screen.getByRole("checkbox", { name: /Hidden files/ }));
     expect(names()).toContain(".bashrc");
     // A symbolic link shows where it leads; a broken one can't be opened.
-    expect(row_("latest").textContent).toContain("/home/liam/projects/app");
+    expect(row_("latest").textContent).toContain("/home/lena/projects/app");
     expect((row_("dangling") as HTMLButtonElement).disabled).toBe(true);
     // Only GETs, only the file routes: nothing on the server is changed.
     expect(s.restRequests.filter((r) => r.path.startsWith("/api/files")).every((r) => r.method === "GET")).toBe(true);
@@ -91,15 +91,15 @@ describe("Server files", () => {
     const { user } = await launch(server());
     await openFiles(user);
     await user.click(row_("projects"));
-    await waitFor(() => expect(trail()).toEqual(["/", "home", "/liam", "/projects"]));
+    await waitFor(() => expect(trail()).toEqual(["/", "home", "/lena", "/projects"]));
     expect(names()).toEqual(["app"]);
     await user.click(screen.getByRole("button", { name: "Up one folder" }));
     await waitFor(() => expect(names()).toContain("notes.md"));
     await user.click(row_("latest"));
-    await waitFor(() => expect(trail()).toEqual(["/", "home", "/liam", "/projects", "/app"]));
+    await waitFor(() => expect(trail()).toEqual(["/", "home", "/lena", "/projects", "/app"]));
     expect(names()).toEqual(["Cargo.toml", "main.rs"]);
     await user.click(screen.getByRole("button", { name: "home" }));
-    await waitFor(() => expect(names()).toEqual(["liam"]));
+    await waitFor(() => expect(names()).toEqual(["lena"]));
     await user.type(screen.getByRole("textbox", { name: "Go to a folder on the server" }), "~/projects/app{Enter}");
     await waitFor(() => expect(names()).toEqual(["Cargo.toml", "main.rs"]));
   });
@@ -111,7 +111,7 @@ describe("Server files", () => {
     await user.click(row_("notes.md"));
     const pane = await screen.findByRole("complementary", { name: "Preview of notes.md" });
     await waitFor(() => expect(pane.querySelector("pre")?.textContent).toBe("# Notes\nbuy milk\n"));
-    expect(pane.textContent).toContain("/home/liam/notes.md");
+    expect(pane.textContent).toContain("/home/lena/notes.md");
     expect(pane.textContent).toContain("17 B (17 bytes)");
     expect(pane.textContent).toContain("text/markdown");
 
@@ -119,7 +119,7 @@ describe("Server files", () => {
     const img = await screen.findByRole("img", { name: "photo.png" });
     expect(img.getAttribute("src")).toMatch(/^data:image\/png;base64,/);
 
-    s.managedFiles.nodes["/home/liam/plan.docx"] = { bytes: readFileSync("src/ui/fixtures/plan.docx", "latin1") };
+    s.managedFiles.nodes["/home/lena/plan.docx"] = { bytes: readFileSync("src/ui/fixtures/plan.docx", "latin1") };
     await user.type(screen.getByRole("textbox", { name: "Go to a folder on the server" }), "~{Enter}");
     await user.click(await screen.findByRole("button", { name: /^plan\.docx/ }));
     const frame = await screen.findByTitle("Rendered plan.docx");
@@ -128,11 +128,11 @@ describe("Server files", () => {
 
     await user.click(row_("huge.log"));
     expect((await screen.findByRole("alert")).textContent).toBe("It's 3.0 MB. Previews go up to 1.0 MB.");
-    expect(s.managedFiles.reads).not.toContain("/home/liam/huge.log");
+    expect(s.managedFiles.reads).not.toContain("/home/lena/huge.log");
 
     // An unknown type is read only when asked.
     await user.click(row_("run"));
-    expect(s.managedFiles.reads).not.toContain("/home/liam/run");
+    expect(s.managedFiles.reads).not.toContain("/home/lena/run");
     await user.click(await screen.findByRole("button", { name: "Open as text" }));
     await waitFor(() => expect(document.querySelector(".files-text")?.textContent).toBe("#!/bin/sh\necho hi\n"));
 
@@ -144,14 +144,14 @@ describe("Server files", () => {
     const { user } = await launch(server());
     await openFiles(user);
     await user.click(row_("private"));
-    expect((await screen.findByRole("alert")).textContent).toContain("Couldn't open /home/liam/private: The Hermes server's user isn't allowed to open this folder.");
+    expect((await screen.findByRole("alert")).textContent).toContain("Couldn't open /home/lena/private: The Hermes server's user isn't allowed to open this folder.");
     expect(names()).toContain("notes.md");
-    expect(trail()).toEqual(["/", "home", "/liam"]);
+    expect(trail()).toEqual(["/", "home", "/lena"]);
   });
 
   it("shows a big folder a page at a time, and finds entries in all of it by name", async () => {
     const s = new FakeHermes();
-    for (let i = 0; i < 1200; i++) s.managedFiles.nodes[`/home/liam/f${String(i).padStart(4, "0")}.txt`] = { text: "x" };
+    for (let i = 0; i < 1200; i++) s.managedFiles.nodes[`/home/lena/f${String(i).padStart(4, "0")}.txt`] = { text: "x" };
     const { user } = await launch(s);
     await openFiles(user);
     expect(names()).toHaveLength(500);
@@ -177,7 +177,7 @@ describe("Server files", () => {
     expect((screen.getByRole("button", { name: "Refresh" }) as HTMLButtonElement).disabled).toBe(true);
     expect((row_("app") as HTMLButtonElement).disabled).toBe(true);
     expect(names()).toEqual(["app"]);
-    s.managedFiles.nodes["/home/liam/projects/web/index.html"] = { text: "<p>" };
+    s.managedFiles.nodes["/home/lena/projects/web/index.html"] = { text: "<p>" };
     await act(async () => void (await hermes.reconnect()));
     await waitFor(() => expect(names()).toEqual(["app", "web"]));
     expect(screen.queryByText(/can't be read until Hermes is connected/)).toBeNull();
@@ -189,7 +189,7 @@ describe("Server files", () => {
     await openFiles(user);
     const list = s.rest["GET /api/files"];
     let release!: () => void;
-    s.rest["GET /api/files"] = (req) => (req.query.get("path") === "/home/liam/projects" ? new Promise((r) => (release = () => r(list(req)))) : list(req));
+    s.rest["GET /api/files"] = (req) => (req.query.get("path") === "/home/lena/projects" ? new Promise((r) => (release = () => r(list(req)))) : list(req));
     await user.click(row_("projects"));
     await user.click(row_("latest"));
     await waitFor(() => expect(names()).toEqual(["Cargo.toml", "main.rs"]));
@@ -231,7 +231,7 @@ describe("Server files", () => {
     await waitFor(() => expect(names()).toContain("notes.md"));
     await user.click(row_("notes.md"));
     await waitFor(() => expect(held).toHaveLength(1));
-    delete s.managedFiles.nodes["/home/liam/notes.md"];
+    delete s.managedFiles.nodes["/home/lena/notes.md"];
     await user.click(screen.getByRole("button", { name: "Refresh" }));
     await waitFor(() => expect(names()).not.toContain("notes.md"));
     await releaseAll();
@@ -247,7 +247,7 @@ describe("Server files", () => {
     await waitFor(() => expect(held).toHaveLength(2));
     // The read was answered before the file went; only the listing sees it gone.
     const [readRun, listAgain] = held.splice(0);
-    delete s.managedFiles.nodes["/home/liam/run"];
+    delete s.managedFiles.nodes["/home/lena/run"];
     await act(async () => {
       listAgain();
       readRun();
@@ -258,11 +258,11 @@ describe("Server files", () => {
 
   it("starts at a locked root and says so", async () => {
     const s = server();
-    s.managedFiles.root = "/home/liam/projects";
+    s.managedFiles.root = "/home/lena/projects";
     const { user } = await launch(s);
     await openFiles(user);
-    expect(screen.getByText("Limited to /home/liam/projects")).toBeTruthy();
-    expect(trail()).toEqual(["/home/liam/projects"]);
+    expect(screen.getByText("Limited to /home/lena/projects")).toBeTruthy();
+    expect(trail()).toEqual(["/home/lena/projects"]);
     expect((screen.getByRole("button", { name: "Up one folder" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -295,7 +295,7 @@ describe("Server files", () => {
     await user.click(screen.getByRole("button", { name: /Nightly backup/ }));
     await waitFor(() => expect(document.querySelector(".chat-title span")?.textContent).toBe("Nightly backup"));
     expect(document.querySelector("aside.side-panel")!.hasAttribute("hidden")).toBe(false);
-    expect(trail()).toEqual(["/", "home", "/liam", "/projects"]);
+    expect(trail()).toEqual(["/", "home", "/lena", "/projects"]);
   });
 });
 
@@ -313,7 +313,7 @@ describe("Server files: Download", () => {
     await user.click(screen.getByRole("button", { name: /Download/ }));
     const progress = await screen.findByRole("progressbar", { name: "Downloading huge.log" });
     expect(progress.getAttribute("value")).toBe("50");
-    expect(transfer().getByText("/home/liam/huge.log")).toBeTruthy();
+    expect(transfer().getByText("/home/lena/huge.log")).toBeTruthy();
     expect(transfer().getByText("/home/me/Downloads/huge.log")).toBeTruthy();
     expect(transfer().getByText("1.5 MB of 3.0 MB (50%)")).toBeTruthy();
     release();
@@ -351,26 +351,26 @@ describe("Server files: Download", () => {
 
   it("shows a name's direction overrides as marks, in the list, the trail, the preview and the transfer (#481)", async () => {
     const s = server();
-    s.managedFiles.nodes["/home/liam/in\u202Ebox/invoice\u202Efdp.exe"] = { size: 3 * MiB };
+    s.managedFiles.nodes["/home/lena/in\u202Ebox/invoice\u202Efdp.exe"] = { size: 3 * MiB };
     const { user } = await launch(s);
     await openFiles(user);
     expect(names()).toContain("in\uFFFDbox");
     await user.click(row_("in\uFFFDbox"));
-    await waitFor(() => expect(trail()).toEqual(["/", "home", "/liam", "/in\uFFFDbox"]));
+    await waitFor(() => expect(trail()).toEqual(["/", "home", "/lena", "/in\uFFFDbox"]));
     expect(names()).toEqual(["invoice\uFFFDfdp.exe"]);
     await user.click(row_("invoice\uFFFDfdp.exe"));
     const pane = await screen.findByRole("complementary", { name: "Preview of invoice\uFFFDfdp.exe" });
     expect(within(pane).getByRole("heading").textContent).toBe("invoice\uFFFDfdp.exe");
     await user.click(within(pane).getByRole("button", { name: /Download/ }));
     await waitFor(() => expect(transfer().getByText("Downloaded, 3.0 MB")).toBeTruthy());
-    expect(transfer().getByText("/home/liam/in\uFFFDbox/invoice\uFFFDfdp.exe")).toBeTruthy();
+    expect(transfer().getByText("/home/lena/in\uFFFDbox/invoice\uFFFDfdp.exe")).toBeTruthy();
     const raw = [...document.querySelectorAll("*")].filter((n) => [...n.childNodes].some((c) => c.nodeType === 3 && /[\u202a-\u202e\u2066-\u2069]/.test(c.textContent!))).map((n) => n.outerHTML.slice(0, 300));
     expect(raw).toEqual([]);
   });
 
   it("offers no download of a file over Hermes's 100 MB, or of a folder", async () => {
     const s = server();
-    s.managedFiles.nodes["/home/liam/disk.img"] = { size: 101 * MiB };
+    s.managedFiles.nodes["/home/lena/disk.img"] = { size: 101 * MiB };
     const { user } = await launch(s);
     await openFiles(user);
     await user.click(row_("disk.img"));
@@ -386,10 +386,10 @@ describe("Server files: Download", () => {
     await user.click(row_("notes.md"));
     await screen.findByText(/buy milk/);
     // Made unreadable after it was listed: the server's 403 shows as the browser words it.
-    s.managedFiles.nodes["/home/liam/notes.md"] = { text: "x", unreadable: true };
+    s.managedFiles.nodes["/home/lena/notes.md"] = { text: "x", unreadable: true };
     await user.click(screen.getByRole("button", { name: /Download/ }));
     await waitFor(() => expect(transfer().getByRole("alert").textContent).toBe("The Hermes server's user isn't allowed to read this file."));
-    s.managedFiles.nodes["/home/liam/notes.md"] = { text: "# Notes\n" };
+    s.managedFiles.nodes["/home/lena/notes.md"] = { text: "# Notes\n" };
     s.managedFiles.transferGate = new Promise(() => {});
     await user.click(screen.getByRole("button", { name: /Download/ }));
     await screen.findByRole("progressbar");
@@ -409,12 +409,12 @@ describe("Server files: Upload", () => {
     const { user } = await launch(s);
     await openFiles(user);
     await user.click(screen.getByRole("button", { name: /Upload/ }));
-    expect(dialog().getByText("/home/liam/report.pdf")).toBeTruthy();
+    expect(dialog().getByText("/home/lena/report.pdf")).toBeTruthy();
     expect(dialog().queryByRole("radio")).toBeNull();
     expect(s.managedFiles.uploads).toEqual([]);
     await user.click(dialog().getByRole("button", { name: "Upload" }));
     await waitFor(() => expect(transfer().getByText(/^Uploaded, and the server lists it at 18 B/)).toBeTruthy());
-    expect(s.managedFiles.uploads).toEqual([{ path: "/home/liam/report.pdf", overwrite: false }]);
+    expect(s.managedFiles.uploads).toEqual([{ path: "/home/lena/report.pdf", overwrite: false }]);
     expect(transfer().getByText("report.pdf", { selector: ".mono" })).toBeTruthy();
     await waitFor(() => expect(names()).toContain("report.pdf"));
   });
@@ -427,18 +427,18 @@ describe("Server files: Upload", () => {
     await user.click(screen.getByRole("button", { name: /Upload/ }));
     expect(dialog().getByText(/There's already a/)).toBeTruthy();
     expect((dialog().getByRole("radio", { name: /Keep both/ }) as HTMLInputElement).checked).toBe(true);
-    expect(dialog().getByText("/home/liam/notes (2).md")).toBeTruthy();
+    expect(dialog().getByText("/home/lena/notes (2).md")).toBeTruthy();
     await user.click(dialog().getByRole("button", { name: "Upload" }));
     await waitFor(() => expect(transfer().getByText(/^Uploaded/)).toBeTruthy());
-    expect(s.managedFiles.nodes["/home/liam/notes.md"]).toEqual({ text: "# Notes\nbuy milk\n" });
-    expect(s.managedFiles.uploads.at(-1)).toEqual({ path: "/home/liam/notes (2).md", overwrite: false });
+    expect(s.managedFiles.nodes["/home/lena/notes.md"]).toEqual({ text: "# Notes\nbuy milk\n" });
+    expect(s.managedFiles.uploads.at(-1)).toEqual({ path: "/home/lena/notes (2).md", overwrite: false });
     await user.click(screen.getByRole("button", { name: /Upload/ }));
     await user.click(dialog().getByRole("radio", { name: /Replace the server's/ }));
     expect(dialog().getByText(/permissions aren't kept/)).toBeTruthy();
-    expect(dialog().getByText("/home/liam/notes.md")).toBeTruthy();
+    expect(dialog().getByText("/home/lena/notes.md")).toBeTruthy();
     await user.click(dialog().getByRole("button", { name: "Replace" }));
     await waitFor(() => expect(transfer().getAllByText(/^Uploaded/)).toHaveLength(2));
-    expect(s.managedFiles.uploads.at(-1)).toEqual({ path: "/home/liam/notes.md", overwrite: true });
+    expect(s.managedFiles.uploads.at(-1)).toEqual({ path: "/home/lena/notes.md", overwrite: true });
   });
 
   it("cancels in the dialog without sending, and says when the name was taken meanwhile", async () => {
@@ -452,10 +452,10 @@ describe("Server files: Upload", () => {
     expect(s.managedFiles.uploads).toEqual([]);
     await user.click(screen.getByRole("button", { name: /Upload/ }));
     // Someone else writes new.txt after the folder was listed: Hermes refuses, and nothing is replaced.
-    s.managedFiles.nodes["/home/liam/new.txt"] = { text: "theirs" };
+    s.managedFiles.nodes["/home/lena/new.txt"] = { text: "theirs" };
     await user.click(dialog().getByRole("button", { name: "Upload" }));
     await waitFor(() => expect(transfer().getByRole("alert").textContent).toBe("A file with that name is on the server now. Nothing was replaced."));
-    expect(s.managedFiles.nodes["/home/liam/new.txt"]).toEqual({ text: "theirs" });
+    expect(s.managedFiles.nodes["/home/lena/new.txt"]).toEqual({ text: "theirs" });
   });
 
   it("refuses a credential file's name and a file over 100 MB up front", async () => {
@@ -477,13 +477,13 @@ describe("Server files: Upload", () => {
 
   it("refuses to replace a link to a credential file, which Hermes would write through", async () => {
     const s = server();
-    s.managedFiles.nodes["/home/liam/report.txt"] = { link: "/home/liam/.env" };
-    s.managedFiles.nodes["/home/liam/.env"] = { text: "SECRET=1\n" };
+    s.managedFiles.nodes["/home/lena/report.txt"] = { link: "/home/lena/.env" };
+    s.managedFiles.nodes["/home/lena/.env"] = { text: "SECRET=1\n" };
     s.managedFiles.openDialog = () => ({ name: "report.txt", bytes: "x" });
     const { user } = await launch(s);
     await openFiles(user);
     await user.click(screen.getByRole("button", { name: /Upload/ }));
-    expect(dialog().getByRole("alert").textContent).toBe("report.txt here is a link to a credential file (/home/liam/.env), so Highwing doesn't upload over it.");
+    expect(dialog().getByRole("alert").textContent).toBe("report.txt here is a link to a credential file (/home/lena/.env), so Highwing doesn't upload over it.");
     expect(dialog().queryByRole("button", { name: /Upload|Replace/ })).toBeNull();
   });
 
@@ -525,7 +525,7 @@ describe("Server files: Upload", () => {
     expect((await screen.findByRole("progressbar", { name: "Uploading big.bin" })).getAttribute("value")).toBe("50");
     await user.click(transfer().getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(transfer().getByText(/^Stopped\. Hermes never keeps part/)).toBeTruthy());
-    expect(s.managedFiles.nodes["/home/liam/big.bin"]).toBeUndefined();
+    expect(s.managedFiles.nodes["/home/lena/big.bin"]).toBeUndefined();
   });
 });
 
@@ -560,19 +560,19 @@ describe("Server files: editing text", () => {
     await user.click(editor().getByRole("button", { name: "Save" }));
     await waitFor(() => expect(screen.getByRole("status").textContent).toMatch(/^Saved notes\.md\. Hermes has your edit, read back/));
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(serverText(s, "/home/liam/notes.md")).toBe("# Notes\nbuy oat milk\n");
+    expect(serverText(s, "/home/lena/notes.md")).toBe("# Notes\nbuy oat milk\n");
     await waitFor(() => expect(screen.getByText(/buy oat milk/, { selector: ".files-text" })).toBeTruthy());
   });
 
   it("writes nothing over a remote change, shows it, and merges the two", async () => {
     const s = server();
-    s.managedFiles.nodes["/home/liam/notes.md"] = { text: "one\ntwo\nthree\nfour\nfive\n" };
+    s.managedFiles.nodes["/home/lena/notes.md"] = { text: "one\ntwo\nthree\nfour\nfive\n" };
     const { user } = await launch(s);
     const area = await openEditor(user);
     await user.clear(area);
     await user.type(area, "one\nTWO\nthree\nfour\nfive\n");
     // Another client edits the last line meanwhile.
-    s.managedFiles.nodes["/home/liam/notes.md"] = { text: "one\ntwo\nthree\nfour\nFIVE (theirs)\n" };
+    s.managedFiles.nodes["/home/lena/notes.md"] = { text: "one\ntwo\nthree\nfour\nFIVE (theirs)\n" };
     await user.click(editor().getByRole("button", { name: "Review changes…" }));
     await user.click(editor().getByRole("button", { name: "Save" }));
     await waitFor(() => expect(editor().getByRole("alert").textContent).toMatch(/changed on the server since you opened it, so nothing was written\. Your edit is kept here\./));
@@ -584,7 +584,7 @@ describe("Server files: editing text", () => {
     await user.click(editor().getByRole("button", { name: "Review changes…" }));
     await user.click(editor().getByRole("button", { name: "Save" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(serverText(s, "/home/liam/notes.md")).toBe("one\nTWO\nthree\nfour\nFIVE (theirs)\n");
+    expect(serverText(s, "/home/lena/notes.md")).toBe("one\nTWO\nthree\nfour\nFIVE (theirs)\n");
   });
 
   it("marks where both changed the same line, and can reload theirs or keep both as a copy", async () => {
@@ -593,7 +593,7 @@ describe("Server files: editing text", () => {
     const area = await openEditor(user);
     await user.clear(area);
     await user.type(area, "# Notes\nbuy bread\n");
-    s.managedFiles.nodes["/home/liam/notes.md"] = { text: "# Notes\nbuy eggs\n" };
+    s.managedFiles.nodes["/home/lena/notes.md"] = { text: "# Notes\nbuy eggs\n" };
     await user.click(editor().getByRole("button", { name: "Review changes…" }));
     await user.click(editor().getByRole("button", { name: "Save" }));
     await editor().findByRole("button", { name: "Merge" });
@@ -601,16 +601,16 @@ describe("Server files: editing text", () => {
     expect((editor().getByRole("textbox") as HTMLTextAreaElement).value).toContain("<<<<<<< your edit\nbuy bread\n=======\nbuy eggs\n>>>>>>> on the server now");
     expect(editor().getByRole("status").textContent).toMatch(/1 place both changed is marked/);
     // Back to a conflict to try the other two ways out.
-    s.managedFiles.nodes["/home/liam/notes.md"] = { text: "# Notes\nbuy jam\n" };
+    s.managedFiles.nodes["/home/lena/notes.md"] = { text: "# Notes\nbuy jam\n" };
     await user.click(editor().getByRole("button", { name: "Review changes…" }));
     await user.click(editor().getByRole("button", { name: "Save" }));
     await user.click(await editor().findByRole("button", { name: "Save mine as a copy" }));
-    await waitFor(() => expect(screen.getByRole("status").textContent).toMatch(/saved as a copy, \/home\/liam\/notes \(2\)\.md/));
-    expect(serverText(s, "/home/liam/notes.md")).toBe("# Notes\nbuy jam\n");
-    expect(serverText(s, "/home/liam/notes (2).md")).toContain("buy bread");
+    await waitFor(() => expect(screen.getByRole("status").textContent).toMatch(/saved as a copy, \/home\/lena\/notes \(2\)\.md/));
+    expect(serverText(s, "/home/lena/notes.md")).toBe("# Notes\nbuy jam\n");
+    expect(serverText(s, "/home/lena/notes (2).md")).toContain("buy bread");
     await user.click(await screen.findByRole("button", { name: "Edit" }));
     await user.type(await screen.findByRole("textbox", { name: "Text of notes.md" }), "more\n");
-    s.managedFiles.nodes["/home/liam/notes.md"] = { text: "server wins\n" };
+    s.managedFiles.nodes["/home/lena/notes.md"] = { text: "server wins\n" };
     await user.click(editor().getByRole("button", { name: "Review changes…" }));
     await user.click(editor().getByRole("button", { name: "Save" }));
     await user.click(await editor().findByRole("button", { name: "Reload theirs" }));
@@ -650,7 +650,7 @@ describe("Server files: editing text", () => {
 
   it("asks before dropping an unsaved edit, and won't edit what it can't round-trip", async () => {
     const s = server();
-    s.managedFiles.nodes["/home/liam/latin1.txt"] = { bytes: "caf\xe9\n" };
+    s.managedFiles.nodes["/home/lena/latin1.txt"] = { bytes: "caf\xe9\n" };
     const { user } = await launch(s);
     const area = await openEditor(user);
     await user.type(area, "x");
@@ -661,7 +661,7 @@ describe("Server files: editing text", () => {
     await user.click(editor().getByRole("button", { name: "Cancel" }));
     await user.click(editor().getByRole("button", { name: "Discard changes" }));
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(serverText(s, "/home/liam/notes.md")).toBe("# Notes\nbuy milk\n");
+    expect(serverText(s, "/home/lena/notes.md")).toBe("# Notes\nbuy milk\n");
     await user.click(row_("latin1.txt"));
     await user.click(await screen.findByRole("button", { name: "Edit" }));
     expect((await editor().findByRole("alert")).textContent).toMatch(/isn't UTF-8 text/);

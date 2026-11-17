@@ -501,7 +501,7 @@ async fn an_attached_chat_or_a_process_in_the_folder_blocks_removal_however_quie
     create(&app, ID, "feature/a", false).await;
     let wt = d.path().join("app-feature-a");
     // The chat's place is held before Hermes starts it, then confirmed.
-    ask(Request::WorktreeAttach { repo: s(&app), id: ID.into(), token: TOKEN.into(), profile: "work".into(), connection: "ssh liam@hermes".into() })
+    ask(Request::WorktreeAttach { repo: s(&app), id: ID.into(), token: TOKEN.into(), profile: "work".into(), connection: "ssh lena@hermes".into() })
         .await
         .unwrap();
     let p = remove_plan(&app, ID).await;

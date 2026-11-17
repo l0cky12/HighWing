@@ -411,6 +411,20 @@ export function chatSections(
   return s;
 }
 
+const UNDER_BOT_ACTIVE_MAX = 5;
+const UNDER_BOT_MIN = 3;
+
+export function chatsUnderBot(s: ChatSections, shown: readonly (string | null)[]): Chat[] {
+  const near = [...s.pinned, ...s.inbox, ...s.working].slice(0, UNDER_BOT_ACTIVE_MAX);
+  near.push(...s.settled.slice(0, Math.max(0, UNDER_BOT_MIN - near.length)));
+  const every = Object.values(s).flat();
+  for (const id of shown) {
+    const c = every.find((x) => x.id === id);
+    if (c && !near.includes(c)) near.push(c);
+  }
+  return near;
+}
+
 /** Where a chat list row dropped on the Settled drawer or the Inbox puts its chat: settled or not, or undefined when the drop would change nothing or the chat is archived (ADR 0090). */
 export const settleByDrop = (chat: Chat | undefined, on: "settled" | "inbox"): boolean | undefined =>
   !chat || chat.archived || chat.settled === (on === "settled") ? undefined : on === "settled";

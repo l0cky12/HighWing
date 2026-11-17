@@ -9,7 +9,7 @@ import { SnapshotSettings } from "./SnapshotSettings";
 
 afterEach(cleanup);
 
-const HOST: SnapshotHost = { endpoint: "https://s3.us-east-1.amazonaws.com", region: "us-east-1", bucket: "liam-shares", prefix: "hermes-chat-snapshots/", keyId: "AKIAEXAMPLE" };
+const HOST: SnapshotHost = { endpoint: "https://s3.us-east-1.amazonaws.com", region: "us-east-1", bucket: "lena-shares", prefix: "hermes-chat-snapshots/", keyId: "AKIAEXAMPLE" };
 const SECRET = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
 const id = (c: string) => c.repeat(26);
 const LIVE: Snapshot = {
@@ -83,7 +83,7 @@ describe("Settings → Snapshots, the host card", () => {
     const { api, user } = fake();
     await user.click(await screen.findByRole("button", { name: "Change" }));
     expect(screen.getByRole("form", { name: "Change the snapshot host" })).toBeTruthy();
-    expect(field("Bucket").value).toBe("liam-shares");
+    expect(field("Bucket").value).toBe("lena-shares");
     expect(field("Access key ID").value).toBe("AKIAEXAMPLE");
     expect(field("Secret access key").value).toBe("");
     await user.clear(field("Bucket"));

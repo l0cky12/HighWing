@@ -17,7 +17,7 @@ import { SNOOZE_KEY } from "./snooze";
 import { TAGS_KEY } from "./tags";
 import { WORKTREE_CHATS_KEY } from "./worktrees";
 
-const legacy = { mode: "ssh" as const, sshTarget: "liam@hermes", url: "", username: "liam" };
+const legacy = { mode: "ssh" as const, sshTarget: "lena@hermes", url: "", username: "lena" };
 let ids = 0;
 const nextId = () => `00000000-0000-4000-8000-${String(++ids).padStart(12, "0")}`;
 const store = (now = () => 1000) => new Connections(localStorage, now, nextId);
@@ -34,7 +34,7 @@ describe("Migrating the single saved sign-in", () => {
     const first = store();
     const [c] = first.recent();
     expect(first.recent()).toHaveLength(1);
-    expect(c).toMatchObject({ ...legacy, name: "hermes", legacy: { scope: ["ssh", "liam@hermes", "liam"], address: addressKey(legacy) } });
+    expect(c).toMatchObject({ ...legacy, name: "hermes", legacy: { scope: ["ssh", "lena@hermes", "lena"], address: addressKey(legacy) } });
     expect(first.current()?.id).toBe(c.id);
     // Read again (the next launch), it is the same connection: the id was kept, not made anew.
     expect(store().current()?.id).toBe(c.id);
@@ -60,7 +60,7 @@ describe("Migrating the single saved sign-in", () => {
     localStorage.setItem(LEGACY_SIGN_IN_KEY, JSON.stringify(legacy));
     const s = store();
     const c = s.current()!;
-    s.save({ ...c, sshTarget: "liam@hermes.tail.ts.net" });
+    s.save({ ...c, sshTarget: "lena@hermes.tail.ts.net" });
     expect(draftKey(s.get(c.id)!, "default", null)).toBe(draftKey(legacy, "default", null));
   });
 
@@ -73,7 +73,7 @@ describe("Migrating the single saved sign-in", () => {
   it("starts again from the old sign-in when the list can't be read", () => {
     localStorage.setItem(LEGACY_SIGN_IN_KEY, JSON.stringify(legacy));
     localStorage.setItem(CONNECTIONS_KEY, "{not json");
-    expect(store().recent().map((c) => c.sshTarget)).toEqual(["liam@hermes"]);
+    expect(store().recent().map((c) => c.sshTarget)).toEqual(["lena@hermes"]);
   });
 });
 
@@ -186,8 +186,8 @@ describe("Saved connections", () => {
 describe("Live connections (ADR 0125)", () => {
   const two = () => {
     const s = store();
-    const a = s.draft({ ...legacy, sshTarget: "liam@alpha" }, "Alpha");
-    const b = s.draft({ ...legacy, sshTarget: "liam@bravo" }, "Bravo");
+    const a = s.draft({ ...legacy, sshTarget: "lena@alpha" }, "Alpha");
+    const b = s.draft({ ...legacy, sshTarget: "lena@bravo" }, "Bravo");
     s.save(a);
     s.save(b);
     return { s, a, b };
@@ -293,7 +293,7 @@ describe("Removing a connection's local data", () => {
   it("forgets failed writes, screenshots and unopened legacy Failed messages before a restart", async () => {
     localStorage.setItem(LEGACY_SIGN_IN_KEY, JSON.stringify(legacy));
     const one = store().current()!;
-    const other = store().draft({ ...legacy, sshTarget: "liam@other" });
+    const other = store().draft({ ...legacy, sshTarget: "lena@other" });
     const held = "hermes-chat.undelivered." + connectionScope(one, "unopened", "chat-1");
     localStorage.setItem(held, "private failed text");
     const set = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("full"); });
@@ -315,7 +315,7 @@ describe("Removing a connection's local data", () => {
   it("matches a scope by its leading parts only", () => {
     expect(inScope(["connection", "x"], connectionScope({ mode: "ssh", sshTarget: "", url: "", username: "", id: "x" }, "default", "chat"))).toBe(true);
     expect(inScope(["connection", "x"], JSON.stringify(["connection", "xy", "default"]))).toBe(false);
-    expect(inScope(["ssh", "liam@hermes", "liam"], JSON.stringify(["ssh", "liam@hermes", "liam2"]))).toBe(false);
+    expect(inScope(["ssh", "lena@hermes", "lena"], JSON.stringify(["ssh", "lena@hermes", "lena2"]))).toBe(false);
     expect(inScope(["a"], "not json")).toBe(false);
   });
 });

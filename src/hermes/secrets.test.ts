@@ -154,7 +154,7 @@ describe("Redacting secrets", () => {
     ["GET https://example.com/x?auth=abc123&y=1", "abc123"],
     ["GET https://example.com/api/display/ws?display_ticket=tkt456", "tkt456"],
     ["GET https://user:p@ss@example.com/x", "ss@example"],
-    ["ssh://liam:hunter2@hermes", "hunter2"],
+    ["ssh://lena:hunter2@hermes", "hunter2"],
     ['{"api_key": "plain-value-123", "model": "x"}', "plain-value-123"],
     ["password=hunter2 user=bob", "hunter2"],
     ["DISCORD_BOT_TOKEN: 'abc.def.ghi'", "abc.def.ghi"],
@@ -174,7 +174,7 @@ describe("Redacting secrets", () => {
 
   it("keeps what isn't a secret, and doesn't redact twice", () => {
     expect(redactSecrets("2026-11-04 10:00:00 INFO agent: 1200 tokens used, max_tokens reached").text).toBe("2026-11-04 10:00:00 INFO agent: 1200 tokens used, max_tokens reached");
-    expect(redactSecrets("Connection to ssh://liam@hermes is up").text).toBe("Connection to ssh://liam@hermes is up");
+    expect(redactSecrets("Connection to ssh://lena@hermes is up").text).toBe("Connection to ssh://lena@hermes is up");
     expect(redactSecrets('h={"Authorization": "Basic dXNlcjpwYXNz", "Host": "x"}').text).toBe('h={"Authorization": [redacted], "Host": "x"}');
     const r = redactSecrets("Authorization: Bearer abcdefgh12345678");
     expect(r.text).toBe("Authorization: [redacted]");
@@ -191,7 +191,7 @@ describe("Redacting secrets", () => {
 
 describe("Every surface hides what another hides", () => {
   const chat = (text: string): Chat => ({ id: "c", runtimeId: "rt", title: "Chat", source: "app", settled: false, updatedAt: 0, items: [{ kind: "user", id: "u", text }] });
-  const sign: SignInDetails = { mode: "ssh", sshTarget: "", url: "", username: "liam", password: "Pw-hunter2-x", token: "tok_9f8e7d6c5b4a" };
+  const sign: SignInDetails = { mode: "ssh", sshTarget: "", url: "", username: "lena", password: "Pw-hunter2-x", token: "tok_9f8e7d6c5b4a" };
   const EXPORT = "a chat export";
   const surfaces: [string, (text: string) => string][] = [
     ["Logs", (t) => clean(t).text],

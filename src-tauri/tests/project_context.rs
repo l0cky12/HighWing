@@ -201,7 +201,7 @@ async fn stub(disk: &Shared) -> Dashboard {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let sign_in = SignIn { credential: Credential::password("liam", "hunter2"), headers: Default::default() };
+    let sign_in = SignIn { credential: Credential::password("lena", "hunter2"), headers: Default::default() };
     Dashboard::sign_in(transport::client(&sign_in.headers).unwrap(), &base, &sign_in).await.expect("signed in")
 }
 

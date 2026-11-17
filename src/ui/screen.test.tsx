@@ -47,7 +47,7 @@ class FakeRfb implements RfbClient {
 const agent: DisplayLease = { holder: "agent", viewer_hash: null, since: 1, epoch: 0 };
 
 class FakeScreen implements ScreenApi {
-  state: DisplayStatus = { supported: true, installed: true, missing: [], running: false, geometry: "1440x900", lease: agent, profile_key: "/home/liam/.hermes" };
+  state: DisplayStatus = { supported: true, installed: true, missing: [], running: false, geometry: "1440x900", lease: agent, profile_key: "/home/lena/.hermes" };
   observed: (string | undefined)[] = [];
   closes: ((code: number, reason: string) => void)[] = [];
   sockets = 0;
@@ -72,7 +72,7 @@ class FakeScreen implements ScreenApi {
   };
   installBrowser = async () => {
     this.calls.push("installBrowser");
-    if (this.pm.code === 0) this.state = { ...this.state, browser: "/home/liam/.hermes/pm/chromium/chrome" };
+    if (this.pm.code === 0) this.state = { ...this.state, browser: "/home/lena/.hermes/pm/chromium/chrome" };
     return this.pm;
   };
   findPrograms = async (names: readonly string[]) => names.filter((n) => this.programs.has(n));
@@ -178,7 +178,7 @@ describe("The Screen tab", () => {
     show(api);
     await connected();
     // Hermes broadcasts the other viewer's lease, then closes this stream with 4000.
-    act(() => api.leaseListener!("/home/liam/.hermes", { holder: "human", viewer_hash: "0123456789ab", since: 3, epoch: 1 }));
+    act(() => api.leaseListener!("/home/lena/.hermes", { holder: "human", viewer_hash: "0123456789ab", since: 3, epoch: 1 }));
     expect(screen.getByText("Someone else has taken over this screen.")).toBeTruthy();
     expect((screen.getByRole("button", { name: /Take over/ }) as HTMLButtonElement).disabled).toBe(false);
     act(() => api.closes[0](4000, "control-taken"));
@@ -187,7 +187,7 @@ describe("The Screen tab", () => {
     expect(api.observed).toEqual([undefined, "viewer-1"]);
     expect(screen.getByText("Someone else took over, so you're watching again.")).toBeTruthy();
     // A lease for another profile's screen changes nothing here.
-    act(() => api.leaseListener!("/home/liam/.hermes/profiles/work", { ...agent, epoch: 9 }));
+    act(() => api.leaseListener!("/home/lena/.hermes/profiles/work", { ...agent, epoch: 9 }));
     expect(screen.getByText("Someone else has taken over this screen.")).toBeTruthy();
   });
 
@@ -276,7 +276,7 @@ describe("The apps the Screen adds", () => {
     expect(await screen.findByText("Added a web browser, a terminal and a text editor to the screen's dock.")).toBeTruthy();
     expect(ssh.given).toEqual([undefined]);
     // Each app added lets the dock be written again; deleting it twice is the same as once.
-    expect(new Set(api.calls)).toEqual(new Set(["installBrowser", "resetDock /home/liam/.hermes"]));
+    expect(new Set(api.calls)).toEqual(new Set(["installBrowser", "resetDock /home/lena/.hermes"]));
     expect(screen.queryByText("No Chrome or Chromium on the Hermes server")).toBeNull();
     expect(screen.queryByRole("button", { name: /Restart the screen/ })).toBeNull();
   });
@@ -319,7 +319,7 @@ describe("The apps the Screen adds", () => {
     api.programs.add("xfce4-terminal").add("mousepad");
     fireEvent.click(within(note).getByRole("button", { name: /Check again/ }));
     expect(await screen.findByText("Added a terminal and a text editor to the screen's dock.")).toBeTruthy();
-    expect(api.calls).toEqual(["resetDock /home/liam/.hermes"]);
+    expect(api.calls).toEqual(["resetDock /home/lena/.hermes"]);
   });
 
   it("falls back to Hermes's command, saying why, when it can't install the browser", async () => {
@@ -354,7 +354,7 @@ describe("The apps the Screen adds", () => {
     expect(api.calls).toEqual(["installBrowser"]);
     fireEvent.click(screen.getByRole("button", { name: /Restart the screen/ }));
     expect(await screen.findByText("Added a web browser, a terminal and a text editor to the screen's dock.")).toBeTruthy();
-    expect(api.calls).toEqual(["installBrowser", "stop", "resetDock /home/liam/.hermes", "start"]);
+    expect(api.calls).toEqual(["installBrowser", "stop", "resetDock /home/lena/.hermes", "start"]);
     await waitFor(() => expect(FakeRfb.made).toHaveLength(2));
   });
 
@@ -401,7 +401,7 @@ describe("The apps the Screen adds", () => {
     await screen.findByText(/Adding a terminal and a text editor to the screen/);
     // App.tsx keys the tab by profile, so switching remounts it; the same api then answers for the other profile.
     unmount();
-    api.state = { ...api.state, profile_key: "/home/liam/.hermes/profiles/work" };
+    api.state = { ...api.state, profile_key: "/home/lena/.hermes/profiles/work" };
     await act(async () => installed());
     await act(async () => new Promise((d) => setTimeout(d, 0)));
     expect(api.calls).toEqual([]);
@@ -465,7 +465,7 @@ describe("The apps the Screen adds", () => {
     rerender(tab(false));
     rerender(tab(true));
     expect(await screen.findByText("Added a terminal and a text editor to the screen's dock.")).toBeTruthy();
-    expect(api.calls).toEqual(["resetDock /home/liam/.hermes"]);
+    expect(api.calls).toEqual(["resetDock /home/lena/.hermes"]);
   });
 
   it("writes the dock again after a reconnect that cut off writing it", async () => {
@@ -483,7 +483,7 @@ describe("The apps the Screen adds", () => {
     await act(async () => cut());
     rerender(tab(true));
     expect(await screen.findByText("Added a terminal and a text editor to the screen's dock.")).toBeTruthy();
-    expect(api.calls).toEqual(["resetDock /home/liam/.hermes"]);
+    expect(api.calls).toEqual(["resetDock /home/lena/.hermes"]);
   });
 
   it("adds nothing to a screen in the terminal's sandbox, which brings its own", async () => {
@@ -562,7 +562,7 @@ describe("Copy and paste with the screen", () => {
     fireEvent.pointerLeave(view());
     await settle();
     expect(c.writes).toEqual(["Error: E_ACCESS at line 42"]);
-    expect(api.clipboardReads).toEqual([{ display: ":42", profileKey: "/home/liam/.hermes" }]);
+    expect(api.clipboardReads).toEqual([{ display: ":42", profileKey: "/home/lena/.hermes" }]);
     fireEvent.blur(view());
     await settle();
     expect(c.writes).toEqual(["Error: E_ACCESS at line 42"]);

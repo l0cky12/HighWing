@@ -442,7 +442,7 @@ describe("The Providers tab in Settings", () => {
       <SettingsScreen
         status="connected"
         unsecure={false}
-        username="liam"
+        username="lena"
         passwordSaved
         profile="default"
         olderPulled={false}

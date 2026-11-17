@@ -127,7 +127,7 @@ export class FakeSkills {
 
   /** A profile's own skills folder on the fake server. */
   static home(profile: string) {
-    return profile === "default" ? "/home/liam/.hermes/skills" : `/home/liam/.hermes/profiles/${profile}/skills`;
+    return profile === "default" ? "/home/lena/.hermes/skills" : `/home/lena/.hermes/profiles/${profile}/skills`;
   }
 
   /** `archive_skill` behind `DELETE /api/learning/node`: refuses what Hermes refuses, else moves the folder aside. */

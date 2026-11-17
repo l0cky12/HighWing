@@ -58,7 +58,7 @@ async function signedIn() {
   const hermes = await connect(server.openPipe);
   running.push(hermes);
   const user = userEvent.setup();
-  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} />);
+  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} />);
   await screen.findByRole("button", { name: /Nightly backup/ });
   await settle(hermes);
   return { server, hermes, user };

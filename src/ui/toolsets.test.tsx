@@ -56,7 +56,7 @@ describe("Settings → Toolsets", () => {
       <SettingsScreen
         status="connected"
         unsecure={false}
-        username="liam"
+        username="lena"
         passwordSaved
         profile="default"
         olderPulled={false}
@@ -756,7 +756,7 @@ describe("Settings → Toolsets layout: cards of rows, help behind an (i)", () =
       <SettingsScreen
         status="connected"
         unsecure={false}
-        username="liam"
+        username="lena"
         passwordSaved
         profile="default"
         olderPulled={false}

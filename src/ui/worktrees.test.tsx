@@ -159,7 +159,7 @@ function fakeApi(answers: Partial<Record<RepoRequest["op"], Answer>>, progress: 
 
 const hooksOf = (over: Partial<WorktreeHooks> = {}): WorktreeHooks => ({
   profile: "default",
-  connection: "liam@hermes",
+  connection: "lena@hermes",
   chatTitle: (id) => ({ "20261104_a": "Fix the login page" })[id],
   hermesChatsIn: async () => [],
   onStartChat: vi.fn(),
@@ -168,7 +168,7 @@ const hooksOf = (over: Partial<WorktreeHooks> = {}): WorktreeHooks => ({
 
 const screenWith = (api: RepoApi, hooks: WorktreeHooks) => (
   <StrictMode>
-    <RepositoryScreen api={api} initialTarget="liam@hermes" initialPath={MAIN} recent={[]} suggestions={[]} onOpened={() => {}} onTarget={() => {}} worktrees={hooks} onClose={() => {}} />
+    <RepositoryScreen api={api} initialTarget="lena@hermes" initialPath={MAIN} recent={[]} suggestions={[]} onOpened={() => {}} onTarget={() => {}} worktrees={hooks} onClose={() => {}} />
   </StrictMode>
 );
 
@@ -246,9 +246,9 @@ describe("the Worktrees view", () => {
 
   it("names an attached chat by its title in this profile, and only by profile in another", async () => {
     const chats = [
-      { token: "aaaaaaaaaaaaaaaa", chat: "20261104_a", profile: "default", connection: "liam@hermes", state: "attached" as const, at: 1 },
-      { token: "bbbbbbbbbbbbbbbb", chat: "20261104_b", profile: "work", connection: "liam@hermes", state: "attached" as const, at: 1 },
-      { token: "cccccccccccccccc", chat: null, profile: "default", connection: "liam@hermes", state: "starting" as const, at: 1 },
+      { token: "aaaaaaaaaaaaaaaa", chat: "20261104_a", profile: "default", connection: "lena@hermes", state: "attached" as const, at: 1 },
+      { token: "bbbbbbbbbbbbbbbb", chat: "20261104_b", profile: "work", connection: "lena@hermes", state: "attached" as const, at: 1 },
+      { token: "cccccccccccccccc", chat: null, profile: "default", connection: "lena@hermes", state: "starting" as const, at: 1 },
     ];
     const { api } = fakeApi({ worktreeList: () => listOf([mainTree(), tree({ managed: record({ chats }) })]) });
     await show(api, hooksOf({ chatTitle: (id) => ({ "20261104_a": "Fix the login page", "20261104_b": "Secret work title" })[id] }));
@@ -265,7 +265,7 @@ describe("the Worktrees view", () => {
   });
 
   it("detaches a chat only after saying the chat keeps working in the folder", async () => {
-    let chats = [{ token: "aaaaaaaaaaaaaaaa", chat: "20261104_a", profile: "default", connection: "liam@hermes", state: "attached" as const, at: 1 }];
+    let chats = [{ token: "aaaaaaaaaaaaaaaa", chat: "20261104_a", profile: "default", connection: "lena@hermes", state: "attached" as const, at: 1 }];
     const { api, ops } = fakeApi({
       worktreeList: () => listOf([mainTree(), tree({ managed: record({ chats }) })]),
       worktreeDetach: () => {
@@ -345,7 +345,7 @@ describe("New worktree", () => {
     expect(calls.find((c) => c.request.op === "worktreeCreate")!.streamed).toBe(true);
 
     await user.click(within(made).getByRole("button", { name: /Start a chat in it/ }));
-    expect(onStartChat).toHaveBeenCalledWith({ target: "liam@hermes", repo: MAIN, id: create.id, path: WT, branch: "feature/login" });
+    expect(onStartChat).toHaveBeenCalledWith({ target: "lena@hermes", repo: MAIN, id: create.id, path: WT, branch: "feature/login" });
   });
 
   it("uses an existing branch, and shows Git's refusal beside the form", async () => {

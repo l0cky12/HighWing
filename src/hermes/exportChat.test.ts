@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import { FIRST_DRAFT, chatJson, chatMarkdown, exportFileName, exportPreview, saveExport, saveImage, type ExportDraft } from "./exportChat";
 import { planImport } from "./importTranscripts";
 import type { ApprovalChoice, Chat, Item } from "./model";
+import { sentImage } from "./sentImages";
 
 const AT = new Date("2026-11-02T14:05:00Z");
 /** What an Approval card offered; the export doesn't show it. */
@@ -48,6 +49,17 @@ describe("A chat as Markdown", () => {
   it("names attachments without their contents, and says they aren't included", () => {
     const md = chatMarkdown(chat([{ kind: "user", id: "u", text: "What's in these?", attachments: ["shot.png", "log_`1`.txt"] }]), AT);
     expect(md).toContain("_Attached, not included in this file:_ `shot.png`, ``log_`1`.txt``");
+  });
+
+  it("names an image a message read back from Hermes was sent with, in every format, without its bytes", () => {
+    const readBack = [{ kind: "user", id: "h-0", text: "What is on this screen?", images: [sentImage("/h/images/upload_1.png")!] }] as Item[];
+    expect(chatMarkdown(chat(readBack), AT)).toContain("_Attached, not included in this file:_ `upload_1.png`");
+    expect(JSON.parse(chatJson(chat(readBack), AT))[0].messages[0].attachments).toEqual(["upload_1.png"]);
+    const draft = { ...FIRST_DRAFT, attachments: true };
+    expect(exportPreview(chat(readBack), draft, AT, "image").text).toContain("Attached: upload_1.png");
+    expect(exportPreview(chat(readBack), draft, AT, "html").text).toContain("upload_1.png");
+    for (const format of ["markdown", "json", "image", "html"] as const) expect(exportPreview(chat(readBack), draft, AT, format).text).not.toContain("/h/images/");
+    expect(exportPreview(chat(readBack), FIRST_DRAFT, AT).text).toContain("> The names of attached files were left out.");
   });
 
   it("keeps the model's thinking, an interrupted reply and Approvals", () => {
@@ -218,9 +230,9 @@ describe("A chat as JSON", () => {
 describe("Saving an image", () => {
   it("hands the PNG and its file name to the Save dialog, and says where it went", async () => {
     const saved: string[][] = [];
-    const notice = await saveImage("iVBORw0KGgo=", "Fix.png", async (png, name) => (saved.push([png, name]), "/home/liam/Fix.png"));
+    const notice = await saveImage("iVBORw0KGgo=", "Fix.png", async (png, name) => (saved.push([png, name]), "/home/lena/Fix.png"));
     expect(saved).toEqual([["iVBORw0KGgo=", "Fix.png"]]);
-    expect(notice).toMatch(/^Exported to \/home\/liam\/Fix\.png\./);
+    expect(notice).toMatch(/^Exported to \/home\/lena\/Fix\.png\./);
     expect(await saveImage("iVBORw0KGgo=", "Fix.png", async () => null)).toBeUndefined();
   });
 });
@@ -239,9 +251,9 @@ describe("The suggested file name", () => {
 describe("Saving an export", () => {
   it("hands the Markdown and file name to the Save dialog, and says where it went", async () => {
     const saved: string[][] = [];
-    const notice = await saveExport("# Fix\n", "Fix.md", "markdown", async (md, name, format) => (saved.push([md, name, format]), "/home/liam/notes/Fix.md"));
+    const notice = await saveExport("# Fix\n", "Fix.md", "markdown", async (md, name, format) => (saved.push([md, name, format]), "/home/lena/notes/Fix.md"));
     expect(saved).toEqual([["# Fix\n", "Fix.md", "markdown"]]);
-    expect(notice).toMatch(/^Exported to \/home\/liam\/notes\/Fix\.md\. Read it before you share it/);
+    expect(notice).toMatch(/^Exported to \/home\/lena\/notes\/Fix\.md\. Read it before you share it/);
   });
 
   it("does nothing when the owner cancels", async () => {

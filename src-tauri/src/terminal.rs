@@ -31,7 +31,7 @@ const INPUT_BUDGET: usize = 1024 * 1024;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TerminalError {
-    #[error("Enter an SSH target such as liam@hermes or a host alias from ~/.ssh/config.")]
+    #[error("Enter an SSH target such as lena@hermes or a host alias from ~/.ssh/config.")]
     BadTarget,
     #[error("A shell can't start in this folder on the server: its path must start with / or ~/, and can't have a quote ('), a backslash, an exclamation mark or a control character in it.")]
     BadFolder,
@@ -602,22 +602,22 @@ mod tests {
 
     #[test]
     fn refuses_a_target_ssh_would_read_as_an_option() {
-        for bad in ["", "  ", "-oProxyCommand=evil", "liam@hermes ls"] {
+        for bad in ["", "  ", "-oProxyCommand=evil", "lena@hermes ls"] {
             assert!(matches!(ssh_command(bad, None), Err(TerminalError::BadTarget)), "{bad:?}");
         }
-        let c = ssh_command(" liam@hermes ", None).unwrap();
+        let c = ssh_command(" lena@hermes ", None).unwrap();
         let args: Vec<_> = c.as_std().get_args().map(|a| a.to_string_lossy().into_owned()).collect();
-        assert_eq!(args.last().map(String::as_str), Some("liam@hermes"));
+        assert_eq!(args.last().map(String::as_str), Some("lena@hermes"));
         assert_eq!(args[args.len() - 2], "--");
     }
 
     #[test]
     fn a_terminal_in_a_folder_is_one_cd_after_the_target_and_refuses_a_folder_it_cant_quote() {
-        let c = ssh_command("liam@hermes", Some("~/notes/a b")).unwrap();
+        let c = ssh_command("lena@hermes", Some("~/notes/a b")).unwrap();
         let args: Vec<_> = c.as_std().get_args().map(|a| a.to_string_lossy().into_owned()).collect();
-        assert_eq!(args[args.len() - 3..], ["--", "liam@hermes", r#"cd ~/'notes/a b'; exec "$SHELL" -l"#]);
+        assert_eq!(args[args.len() - 3..], ["--", "lena@hermes", r#"cd ~/'notes/a b'; exec "$SHELL" -l"#]);
         for bad in ["/it's", "/a\\b", "/now!", "/a\nb", "src/ui", "~"] {
-            let refused = ssh_command("liam@hermes", Some(bad)).err().map(|e| e.to_string());
+            let refused = ssh_command("lena@hermes", Some(bad)).err().map(|e| e.to_string());
             assert!(refused.as_deref().is_some_and(|e| e.starts_with("A shell can't start in this folder on the server")), "{bad:?}: {refused:?}");
         }
     }

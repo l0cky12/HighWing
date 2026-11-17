@@ -427,7 +427,7 @@ describe("in the app", () => {
     render(
       <Main
         hermes={hermes}
-        connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }}
+        connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }}
         webPages={{ check: async () => ({ kind: "allowed" }) as never, httpsAnswers: async () => true, openInBrowser: opens, devServers: async () => ({ server: { kind: "listed", ports: [] }, local: [] }) }}
         onSignOut={async () => {}}
       />,
@@ -503,7 +503,7 @@ describe("in the app", () => {
     await user.click(screen.getByRole("button", { name: "Settings" }));
     await user.click(screen.getByRole("button", { name: "Connection diagnostics" }));
     expect(screen.getByRole("tab", { name: /Diagnostics/, selected: true })).toBeTruthy();
-    expect(screen.getByText(/liam@hermes/)).toBeTruthy();
+    expect(screen.getByText(/lena@hermes/)).toBeTruthy();
     expect(screen.getByText(/^Dashboard username and password, through an SSH tunnel; the dashboard offers basic$/)).toBeTruthy();
     // Arrow keys move along the tabs, as everywhere in Settings: up and down the sidebar's one list (ADR 0160), where
     // Profiles comes before Diagnostics.

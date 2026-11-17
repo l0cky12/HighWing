@@ -3,7 +3,7 @@ import { page, server as vitest } from "vitest/browser";
 import { FakeHermes } from "../src/hermes/fakeHermes";
 import type { Pipe, PipeEvent } from "../src/hermes/pipe";
 
-type Command = (args: Record<string, any>) => unknown;
+type Command = (args: Record<string, any>, headers?: Record<string, string>) => unknown;
 export type Commands = Record<string, Command>;
 
 export type BootOptions = {
@@ -28,7 +28,7 @@ export const SIGN_IN = { mode: "url", sshTarget: "", url: "https://hermes.exampl
 
 declare global {
   interface Window {
-    e2eInvoke?: (cmd: string, args: unknown) => Promise<unknown>;
+    e2eInvoke?: (cmd: string, args: unknown, headers?: Record<string, string>) => Promise<unknown>;
   }
 }
 
@@ -78,6 +78,20 @@ export async function boot(opts: BootOptions = {}) {
     hermes_get_limited: (args) => heldPipe(args).getLimited(args.path, args.maxBytes),
     hermes_voice_setup: (args) => heldPipe(args).voiceSetup(args.profile),
     hermes_toolset_guards: (args) => heldPipe(args).toolsetGuards(args.profile),
+    // The owner's disk is `server.files`, one char per byte, as FakeHermes's pipe reads and sends it.
+    stage_clipboard_file: (bytes, headers) => {
+      const path = `/home/owner/.cache/highwing/captures/${decodeURIComponent(headers?.["x-name"] ?? "")}`;
+      server.files[path] = Array.from(new Uint8Array(bytes as unknown as ArrayBuffer), (b) => String.fromCharCode(b)).join("");
+      return path;
+    },
+    hermes_stat_files: (args) => pipes.values().next().value!.statFiles(args.paths),
+    hermes_send_file: (args) => heldPipe(args).sendFile(args.head, args.path, args.tail, args.maxBytes),
+    hermes_read_preview: (args) => {
+      const bytes = server.files[args.path];
+      if (typeof bytes !== "string") throw `Couldn't read ${args.path}`;
+      return Uint8Array.from(bytes, (c) => c.charCodeAt(0)).buffer;
+    },
+    screenshot_discard: (args) => void delete server.files[args.path],
     hermes_disconnect: async (args) => {
       await pipes.get(args.attempt)?.close();
       pipes.delete(args.attempt);
@@ -107,11 +121,11 @@ export async function boot(opts: BootOptions = {}) {
     ...opts.commands,
   };
 
-  window.e2eInvoke = async (cmd, args) => {
+  window.e2eInvoke = async (cmd, args, headers) => {
     const a = (args ?? {}) as Record<string, any>;
     rust.calls.push({ cmd, args: a });
     const handler = commands[cmd];
-    if (handler) return handler(a);
+    if (handler) return handler(a, headers);
     if (!rust.unhandled.has(cmd)) {
       rust.unhandled.add(cmd);
       // A command invoked after the test ended can't be recorded on it.
@@ -122,10 +136,19 @@ export async function boot(opts: BootOptions = {}) {
 
   localStorage.setItem("hermes-chat.sign-in", JSON.stringify(SIGN_IN));
   if (opts.signedIn ?? true) rust.keyring.set("password:legacy", password);
-  const frame = Object.assign(document.createElement("iframe"), { title: "Highwing", src: "/e2e/app.html" });
-  frame.style.cssText = "position: fixed; inset: 0; width: 100%; height: 100%; border: 0";
-  document.body.replaceChildren(frame);
-  return { server, rust, app: page.frameLocator(page.getByTitle("Highwing")) };
+  const launch = () => {
+    const frame = Object.assign(document.createElement("iframe"), { title: "Highwing", src: "/e2e/app.html" });
+    frame.style.cssText = "position: fixed; inset: 0; width: 100%; height: 100%; border: 0";
+    document.body.replaceChildren(frame);
+  };
+  launch();
+  /** Quits the app and starts it again against the same server, keyring and saved storage, as a relaunch does. */
+  const relaunch = async () => {
+    document.body.replaceChildren();
+    await Promise.all([...pipes.keys()].map((attempt) => commands.hermes_disconnect({ attempt })));
+    launch();
+  };
+  return { server, rust, relaunch, app: page.frameLocator(page.getByTitle("Highwing")) };
 }
 
 export async function shot(name: string) {

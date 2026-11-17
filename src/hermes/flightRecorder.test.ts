@@ -438,7 +438,7 @@ describe("display.tool_progress", () => {
 });
 
 describe("The Run view against FakeHermes", () => {
-  const nas = { mode: "ssh" as const, sshTarget: "liam@nas", url: "", username: "liam" };
+  const nas = { mode: "ssh" as const, sshTarget: "lena@nas", url: "", username: "lena" };
   const running: Hermes[] = [];
   afterEach(async () => {
     await Promise.all(running.splice(0).map((h) => h.close()));

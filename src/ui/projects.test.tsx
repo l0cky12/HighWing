@@ -56,7 +56,7 @@ function server() {
 async function launch(s: FakeHermes) {
   const hermes = await connect(s.openPipe);
   running.push(hermes);
-  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} />);
+  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} />);
   await waitFor(() => expect(hermes.hasListed()).toBe(true));
   await act(async () => void (await hermes.idle()));
   return { hermes, user: userEvent.setup() };
@@ -309,7 +309,7 @@ describe("the project screen", () => {
   it("shows each folder's connection and path on the server", async () => {
     await openScreen(server(), "Folders");
     const folder = screen.getByText("/srv/budget", { selector: ".folder-path" }).closest("li")!;
-    expect(within(folder).getByText("ssh://liam@hermes")).toBeTruthy();
+    expect(within(folder).getByText("ssh://lena@hermes")).toBeTruthy();
     expect(within(folder).getByText("Main folder")).toBeTruthy();
   });
 
@@ -407,7 +407,7 @@ describe("the project screen", () => {
 });
 
 describe("a project's defaults for new chats", () => {
-  const SCOPE = projectScope({ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }, "default");
+  const SCOPE = projectScope({ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }, "default");
   /** Defaults saved as another window, or an earlier run, would have. */
   const seed = (id: string, draft: DefaultsDraft, base = 0) => savedDefaults.save(SCOPE, id, base, draft);
   const opus = { provider: "anthropic", model: "claude-opus-4-5", effort: "high" as const };
@@ -423,7 +423,7 @@ describe("a project's defaults for new chats", () => {
     const panel = startPanel().textContent!;
     expect(panel).toContain("claude-opus-4-5 (anthropic) project default (Budget Tracker)");
     expect(panel).toContain("High project default (Budget Tracker)");
-    expect(panel).toContain("/srv/budget on ssh://liam@hermes project default (Budget Tracker)");
+    expect(panel).toContain("/srv/budget on ssh://lena@hermes project default (Budget Tracker)");
     expect(panel).toContain("Use metric units. project default (Budget Tracker)");
     // The composer shows the project's model too.
     expect(screen.getByRole("button", { name: /^Model:/ }).textContent).toContain("claude-opus-4-5");
@@ -566,7 +566,7 @@ describe("a project's defaults for new chats", () => {
     await waitFor(() => expect(hermes.getSnapshot().status).not.toBe("connected"));
     await user.type(screen.getByPlaceholderText("Message Hermes"), "Plan the budget{Enter}");
     expect((screen.getByTitle("Send") as HTMLButtonElement).disabled).toBe(true);
-    expect(startPanel().textContent).toContain("/srv/budget on ssh://liam@hermes");
+    expect(startPanel().textContent).toContain("/srv/budget on ssh://lena@hermes");
     expect(creates(s)).toEqual([]);
   });
 
@@ -592,7 +592,7 @@ describe("a project's defaults for new chats", () => {
     expect((instructions as HTMLTextAreaElement).value).toBe("");
     await user.type(instructions, "Answer in French.");
     await user.selectOptions(screen.getByRole("combobox", { name: "Working folder on the server" }), "/srv/app");
-    expect(document.getElementById("defaults-folder-hint")!.textContent).toContain("/srv/app on ssh://liam@hermes, profile default");
+    expect(document.getElementById("defaults-folder-hint")!.textContent).toContain("/srv/app on ssh://lena@hermes, profile default");
     await user.click(screen.getByRole("button", { name: "Save defaults" }));
     await screen.findByText(/Saved\. New chats in this project use these/);
     expect((await savedDefaults.read(SCOPE)).p_budget).toEqual({ rev: 2, instructions: "Answer in French.", folder: "/srv/app" });
@@ -647,7 +647,7 @@ describe("a project's defaults for new chats", () => {
     const { user, hermes } = await launch(s);
     await pick(user, "Budget Tracker");
     // Another window picked All chats; this one hasn't heard yet.
-    projectLinks(localStorage).select(projectScope({ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }, "default"), undefined);
+    projectLinks(localStorage).select(projectScope({ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }, "default"), undefined);
     await send(user, "Plan the budget");
     await waitFor(() => expect(creates(s)).toHaveLength(1));
     await act(async () => void (await hermes.idle()));
@@ -671,7 +671,7 @@ describe("a project's defaults for new chats", () => {
     await waitFor(() => expect(s.restRequests.some((r) => r.path === "/api/fs/list")).toBe(true));
     // Another window picks All chats meanwhile.
     await act(async () => {
-      projectLinks(localStorage).select(projectScope({ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }, "default"), undefined);
+      projectLinks(localStorage).select(projectScope({ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }, "default"), undefined);
       window.dispatchEvent(new StorageEvent("storage", { key: PROJECTS_KEY }));
     });
     await act(async () => release());

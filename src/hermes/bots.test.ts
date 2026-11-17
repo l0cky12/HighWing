@@ -3,7 +3,7 @@
 // (no stored pointer) and new-compact-guard. The transport's side (hidden from the list and search, the open) is in
 // botsTransport.test.ts.
 import { describe, expect, it } from "vitest";
-import { BOT_CHAT_TITLE, BotChats, BotModeUnsupportedError, botActivity, botName, isBotChat, isBotChatOnScreen, isBotChatTitle, newInBotChatNote, rosterOf, type BotRpc } from "./bots";
+import { BOT_CHAT_TITLE, BotChats, BotModeUnsupportedError, botActivity, botName, botsWaiting, isBotChat, isBotChatOnScreen, isBotChatTitle, namedByProfile, newInBotChatNote, rosterOf, type Bot, type BotActivity, type BotRpc } from "./bots";
 
 type Call = { method: string; params: Record<string, unknown> };
 
@@ -244,5 +244,53 @@ describe("a bot's activity", () => {
     expect(newInBotChatNote({ kind: "compacted" })).toMatch(/one continuous conversation, so \/new compacts it .* Hermes compacted it\.$/);
     expect(newInBotChatNote({ kind: "nothing" })).toMatch(/nothing to compact yet/);
     expect(newInBotChatNote({ kind: "busy", message: "Hermes is already compacting this chat." })).toMatch(/already compacting/);
+  });
+});
+
+describe("what waits in the other bots", () => {
+  const bot = (profile: string, more: Partial<Bot> = {}): Bot => ({
+    profile,
+    name: profile,
+    description: "",
+    isDefault: false,
+    hasAvatar: false,
+    hidden: false,
+    pinned: false,
+    botChat: null,
+    lastActive: 0,
+    ...more,
+  });
+  const doing = (by: Record<string, BotActivity>) => (b: Bot) => by[b.profile];
+
+  it("names the bots in other profiles that need the owner, in roster order, and counts those replying", () => {
+    const roster = [bot("ops"), bot("scout"), bot("quill"), bot("hearth"), bot("default")];
+    const now = doing({ ops: "replying", scout: "needs-you", hearth: "needs-you", quill: "replying" });
+    const { waiting, replying } = botsWaiting(roster, now, "default");
+    expect(waiting.map((b) => b.profile)).toEqual(["scout", "hearth"]);
+    expect(replying).toBe(2);
+  });
+
+  it("leaves out the shown profile's own bot and the bots hidden in Hermes", () => {
+    const roster = [bot("default"), bot("scout", { hidden: true }), bot("ops", { hidden: true })];
+    const now = doing({ default: "needs-you", scout: "needs-you", ops: "replying" });
+    expect(botsWaiting(roster, now, "default")).toEqual({ waiting: [], replying: 0 });
+  });
+
+  it("is nothing when every bot is idle", () => {
+    expect(botsWaiting([bot("a"), bot("b")], () => undefined, "a")).toEqual({ waiting: [], replying: 0 });
+  });
+});
+
+describe("a bot named only by its profile", () => {
+  it("is its id made readable, in any case, with any separators", () => {
+    expect(namedByProfile("Hermes Chat", "hermes-chat")).toBe(true);
+    expect(namedByProfile("Scout", "scout")).toBe(true);
+    expect(namedByProfile("Night Shift", "night_shift")).toBe(true);
+  });
+
+  it("isn't when the name says something the id doesn't", () => {
+    expect(namedByProfile("Hermes", "default")).toBe(false);
+    expect(namedByProfile("Quill", "writer")).toBe(false);
+    expect(namedByProfile("Hermes Chat 2", "hermes-chat")).toBe(false);
   });
 });

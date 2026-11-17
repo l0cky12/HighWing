@@ -125,7 +125,7 @@ async function launch(s: FakeHermes, api: RepoApi) {
   localStorage.setItem(REPO_PATH_KEY, MAIN);
   const hermes = await connect(s.openPipe);
   running.push(hermes);
-  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} repoApi={api} />);
+  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} repoApi={api} />);
   await waitFor(() => expect(hermes.hasListed()).toBe(true));
   await act(async () => void (await hermes.idle()));
   return { hermes, user: userEvent.setup() };
@@ -150,7 +150,7 @@ describe("a chat started in a worktree", () => {
     await startHere(user);
 
     const panel = screen.getByRole("region", { name: "What this chat starts with" });
-    expect(panel.textContent).toContain(`${WT} on ssh://liam@hermes chosen for this chat`);
+    expect(panel.textContent).toContain(`${WT} on ssh://lena@hermes chosen for this chat`);
     expect(panel.textContent).toContain("feature/login, a worktree made in the Repository screen");
 
     await send(user, "Fix the login page");
@@ -283,7 +283,7 @@ describe("with this computer's storage full", () => {
     const { api, targets } = repoApi();
     const { user } = await launch(s, api);
     await user.click(screen.getByRole("button", { name: "Repository" }));
-    await waitFor(() => expect(targets).toContain("liam@hermes"));
+    await waitFor(() => expect(targets).toContain("lena@hermes"));
     const full = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
     });

@@ -84,7 +84,7 @@ describe("Signing out with extra request headers", () => {
     // A row left blank is dropped.
     await userEvent.click(screen.getByRole("button", { name: "Add header" }));
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
-    await userEvent.type(await screen.findByLabelText("Dashboard username"), "liam");
+    await userEvent.type(await screen.findByLabelText("Dashboard username"), "lena");
     await userEvent.type(screen.getByLabelText(/^Dashboard password/), "hunter2");
     await userEvent.click(screen.getByRole("button", { name: "Test connection" }));
     await userEvent.click(await screen.findByRole("button", { name: "Save and connect" }));

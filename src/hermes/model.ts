@@ -25,6 +25,15 @@ export const SOURCE_LABEL: Record<Source, string> = {
 export type Attachment = { path: string; name: string; size: number; kind: "image" | "file" };
 
 /**
+ * Where Hermes keeps an image sent with a message: a full path on the Hermes server ending in an image extension. Only
+ * `sentImage()` (sentImages.ts) makes one, so nothing else is ever read for a bubble.
+ */
+export type SentImagePath = string & { readonly __sentImage: unique symbol };
+
+/** An image sent with a message, as Hermes stored it. `name`: its file name here; a message read back has none. */
+export type SentImage = { path: SentImagePath; name?: string };
+
+/**
  * A Referenced chat as it goes with a message: the chat, its title then, and the summary sent (chatReferences.ts).
  * `chatId` is missing for one read back from a stored message, which Edit and Regenerate send again.
  */
@@ -63,8 +72,9 @@ export type Item =
    * `attachments`: names sent with the message. `outgoing`: sent from here and not confirmed yet. `rowId`: its stored
    * row, once known. `steer`: it went into a running reply, as `/steer` does, rather than starting a turn of its own
    * (Hermes stores it with `display_kind: "steer"`, ADR 0057). `references`: the titles of the chats it referenced.
+   * `images`: the images Hermes stored for it, set once Hermes has them; never bytes.
    */
-  | { kind: "user"; id: string; text: string; attachments?: string[]; references?: string[]; at?: number; outgoing?: Outgoing; rowId?: number; steer?: boolean }
+  | { kind: "user"; id: string; text: string; attachments?: string[]; images?: SentImage[]; references?: string[]; at?: number; outgoing?: Outgoing; rowId?: number; steer?: boolean }
   /**
    * `interrupted`: the owner, or another Hermes client, stopped this reply before it finished. `rowId`: its stored row,
    * once known. `usage`: the tokens its turn took, only for a reply this app watched finish (`usage.ts`). `sealed`:

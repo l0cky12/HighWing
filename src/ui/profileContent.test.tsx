@@ -27,7 +27,7 @@ afterEach(async () => {
   localStorage.clear();
 });
 
-const HOME = "/home/liam/.hermes";
+const HOME = "/home/lena/.hermes";
 const SPARE = `${HOME}/profiles/spare`;
 const skill = (name: string, description: string) => `---\nname: ${name}\ndescription: ${description}\n---\n\nWhen asked.\n`;
 const NOTES = skill("release-notes", "Write release notes from merged PRs.");
@@ -56,7 +56,7 @@ async function launch() {
   const hermes = await connect(s.openPipe, undefined, memoryCache());
   running.push(hermes);
   const store = new PersonaStore(memoryStorage());
-  const connection = { mode: "ssh" as const, sshTarget: `liam@hermes-profiles-${++launches}`, url: "", username: "liam" };
+  const connection = { mode: "ssh" as const, sshTarget: `lena@hermes-profiles-${++launches}`, url: "", username: "lena" };
   render(<Main hermes={hermes} connection={connection} onSignOut={async () => {}} personaStore={store} />);
   await waitFor(() => expect(hermes.hasListed()).toBe(true));
   await act(async () => void (await hermes.idle()));

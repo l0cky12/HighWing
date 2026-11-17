@@ -43,8 +43,8 @@ const copied = (text: string | undefined) => (text === undefined ? rmSync(CLIPBO
 
 describe("The screen's clipboard, read on the server", () => {
   it("quotes the display and the profile's X authority for the shell", () => {
-    expect(chunkCommand({ display: ":42", profileKey: "/home/liam/.hermes" }, 0)).toBe(
-      `export DISPLAY=':42' XAUTHORITY='/home/liam/.hermes/bot-desktop/Xauthority'; xclip -selection clipboard -o 2>/dev/null | sha256sum | cut -c1-64; xclip -selection clipboard -o | tail -c +1 | head -c ${CHUNK_BYTES} | od -An -v -tx1 | tr -d ' \\n'`,
+    expect(chunkCommand({ display: ":42", profileKey: "/home/lena/.hermes" }, 0)).toBe(
+      `export DISPLAY=':42' XAUTHORITY='/home/lena/.hermes/bot-desktop/Xauthority'; xclip -selection clipboard -o 2>/dev/null | sha256sum | cut -c1-64; xclip -selection clipboard -o | tail -c +1 | head -c ${CHUNK_BYTES} | od -An -v -tx1 | tr -d ' \\n'`,
     );
     execFileSync("sh", ["-n", "-c", chunkCommand(where, 0)]);
   });
@@ -128,12 +128,12 @@ describe("Through Hermes", () => {
     const status = await hermes.screen.status();
     expect(await hermes.screen.readClipboard({ display: status.display!, profileKey: status.profile_key })).toBe("copied on the screen ✓");
     expect(s.requests.filter((r) => r.method === "shell.exec").map((r) => r.params)).toEqual([
-      { command: `export DISPLAY=':42' XAUTHORITY='/home/liam/.hermes/bot-desktop/Xauthority'; xclip -selection clipboard -o 2>/dev/null | sha256sum | cut -c1-64; xclip -selection clipboard -o | tail -c +1 | head -c ${CHUNK_BYTES} | od -An -v -tx1 | tr -d ' \\n'` },
+      { command: `export DISPLAY=':42' XAUTHORITY='/home/lena/.hermes/bot-desktop/Xauthority'; xclip -selection clipboard -o 2>/dev/null | sha256sum | cut -c1-64; xclip -selection clipboard -o | tail -c +1 | head -c ${CHUNK_BYTES} | od -An -v -tx1 | tr -d ' \\n'` },
     ]);
   });
 
   it("fails without xclip on the server", async () => {
     const hermes = await connect(server("text", []).openPipe);
-    await expect(hermes.screen.readClipboard({ display: ":42", profileKey: "/home/liam/.hermes" })).rejects.toThrow("xclip: not found");
+    await expect(hermes.screen.readClipboard({ display: ":42", profileKey: "/home/lena/.hermes" })).rejects.toThrow("xclip: not found");
   });
 });

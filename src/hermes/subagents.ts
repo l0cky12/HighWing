@@ -367,6 +367,19 @@ export function descendantsOf(tree: SubagentTree, id: SubagentId): Subagent[] {
   return out;
 }
 
+/**
+ * The tree as the panel lists it (ADR 0196): the subagents still queued or running, and the ones above each, which it
+ * hangs from. One that ended leaves, unless it is `open`, the one the owner is looking at.
+ */
+export function stillRunning(tree: SubagentTree, open?: SubagentId): SubagentTree {
+  const byId = new Map(tree.subagents.map((s) => [s.id, s]));
+  const keep = new Set<SubagentId>();
+  const seeds = tree.subagents.filter((s) => s.state === "running" || s.state === "queued" || s.id === open);
+  for (const seed of seeds)
+    for (let s: Subagent | undefined = seed; s && !keep.has(s.id); s = s.parent && byId.get(s.parent)) keep.add(s.id);
+  return { ...tree, subagents: tree.subagents.filter((s) => keep.has(s.id)) };
+}
+
 /** How many are queued or running, and how many failed. */
 export function tally(tree: SubagentTree): { running: number; failed: number; total: number } {
   let running = 0;

@@ -83,6 +83,14 @@ describe("Edit and Regenerate: what they work out", () => {
     expect(cannotResend("Plain words", "edit")).toBeUndefined();
   });
 
+  it("refuses a message Hermes stored with its images' @image: lines after it, the attached context included", () => {
+    for (const stored of ["caption\n@image:/h/images/upload_1.png", "caption\n\n--- Attached Context ---\n\n## a.txt\nhi\n@image:/h/images/upload_1.png"]) {
+      expect(cannotResend(stored, "edit")).toMatch(/sent with an image.*can't be edited/);
+      expect(cannotResend(stored, "regenerate")).toMatch(/sent with an image.*can't be regenerated/);
+    }
+    expect(cannotResend("two\n@image:/h/images/upload_1.png\n@image:/h/images/upload_2.png", "edit")).toMatch(/sent with 2 images/);
+  });
+
   it("groups each turn's versions under the chat they're versions of", () => {
     const link = (variant: BranchLink["variant"], at: number): BranchLink => ({ parentId: "x", parentTitle: "X", point: { role: "user", excerpt: "" }, at, variant });
     const links: Record<string, BranchLink> = {

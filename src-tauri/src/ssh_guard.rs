@@ -201,16 +201,16 @@ mod tests {
 
     #[test]
     fn refuses_a_target_ssh_would_read_as_an_option_or_more_than_a_host() {
-        for bad in ["", "  ", "-oProxyCommand=evil", "-oProxyCommand=sh", "liam@hermes ls", "liam@hermes -L 1:2:3", "a\tb", "a\nb"] {
+        for bad in ["", "  ", "-oProxyCommand=evil", "-oProxyCommand=sh", "lena@hermes ls", "lena@hermes -L 1:2:3", "a\tb", "a\nb"] {
             assert_eq!(Target::parse(bad), None, "{bad:?}");
         }
-        assert_eq!(Target::parse("  liam@hermes  ").map(Target::as_str), Some("liam@hermes"));
+        assert_eq!(Target::parse("  lena@hermes  ").map(Target::as_str), Some("lena@hermes"));
         assert_eq!(Target::parse("hermes").map(Target::as_str), Some("hermes"));
     }
 
     #[test]
     fn every_ssh_gets_every_option_that_only_takes_something_away() {
-        let target = Target::parse("liam@hermes").unwrap();
+        let target = Target::parse("lena@hermes").unwrap();
         for kind in KINDS {
             let args = strings(args(target, kind, None));
             let options = options(&args);
@@ -228,7 +228,7 @@ mod tests {
 
     #[test]
     fn only_a_tunnel_needs_openssh_8_7() {
-        let target = Target::parse("liam@hermes").unwrap();
+        let target = Target::parse("lena@hermes").unwrap();
         for kind in KINDS {
             let args = strings(args(target, kind, None));
             let forked = options(&args).contains(&"ForkAfterAuthentication=no");
@@ -238,7 +238,7 @@ mod tests {
 
     #[test]
     fn each_option_is_set_once() {
-        let target = Target::parse("liam@hermes").unwrap();
+        let target = Target::parse("lena@hermes").unwrap();
         for kind in KINDS {
             let args = strings(args(target, kind, Some(Duration::from_secs(15))));
             let mut names: Vec<&str> = options(&args).iter().map(|o| o.split('=').next().unwrap()).collect();
@@ -251,17 +251,17 @@ mod tests {
 
     #[test]
     fn the_terminal_can_ask_the_owner_and_keeps_the_owners_host_keys() {
-        let args = strings(args(Target::parse(" liam@hermes ").unwrap(), Kind::Terminal { folder: None }, None));
+        let args = strings(args(Target::parse(" lena@hermes ").unwrap(), Kind::Terminal { folder: None }, None));
         assert_eq!(args[0], "-t");
         assert!(!options(&args).iter().any(|o| o.starts_with("BatchMode") || o.starts_with("StrictHostKeyChecking")), "{args:?}");
         assert!(!options(&args).iter().any(|o| o.starts_with("RemoteCommand")), "the owner's RemoteCommand still runs: {args:?}");
-        assert_eq!(args[args.len() - 2..], ["--", "liam@hermes"]);
+        assert_eq!(args[args.len() - 2..], ["--", "lena@hermes"]);
     }
 
     #[test]
     fn refuses_a_folder_a_shell_could_read_as_more_than_one_word() {
         let long = format!("/{}", "a".repeat(4096));
-        for bad in ["", "src/ui", "~", "~liam/x", "./x", "/it's", "/a\\b", "/wow!", "/a\nb", "/a\x1bb", "/a\0b", "/a\u{85}b", "~/it's", long.as_str()] {
+        for bad in ["", "src/ui", "~", "~lena/x", "./x", "/it's", "/a\\b", "/wow!", "/a\nb", "/a\x1bb", "/a\0b", "/a\u{85}b", "~/it's", long.as_str()] {
             assert_eq!(Folder::parse(bad), None, "{bad:?}");
         }
         for good in ["/", "~/", "/srv/app", "~/notes/2026", "/a b/$(touch pwned)/`id`;x&&y|z*?", "/caf\u{e9}/\u{65e5}\u{672c}"] {
@@ -281,30 +281,30 @@ mod tests {
     #[test]
     fn a_terminal_in_a_folder_runs_one_command_after_the_target_whatever_the_owners_config_runs() {
         let folder = Folder::parse("/srv/my app").unwrap();
-        let args = strings(args(Target::parse("liam@hermes").unwrap(), Kind::Terminal { folder: Some(folder) }, None));
+        let args = strings(args(Target::parse("lena@hermes").unwrap(), Kind::Terminal { folder: Some(folder) }, None));
         assert_eq!(args[0], "-t");
         assert!(options(&args).contains(&"RemoteCommand=none"), "{args:?}");
         assert!(!options(&args).iter().any(|o| o.starts_with("BatchMode")), "{args:?}");
-        assert_eq!(args[args.len() - 3..], ["--", "liam@hermes", r#"cd '/srv/my app'; exec "$SHELL" -l"#]);
+        assert_eq!(args[args.len() - 3..], ["--", "lena@hermes", r#"cd '/srv/my app'; exec "$SHELL" -l"#]);
     }
 
     #[test]
     fn a_command_forwards_nothing_and_comes_after_the_target() {
-        let args = strings(args(Target::parse("liam@hermes").unwrap(), Kind::Command { remote: &["ss", "-ltnpH"] }, Some(Duration::from_secs(15))));
+        let args = strings(args(Target::parse("lena@hermes").unwrap(), Kind::Command { remote: &["ss", "-ltnpH"] }, Some(Duration::from_secs(15))));
         assert!(options(&args).contains(&"ClearAllForwardings=yes"));
         assert!(options(&args).contains(&"ConnectTimeout=15"));
         assert!(!args.iter().any(|a| a == "-L" || a == "-N"));
-        assert_eq!(args[args.len() - 4..], ["--", "liam@hermes", "ss", "-ltnpH"]);
+        assert_eq!(args[args.len() - 4..], ["--", "lena@hermes", "ss", "-ltnpH"]);
     }
 
     #[test]
     fn a_forward_is_one_l_and_nothing_after_the_target() {
-        let target = Target::parse("liam@hermes").unwrap();
+        let target = Target::parse("lena@hermes").unwrap();
         let local = Local::Socket("/run/user/1000/d/s");
         let far_end = "127.0.0.1:9119";
         let tunnel = strings(args(target, Kind::Forward { local, far_end, host_keys: HostKeys::AcceptNew, on_failure: ForwardFailure::Exit }, None));
         assert_eq!(tunnel[..2], ["-N", "-T"]);
-        assert_eq!(tunnel[tunnel.len() - 4..], ["-L", "/run/user/1000/d/s:127.0.0.1:9119", "--", "liam@hermes"]);
+        assert_eq!(tunnel[tunnel.len() - 4..], ["-L", "/run/user/1000/d/s:127.0.0.1:9119", "--", "lena@hermes"]);
         let options = options(&tunnel);
         // `ClearAllForwardings` would clear this forward too.
         assert!(!options.iter().any(|o| o.starts_with("ClearAllForwardings") || o.starts_with("ConnectTimeout")), "{tunnel:?}");
@@ -317,14 +317,14 @@ mod tests {
 
     #[test]
     fn a_forward_over_stdio_listens_on_nothing_with_the_same_options_as_over_a_socket() {
-        let target = Target::parse("liam@hermes").unwrap();
+        let target = Target::parse("lena@hermes").unwrap();
         let far_end = "[::1]:8080";
         for (host_keys, on_failure) in [(HostKeys::AcceptNew, ForwardFailure::Exit), (HostKeys::OwnersConfig, ForwardFailure::KeepGoing)] {
             let socket =
                 strings(args(target, Kind::Forward { local: Local::Socket("/tmp/d/s"), far_end, host_keys, on_failure }, Some(Duration::from_secs(5))));
             let stdio = strings(args(target, Kind::Forward { local: Local::Stdio, far_end, host_keys, on_failure }, Some(Duration::from_secs(5))));
             assert_eq!(stdio[..stdio.len() - 8], socket[2..socket.len() - 8], "the same options, without -N -T");
-            assert_eq!(stdio[stdio.len() - 8..], ["-o", "ClearAllForwardings=yes", "-o", "StdinNull=no", "-W", far_end, "--", "liam@hermes"]);
+            assert_eq!(stdio[stdio.len() - 8..], ["-o", "ClearAllForwardings=yes", "-o", "StdinNull=no", "-W", far_end, "--", "lena@hermes"]);
             assert!(!stdio.iter().any(|a| ["-L", "-D", "-R", "-N"].contains(&a.as_str())), "ssh listens on nothing: {stdio:?}");
         }
     }

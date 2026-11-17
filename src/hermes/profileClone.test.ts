@@ -14,7 +14,7 @@ afterEach(async () => {
   await Promise.all(running.splice(0).map((h) => h.close()));
 });
 
-const HOME = "/home/liam/.hermes";
+const HOME = "/home/lena/.hermes";
 const skill = (name: string, description: string) => `---\nname: ${name}\ndescription: ${description}\n---\n\n# ${name}\n`;
 
 async function signedIn() {

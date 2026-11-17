@@ -570,7 +570,7 @@ export function ServerFields({ d, set }: { d: SignInDetails; set: (patch: Partia
             </>
           }
         >
-          {(a) => <input {...a} value={d.sshTarget} onChange={(e) => set({ sshTarget: e.target.value })} placeholder="liam@hermes" spellCheck={false} />}
+          {(a) => <input {...a} value={d.sshTarget} onChange={(e) => set({ sshTarget: e.target.value })} placeholder="lena@hermes" spellCheck={false} />}
         </Field>
       ) : (
         <>

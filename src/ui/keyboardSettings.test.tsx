@@ -39,7 +39,7 @@ async function signedIn(keybindings: Record<string, string[]> = {}) {
   server.transcripts = { backup: [{ role: "user", text: "Why did the backup fail?" }], nas: [{ role: "user", text: "How full is the NAS?" }] };
   const hermes = await connect(server.openPipe);
   const user = userEvent.setup();
-  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} />);
+  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} />);
   await screen.findByRole("button", { name: /Nightly backup/ });
   await settle(hermes);
   return { server, hermes, user };
@@ -121,7 +121,7 @@ describe("A rebound shortcut", () => {
     await waitFor(() => expect(screen.queryByRole("textbox", { name: "Chat title" })).toBeNull());
     expect(palette()).toBeNull();
     // Closing the profile menu on Ctrl+K doesn't open Search either.
-    button(/^default/).focus();
+    button(/\(default\)$/).focus();
     await s.user.keyboard("{Enter}");
     expect(screen.getByRole("listbox", { name: "Profiles" })).toBeTruthy();
     await s.user.keyboard("{Control>}k{/Control}");

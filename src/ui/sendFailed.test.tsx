@@ -109,7 +109,7 @@ describe("Dismissing failed messages", () => {
     const hermes = await connect(server.openPipe);
     const user = userEvent.setup();
     const consoleError = vi.spyOn(console, "error");
-    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} />);
+    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} />);
     await user.click(await screen.findByRole("button", { name: /^Logs/ }));
     const composer = () => screen.getByPlaceholderText<HTMLTextAreaElement>("Message Hermes");
     const settle = () => act(async () => void (await hermes.idle()));

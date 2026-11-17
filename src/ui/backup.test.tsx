@@ -15,7 +15,7 @@ beforeAll(() => {
 });
 afterEach(cleanup);
 
-const conn = { mode: "ssh" as const, sshTarget: "liam@hermes.lan", url: "", username: "liam" };
+const conn = { mode: "ssh" as const, sshTarget: "lena@hermes.lan", url: "", username: "lena" };
 
 /** `writes`: how many writes succeed before every later one is refused, as a full store does. */
 function store(writes = Infinity): Storage {
@@ -44,15 +44,15 @@ function setUp(opts: { picks?: (PickedBackup | null)[]; busy?: string; recovery?
   const onClose = vi.fn();
   const wiring: BackupWiring = {
     env,
-    connection: { mode: "ssh", target: "liam@hermes.lan", username: "liam" },
+    connection: { mode: "ssh", target: "lena@hermes.lan", username: "lena" },
     profiles: async () => ["default", "work"],
     profile: "default",
     busy: opts.busy ? () => opts.busy : undefined,
     reload,
     archive: {
-      save: async (entries, name) => (saved.push({ entries, name }), "/home/liam/hermes-chat-backup-2026-11-04.zip"),
+      save: async (entries, name) => (saved.push({ entries, name }), "/home/lena/hermes-chat-backup-2026-11-04.zip"),
       pick: async () => opts.picks?.shift() ?? null,
-      saveRecovery: opts.recovery ?? (async () => "/home/liam/.local/share/hermes-chat/backups/recovery-1.zip"),
+      saveRecovery: opts.recovery ?? (async () => "/home/lena/.local/share/hermes-chat/backups/recovery-1.zip"),
     },
   };
   return { storage, env, wiring, saved, reload, onClose };
@@ -61,7 +61,7 @@ function setUp(opts: { picks?: (PickedBackup | null)[]; busy?: string; recovery?
 async function backupWith(fill: (s: Storage) => void): Promise<PickedBackup> {
   const s = store();
   fill(s);
-  return { name: "b.zip", path: "/home/liam/b.zip", bytes: 4096, entries: await makeBackup(envOf(s), CATEGORY_IDS) };
+  return { name: "b.zip", path: "/home/lena/b.zip", bytes: 4096, entries: await makeBackup(envOf(s), CATEGORY_IDS) };
 }
 
 describe("Export backup", () => {
@@ -72,7 +72,7 @@ describe("Export backup", () => {
     const dialog = await screen.findByRole("dialog", { name: "Export backup" });
     expect((within(dialog).getByRole("checkbox", { name: /Drafts \(1\)/ }) as HTMLInputElement).checked).toBe(true);
     expect(dialog.textContent).toContain("It holds personal and chat data");
-    expect(dialog.textContent).toContain("ssh liam@hermes.lan as liam, default");
+    expect(dialog.textContent).toContain("ssh lena@hermes.lan as lena, default");
     expect(within(dialog).getByText(/Passwords, extra request header values/)).toBeTruthy();
     await userEvent.click(within(dialog).getByRole("checkbox", { name: /Settings/ }));
     await userEvent.click(within(dialog).getByRole("button", { name: "Choose where to save…" }));
@@ -123,7 +123,7 @@ describe("Restore a backup", () => {
     const picked = await backupWith((s) => drafts(s).set(draftKey(conn, "default", "c"), "x"));
     const t = setUp({ picks: [picked] });
     t.env.tags = storageDefaultsFile(() => t.storage, "hermes-chat.tags");
-    t.storage.setItem("hermes-chat.tags", JSON.stringify({ v: 1, scopes: { '["ssh","liam@hermes.lan","liam","default"]': { tags: [{ id: "t", name: "Mine" }], chats: {}, filters: [] } } }));
+    t.storage.setItem("hermes-chat.tags", JSON.stringify({ v: 1, scopes: { '["ssh","lena@hermes.lan","lena","default"]': { tags: [{ id: "t", name: "Mine" }], chats: {}, filters: [] } } }));
     render(<RestoreDialog wiring={t.wiring} onClose={t.onClose} />);
     await userEvent.click(await screen.findByRole("button", { name: "Choose backup…" }));
     const what = await screen.findByRole("table", { name: "What is restored" });
@@ -134,12 +134,12 @@ describe("Restore a backup", () => {
   });
 
   it("asks where an unknown connection goes, and waits for running replies", async () => {
-    const other = { mode: "url" as const, sshTarget: "", url: "https://old.example.com", username: "liam" };
+    const other = { mode: "url" as const, sshTarget: "", url: "https://old.example.com", username: "lena" };
     const picked = await backupWith((s) => drafts(s).set(draftKey(other, "default", "c"), "Old server"));
     const t = setUp({ picks: [picked], busy: "A reply is running or an Approval is waiting." });
     render(<RestoreDialog wiring={t.wiring} onClose={t.onClose} />);
     await userEvent.click(await screen.findByRole("button", { name: "Choose backup…" }));
-    const map = await screen.findByRole("combobox", { name: /Restore https:\/\/old.example.com as liam, profile default, into/ });
+    const map = await screen.findByRole("combobox", { name: /Restore https:\/\/old.example.com as lena, profile default, into/ });
     expect((map as HTMLSelectElement).value).toBe("?");
     expect(screen.getByRole("alert").textContent).toContain("Choose where each connection and profile");
     expect((screen.getByRole("button", { name: "Restore" }) as HTMLButtonElement).disabled).toBe(true);

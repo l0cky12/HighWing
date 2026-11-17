@@ -20,7 +20,7 @@ afterEach(() => {
   document.getElementById("narrow")?.remove();
 });
 
-const connection = { mode: "ssh" as const, sshTarget: "liam@hermes", url: "", username: "liam" };
+const connection = { mode: "ssh" as const, sshTarget: "lena@hermes", url: "", username: "lena" };
 const pill = () => screen.queryByRole("button", { name: /^Approval mode:/ }) as HTMLButtonElement | null;
 const face = () => pill()!.getAttribute("aria-label");
 const menu = () => screen.getByRole("menu", { name: "Approval mode" });

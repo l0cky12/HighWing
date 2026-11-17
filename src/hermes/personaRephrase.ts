@@ -1,4 +1,4 @@
-// Generate with AI on the New profile form's Persona (ADR 0195): what the stateless `llm.oneshot` call is told and given,
+// Generate with AI on the New profile form's Persona (ADR 0197): what the stateless `llm.oneshot` call is told and given,
 // and how its answer is read. No I/O here. It only rewrites what the owner typed: an empty box sends nothing, and the
 // answer is a suggestion the owner edits and applies, never saved on its own.
 import type { Call } from "./instructionsAI";

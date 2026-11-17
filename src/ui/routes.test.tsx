@@ -56,13 +56,13 @@ describe("Setup's Routes list", () => {
       "http://192.168.1.10:9119": { stage: "reach", message: "The dashboard didn't answer within 5s." },
       "http://100.101.102.103:9119": { server: "home" },
       "https://hermes.example.com": { stage: "reach", message: "Can't reach the Hermes dashboard: error sending request: Connection refused (os error 111)" },
-      "liam@hermes": { server: "home" },
+      "lena@hermes": { server: "home" },
     });
     const onConnect = vi.fn(async (_d: SignInDetails, _name: string, _signal: AbortSignal) => ({}));
     render(<Onboarding mode="add" initial={BLANK} probe={b.probe} reach={b.reach} onConnect={onConnect} onCancel={() => {}} onDone={() => {}} />);
 
     // One route to start with, labelled as before routes.
-    await user.type(screen.getByLabelText("SSH target"), "liam@hermes");
+    await user.type(screen.getByLabelText("SSH target"), "lena@hermes");
     await user.click(screen.getByRole("button", { name: "Add a route" }));
     await user.type(screen.getByLabelText("Route 2: Dashboard URL"), "100.101.102.103");
     await user.tab();
@@ -96,12 +96,12 @@ describe("Setup's Routes list", () => {
     expect((await route(3).findByRole("status")).textContent).toContain("Reached Hermes 0.22.5.");
     await user.click(screen.getByRole("button", { name: "Test route 4" }));
     expect((await route(4).findByRole("alert")).textContent?.trim()).toMatch(/^Refused\./);
-    expect(b.reached.map((r) => r.at)).toEqual(["http://192.168.1.10:9119", "liam@hermes", "https://hermes.example.com"]);
+    expect(b.reached.map((r) => r.at)).toEqual(["http://192.168.1.10:9119", "lena@hermes", "https://hermes.example.com"]);
     expect(b.probed).toEqual([]);
 
     await user.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByText(/Over LAN, Tailscale, SSH and web address \(off\), tried in that order\./)).toBeTruthy();
-    await user.type(screen.getByLabelText("Dashboard username"), "liam");
+    await user.type(screen.getByLabelText("Dashboard username"), "lena");
     await user.type(screen.getByLabelText("Dashboard password"), "hunter2");
     await user.click(screen.getByRole("button", { name: "Test connection" }));
     const result = await screen.findByText(/At least one route works/);
@@ -109,17 +109,17 @@ describe("Setup's Routes list", () => {
     expect([...checks].map((li) => li.textContent?.replace(/\s+/g, " ").trim())).toEqual([
       expect.stringMatching(/^LAN http:\/\/192.168.1.10:9119 · timed out/),
       expect.stringMatching(/^Tailscale http:\/\/100.101.102.103:9119 · reached Hermes 0.22.5/),
-      expect.stringMatching(/^SSH ssh:\/\/liam@hermes · reached Hermes 0.22.5$/),
+      expect.stringMatching(/^SSH ssh:\/\/lena@hermes · reached Hermes 0.22.5$/),
     ]);
     // A route turned off isn't tested.
-    expect(b.probed.map(at)).toEqual(["http://192.168.1.10:9119", "http://100.101.102.103:9119", "liam@hermes"]);
+    expect(b.probed.map(at)).toEqual(["http://192.168.1.10:9119", "http://100.101.102.103:9119", "lena@hermes"]);
 
     await user.click(screen.getByRole("button", { name: "Save and connect" }));
     const [d] = onConnect.mock.calls[0];
     expect(d.routes?.map((r) => [r.kind, r.target, !!r.off])).toEqual([
       ["lan", "http://192.168.1.10:9119", false],
       ["tailscale", "http://100.101.102.103:9119", false],
-      ["ssh", "liam@hermes", false],
+      ["ssh", "lena@hermes", false],
       ["web", "https://hermes.example.com", true],
     ]);
     expect(d.routes?.[3].headers).toEqual([{ name: "CF-Access-Client-Secret", value: "s3cret" }]);
@@ -128,20 +128,20 @@ describe("Setup's Routes list", () => {
 
   it("says when a route reaches a different server, and trusts the new one only when the owner says so", async () => {
     const user = userEvent.setup();
-    const b = backend({ "liam@hermes": { server: "reinstalled" } });
-    const initial = { ...withRoutes(BLANK, [{ id: "s", kind: "ssh", target: "liam@hermes" }, { id: "l", kind: "lan", target: "http://192.168.1.10:9119" }]), username: "liam", server: "home" };
+    const b = backend({ "lena@hermes": { server: "reinstalled" } });
+    const initial = { ...withRoutes(BLANK, [{ id: "s", kind: "ssh", target: "lena@hermes" }, { id: "l", kind: "lan", target: "http://192.168.1.10:9119" }]), username: "lena", server: "home" };
     const onConnect = vi.fn(async () => ({}));
     render(<Onboarding mode="edit" initial={initial} initialName="Home" probe={b.probe} reach={b.reach} onConnect={onConnect} onCancel={() => {}} onDone={() => {}} />);
 
     await user.click(screen.getByRole("button", { name: "Test route 1" }));
     const wrong = await route(1).findByRole("alert");
     expect(wrong.textContent?.trim()).toMatch(/^Wrong server\. A different Hermes server answered at hermes, not the one this connection signed in to before\. It wasn't sent the password\./);
-    expect(b.reached).toEqual([{ at: "liam@hermes", expect: "home" }]);
+    expect(b.reached).toEqual([{ at: "lena@hermes", expect: "home" }]);
 
     await user.click(within(wrong).getByRole("button", { name: "Trust this server" }));
     await user.click(screen.getByRole("button", { name: "Test route 1" }));
     expect((await route(1).findByRole("status")).textContent).toContain("Reached Hermes");
-    expect(b.reached[1]).toEqual({ at: "liam@hermes", expect: undefined });
+    expect(b.reached[1]).toEqual({ at: "lena@hermes", expect: undefined });
 
     await user.click(screen.getByRole("button", { name: "Next" }));
     await user.type(screen.getByLabelText("Dashboard password"), "hunter2");
@@ -153,23 +153,23 @@ describe("Setup's Routes list", () => {
 
   it("keeps one route that its address alone says as a connection without a list, as before routes", async () => {
     const user = userEvent.setup();
-    const b = backend({ "liam@hermes": { server: "home" } });
+    const b = backend({ "lena@hermes": { server: "home" } });
     const onConnect = vi.fn(async () => ({}));
     render(<Onboarding mode="add" initial={BLANK} probe={b.probe} reach={b.reach} onConnect={onConnect} onCancel={() => {}} onDone={() => {}} />);
-    await user.type(screen.getByLabelText("SSH target"), "liam@hermes");
+    await user.type(screen.getByLabelText("SSH target"), "lena@hermes");
     // One route can't be turned off, moved or removed.
     expect(screen.queryByRole("checkbox")).toBeNull();
     expect(screen.queryByRole("button", { name: /Remove route/ })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Next" }));
-    await user.type(screen.getByLabelText("Dashboard username"), "liam");
+    await user.type(screen.getByLabelText("Dashboard username"), "lena");
     await user.type(screen.getByLabelText("Dashboard password"), "hunter2");
     await user.click(screen.getByRole("button", { name: "Test connection" }));
     // The test as it always was: the checklist of stages.
-    expect((await screen.findByRole("status")).textContent).toContain("Connected to Hermes 0.22.5 at ssh://liam@hermes.");
+    expect((await screen.findByRole("status")).textContent).toContain("Connected to Hermes 0.22.5 at ssh://lena@hermes.");
     await user.click(screen.getByRole("button", { name: "Save and connect" }));
     const d = (onConnect.mock.calls[0] as unknown[])[0] as SignInDetails;
     expect(d.routes).toBeUndefined();
-    expect([d.mode, d.sshTarget]).toEqual(["ssh", "liam@hermes"]);
+    expect([d.mode, d.sshTarget]).toEqual(["ssh", "lena@hermes"]);
   });
 
   it("refuses an address with a token in it, and says why", async () => {
@@ -187,7 +187,7 @@ describe("Setup's Routes list", () => {
     const user = userEvent.setup();
     const b = backend({});
     const web = { id: "w", kind: "web" as const, target: "https://hermes.example.com", headers: [{ name: "CF-Access-Client-Secret", value: "s3cret" }] };
-    const initial = { ...withRoutes(BLANK, [{ id: "s", kind: "ssh", target: "liam@hermes" }, web]), username: "liam" };
+    const initial = { ...withRoutes(BLANK, [{ id: "s", kind: "ssh", target: "lena@hermes" }, web]), username: "lena" };
     render(<Onboarding mode="edit" initial={initial} probe={b.probe} reach={b.reach} onConnect={async () => ({})} onCancel={() => {}} onDone={() => {}} />);
     expect((screen.getByLabelText("Header 1 value, route 2") as HTMLInputElement).value).toBe("s3cret");
     await user.type(screen.getByLabelText("Route 2: Dashboard URL"), "/other");
@@ -203,9 +203,9 @@ describe("The sign-in screen", () => {
     const routes = [
       { id: "l", kind: "lan" as const, target: "http://192.168.1.10:9119" },
       { id: "t", kind: "tailscale" as const, target: "http://100.101.102.103:9119", locked: true },
-      { id: "s", kind: "ssh" as const, target: "liam@hermes", off: true },
+      { id: "s", kind: "ssh" as const, target: "lena@hermes", off: true },
     ];
-    const initial = { ...withRoutes(BLANK, routes), username: "liam" };
+    const initial = { ...withRoutes(BLANK, routes), username: "lena" };
     const connection = { id: "0d6f3c8e-1111-4a8a-9d2b-1f0e7c9a5b3d", name: "Home server", addedAt: 0, ...initial, routes };
     const onSignIn = vi.fn(async () => {});
     render(<SignIn initial={initial} connection={connection} connections={[connection]} onSignIn={onSignIn} />);
@@ -214,7 +214,7 @@ describe("The sign-in screen", () => {
     expect([...listed].map((li) => li.textContent?.replace(/\s+/g, " ").trim())).toEqual([
       "LAN http://192.168.1.10:9119",
       "Tailscale http://100.101.102.103:9119",
-      "SSH ssh://liam@hermesoff",
+      "SSH ssh://lena@hermesoff",
     ]);
     expect(screen.queryByLabelText("SSH target")).toBeNull();
     await user.type(screen.getByLabelText(/^Dashboard password/), "hunter2");

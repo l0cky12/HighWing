@@ -1,4 +1,4 @@
-// New profile's Skills and Tools (botSetup.ts, ADR 0195) through the real transport against FakeHermes, whose create
+// New profile's Skills and Tools (botSetup.ts, ADR 0197) through the real transport against FakeHermes, whose create
 // follows `hermes_cli/web_routers/profiles.py` at `f0d94882`: the create carries neither, Hermes seeds its built-in
 // skills all on, and each choice is then applied to the new profile alone, one switch or toolset change at a time, and
 // read back. All data is synthetic.

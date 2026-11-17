@@ -8,8 +8,8 @@ import { FakeHermes, row } from "./fakeHermes";
 import { isOutgoing } from "./model";
 import { SKILL_COMMANDS_FRESH_MS, connect } from "./transport";
 
-const nas: SavedSignIn = { mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" };
-const SKILLS = "/home/liam/.hermes/skills";
+const nas: SavedSignIn = { mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" };
+const SKILLS = "/home/lena/.hermes/skills";
 const BODY = "Reproduce the failure first.\nThen bisect.";
 const skill = (name: string, description: string, body: string) => `---\nname: ${name}\ndescription: ${description}\n---\n\n${body}\n`;
 const CALL = { name: "debugging", arg: "/writing fix the build\n  using $debugging" };

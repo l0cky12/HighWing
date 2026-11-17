@@ -37,7 +37,7 @@ const updates: Updater = {
 async function launch(s: FakeHermes) {
   state = { state: "restart", from: "r1.ef433a2-1", to: "r2.4444444-1" };
   hermes = await connect(s.openPipe);
-  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} updates={updates} />);
+  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} updates={updates} />);
   await waitFor(() => expect(hermes!.hasListed()).toBe(true));
 }
 

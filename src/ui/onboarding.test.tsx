@@ -49,7 +49,7 @@ const where = (d: SignInDetails) => (d.mode === "ssh" ? `ssh:${d.sshTarget.trim(
 function reach(d: SignInDetails): { server: FakeHermes } | ProbeFailure {
   const found = backend.servers.get(where(d));
   if (!found) return { stage: "address", message: `SSH failed: ssh: Could not resolve hostname ${d.sshTarget}: Name or service not known` };
-  if (d.username !== "liam" || d.password !== found.password)
+  if (d.username !== "lena" || d.password !== found.password)
     return { stage: "sign-in", message: "Wrong username or password.", status: '{"version":"0.22.5","auth_required":true,"auth_providers":["basic"]}' };
   return { server: found.server as FakeHermes };
 }
@@ -144,7 +144,7 @@ beforeEach(() => {
   vi.resetModules();
   home = new FakeHermes();
   backend.servers.clear();
-  backend.servers.set("ssh:liam@hermes", { server: home, password: "hunter2" });
+  backend.servers.set("ssh:lena@hermes", { server: home, password: "hunter2" });
   Object.assign(backend, {
     keyring: undefined,
     holdProbe: false,
@@ -190,11 +190,11 @@ const savedPassword = () => {
 };
 /** This computer already set up and signed in, as before setup existed. */
 function alreadySetUp({ signedOut = false } = {}) {
-  localStorage.setItem(SAVED, JSON.stringify({ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }));
+  localStorage.setItem(SAVED, JSON.stringify({ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }));
   backend.keyring = signedOut ? undefined : "hunter2";
 }
 
-async function toSignInStep(user: ReturnType<typeof userEvent.setup>, target = "liam@hermes") {
+async function toSignInStep(user: ReturnType<typeof userEvent.setup>, target = "lena@hermes") {
   await user.click(screen.getByRole("button", { name: "Get started" }));
   await user.type(screen.getByLabelText("SSH target"), target);
   await user.click(screen.getByRole("button", { name: "Next" }));
@@ -209,7 +209,7 @@ describe("First run", () => {
     expect(screen.queryByRole("button", { name: /cancel/i })).toBeNull();
 
     await toSignInStep(user);
-    await user.type(screen.getByLabelText("Dashboard username"), "liam");
+    await user.type(screen.getByLabelText("Dashboard username"), "lena");
     await user.type(screen.getByLabelText("Dashboard password"), "wrong");
     await user.click(screen.getByRole("button", { name: "Test connection" }));
     const failed = await screen.findByRole("alert");
@@ -225,14 +225,14 @@ describe("First run", () => {
     expect(screen.queryByRole("alert")).toBeNull();
     await user.type(screen.getByLabelText("Dashboard password"), "hunter2");
     await user.click(screen.getByRole("button", { name: "Test connection" }));
-    expect((await screen.findByRole("status")).textContent).toContain("Connected to Hermes 0.22.5 at ssh://liam@hermes.");
+    expect((await screen.findByRole("status")).textContent).toContain("Connected to Hermes 0.22.5 at ssh://lena@hermes.");
     expect(home.opened).toBe(0);
     expect(backend.keyring).toBeUndefined();
 
     await user.click(screen.getByRole("button", { name: "Save and connect" }));
     expect(await screen.findByRole("heading", { name: "Model providers" })).toBeTruthy();
     expect(savedPassword()).toBe("hunter2");
-    expect(savedSignIn()).toEqual({ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" });
+    expect(savedSignIn()).toEqual({ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" });
     expect(home.opened).toBe(1);
     // Saved, so there is nothing left to cancel.
     expect(screen.queryByRole("button", { name: /cancel/i })).toBeNull();
@@ -274,8 +274,8 @@ describe("First run", () => {
   it("explains an SSH host that can't be found", async () => {
     const user = await start();
     await screen.findByRole("heading", { name: "Welcome to Highwing" });
-    await toSignInStep(user, "liam@hermse");
-    await user.type(screen.getByLabelText("Dashboard username"), "liam");
+    await toSignInStep(user, "lena@hermse");
+    await user.type(screen.getByLabelText("Dashboard username"), "lena");
     await user.type(screen.getByLabelText("Dashboard password"), "hunter2");
     await user.click(screen.getByRole("button", { name: "Test connection" }));
     const failed = await screen.findByRole("alert");
@@ -290,7 +290,7 @@ describe("First run", () => {
     const user = await start();
     await screen.findByRole("heading", { name: "Welcome to Highwing" });
     await toSignInStep(user);
-    await user.type(screen.getByLabelText("Dashboard username"), "liam");
+    await user.type(screen.getByLabelText("Dashboard username"), "lena");
     await user.type(screen.getByLabelText("Dashboard password"), "hunter2");
     await user.click(screen.getByRole("button", { name: "Test connection" }));
     await screen.findByText(/Connected to Hermes/);
@@ -307,7 +307,7 @@ describe("First run", () => {
     const user = await start();
     await screen.findByRole("heading", { name: "Welcome to Highwing" });
     await toSignInStep(user);
-    await user.type(screen.getByLabelText("Dashboard username"), "liam");
+    await user.type(screen.getByLabelText("Dashboard username"), "lena");
     await user.type(screen.getByLabelText("Dashboard password"), "hunter2");
     await user.click(screen.getByRole("button", { name: "Test connection" }));
     expect(await screen.findByText("Testing the connection…")).toBeTruthy();
@@ -329,7 +329,7 @@ describe("First run", () => {
     const user = await start();
     await screen.findByRole("heading", { name: "Welcome to Highwing" });
     await toSignInStep(user);
-    await user.type(screen.getByLabelText("Dashboard username"), "liam");
+    await user.type(screen.getByLabelText("Dashboard username"), "lena");
     await user.type(screen.getByLabelText("Dashboard password"), "hunter2");
     await user.click(screen.getByRole("button", { name: "Test connection" }));
     await screen.findByText("Testing the connection…");
@@ -359,7 +359,7 @@ describe("An install set up before", () => {
     backend.unlockCancelled = true;
     await start();
     expect(await screen.findByRole("heading", { name: "Connect to hermes" })).toBeTruthy();
-    expect((screen.getByLabelText("Dashboard username") as HTMLInputElement).value).toBe("liam");
+    expect((screen.getByLabelText("Dashboard username") as HTMLInputElement).value).toBe("lena");
     expect(backend.keyringReads.sort()).toEqual(["headers_load", "password_load"]);
   });
 
@@ -419,7 +419,7 @@ describe("Setup from Settings", () => {
     await user.selectOptions(screen.getByLabelText("Connect through"), "web");
     await user.type(screen.getByLabelText("Dashboard URL"), "http://studio.example.com:9119");
     await user.click(screen.getByRole("button", { name: "Next" }));
-    expect((screen.getByLabelText("Dashboard username") as HTMLInputElement).value).toBe("liam");
+    expect((screen.getByLabelText("Dashboard username") as HTMLInputElement).value).toBe("lena");
     await user.type(screen.getByLabelText("Dashboard password"), "pa55");
     await user.click(screen.getByRole("button", { name: "Test connection" }));
     const passed = await screen.findByRole("status");
@@ -431,7 +431,7 @@ describe("Setup from Settings", () => {
     await user.click(screen.getByRole("button", { name: "Save and connect" }));
     await screen.findByRole("heading", { name: "Model providers" });
     expect([home.closed, studio.opened, savedPassword()]).toEqual([true, 1, "pa55"]);
-    expect(savedSignIn()).toEqual({ mode: "url", sshTarget: "liam@hermes", url: "http://studio.example.com:9119", username: "liam" });
+    expect(savedSignIn()).toEqual({ mode: "url", sshTarget: "lena@hermes", url: "http://studio.example.com:9119", username: "lena" });
 
     await screen.findByText(/Hermes can already use/);
     await user.click(screen.getByRole("button", { name: "Skip" }));
@@ -478,7 +478,7 @@ describe("Setup from Settings", () => {
     // First run: connected, but the password is only in memory.
     await screen.findByRole("heading", { name: "Welcome to Highwing" });
     await toSignInStep(user);
-    await user.type(screen.getByLabelText("Dashboard username"), "liam");
+    await user.type(screen.getByLabelText("Dashboard username"), "lena");
     await user.type(screen.getByLabelText("Dashboard password"), "hunter2");
     await user.click(screen.getByRole("button", { name: "Test connection" }));
     await screen.findByText(/Connected to Hermes/);
@@ -528,11 +528,11 @@ describe("Setup from Settings", () => {
   });
 });
 
-/** First run up to a passed test of liam@hermes. */
+/** First run up to a passed test of lena@hermes. */
 async function testedFirstRun(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByRole("heading", { name: "Welcome to Highwing" });
   await toSignInStep(user);
-  await user.type(screen.getByLabelText("Dashboard username"), "liam");
+  await user.type(screen.getByLabelText("Dashboard username"), "lena");
   await user.type(screen.getByLabelText("Dashboard password"), "hunter2");
   await user.click(screen.getByRole("button", { name: "Test connection" }));
   await screen.findByText(/Connected to Hermes/);
@@ -546,7 +546,7 @@ describe("A connection test explains each stage on its own", () => {
     const user = await start();
     await screen.findByRole("heading", { name: "Welcome to Highwing" });
     await toSignInStep(user);
-    await user.type(screen.getByLabelText("Dashboard username"), "liam");
+    await user.type(screen.getByLabelText("Dashboard username"), "lena");
     await user.type(screen.getByLabelText("Dashboard password"), "hunter2");
     const retest = async () => {
       await user.click(screen.getByRole("button", { name: /^(Test connection|Try again|Test again)$/ }));
@@ -590,7 +590,7 @@ describe("A connection test explains each stage on its own", () => {
     // A pass marks every stage.
     backend.probeReady = undefined;
     result = await retest();
-    expect(result.textContent).toContain("Connected to Hermes 0.22.5 at ssh://liam@hermes.");
+    expect(result.textContent).toContain("Connected to Hermes 0.22.5 at ssh://lena@hermes.");
     expect(marks(result).map((m) => m.split(": ")[1])).toEqual(["ok", "ok", "ok", "ok"]);
 
     // None of the tests kept anything.
@@ -604,7 +604,7 @@ describe("A connection test explains each stage on its own", () => {
     await user.selectOptions(screen.getByLabelText("Connect through"), "web");
     await user.type(screen.getByLabelText("Dashboard URL"), "https://hermes.example.com");
     await user.click(screen.getByRole("button", { name: "Next" }));
-    await user.type(screen.getByLabelText("Dashboard username"), "liam");
+    await user.type(screen.getByLabelText("Dashboard username"), "lena");
     await user.type(screen.getByLabelText("Dashboard password"), "hunter2");
     backend.probeFailure = { stage: "reach", message: "The dashboard answered 403: Forbidden by Access", answered: { status: 403, body: "Forbidden by Access" } };
     await user.click(screen.getByRole("button", { name: "Test connection" }));
@@ -786,14 +786,14 @@ describe("Run setup again from the sign-in screen", () => {
     await user.click(screen.getByRole("button", { name: "Run setup again…" }));
     expect(await screen.findByRole("heading", { name: "Edit hermes" })).toBeTruthy();
     expect(screen.getByText(/Nothing changes until the connection is tested and saved/)).toBeTruthy();
-    expect((screen.getByLabelText("SSH target") as HTMLInputElement).value).toBe("liam@hermes");
+    expect((screen.getByLabelText("SSH target") as HTMLInputElement).value).toBe("lena@hermes");
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(await screen.findByRole("heading", { name: "Connect to hermes" })).toBeTruthy();
     expect(dialog()).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Run setup again…" }));
     await user.click(await screen.findByRole("button", { name: "Next" }));
-    expect((screen.getByLabelText("Dashboard username") as HTMLInputElement).value).toBe("liam");
+    expect((screen.getByLabelText("Dashboard username") as HTMLInputElement).value).toBe("lena");
     await user.type(screen.getByLabelText("Dashboard password"), "hunter2");
     await user.click(screen.getByRole("button", { name: "Test connection" }));
     await screen.findByText(/Connected to Hermes/);
@@ -821,7 +821,7 @@ describe("Stopping at the edges", () => {
     await act(async () => backend.letKeyring!());
     await screen.findByRole("heading", { name: "Model providers" });
     expect(screen.queryByText(/Connecting was stopped/)).toBeNull();
-    expect([savedPassword(), savedSignIn()?.sshTarget, home.opened, home.closed, backend.connectsStopped]).toEqual(["hunter2", "liam@hermes", 1, false, 0]);
+    expect([savedPassword(), savedSignIn()?.sshTarget, home.opened, home.closed, backend.connectsStopped]).toEqual(["hunter2", "lena@hermes", 1, false, 0]);
   });
 
   it("from Settings, when the old server can't be reached either, goes back to it signed out, with its draft and secrets", async () => {
@@ -852,13 +852,13 @@ describe("Stopping at the edges", () => {
     // Nothing could be put back, so setup doesn't claim it was.
     expect((await screen.findByText(/Connecting was stopped/)).textContent?.trim()).toBe("Connecting was stopped. Nothing was saved.");
     // Nothing of the new server was kept; the old connection's secrets and address are as they were.
-    expect([studio.opened, backend.keyring, savedSignIn()]).toEqual([0, "hunter2", { mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }]);
+    expect([studio.opened, backend.keyring, savedSignIn()]).toEqual([0, "hunter2", { mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }]);
 
     // With no chat list saved to read Offline, the old connection's sign-in screen is under setup.
     await user.click(screen.getByRole("button", { name: "Cancel setup" }));
     expect(dialog()).toBeNull();
     expect(await screen.findByRole("heading", { name: "Connect to hermes" })).toBeTruthy();
-    expect((screen.getByLabelText("SSH target") as HTMLInputElement).value).toBe("liam@hermes");
+    expect((screen.getByLabelText("SSH target") as HTMLInputElement).value).toBe("lena@hermes");
     // Once it answers again, signing in finds the draft.
     home.refuse = undefined;
     await user.type(screen.getByLabelText(/^Dashboard password/), "hunter2");
@@ -897,7 +897,7 @@ describe("Stopping a Save and connect that waits its turn", () => {
     await waitFor(() => expect(backend.letKeyring).toBeTruthy());
     await user.click(screen.getByRole("button", { name: "Set up a new connection…" }));
     await toSignInStep(user);
-    await user.type(screen.getByLabelText("Dashboard username"), "liam");
+    await user.type(screen.getByLabelText("Dashboard username"), "lena");
     await user.type(screen.getByLabelText("Dashboard password"), "hunter2");
     await user.click(screen.getByRole("button", { name: "Test connection" }));
     await screen.findByText(/Connected to Hermes/);

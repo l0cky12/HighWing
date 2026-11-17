@@ -15,8 +15,8 @@ function memoryStorage() {
   const m = new Map<string, string>();
   return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), m };
 }
-const home: SavedSignIn = { mode: "url", sshTarget: "", url: "https://hermes.example.com", username: "liam" };
-const lab: SavedSignIn = { mode: "ssh", sshTarget: "liam@lab", url: "", username: "liam" };
+const home: SavedSignIn = { mode: "url", sshTarget: "", url: "https://hermes.example.com", username: "lena" };
+const lab: SavedSignIn = { mode: "ssh", sshTarget: "lena@lab", url: "", username: "lena" };
 
 describe("Reading a chat link", () => {
   it("reads the connection, profile and chat from a link it made", () => {
@@ -56,8 +56,8 @@ describe("Reading a chat link", () => {
   });
 
   it("refuses a link carrying a sign-in", () => {
-    expect(reason(good().replace("//chat", "//liam:hunter2@chat"))).toMatch(/sign-in/);
-    expect(reason(good().replace("//chat", "//liam@chat"))).toMatch(/sign-in/);
+    expect(reason(good().replace("//chat", "//lena:hunter2@chat"))).toMatch(/sign-in/);
+    expect(reason(good().replace("//chat", "//lena@chat"))).toMatch(/sign-in/);
   });
 
   it("refuses unknown, missing and repeated parts, so nothing rides along", () => {
@@ -103,7 +103,7 @@ describe("Connection references", () => {
     expect(refs.resolve(ref)).toBe(connectionKey(home));
     expect(refs.resolve("nothinglikeit123")).toBeUndefined();
     const link = formatChatLink({ connection: ref, profile: "default", chatId: "c1" });
-    for (const secret of ["hermes.example.com", "liam", "https", "hunter2"]) expect(link).not.toContain(secret);
+    for (const secret of ["hermes.example.com", "lena", "https", "hunter2"]) expect(link).not.toContain(secret);
   });
 
   it("keeps a reference for the session when storage can't, so links agree", () => {
@@ -127,16 +127,16 @@ describe("Connection references", () => {
     refs.alias(link.connection, home);
     expect(checkConnection(link, home, refs)).toEqual({ kind: "ok" });
     expect(checkConnection({ ...link, connection: mine }, home, refs)).toEqual({ kind: "ok" });
-    expect(checkConnection({ ...link, connection: mine }, lab, refs)).toEqual({ kind: "other", label: "hermes.example.com (liam)" });
+    expect(checkConnection({ ...link, connection: mine }, lab, refs)).toEqual({ kind: "other", label: "hermes.example.com (lena)" });
     // A malformed store reads as empty instead of failing.
     store.setItem(REFS_KEY, "{not json");
     expect(connectionRefs(store).resolve(mine)).toBeUndefined();
   });
 
   it("names a connection by its server and username", () => {
-    expect(connectionLabel(connectionKey(lab))).toBe("liam@lab");
-    expect(connectionLabel(connectionKey({ ...lab, sshTarget: "lab" }))).toBe("lab (liam)");
-    expect(connectionLabel(connectionKey(home))).toBe("hermes.example.com (liam)");
+    expect(connectionLabel(connectionKey(lab))).toBe("lena@lab");
+    expect(connectionLabel(connectionKey({ ...lab, sshTarget: "lab" }))).toBe("lab (lena)");
+    expect(connectionLabel(connectionKey(home))).toBe("hermes.example.com (lena)");
     expect(connectionLabel("nonsense")).toBe("another connection");
   });
 });

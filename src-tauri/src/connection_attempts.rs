@@ -332,7 +332,7 @@ mod tests {
         let refused = [
             ("error", json!("error sending request for url (http://192.168.1.10:9119/api/status)")),
             ("error", json!("Plain http:// is only used on this computer")),
-            ("error", json!("liam@box: Permission denied (publickey)")),
+            ("error", json!("lena@box: Permission denied (publickey)")),
             ("error", json!("ssh: connect to host 203.0.113.77 port 22: Connection refused")),
             ("error", json!("The chat connection failed: IO error at [fd7a:115c:a1e0::1]:9119")),
             ("error", json!("dial 2001:db8:0:1:2:3:4:5 failed")),

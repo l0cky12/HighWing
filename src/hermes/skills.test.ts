@@ -16,7 +16,7 @@ afterEach(async () => {
 
 const skill = (name: string, description: string, body = "## When to Use\n\nWhen asked.\n") => `---\nname: ${name}\ndescription: ${description}\nversion: 1.0.0\nx-custom: {keep: me}\n---\n\n${body}`;
 const NOTES = skill("release-notes", "Write release notes from merged PRs.", "## When to Use\n\nSee references/style.md and templates/notes.md.\n");
-const HOME = "/home/liam/.hermes";
+const HOME = "/home/lena/.hermes";
 const SPARE = `${HOME}/profiles/spare`;
 
 async function signedIn() {

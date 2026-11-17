@@ -50,7 +50,7 @@ describe("loading memory", () => {
     const { s, hermes } = await setUp();
     const view = await hermes.memory.load("default");
     expect(view.profile).toBe("default");
-    expect(view.home).toBe("/home/liam/.hermes");
+    expect(view.home).toBe("/home/lena/.hermes");
     expect(view.resources.memory.entries.map((e) => e.text)).toEqual([FALCON, SHORT]);
     expect(view.resources.profile.entries.map((e) => e.text)).toEqual([SAM]);
     expect(view.resources.memory.bytes).toBe(new TextEncoder().encode(`${FALCON}\n§\n${SHORT}`).length);
@@ -223,7 +223,7 @@ describe("saving an entry", () => {
 
   it("says a permission failure is one", async () => {
     const s = server();
-    s.learningError = { code: 5000, message: "learning.edit failed: [Errno 13] Permission denied: '/home/liam/.hermes/memories/.mem_x'" };
+    s.learningError = { code: 5000, message: "learning.edit failed: [Errno 13] Permission denied: '/home/lena/.hermes/memories/.mem_x'" };
     const { hermes } = await setUp(s);
     const view = await hermes.memory.load("default");
     const e = await hermes.memory.save("default", view.resources.memory.entries[0], "changed").catch((x) => x);
@@ -398,7 +398,7 @@ describe("any profile's memory through the profile-scoped routes (ADR 0118)", ()
     const { s, hermes } = await setUp(withRoutes());
     const view = await hermes.memory.load("research");
     expect(view.resources.memory.entries.map((e) => e.text)).toEqual(["Research profile: cite sources as numbered footnotes."]);
-    expect(view.home).toBe("/home/liam/.hermes/profiles/research");
+    expect(view.home).toBe("/home/lena/.hermes/profiles/research");
     expect(rest(s).every((c) => c.endsWith("profile=research"))).toBe(true);
     expect(learning(s)).toEqual([]);
     expect(hermes.memory.anyProfile()).toBe(true);

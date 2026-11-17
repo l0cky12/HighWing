@@ -82,7 +82,7 @@ description: Use for any document. The team house style, shared between profiles
 Use sentence case for headings.
 ## the throwaway dashboard's log for that save
            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/liam/.hermes/hermes-agent/.hermes-runtime/python/generation-1789674564-1047739-ccc645fc/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/tempfile.py", line 257, in _mkstemp_inner
+  File "/home/lena/.hermes/hermes-agent/.hermes-runtime/python/generation-1789674564-1047739-ccc645fc/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/tempfile.py", line 257, in _mkstemp_inner
     fd = _os.open(file, flags, 0o600)
          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 PermissionError: [Errno 13] Permission denied: '/tmp/hc69/shared-skills/house-style/.tmp_g9893zgy.tmp'

@@ -355,6 +355,16 @@ export function botActivity(
   return undefined;
 }
 
+export function botsWaiting(roster: readonly Bot[], activity: (bot: Bot) => BotActivity, shown: string): { waiting: Bot[]; replying: number } {
+  const others = roster.filter((b) => b.profile !== shown && !b.hidden).map((b) => ({ b, now: activity(b) }));
+  return { waiting: others.filter((o) => o.now === "needs-you").map((o) => o.b), replying: others.filter((o) => o.now === "replying").length };
+}
+
+export function namedByProfile(name: string, profile: string): boolean {
+  const plain = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  return plain(name) === plain(profile);
+}
+
 /**
  * What `/new` typed in a Bot Chat says. A Bot Chat is one continuous conversation, so, as in Hermes's desktop, it is
  * compacted instead of a new chat being started: the model reads a fresh, shorter context, and the chat stays the same.

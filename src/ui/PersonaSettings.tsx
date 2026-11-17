@@ -19,9 +19,9 @@ import { clockTime, errorText } from "../hermes/values";
 
 /** Where SOUL.md is, as the screen names it. */
 export type PersonaWhere = {
-  /** How the app reaches the server, e.g. `liam@hermes` or `hermes:9119`. */
+  /** How the app reaches the server, e.g. `lena@hermes` or `hermes:9119`. */
   server: string;
-  /** The route in full, e.g. `ssh://liam@hermes`. */
+  /** The route in full, e.g. `ssh://lena@hermes`. */
   route?: string;
   /** The profile whose SOUL.md is edited. For PersonaPage: the profile in use, which the picker starts on. */
   profile: string;

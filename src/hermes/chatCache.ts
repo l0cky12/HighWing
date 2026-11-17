@@ -18,9 +18,10 @@ import { NO_BRANCHES, type BranchAttempt, type BranchLink, type BranchPoint, typ
 import { pickOf } from "./models";
 import { optionalText } from "./values";
 import { isServerPath } from "./preview";
+import { sentHereOf, sentImage, withSentHere } from "./sentImages";
 
 /** Every key prefix this module keeps a connection's data under, each followed by its scope (connections.ts). */
-export const CACHE_PREFIXES = () => [LIST_PREFIX, TRANSCRIPT_PREFIX, PROFILE_PREFIX, PULLED_PREFIX, OUTBOX_PREFIX, QUEUE_PREFIX, HELD_PREFIX, BRANCH_PREFIX, REPLY_TIMES_PREFIX];
+export const CACHE_PREFIXES = () => [LIST_PREFIX, TRANSCRIPT_PREFIX, PROFILE_PREFIX, PULLED_PREFIX, OUTBOX_PREFIX, QUEUE_PREFIX, HELD_PREFIX, BRANCH_PREFIX, REPLY_TIMES_PREFIX, SENT_HERE_PREFIX];
 /** Each profile's chat list, by connection and profile. */
 export const LIST_PREFIX = "hermes-chat.chats.";
 /** A chat's Saved copy, by connection, profile and chat. */
@@ -37,6 +38,8 @@ export const QUEUE_PREFIX = "hermes-chat.queue.";
 export const BRANCH_PREFIX = "hermes-chat.branches.";
 /** How long the replies this app watched finish took, per connection and profile (replyTimes.ts, ADR 0181). */
 export const REPLY_TIMES_PREFIX = "hermes-chat.reply-times.";
+/** The images this app sent, per connection and profile (sentImages.ts `SentHere`). */
+export const SENT_HERE_PREFIX = "hermes-chat.sent-images.";
 /** Where drafts.ts kept a chat's sent messages Hermes didn't take, or may not have, before the outbox: moved into it. */
 export const HELD_PREFIX = "hermes-chat.undelivered.";
 
@@ -166,6 +169,7 @@ function toItem(v: unknown): Item | undefined {
   switch (i.kind) {
     case "user": {
       const attachments = Array.isArray(i.attachments) ? i.attachments.filter((a): a is string => typeof a === "string") : undefined;
+      const images = Array.isArray(i.images) ? i.images.flatMap((m: { path?: unknown; name?: unknown } | null) => sentImage(m?.path, m?.name) ?? []) : undefined;
       const references = Array.isArray(i.references) ? i.references.filter((a): a is string => typeof a === "string") : undefined;
       const rowId = Number.isSafeInteger(i.rowId) ? (i.rowId as number) : undefined;
       return text === undefined
@@ -175,6 +179,7 @@ function toItem(v: unknown): Item | undefined {
             id,
             text,
             ...(attachments?.length && { attachments }),
+            ...(images?.length && { images }),
             ...(references?.length && { references }),
             ...(at !== undefined && { at }),
             ...(rowId !== undefined && { rowId }),
@@ -353,6 +358,14 @@ export function localChatCache(connection: ScopeSource): ChatCache {
   const queueKey = (profile: string, chatId: string) => QUEUE_PREFIX + scope(profile, chatId);
   const branchKey = (profile: string) => BRANCH_PREFIX + scope(profile);
   const replyTimesKey = (profile: string) => REPLY_TIMES_PREFIX + scope(profile);
+  const sentHereKey = (profile: string) => SENT_HERE_PREFIX + scope(profile);
+  const loadSentHere = (profile: string) => {
+    try {
+      return sentHereOf(JSON.parse(localStorage.getItem(sentHereKey(profile)) ?? "null"));
+    } catch {
+      return [];
+    }
+  };
   const loadReplyTimes = (profile: string): ReplyTime[] => {
     try {
       return replyTimesOf(JSON.parse(localStorage.getItem(replyTimesKey(profile)) ?? "null"));
@@ -541,6 +554,10 @@ export function localChatCache(connection: ScopeSource): ChatCache {
     loadReplyTimes,
     saveReplyTime(profile, t) {
       persist(() => localStorage, replyTimesKey(profile), JSON.stringify(withReplyTime(loadReplyTimes(profile), t)));
+    },
+    loadSentHere,
+    saveSentHere(profile, chat, images) {
+      persist(() => localStorage, sentHereKey(profile), JSON.stringify(withSentHere(loadSentHere(profile), chat, images)));
     },
     rememberOlderPulled(profile) {
       try {

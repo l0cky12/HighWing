@@ -88,7 +88,7 @@ describe("Token sign-in", () => {
     ];
     await (await signIn(c, { ...lan, routes }, a)).hermes.close();
     const saved = a.connections.get(c.id)!;
-    a.connections.save({ ...saved, routes: [...saved.routes!, { id: "ssh", kind: "ssh", target: "liam@hermes" }] });
+    a.connections.save({ ...saved, routes: [...saved.routes!, { id: "ssh", kind: "ssh", target: "lena@hermes" }] });
     const d = await savedSignIn(a.connections.get(c.id)!, a);
     expect(d).toMatchObject({ method: "token", savedToken: c.id, password: "" });
     expect(d?.token).toBeUndefined();
@@ -132,7 +132,7 @@ describe("Token sign-in", () => {
     const { a, c, token } = account();
     await (await signIn(c, lan, a)).hermes.close();
     const pw: Account = { ...a, connect: async () => connect(new FakeHermes().openPipe, "default") };
-    await (await signIn(a.connections.get(c.id)!, { ...lan, method: undefined, token: undefined, username: "liam", password: "hunter2" }, pw)).hermes.close();
+    await (await signIn(a.connections.get(c.id)!, { ...lan, method: undefined, token: undefined, username: "lena", password: "hunter2" }, pw)).hermes.close();
     expect(token.routes).toBeUndefined();
     expect(a.connections.get(c.id)?.method).toBeUndefined();
   });

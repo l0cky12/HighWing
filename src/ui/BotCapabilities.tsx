@@ -1,4 +1,4 @@
-// New profile's Skills, Tools and MCP servers (ADR 0195), and what applying them came to once Hermes made the profile.
+// New profile's Skills, Tools and MCP servers (ADR 0197), and what applying them came to once Hermes made the profile.
 // Each area keeps Hermes's defaults unless the owner picks Choose, which reads what there is to choose from then. MCP
 // servers can't be chosen: Hermes has no way to copy them to a new profile without their secrets, so a note says so.
 // The stages and their outcomes are botSetup.ts; this draws them.

@@ -9,6 +9,7 @@ import type { ApprovalChoice, AttachCheck, Attachment, Chat, ChatQueue, Connecti
 import { SOURCE_LABEL, isOutgoing, isWaiting } from "../hermes/model";
 import { useLocale } from "../i18n/locale";
 import type { SkillCall } from "../hermes/skillCommands";
+import { BotFace, type BotLookShown } from "./BotFace";
 import { STEER, typedCommand } from "../hermes/commands";
 import type { ScreenshotDesk } from "../hermes/screenshots";
 import type { Reference, ReferenceDesk } from "../hermes/chatReferences";
@@ -33,7 +34,8 @@ import { caretAfter, editStep, inputKind, type EditStep } from "./editKeys";
 import { ariaKeys, chordLabel, chordParts, pick as pickCommand, pickApp, typeNewLine, useBindings, type Chord } from "./keybindings";
 import type { EditKind } from "../hermes/editHistory";
 import { wakeFull } from "../hermes/snooze";
-import { AttachmentChip, Previews, readPreview } from "./previews";
+import { AttachmentChip, Previews, SentImages, readPreview } from "./previews";
+import { sentWith } from "../hermes/sentImages";
 import { Speaker } from "./speaker";
 import { DictationNoteView, DictationStrip, ListenButton, MicButton, type VoiceApi, listenBlocked, micBlocked, useDictation, useVoiceSetup } from "./Voice";
 import { withTranscript } from "../hermes/voice";
@@ -442,6 +444,7 @@ export function ChatPane({
   screenshotKeys,
   projects,
   server,
+  bot,
   snoozedUntil,
   notice,
   banner,
@@ -518,6 +521,7 @@ export function ChatPane({
   projects?: string[];
   /** The server and profile the chat is on, shown while more than one connection is live (ADR 0125). */
   server?: string;
+  bot?: BotLookShown;
   /** When the chat wakes, if the owner snoozed it and it hasn't woken yet (snooze.ts). */
   snoozedUntil?: number;
   /** Shown at the top of the transcript: what a new chat starts with. */
@@ -555,6 +559,8 @@ export function ChatPane({
   onCheckpoints?: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const words = useLocale().chat;
+  const botOfChat = isBotChat(chat) ? bot : undefined;
   const keys = useBindings();
   const labels = (chords: readonly Chord[]) => chords.map(chordLabel).join(" or ");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -922,10 +928,11 @@ export function ChatPane({
       <header className="chat-head">
         <div className="chat-title">
           {chat.source !== "app" && <SourceIcon source={chat.source} size={13} />}
-          <span>{chat.title}</span>
+          {botOfChat && <BotFace bot={botOfChat} size="sm" />}
+          <span translate={botOfChat ? "no" : undefined}>{botOfChat?.name ?? chat.title}</span>
           {isBotChat(chat) ? (
-            <span className="badge" title="Its bot's one continuous chat, opened from the Bots view">
-              Bot
+            <span className="badge" title={words.botChatTip}>
+              {words.botChat}
             </span>
           ) : policy.readOnly === "jobRun" ? (
             <span className="badge" title="One run of a scheduled job, as Hermes stored it">
@@ -1080,7 +1087,7 @@ export function ChatPane({
           {!chat.loading && !notLoaded && blocks.length === 0 && policy.readOnly === "jobRun" && <div className="unloaded-chat">Hermes has stored no messages for this run yet.</div>}
           {!chat.loading && !notLoaded && blocks.length === 0 && !policy.readOnly && (
             <div className="empty-state">
-              <div className="empty-chat">What should Hermes work on?</div>
+              <div className="empty-chat">{words.workOn(bot?.name ?? "Hermes")}</div>
               <ul className="empty-keys" aria-label="Keyboard shortcuts">
                 <li><kbd>{chordParts(keys.newChat[0]).join(" ")}</kbd> New chat</li>
                 <li><kbd>{chordParts(keys.search[0]).join(" ")}</kbd> Search chats</li>
@@ -1169,6 +1176,7 @@ export function ChatPane({
         </div>
       ) : (
       <Composer
+        placeholder={words.messageTo(bot?.name ?? "Hermes")}
         offline={status !== "connected"}
         queueing={queueing}
         onQueue={compare ? undefined : queueApi?.add}
@@ -1235,7 +1243,8 @@ const usageShown = (usage: ReplyUsage | undefined, level: MessageDetails): Reply
 
 /**
  * One block of the transcript. Memoized, so a streamed delta re-renders only the block it changes. `live`: the reply
- * or thinking is still streaming. `offline` and `movedAt` are for a Question card; other blocks get `movedAt` 0, so
+ * or thinking is still streaming. `offline` is for a Question card and a message's images. `movedAt` is for a Question
+ * card; other blocks get `movedAt` 0, so
  * the transcript changing doesn't re-render them. `canRetry` and `onOutgoing` are for a message Hermes didn't take, or
  * may not have; other blocks get `canRetry` false.
  */
@@ -1293,7 +1302,8 @@ const BlockView = memo(
     const nav = versions && current >= 0 && turn !== undefined && (
       <VariantNav versions={versions} current={current} onPick={(id) => onPickVariant(id, turn)} />
     );
-    if (block.kind === "user")
+    if (block.kind === "user") {
+      const { images, chips } = sentWith(block);
       return (
         <div className={`msg user${block.outgoing ? ` outgoing ${block.outgoing.state}` : ""}${block.steer ? " steer" : ""}`} data-item={block.id} data-at={block.at}>
           {block.steer && (
@@ -1301,9 +1311,10 @@ const BlockView = memo(
               <CornerDownRight size={12} aria-hidden /> Steered into the reply
             </div>
           )}
-          {block.attachments && (
+          {images.length > 0 && <SentImages images={images} offline={offline} />}
+          {chips.length > 0 && (
             <div className="msg-files">
-              {block.attachments.map((name, i) => (
+              {chips.map((name, i) => (
                 <span key={i} className="chip">
                   <Paperclip size={12} />
                   <span className="chip-name">{name}</span>
@@ -1336,6 +1347,7 @@ const BlockView = memo(
           {nav}
         </div>
       );
+    }
     if (block.kind === "assistant") {
       const usage = usageShown(block.usage, details);
       return (
@@ -1735,6 +1747,7 @@ function ToolGroup({ tools }: { tools: ToolItem[] }) {
 }
 
 function Composer({
+  placeholder,
   offline,
   queueing = false,
   onQueue,
@@ -1767,6 +1780,7 @@ function Composer({
   followUp,
   compare,
 }: {
+  placeholder: string;
   offline: boolean;
   /** Enter, and the Queue button, add the message to the chat's queue (`onQueue`, which says why it couldn't). */
   queueing?: boolean;
@@ -2258,7 +2272,7 @@ function Composer({
           data-composer
           rows={1}
           autoFocus={autoFocus}
-          placeholder="Message Hermes"
+          placeholder={placeholder}
           spellCheck={spellCheck}
           value={text}
           {...slash.inputProps}

@@ -225,7 +225,7 @@ pub enum RepoError {
 impl std::fmt::Display for RepoError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RepoError::BadTarget => write!(f, "Enter an SSH target such as liam@hermes or a host alias from ~/.ssh/config."),
+            RepoError::BadTarget => write!(f, "Enter an SSH target such as lena@hermes or a host alias from ~/.ssh/config."),
             RepoError::Spawn(e) => write!(f, "Couldn't start ssh: {e}"),
             RepoError::Ssh { why: "ssh-auth", .. } => {
                 write!(f, "ssh couldn't sign in to the server without asking. The key needs to be in your SSH agent, or unencrypted.")
@@ -501,10 +501,10 @@ mod tests {
         assert_eq!(ssh_command("-oProxyCommand=x").err(), Some(RepoError::BadTarget));
         assert_eq!(ssh_command("a b").err(), Some(RepoError::BadTarget));
         assert_eq!(ssh_command("  ").err(), Some(RepoError::BadTarget));
-        let cmd = ssh_command("liam@hermes").unwrap();
+        let cmd = ssh_command("lena@hermes").unwrap();
         let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_string_lossy().into_owned()).collect();
         let dashdash = args.iter().position(|a| a == "--").unwrap();
-        assert_eq!(args[dashdash + 1], "liam@hermes");
+        assert_eq!(args[dashdash + 1], "lena@hermes");
         assert_eq!(args[dashdash + 2], HELPER_DELIVERY.remote_command());
         assert_eq!(args.len(), dashdash + 3);
         assert!(args.windows(2).any(|w| w == ["-o", "BatchMode=yes"]));
@@ -570,7 +570,7 @@ mod tests {
     #[test]
     fn ssh_failures_are_told_apart() {
         assert_eq!(ssh_failure("Host key verification failed."), "ssh-host-key");
-        assert_eq!(ssh_failure("liam@x: Permission denied (publickey)."), "ssh-auth");
+        assert_eq!(ssh_failure("lena@x: Permission denied (publickey)."), "ssh-auth");
         assert_eq!(ssh_failure("ssh: Could not resolve hostname nope: Name or service not known"), "ssh-unreachable");
         assert_eq!(ssh_failure("kex_exchange_identification: read: Connection reset by peer"), "ssh");
     }

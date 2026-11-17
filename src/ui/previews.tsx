@@ -1,10 +1,14 @@
-// Thumbnails for the images staged in the composer. Rust reads the bytes (image files only, up to 25 MB), and each
-// becomes a blob: URL that lives only while its image is staged. Nothing is copied to disk.
-import { useState } from "react";
-import { Paperclip, X } from "lucide-react";
+// Pictures of attached images. The composer's thumbnails: Rust reads the bytes (image files only, up to 25 MB), and
+// each becomes a blob: URL that lives only while its image is staged. Nothing is copied to disk. A sent message's
+// images: read from Hermes's stored copy on the dashboard's machine as data: URLs (sentImages.ts), never from this
+// computer, and by themselves only when this app sent them.
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { CloudOff, Image as ImageIcon, ImageOff, Paperclip, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { staleText, type AnnotationLabel } from "../hermes/annotations";
-import type { Attachment } from "../hermes/model";
+import type { Attachment, SentImage } from "../hermes/model";
+import { sentImageName, type SentImageLoad, type SentImageStore } from "../hermes/sentImages";
+import { useOpenPreview, usePathsIn } from "./previewContext";
 import { asError } from "../hermes/tauriPipe";
 import { errorText, formatBytes } from "../hermes/values";
 
@@ -94,6 +98,95 @@ export function AttachmentChip({ file, preview, annotation, onRemove }: { file: 
       <button title="Remove" onClick={onRemove}>
         <X size={12} />
       </button>
+    </span>
+  );
+}
+
+/** The store a sent message's images are read through, one for each connection and profile, given by Main. */
+export const SentImageReader = createContext<SentImageStore | undefined>(undefined);
+
+/**
+ * The images Hermes stored for a message, above its words. A shown image is a button that opens it in the Preview. One
+ * this app didn't send is named, with Show image, and nothing reads it before that click. One that can't be shown is
+ * named, with why and Try again. `offline`: nothing is read until Hermes is reachable, and an image not read yet is
+ * named, with what it waits for.
+ */
+export function SentImages({ images, offline }: { images: readonly SentImage[]; offline: boolean }) {
+  return (
+    <div className="msg-images">
+      {images.map((image, i) => (
+        <SentPicture key={`${i}:${image.path}`} image={image} offline={offline} />
+      ))}
+    </div>
+  );
+}
+
+const NO_STORE: SentImageLoad = { state: "failed", why: "Images from Hermes can't be read here." };
+
+function SentPicture({ image, offline }: { image: SentImage; offline: boolean }) {
+  const store = useContext(SentImageReader);
+  const open = useOpenPreview();
+  // The chat the message is in: an image is read by itself only if this app sent it in that chat.
+  const chat = usePathsIn()?.session;
+  const [asked, setAsked] = useState(false);
+  const [load, setLoad] = useState<SentImageLoad>(() => store?.look(image.path, chat) ?? NO_STORE);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (!store) return setLoad(NO_STORE);
+    const now = store.look(image.path, chat, asked);
+    setLoad(now);
+    if (now.state !== "loading" || offline) return;
+    let live = true;
+    void store.load(image.path, chat, asked).then((l) => {
+      if (live) setLoad(l);
+    });
+    return () => {
+      live = false;
+    };
+  }, [store, image.path, chat, offline, attempt, asked]);
+  const name = sentImageName(image);
+  if (load.state === "loading" && !offline) return <div className="sent-image-loading" role="img" aria-busy="true" aria-label={`Loading ${name}`} title={name} />;
+  if (load.state === "ask")
+    return (
+      <SentImageTile name={name} why="Not sent from this app, so it loads when you ask." icon={<ImageIcon size={12} aria-hidden />}>
+        <button type="button" className="btn" aria-label={`Show image ${name}`} onClick={() => setAsked(true)}>
+          Show image
+        </button>
+      </SentImageTile>
+    );
+  if (load.state === "failed")
+    return (
+      <SentImageTile name={name} why={load.why} icon={<ImageOff size={12} aria-hidden />}>
+        {store && (
+          <button type="button" className="btn" onClick={() => setAttempt((n) => n + 1)}>
+            Try again
+          </button>
+        )}
+      </SentImageTile>
+    );
+  if (load.state !== "shown") return <SentImageTile name={name} why="It shows once Hermes is reachable and the chat has loaded." icon={<CloudOff size={12} aria-hidden />} />;
+  return (
+    <button type="button" className="sent-image" title={`${name}\nOpens in the preview`} disabled={!open} onClick={() => open?.({ kind: "server", path: image.path, host: true })}>
+      <img
+        src={load.src}
+        alt={name}
+        onError={() => {
+          store?.drop(image.path, chat);
+          setLoad({ state: "failed", why: "The image couldn't be shown." });
+        }}
+      />
+    </button>
+  );
+}
+
+/** A sent image that isn't drawn: its name, why, and what can be done. */
+function SentImageTile({ name, why, icon, children }: { name: string; why: string; icon: ReactNode; children?: ReactNode }) {
+  return (
+    <span className="sent-image-tile" title={`${name}\n${why}`}>
+      {icon}
+      <span className="chip-name">{name}</span>
+      {children}
+      <span className="sent-image-why">{why}</span>
     </span>
   );
 }

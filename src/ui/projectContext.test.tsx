@@ -36,7 +36,7 @@ afterEach(async () => {
   localStorage.clear();
 });
 
-const CONNECTION = { mode: "ssh" as const, sshTarget: "liam@hermes", url: "", username: "liam" };
+const CONNECTION = { mode: "ssh" as const, sshTarget: "lena@hermes", url: "", username: "lena" };
 const SCOPE = projectScope(CONNECTION, "default");
 const DIR = "/srv/budget/context";
 const MARK = "\n\n--- Attached Context ---\n\n";
@@ -463,11 +463,11 @@ describe("the Context card", () => {
     s.context.dialog = () => ["/home/me/books.md"];
     const app = await launch(s);
     const card = await app.openPage("Reading list");
-    expect(card.getByText("/home/liam/.hermes/projects/reading-list")).toBeTruthy();
+    expect(card.getByText("/home/lena/.hermes/projects/reading-list")).toBeTruthy();
     await app.add("Upload files");
     await waitFor(() => expect(cards()).toEqual(["books.md"]));
-    expect(s.managedFiles.nodes["/home/liam/.hermes/projects/reading-list/context/books.md"]).toMatchObject({ bytes: "Dune." });
-    expect(s.projects.default[1].folders).toMatchObject([{ path: "/home/liam/.hermes/projects/reading-list", is_primary: true }]);
+    expect(s.managedFiles.nodes["/home/lena/.hermes/projects/reading-list/context/books.md"]).toMatchObject({ bytes: "Dune." });
+    expect(s.projects.default[1].folders).toMatchObject([{ path: "/home/lena/.hermes/projects/reading-list", is_primary: true }]);
   });
 
   it("notes that context/ is ignored in the main folder's Git repository", async () => {

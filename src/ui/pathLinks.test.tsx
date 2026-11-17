@@ -70,19 +70,19 @@ afterEach(async () => {
 
 const REPLY =
   "I edited src/main.py and `README.md`. The tests are in tests/ and the guide in `./docs`. " +
-  "There is a report at /workspace/report.md, nothing yet at /home/liam/app/build/out.txt, and no `gone/nowhere`.";
+  "There is a report at /workspace/report.md, nothing yet at /home/lena/app/build/out.txt, and no `gone/nowhere`.";
 
-/** The app on a chat that works in `/home/liam/app`, with a reply that names paths in it. */
+/** The app on a chat that works in `/home/lena/app`, with a reply that names paths in it. */
 async function launch() {
   const server = new FakeHermes();
-  server.sessions = [row("fix", 1, { pinned: true, title: "Fix the app", cwd: "/home/liam/app" })];
+  server.sessions = [row("fix", 1, { pinned: true, title: "Fix the app", cwd: "/home/lena/app" })];
   server.transcripts = { fix: [{ role: "user", text: "Fix it" }, { role: "assistant", text: REPLY }] };
   server.serverFiles = {
-    "/home/liam/app/src/main.py": 'print("fixed")\n',
-    "/home/liam/app/README.md": "# App\n\nStart with docs/guide.md.\n",
-    "/home/liam/app/docs": { dir: true },
-    "/home/liam/app/docs/guide.md": "# Guide\n\nRun the app.\n",
-    "/home/liam/app/tests/test_main.py": "def test(): pass\n",
+    "/home/lena/app/src/main.py": 'print("fixed")\n',
+    "/home/lena/app/README.md": "# App\n\nStart with docs/guide.md.\n",
+    "/home/lena/app/docs": { dir: true },
+    "/home/lena/app/docs/guide.md": "# Guide\n\nRun the app.\n",
+    "/home/lena/app/tests/test_main.py": "def test(): pass\n",
     "/srv/sandboxes/fix/report.md": "# Report\n\nAll green.\n",
   };
   // Each chat's `/workspace` is its own folder on the host; a listing, which names no chat, sees the profile's.
@@ -90,7 +90,7 @@ async function launch() {
   const hermes = await connect(server.openPipe);
   running.push(hermes);
   const user = userEvent.setup();
-  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} />);
+  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} />);
   await user.click(await screen.findByRole("button", { name: /Fix the app/ }));
   await screen.findByText(/I edited/);
   await act(async () => void (await hermes.idle()));
@@ -117,8 +117,8 @@ describe("A path in a reply", () => {
   it("links every path the reply names, relative to the folder the chat works in", async () => {
     await launch();
     const links = [...document.querySelectorAll<HTMLElement>(".msg.assistant a.path-link")];
-    expect(links.map((a) => a.textContent)).toEqual(["src/main.py", "README.md", "tests/", "./docs", "/workspace/report.md", "/home/liam/app/build/out.txt", "gone/nowhere"]);
-    expect(path("src/main.py").title.split("\n")[0]).toBe("/home/liam/app/src/main.py");
+    expect(links.map((a) => a.textContent)).toEqual(["src/main.py", "README.md", "tests/", "./docs", "/workspace/report.md", "/home/lena/app/build/out.txt", "gone/nowhere"]);
+    expect(path("src/main.py").title.split("\n")[0]).toBe("/home/lena/app/src/main.py");
     expect(links.every((a) => !a.hasAttribute("href"))).toBe(true);
   });
 
@@ -126,8 +126,8 @@ describe("A path in a reply", () => {
     const { server, user } = await launch();
     await user.click(path("src/main.py"));
     expect(await within(pane()).findByText(/fixed/)).toBeTruthy();
-    expect(address()).toBe("/home/liam/app/src/main.py");
-    expect(asked(server, "/home/liam/app/src/main.py")).toEqual(["list -", "read-text fix"]);
+    expect(address()).toBe("/home/lena/app/src/main.py");
+    expect(asked(server, "/home/lena/app/src/main.py")).toEqual(["list -", "read-text fix"]);
     expect(fakes.server.opened).toEqual([]);
   });
 
@@ -136,7 +136,7 @@ describe("A path in a reply", () => {
     await user.click(path("./docs"));
     await terminalShown();
     expect(screen.getByRole("tab", { name: /Terminal/ }).getAttribute("aria-selected")).toBe("true");
-    expect(fakes.server.opened).toEqual([{ target: "liam@hermes", folder: "/home/liam/app/docs" }]);
+    expect(fakes.server.opened).toEqual([{ target: "lena@hermes", folder: "/home/lena/app/docs" }]);
     expect(screen.getByRole("button", { name: /^docs/ }).getAttribute("aria-pressed")).toBe("true");
     expect(fakes.server.written).toEqual([]);
     expect(fakes.local.opened).toEqual([]);
@@ -146,8 +146,8 @@ describe("A path in a reply", () => {
     const { server, user } = await launch();
     await user.click(path("tests/"));
     await terminalShown();
-    expect(fakes.server.opened).toEqual([{ target: "liam@hermes", folder: "/home/liam/app/tests" }]);
-    expect(asked(server, "/home/liam/app/tests")).toEqual([]);
+    expect(fakes.server.opened).toEqual([{ target: "lena@hermes", folder: "/home/lena/app/tests" }]);
+    expect(asked(server, "/home/lena/app/tests")).toEqual([]);
   });
 
   it("shows the shell a folder already has when its path is clicked again", async () => {
@@ -158,13 +158,13 @@ describe("A path in a reply", () => {
     await waitFor(() => expect(fakes.server.opened).toHaveLength(2));
     await user.click(path("tests/"));
     await waitFor(() => expect(screen.getByRole("button", { name: /^tests/ }).getAttribute("aria-pressed")).toBe("true"));
-    expect(fakes.server.opened.map((o) => o.folder)).toEqual(["/home/liam/app/tests", "/home/liam/app/docs"]);
+    expect(fakes.server.opened.map((o) => o.folder)).toEqual(["/home/lena/app/tests", "/home/lena/app/docs"]);
     expect(fakes.server.written).toEqual([]);
   });
 
   it("opens a path the server finds nothing at in the Preview, which says so", async () => {
     const { user } = await launch();
-    await user.click(path("/home/liam/app/build/out.txt"));
+    await user.click(path("/home/lena/app/build/out.txt"));
     expect(await within(pane()).findByText("There's no file at this path on the Hermes server.")).toBeTruthy();
     expect(fakes.server.opened).toEqual([]);
   });
@@ -188,7 +188,7 @@ describe("A path in a reply", () => {
     fireEvent.contextMenu(path("src/main.py"));
     await user.click(screen.getByRole("menuitem", { name: "Open in the Terminal" }));
     await terminalShown();
-    expect(fakes.server.opened).toEqual([{ target: "liam@hermes", folder: "/home/liam/app/src" }]);
+    expect(fakes.server.opened).toEqual([{ target: "lena@hermes", folder: "/home/lena/app/src" }]);
   });
 
   it("offers the Preview for a folder, and says there's no folder when the Terminal is asked for a path that isn't there", async () => {
@@ -198,7 +198,7 @@ describe("A path in a reply", () => {
     expect(await within(pane()).findByText("This path is a folder on the Hermes server, not a file.")).toBeTruthy();
     fireEvent.contextMenu(path("gone/nowhere"));
     await user.click(screen.getByRole("menuitem", { name: "Open in the Terminal" }));
-    expect((await screen.findByText("There's no folder at /home/liam/app/gone/nowhere on the Hermes server.")).closest(".toast")).toBeTruthy();
+    expect((await screen.findByText("There's no folder at /home/lena/app/gone/nowhere on the Hermes server.")).closest(".toast")).toBeTruthy();
     expect(fakes.server.opened).toEqual([]);
   });
 
@@ -209,7 +209,7 @@ describe("A path in a reply", () => {
     vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
     fireEvent.contextMenu(path("README.md"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Copy path" }));
-    expect(writeText).toHaveBeenCalledWith("/home/liam/app/README.md");
+    expect(writeText).toHaveBeenCalledWith("/home/lena/app/README.md");
     expect(await screen.findByText("Path copied.")).toBeTruthy();
   });
 
@@ -219,30 +219,30 @@ describe("A path in a reply", () => {
     server.transcripts = {
       shots: [
         { role: "user", text: "Show me the shots" },
-        { role: "assistant", text: "After (round 5):\nMEDIA:/home/liam/shots/chat.png\nMEDIA:/home/liam/shots/settings.png" },
+        { role: "assistant", text: "After (round 5):\nMEDIA:/home/lena/shots/chat.png\nMEDIA:/home/lena/shots/settings.png" },
       ],
     };
-    server.serverFiles = { "/home/liam/shots/chat.png": "\x89PNG\r\n", "/home/liam/shots/settings.png": "\x89PNG\r\n" };
+    server.serverFiles = { "/home/lena/shots/chat.png": "\x89PNG\r\n", "/home/lena/shots/settings.png": "\x89PNG\r\n" };
     const hermes = await connect(server.openPipe);
     running.push(hermes);
     const user = userEvent.setup();
-    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} />);
+    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} />);
     await user.click(await screen.findByRole("button", { name: /Redesign shots/ }));
     await screen.findByText(/After \(round 5\)/);
     expect([...document.querySelectorAll(".msg.assistant a.path-link")].map((a) => a.textContent)).toEqual([
-      "MEDIA:/home/liam/shots/chat.png",
-      "MEDIA:/home/liam/shots/settings.png",
+      "MEDIA:/home/lena/shots/chat.png",
+      "MEDIA:/home/lena/shots/settings.png",
     ]);
 
-    await user.click(path("MEDIA:/home/liam/shots/chat.png"));
-    await waitFor(() => expect(address()).toBe("/home/liam/shots/chat.png"));
-    await waitFor(() => expect(asked(server, "/home/liam/shots/chat.png")).toEqual(["list -", "read-data-url shots"]));
+    await user.click(path("MEDIA:/home/lena/shots/chat.png"));
+    await waitFor(() => expect(address()).toBe("/home/lena/shots/chat.png"));
+    await waitFor(() => expect(asked(server, "/home/lena/shots/chat.png")).toEqual(["list -", "read-data-url shots"]));
 
     const writeText = vi.fn(async (_text: string) => {});
     vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
-    fireEvent.contextMenu(path("MEDIA:/home/liam/shots/settings.png"));
+    fireEvent.contextMenu(path("MEDIA:/home/lena/shots/settings.png"));
     fireEvent.click(screen.getByRole("menuitem", { name: "Copy path" }));
-    expect(writeText).toHaveBeenCalledWith("/home/liam/shots/settings.png");
+    expect(writeText).toHaveBeenCalledWith("/home/lena/shots/settings.png");
   });
 
   it("in a previewed Server file is relative to that file's folder", async () => {
@@ -251,6 +251,6 @@ describe("A path in a reply", () => {
     await within(pane()).findByText(/Start with/);
     await user.click(path("docs/guide.md", pane()));
     expect(await within(pane()).findByText("Run the app.")).toBeTruthy();
-    expect(address()).toBe("/home/liam/app/docs/guide.md");
+    expect(address()).toBe("/home/lena/app/docs/guide.md");
   });
 });

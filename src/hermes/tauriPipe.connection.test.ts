@@ -19,7 +19,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   },
 }));
 
-const details = { mode: "url" as const, sshTarget: "", url: "https://hermes.example.com", username: "liam", password: "hunter2" };
+const details = { mode: "url" as const, sshTarget: "", url: "https://hermes.example.com", username: "lena", password: "hunter2" };
 
 async function opened() {
   const pipe = await tauriPipe(details, "saved-connection-1")(() => {}, "default");

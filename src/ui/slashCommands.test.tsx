@@ -34,7 +34,7 @@ async function launch(setup: (server: FakeHermes) => void = () => {}) {
   setup(server);
   const hermes = await connect(server.openPipe, undefined, memoryCache());
   running.push(hermes);
-  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: `liam@slash-${++launches}`, url: "", username: "liam" }} onSignOut={async () => {}} />);
+  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: `lena@slash-${++launches}`, url: "", username: "lena" }} onSignOut={async () => {}} />);
   await waitFor(() => expect(hermes.hasListed()).toBe(true));
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: /Nightly backup/ }));

@@ -248,7 +248,7 @@ export function fingerprint(text: string): string {
 
 /** `_normalize_path`: absolute (a relative path is read from the server's home folder), no trailing slash. */
 const serverPath = (path: string) => {
-  const p = path.trim().startsWith("/") ? path.trim() : `/home/liam/${path.trim()}`;
+  const p = path.trim().startsWith("/") ? path.trim() : `/home/lena/${path.trim()}`;
   return p.replace(/\/+$/, "") || "/";
 };
 
@@ -318,7 +318,7 @@ export class FakeHermes {
   restTap?: (req: RestRequest) => void;
   readyPayload: Record<string, unknown> = { skin: {}, change_events: true, heartbeat: true, replay_epoch: "e1" };
   /** How the pipe reaches this server, as the Rust side reports it. */
-  route: Route = { kind: "ssh", target: "liam@hermes" };
+  route: Route = { kind: "ssh", target: "lena@hermes" };
   /** While set, opening a pipe fails with this message, as the Rust side does when the server can't be reached. */
   refuse?: string;
   /** While set, a frame sent rejects with this message and never arrives, as when the Rust side's outgoing queue has
@@ -975,7 +975,9 @@ export class FakeHermes {
         this.store(created.profile)?.push(stored);
       }
       const stored = this.runtime.get(runtimeId);
-      if (stored) this.storeMessage(stored, { role: "user", text: String(r.params.text), row_id: this.userRowId });
+      const images = this.attachedImages.get(runtimeId) ?? [];
+      this.attachedImages.delete(runtimeId);
+      if (stored) this.storeMessage(stored, { role: "user", text: imageDisplayText(String(r.params.text), images), row_id: this.userRowId });
       if (drop === "stored") return this.drop();
       this.turns.add(runtimeId);
       if (stored) this.inflight.set(runtimeId, { stored, user: String(r.params.text ?? ""), assistant: "" });
@@ -995,8 +997,14 @@ export class FakeHermes {
     "image.attach_bytes": (r) => {
       const n = ++this.imagesStaged;
       const name = `upload_${n}.png`;
-      const bytes = atob(String(r.params.content_base64)).length;
-      this.respond(r.id, { attached: true, path: `/hermes/images/${name}`, name, count: n, remainder: "", text: `[User attached image: ${name}]`, bytes });
+      const path = `/hermes/images/${name}`;
+      const data = atob(String(r.params.content_base64));
+      this.serverFiles[path] = data;
+      // Hermes writes it in `<profile home>/images` on the dashboard's own machine, which the managed files routes read.
+      this.managedFiles.nodes[path] = { bytes: data };
+      const sid = String(r.params.session_id);
+      this.attachedImages.set(sid, [...(this.attachedImages.get(sid) ?? []), path]);
+      this.respond(r.id, { attached: true, path, name, count: n, remainder: "", text: `[User attached image: ${name}]`, bytes: data.length });
     },
     "file.attach": (r) => {
       const name = String(r.params.name);
@@ -1036,7 +1044,7 @@ export class FakeHermes {
         const status = this.display?.status;
         const stderr = !m.programs.has("xclip")
           ? "sh: 1: xclip: not found\n"
-          : !status?.running || display !== status.display || xauthority !== "/home/liam/.hermes/bot-desktop/Xauthority"
+          : !status?.running || display !== status.display || xauthority !== "/home/lena/.hermes/bot-desktop/Xauthority"
             ? `Error: Can't open display: ${display}\n`
             : m.clipboard === undefined
               ? "Error: target STRING not available\n"
@@ -1066,7 +1074,7 @@ export class FakeHermes {
       const asked = String(r.params.viewer_id ?? "");
       const viewer = d.minted.has(asked) ? asked : `viewer-${d.minted.size + 1}`;
       d.minted.add(viewer);
-      this.respond(r.id, { ...d.status, lease: d.lease, profile_key: "/home/liam/.hermes", ticket: `ticket-${viewer}`, path: "/api/display/ws", viewer_id: viewer });
+      this.respond(r.id, { ...d.status, lease: d.lease, profile_key: "/home/lena/.hermes", ticket: `ticket-${viewer}`, path: "/api/display/ws", viewer_id: viewer });
     },
     "display.lease.acquire": async (r) => {
       const d = this.display;
@@ -1075,18 +1083,20 @@ export class FakeHermes {
       if (!d.minted.has(viewer)) return this.fail(r.id, 5300, "viewer_id was not minted for this connection; call display.observe first");
       const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(viewer))), (b) => b.toString(16).padStart(2, "0")).join("").slice(0, 12);
       d.lease = { holder: "human", viewer_hash: hash, since: 2, epoch: d.lease.epoch + 1 };
-      this.broadcast("display.lease", { profile_key: "/home/liam/.hermes", lease: d.lease });
+      this.broadcast("display.lease", { profile_key: "/home/lena/.hermes", lease: d.lease });
       this.respond(r.id, { lease: d.lease });
     },
     "display.lease.release": (r) => {
       const d = this.display;
       if (!d) return this.fail(r.id, -32601, "unknown method: display.lease.release");
       d.lease = { holder: "agent", viewer_hash: null, since: 3, epoch: d.lease.epoch + 1 };
-      this.broadcast("display.lease", { profile_key: "/home/liam/.hermes", lease: d.lease });
+      this.broadcast("display.lease", { profile_key: "/home/lena/.hermes", lease: d.lease });
       this.respond(r.id, { lease: d.lease });
     },
     "image.detach": (r) => {
       this.imagesStaged--;
+      const sid = String(r.params.session_id);
+      this.attachedImages.set(sid, (this.attachedImages.get(sid) ?? []).filter((p) => p !== r.params.path));
       this.respond(r.id, { detached: true, count: this.imagesStaged });
     },
     // `commands.catalog` (tui_gateway/methods_tools.py, `command_discovery.command_catalog`) at the deployed `bf0203a`:
@@ -1674,7 +1684,7 @@ export class FakeHermes {
     "GET /api/profiles": () => ({
       profiles: ["default", ...Object.keys(this.otherProfiles)].map((name) => ({
         name,
-        path: name === "default" ? "/home/liam/.hermes" : `/home/liam/.hermes/profiles/${name}`,
+        path: name === "default" ? "/home/lena/.hermes" : `/home/lena/.hermes/profiles/${name}`,
         is_default: name === "default",
         model: this.profileModel[name]?.model ?? null,
         provider: this.profileModel[name]?.provider ?? null,
@@ -1838,6 +1848,8 @@ export class FakeHermes {
 
   private onEvent?: (e: PipeEvent) => void;
   private imagesStaged = 0;
+  /** The images `image.attach_bytes` queued for each runtime session's next `prompt.submit` (`attached_images`). */
+  private readonly attachedImages = new Map<string, string[]>();
   private resumed = 0;
   /** False: a server without `session.undo`, which answers it "method not found". */
   undoMethod = true;
@@ -1883,7 +1895,7 @@ export class FakeHermes {
       rest = m[2] ?? "";
     }
     const instruction = rest.trim();
-    const block = (k: (typeof skills)[number], note: string) => `${note}\n\n${k.body}\n\n[Skill directory: /home/liam/.hermes/skills/${k.name}]`;
+    const block = (k: (typeof skills)[number], note: string) => `${note}\n\n${k.body}\n\n[Skill directory: /home/lena/.hermes/skills/${k.name}]`;
     let message: string;
     let display: string;
     if (!extra.length) {
@@ -2319,7 +2331,7 @@ export class FakeHermes {
       throw refuse(`Profile name '${name}' is reserved — it collides with either the Hermes installation itself or a common system binary.  Pick a different name.`);
     if (known(name)) throw refuse(`A profile named '${name}' already exists. Switch to it with \`hermes profile use ${name}\`, or choose a different name.`);
     const source = typeof body.clone_from === "string" ? body.clone_from : undefined;
-    if (source !== undefined && !known(source)) throw refuse(`Source profile '${source}' does not exist at /home/liam/.hermes/profiles/${source}`);
+    if (source !== undefined && !known(source)) throw refuse(`Source profile '${source}' does not exist at /home/lena/.hermes/profiles/${source}`);
     this.otherProfiles[name] = [];
     this.skills.profiles.add(name);
     let modelSet = false;
@@ -2356,7 +2368,7 @@ export class FakeHermes {
     return {
       ok: true,
       name,
-      path: `/home/liam/.hermes/profiles/${name}`,
+      path: `/home/lena/.hermes/profiles/${name}`,
       model_set: modelSet,
       model_error: modelError,
       mcp_written: 0,
@@ -2384,7 +2396,7 @@ export class FakeHermes {
       if (!display) throw refuse("Display name cannot be empty.");
       if (display.length > 64) throw refuse(`Display name too long (${display.length} chars, max 64).`);
       this.profileMeta.default = { ...this.profileMeta.default, display_name: display };
-      return { ok: true, name: "default", display_name: display, path: "/home/liam/.hermes" };
+      return { ok: true, name: "default", display_name: display, path: "/home/lena/.hermes" };
     }
     const to = body.new_name.trim().toLowerCase();
     if (to === "default") throw refuse("Cannot rename to 'default' — it is reserved.");
@@ -2412,7 +2424,7 @@ export class FakeHermes {
     if (this.skills.profiles.delete(name)) this.skills.profiles.add(to);
     if (this.gatewaysRunning.delete(name)) this.gatewaysRunning.add(to);
     if (this.profileRenameLost) throw new Error(this.profileRenameLost);
-    return { ok: true, name: to, path: `/home/liam/.hermes/profiles/${to}` };
+    return { ok: true, name: to, path: `/home/lena/.hermes/profiles/${to}` };
   }
 
   /** `PUT …/description`, `PUT …/model` and `POST …/describe-auto` at `f0d94882`, each after `_resolve_profile_dir`. */
@@ -2466,8 +2478,8 @@ export class FakeHermes {
     delete this.skills.folders[name];
     this.skills.profiles.delete(name);
     if (this.profileSettlementPending !== undefined)
-      return { ok: true, path: `/home/liam/.hermes/profiles/${name}`, identity_settled: false, settlement_pending: true, retry_command: this.profileSettlementPending };
-    return { ok: true, path: `/home/liam/.hermes/profiles/${name}` };
+      return { ok: true, path: `/home/lena/.hermes/profiles/${name}`, identity_settled: false, settlement_pending: true, retry_command: this.profileSettlementPending };
+    return { ok: true, path: `/home/lena/.hermes/profiles/${name}` };
   }
 
   /**
@@ -2722,7 +2734,7 @@ export class FakeHermes {
   private displayAnswer(id: number, profile: unknown) {
     if (!this.display) return this.fail(id, -32601, "unknown method: display.status");
     const own = typeof profile === "string" ? this.display.profiles?.[profile] : undefined;
-    this.respond(id, { ...this.display.status, ...own, lease: this.display.lease, profile_key: "/home/liam/.hermes" });
+    this.respond(id, { ...this.display.status, ...own, lease: this.display.lease, profile_key: "/home/lena/.hermes" });
   }
 
   /** A session-less broadcast such as `sessions.changed` (tui_gateway `_broadcast_global_event`). */
@@ -3145,7 +3157,7 @@ export class FakeHermes {
       : null;
     return {
       name,
-      path: name === "default" ? "/home/liam/.hermes" : `/home/liam/.hermes/profiles/${name}`,
+      path: name === "default" ? "/home/lena/.hermes" : `/home/lena/.hermes/profiles/${name}`,
       is_default: name === "default",
       model: null,
       provider: null,
@@ -3486,6 +3498,16 @@ export function unread(s: SessionRow): boolean {
   return s.last_read_at !== null && (s.last_active ?? s.started_at) > s.last_read_at;
 }
 
+/**
+ * A user message with attached images as Hermes stores it: the prompt, then an `@image:` ref per image on lines of their
+ * own (`tui_gateway/session_history.py` `_build_persist_message_with_image_refs`, from `prompt_turn.py` at f0d94882).
+ */
+function imageDisplayText(text: string, images: string[]): string {
+  const refs = images.map((p) => `@image:${formatRefValue(p)}`).join("\n");
+  if (!refs) return text;
+  return text ? `${text}\n${refs}` : refs;
+}
+
 /** `tui_gateway/prompt_attachments.py::_format_ref_value`: quote a ref with whitespace, brackets or quotes. */
 function formatRefValue(value: string): string {
   if (!/[\s()[\]{}<>"'`]/.test(value)) return value;
@@ -3621,7 +3643,7 @@ export class FakeCron {
   }
 
   private stamp(profile: string, row: CronRow) {
-    return { ...structuredClone(row), profile, profile_name: profile, hermes_home: `/home/liam/.hermes${profile === "default" ? "" : `/profiles/${profile}`}`, is_default_profile: profile === "default", scheduler_heartbeat_age_s: this.heartbeat, latest_execution: this.executions[row.id] ?? null };
+    return { ...structuredClone(row), profile, profile_name: profile, hermes_home: `/home/lena/.hermes${profile === "default" ? "" : `/profiles/${profile}`}`, is_default_profile: profile === "default", scheduler_heartbeat_age_s: this.heartbeat, latest_execution: this.executions[row.id] ?? null };
   }
 
   private refuse(status: number, detail: unknown): never {

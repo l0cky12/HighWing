@@ -6,7 +6,7 @@ import { connect } from "./transport";
 
 /** About as long as a 1440x900 Bot Desktop capture's base64: 446 KB of PNG. */
 const PNG_BASE64 = "iVBORw0KGgo" + "A".repeat(594_590 - 11);
-const SHOT = "/home/liam/.hermes/cache/images/computer_use_76f76bd5.png";
+const SHOT = "/home/lena/.hermes/cache/images/computer_use_76f76bd5.png";
 
 /** A `computer_use` capture's result as Hermes sends it with `tool.complete` (hermes-agent 2026.9.24). */
 const capture = () => ({
@@ -66,7 +66,7 @@ describe("A computer-use chat", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("keeps no screenshot from a capture, so its Saved copy fits and leaves other chats' copies alone", async () => {
-    const cache = localChatCache({ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" });
+    const cache = localChatCache({ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" });
     // Another chat's Saved copy, a quarter of the room.
     cache.saveTranscript("default", "older", [{ kind: "assistant", id: "a-0", text: "x".repeat(TRANSCRIPT_LIMIT_BYTES / 8) }]);
     const server = new FakeHermes();

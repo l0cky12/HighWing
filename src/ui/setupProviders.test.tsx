@@ -14,7 +14,7 @@ import { Onboarding } from "./Onboarding";
 afterEach(cleanup);
 
 const probe: Probe = { run: () => new Promise(() => {}), cancel: () => {} };
-const initial = { mode: "ssh" as const, sshTarget: "liam@hermes", url: "", username: "liam", password: "", headers: [] };
+const initial = { mode: "ssh" as const, sshTarget: "lena@hermes", url: "", username: "lena", password: "", headers: [] };
 
 /** A server whose `GET /api/env` answers only when let through, with only `providers`' keys. */
 function heldServer(providers: string[]) {
@@ -163,7 +163,7 @@ describe("Setup going away while connecting", () => {
   it("stops the sign-in under way", async () => {
     const passing: Probe = {
       run: async () => ({
-        route: { kind: "ssh", target: "liam@hermes", localPort: 1 } as never,
+        route: { kind: "ssh", target: "lena@hermes", localPort: 1 } as never,
         status: '{"version":"0.22.5","auth_required":true,"auth_providers":["basic"]}',
         ready: JSON.stringify({ jsonrpc: "2.0", method: "event", params: { type: "gateway.ready", payload: {} } }),
       }),

@@ -7,7 +7,7 @@ import { connect, type Hermes } from "./transport";
 import { turnStart, type Item } from "./model";
 import { localChatCache } from "./chatCache";
 
-const nas = { mode: "ssh" as const, sshTarget: "liam@nas", url: "", username: "liam" };
+const nas = { mode: "ssh" as const, sshTarget: "lena@nas", url: "", username: "lena" };
 
 const running: Hermes[] = [];
 afterEach(async () => {

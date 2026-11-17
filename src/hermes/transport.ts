@@ -31,7 +31,7 @@ import { PersonaApi } from "./persona";
 import { ProfileCloneApi } from "./profileClone";
 import { ProfilesApi, profileFailure, toProfileRows, type ProfileFailure } from "./profiles";
 import { FILTER_SEARCH_LIMIT } from "./chatFilter";
-import { APPROVAL_CHOICES, endedNote, isBroadGrant, isOutgoing, isQuestion, isStoredPrompt, isWaiting, offeredChoices, sameFields, sendNowRoute, turnStart, type ApprovalChoice, type ApprovalItem, type AttachCheck, type ClarifyQuestion, type QuestionAnswer, type QuestionItem, type QuestionKind, type Attachment, type Chat, type ChatQueue, type ConnectionStatus, type ContextUse, type Found, type Hit, type Item, type ListedChat, type LiveSession, type LiveSessions, type OtherProfiles, type Outgoing, type OutgoingItem, type Queued, type SavedSend, type SeenFailure, type SentReference, type SessionLive, type SideQuestion, type Source, QUEUE_LIMIT } from "./model";
+import { APPROVAL_CHOICES, endedNote, isBroadGrant, isOutgoing, isQuestion, isStoredPrompt, isWaiting, offeredChoices, sameFields, sendNowRoute, turnStart, type ApprovalChoice, type ApprovalItem, type AttachCheck, type ClarifyQuestion, type QuestionAnswer, type QuestionItem, type QuestionKind, type Attachment, type Chat, type ChatQueue, type ConnectionStatus, type ContextUse, type Found, type Hit, type Item, type ListedChat, type LiveSession, type LiveSessions, type OtherProfiles, type Outgoing, type OutgoingItem, type Queued, type SavedSend, type SeenFailure, type SentImage, type SentImagePath, type SentReference, type SessionLive, type SideQuestion, type Source, QUEUE_LIMIT } from "./model";
 import { catalogFromServer, fallbackCatalog, isEffort, modelKey, pickFromInfo, type ModelCatalog, type ModelPick } from "./models";
 import { approvalsOf, isApprovalMode, writesFor, type ApprovalPick } from "./approvals";
 import { CheckTimesStore, noOthers, OtherProfilesCheck } from "./otherProfiles";
@@ -83,7 +83,8 @@ import { plan, settle as settleEdits, type EditResult, type Edits, type Outcomes
 import { conflictOf, sessionNotFound, statusOf, type OpenPipe, type Pipe, type PipeEvent, type RestMethod, type Route, type Speech, type Transcript, type VoiceSetup } from "./pipe";
 import { projectContextFiles, type ChatContext, type ProjectContextFiles } from "./projectContextFiles";
 import { withContext } from "./projectContext";
-import { typedText } from "./branch";
+import { peelImages, typedText } from "./branch";
+import { sentImage, type SentHere } from "./sentImages";
 import { SUMMARY_INSTRUCTIONS, SUMMARY_MAX_TOKENS, cleanSummary, referenceBlock, storedReferences, summaryInput } from "./chatReferences";
 import { previewSupport, remoteFiles, type EditIo, type RemoteFiles } from "./remoteFiles";
 import { isUnsecure } from "./unsecure";
@@ -261,6 +262,10 @@ export type ChatCache = {
   loadReplyTimes(profile: string): ReplyTime[];
   /** Keeps one more, dropping the oldest past `REPLY_TIMES_KEPT`. */
   saveReplyTime(profile: string, t: ReplyTime): void;
+  /** The images this app sent in the profile's chats, oldest first (sentImages.ts). */
+  loadSentHere(profile: string): SentHere[];
+  /** Adds the images Hermes stored for a message sent in `chat`, dropping the oldest past `SENT_HERE_KEPT`. */
+  saveSentHere(profile: string, chat: string, images: readonly SentImage[]): void;
 };
 /**
  * What clicking a notification about a waiting card does: `open` shows the card in its chat. `deny`, for an Approval
@@ -299,6 +304,8 @@ const noCache: ChatCache = {
   saveBranches: () => true,
   loadReplyTimes: () => [],
   saveReplyTime: () => {},
+  loadSentHere: () => [],
+  saveSentHere: () => {},
 };
 
 /** A row of dashboard REST `GET /api/sessions`; times are Unix seconds. */
@@ -1301,7 +1308,7 @@ export class Hermes {
     const res = await this.rest(method, pathAndQuery, body);
     if (method === "GET" && pathAndQuery === "api/profiles") this.keepDefaultName(res);
     if (method === "PATCH" && pathAndQuery === "api/profiles/default" && typeof (res as { display_name?: unknown })?.display_name === "string")
-      this.update({ defaultName: (res as { display_name: string }).display_name.trim() || undefined });
+      this.defaultNamed((res as { display_name: string }).display_name.trim() || undefined);
     return res;
   });
 
@@ -1574,7 +1581,14 @@ export class Hermes {
   /** Keeps the display name a `GET /api/profiles` answer gives `default`, for the switcher and the profile pickers. */
   private keepDefaultName(res: unknown) {
     const row = toProfileRows(res).find((p) => p.name === "default");
-    if (row && row.displayName !== this.snapshot.defaultName) this.update({ defaultName: row.displayName });
+    if (row) this.defaultNamed(row.displayName);
+  }
+
+  /** `default`'s display name is part of its bot's name (bots.ts `botName`), so a roster already read is read again when it changes. */
+  private defaultNamed(name: string | undefined) {
+    if (name === this.snapshot.defaultName) return;
+    this.update({ defaultName: name });
+    if (this.snapshot.bots) void this.bots().catch(() => {});
   }
 
   /**
@@ -3756,10 +3770,14 @@ export class Hermes {
       // From here Hermes may have it: what went out, and the newest row the chat had, find it in the history later.
       // A message that runs skills is found in the history by what Hermes shows for it, not the skill text that went.
       let shown: string | undefined;
-      const goingOut = (prompt: string) =>
-        this.setOutgoing(profile, chatId, user.id, (r) =>
-          withOutgoing(r, { sent: { prompt: shown ?? prompt, ...(this.knownRow.has(profile, chatId) && { after: this.knownRow.get(profile, chatId) }) } }),
-        );
+      const goingOut = (prompt: string, images: SentImage[]) => {
+        // Kept before Hermes stores the message, so its bubble already finds them among the images sent from here.
+        if (images.length) this.cache.saveSentHere(profile, chatId, images);
+        this.setOutgoing(profile, chatId, user.id, (r) => ({
+          ...withOutgoing(r, { sent: { prompt: shown ?? prompt, ...(this.knownRow.has(profile, chatId) && { after: this.knownRow.get(profile, chatId) }) } }),
+          ...(images.length && { images }),
+        }));
+      };
       let told: ChatContext | undefined;
       // A compaction Hermes hasn't answered yet goes first: the message mustn't land while it rewrites the context.
       const submitting = this.resume(chatId).then((runtimeId) => {
@@ -4913,7 +4931,8 @@ export class Hermes {
       if (start < 0 || c.items.some((i) => (i.kind === "user" || i.kind === "assistant" || i.kind === "returned") && i.rowId === rowId)) return c;
       const id = nextId(c.items, "w");
       const back = returnedItem(text, row.display_kind, row.display_metadata);
-      const began: Item = back ? { kind: "returned", id, ...back, rowId, ...(at && { at }) } : { kind: "user", id, text, rowId, ...(at && { at }) };
+      const { rest, images } = peelImages(text);
+      const began: Item = back ? { kind: "returned", id, ...back, rowId, ...(at && { at }) } : { kind: "user", id, text: rest, ...(images.length && { images }), rowId, ...(at && { at }) };
       return { ...c, items: [...c.items.slice(0, start), began, ...c.items.slice(start)] };
     });
     this.saveTranscript(chatId);
@@ -5129,11 +5148,13 @@ export class Hermes {
    * Stages the attachments for the session's next turn, then submits the message. Images are queued server-side;
    * other files are staged in the session's workspace and their `@file:` refs go before the text, as the official
    * desktop app does. If anything fails the message isn't sent, and images already queued are taken back so they
-   * don't ride along with the next one. `goingOut` hears the prompt just before it goes. `hold`: should a turn still be
-   * running there, Hermes holds the message until it ends, instead of redirecting or interrupting it (research doc).
+   * don't ride along with the next one. `goingOut` hears the prompt just before it goes, and the images Hermes stored for
+   * it. `hold`: should a turn still be running there, Hermes holds the message until it ends, instead of redirecting or
+   * interrupting it (research doc).
    */
-  private async submit(runtimeId: string, text: string, attachments: Attachment[], goingOut: (prompt: string) => void, hold = false, context: readonly string[] = []) {
+  private async submit(runtimeId: string, text: string, attachments: Attachment[], goingOut: (prompt: string, images: SentImage[]) => void, hold = false, context: readonly string[] = []) {
     const queued: string[] = [];
+    const images: SentImage[] = [];
     const refs: string[] = [];
     try {
       for (const a of attachments) {
@@ -5141,7 +5162,10 @@ export class Hermes {
         try {
           if (a.kind === "image") {
             const params = { session_id: runtimeId, filename: a.name, content_base64: FILE_MARK };
-            queued.push(((await this.request("image.attach_bytes", params, file)) as ImageAttached).path);
+            const { path } = (await this.request("image.attach_bytes", params, file)) as ImageAttached;
+            queued.push(path);
+            const image = sentImage(path, a.name);
+            if (image) images.push(image);
           } else {
             const params = { session_id: runtimeId, name: a.name, data_url: `data:application/octet-stream;base64,${FILE_MARK}` };
             refs.push(((await this.request("file.attach", params, file)) as FileAttached).ref_text);
@@ -5151,7 +5175,7 @@ export class Hermes {
         }
       }
       const prompt = [refs.join("\n"), text].filter(Boolean).join("\n\n") || (queued.length ? IMAGE_ONLY_PROMPT : "");
-      goingOut(prompt);
+      goingOut(prompt, images);
       return (await this.request("prompt.submit", { session_id: runtimeId, profile: this.profile, text: withContext(prompt, context), ...(hold && { queued: true }) }).catch((e) => {
         throw e instanceof ConnectionLostError ? new PromptUnconfirmedError(e.message) : e;
       })) as Submitted;
@@ -5764,6 +5788,11 @@ export class Hermes {
     return readServerFile((q) => this.rest("GET", q), path, this.snapshot.profile, session);
   }
 
+  /** Whether this app sent the image at `path` in chat `chat` of the profile shown (sentImages.ts `SentHere`). */
+  sentHere(chat: string, path: SentImagePath): boolean {
+    return this.cache.loadSentHere(this.profile).some((e) => e.chat === chat && e.path === path);
+  }
+
   /** A folder's entries where `profile`'s tools run (`GET /api/fs/list`), or none and why: `ENOENT`, `ENOTDIR`, `EACCES`. */
   private async fsList(path: string, profile: string): Promise<{ entries: { name: string; isDirectory: boolean }[]; error?: string }> {
     const res = JSON.parse(await this.restGet(`api/fs/list?${new URLSearchParams({ path, profile })}`, LIST_MAX_BYTES)) as { entries?: unknown; error?: unknown };
@@ -6330,7 +6359,7 @@ function arrived(row: OutgoingItem, readBack: ReadBack[]): boolean {
     (m) =>
       m.role === "user" &&
       (sent.after === undefined || m.rowId === undefined || m.rowId > sent.after) &&
-      (typedText(m.text).trim() === sent.prompt.trim() || (!!attachments?.length && !!words && m.text.includes(words))),
+      (typedText(peelImages(m.text).rest).trim() === sent.prompt.trim() || (!!attachments?.length && !!words && m.text.includes(words))),
   );
 }
 
@@ -6381,8 +6410,9 @@ function historyItems(messages: TranscriptMessage[]): Item[] {
     if (m.role === "user") {
       const back = returnedItem(m.text, m.display_kind, m.display_metadata);
       if (back) return [{ kind: "returned", id, ...back, ...(at && { at }), ...(rowId !== undefined && { rowId }) }];
-      const references = storedReferences(m.text).map((r) => r.title);
-      return [{ kind: "user", id, text: typedText(m.text), ...(references.length && { references }), ...(at && { at }), ...(rowId !== undefined && { rowId }), ...(m.display_kind === "steer" && { steer: true }) }];
+      const { rest, images } = peelImages(m.text);
+      const references = storedReferences(rest).map((r) => r.title);
+      return [{ kind: "user", id, text: typedText(rest), ...(images.length && { images }), ...(references.length && { references }), ...(at && { at }), ...(rowId !== undefined && { rowId }), ...(m.display_kind === "steer" && { steer: true }) }];
     }
     if (m.role === "assistant") return [...thought, { kind: "assistant", id, text: m.text, ...(at && { at }), ...(rowId !== undefined && { rowId }) }];
     return [];

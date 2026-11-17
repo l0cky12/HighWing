@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Attachment } from "../hermes/model";
-import { AttachmentChip, Previews } from "./previews";
+import { SentImageStore, sentImage } from "../hermes/sentImages";
+import { AttachmentChip, Previews, SentImageReader, SentImages } from "./previews";
+import { PathsIn } from "./previewContext";
 
 const img = (path: string): Attachment => ({ path, name: path.split("/").pop()!, size: 9, kind: "image" });
 const file = (path: string): Attachment => ({ ...img(path), kind: "file" });
-const rack = img("/home/liam/Pictures/rack.png");
+const rack = img("/home/lena/Pictures/rack.png");
 // Where PR #9 saves a pasted screenshot: previews go by path, so it is staged like any other image.
-const pasted = img("/home/liam/.cache/net.l0cky12.hermes-chat/pasted/a1/Pasted image 14.03.22.png");
+const pasted = img("/home/lena/.cache/net.l0cky12.hermes-chat/pasted/a1/Pasted image 14.03.22.png");
 
 /** Previews over an in-memory disk: `disk` maps a path to its bytes, or to the error reading it gives. */
 function setUp(disk: Record<string, string | Error>) {
@@ -50,13 +52,13 @@ function setUp(disk: Record<string, string | Error>) {
 describe("Image previews in the composer", () => {
   it("reads a thumbnail for each staged image, including a pasted one, and none for other files", async () => {
     const { previews, live, reads, land, changes } = setUp({ [rack.path]: "\x89PNG", [pasted.path]: "\x89PNG" });
-    previews.sync([rack, file("/home/liam/notes.txt"), pasted]);
+    previews.sync([rack, file("/home/lena/notes.txt"), pasted]);
     await land();
 
     expect(reads).toEqual([rack.path, pasted.path]);
     expect(previews.get(rack.path)).toEqual({ url: "blob:preview-1" });
     expect(previews.get(pasted.path)).toEqual({ url: "blob:preview-2" });
-    expect(previews.get("/home/liam/notes.txt")).toBeUndefined();
+    expect(previews.get("/home/lena/notes.txt")).toBeUndefined();
     expect(live.size).toBe(2);
     expect(changes()).toBe(2);
   });
@@ -72,17 +74,17 @@ describe("Image previews in the composer", () => {
   });
 
   it("gives a missing, unreadable or oversized image a reason instead of a thumbnail, and still previews the rest", async () => {
-    const big = img("/home/liam/big.png");
-    const secret = img("/home/liam/id_rsa.png");
+    const big = img("/home/lena/big.png");
+    const secret = img("/home/lena/id_rsa.png");
     const { previews, live, land } = setUp({
       [rack.path]: "\x89PNG",
       [big.path]: new Error("it's 26.0 MB now, over the 25 MB limit"),
       [secret.path]: new Error("it isn't an image"),
     });
-    previews.sync([img("/home/liam/gone.png"), big, secret, rack]);
+    previews.sync([img("/home/lena/gone.png"), big, secret, rack]);
     await land();
 
-    expect(previews.get("/home/liam/gone.png")).toEqual({ error: "No such file or directory (os error 2)" });
+    expect(previews.get("/home/lena/gone.png")).toEqual({ error: "No such file or directory (os error 2)" });
     expect(previews.get(big.path)).toEqual({ error: "it's 26.0 MB now, over the 25 MB limit" });
     expect(previews.get(secret.path)).toEqual({ error: "it isn't an image" });
     expect(previews.get(rack.path)).toEqual({ url: "blob:preview-1" });
@@ -167,11 +169,52 @@ describe("Attachment chips", () => {
   });
 
   it("shows a paperclip while the thumbnail is read, and for files that aren't images", () => {
-    for (const f of [rack, file("/home/liam/notes.txt")]) {
+    for (const f of [rack, file("/home/lena/notes.txt")]) {
       const out = html(<AttachmentChip file={f} onRemove={() => {}} />);
       expect(out).not.toContain("<img");
       expect(out).toContain("lucide-paperclip");
       expect(out).toContain(`title="${f.path}"`);
+    }
+  });
+});
+
+describe("A sent message's images", () => {
+  const shown = (offline: boolean, sentHere = true) => {
+    const reads: string[] = [];
+    const store = new SentImageStore(
+      (path) => (reads.push(path), new Promise(() => {})),
+      () => sentHere,
+    );
+    const html = renderToStaticMarkup(
+      <SentImageReader.Provider value={store}>
+        <PathsIn session="c1">
+          <SentImages images={[sentImage("/h/images/upload_1.png")!]} offline={offline} />
+        </PathsIn>
+      </SentImageReader.Provider>,
+    );
+    return { html, reads };
+  };
+
+  it("names an image not read yet while Hermes can't be reached, and says what it waits for, instead of loading", () => {
+    const { html } = shown(true);
+    expect(html).toContain("upload_1.png");
+    expect(html).toContain("It shows once Hermes is reachable and the chat has loaded.");
+    expect(html).not.toContain("aria-busy");
+    expect(html).not.toContain("Try again");
+  });
+
+  it("shows it loading while Hermes can be reached", () => {
+    expect(shown(false).html).toContain('aria-busy="true"');
+  });
+
+  it("names an image this app didn't send, with why and Show image, and reads nothing", () => {
+    for (const offline of [false, true]) {
+      const { html, reads } = shown(offline, false);
+      expect(html).toContain("upload_1.png");
+      expect(html).toContain("Not sent from this app, so it loads when you ask.");
+      expect(html).toContain(">Show image</button>");
+      expect(html).not.toContain("aria-busy");
+      expect(reads).toEqual([]);
     }
   });
 });

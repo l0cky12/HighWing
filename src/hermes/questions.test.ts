@@ -8,7 +8,7 @@ import { connect, type Hermes } from "./transport";
 import { localChatCache } from "./chatCache";
 import { isQuestion, type Item } from "./model";
 
-const nas = { mode: "ssh" as const, sshTarget: "liam@nas", url: "", username: "liam" };
+const nas = { mode: "ssh" as const, sshTarget: "lena@nas", url: "", username: "lena" };
 const running: Hermes[] = [];
 afterEach(async () => {
   vi.useRealTimers();

@@ -16,6 +16,10 @@ export const en = {
     now: "now",
   },
   chat: {
+    messageTo: (name: string) => `Message ${name}`,
+    workOn: (name: string) => `What should ${name} work on?`,
+    botChat: "Bot Chat",
+    botChatTip: "Its bot's one continuous chat",
     /** A Returned result's card (ADR 0175): its title when Hermes sent none, and its header's tooltip. */
     returned: {
       work: "Background work finished",
@@ -287,6 +291,28 @@ export const en = {
     openFailed: (name: string, why: string) => `Couldn't open ${name}: ${why}`,
     notChanged: (name: string, why: string) => `${name} wasn't changed. ${why}`,
   },
+  chatList: {
+    modes: "Chat list",
+    chats: "Chats",
+    bots: "Bots",
+    inbox: (n: number) => `${n} in the Inbox`,
+    needYou: (n: number) => (n === 1 ? "1 bot needs you" : `${n} bots need you`),
+    replying: (n: number) => (n === 1 ? "1 bot is replying" : `${n} bots are replying`),
+    tabLabel: (mode: string, waits: string) => `${mode}, ${waits}`,
+    tabTip: (mode: string, waits: string) => `${mode}: ${waits}`,
+    withKeys: (text: string, keys: string) => `${text} (${keys})`,
+    needsYou: (name: string) => `${name} needs you`,
+    manyNeedYou: (n: number) => `${n} bots need you`,
+    openBotChat: (name: string) => `Open ${name}'s Bot Chat`,
+    showBots: "Show the bots",
+    botChat: "Bot Chat",
+    botChatOf: (name: string) => `${name}'s Bot Chat`,
+    lastMessage: (tip: string, last: string) => `${tip}\n${last}`,
+    chatsOf: (name: string) => `${name}'s chats`,
+    inInbox: "In the Inbox",
+    allChats: (n: number) => (n === 1 ? "All 1 chat" : `All ${n} chats`),
+    noChats: "No chats yet.",
+  },
   profiles: {
     title: "Profiles on this server",
     intro: "Each profile is a separate Hermes agent setup with its own chats, persona, memory, skills and keys.",
@@ -437,7 +463,7 @@ export const en = {
       contended: "Hermes kept changing this bot while it saved, so nothing was written. Try again.",
       noCheck: "This Hermes can't check a bot's settings for changes made elsewhere, so nothing was sent. Updating Hermes adds the check.",
       pictureUnconfirmed: "Hermes stored the picture without confirming it, so the bot doesn't say it has one yet. Save again.",
-      /** Generate with AI under New's Persona (ADR 0195): a rewrite of what the owner typed, applied only on Replace. */
+      /** Generate with AI under New's Persona (ADR 0197): a rewrite of what the owner typed, applied only on Replace. */
       rephrase: {
         generate: "Generate with AI",
         runsOn: (model: string, profile: string) =>
@@ -464,7 +490,7 @@ export const en = {
         noText: "Hermes answered with no text.",
         cut: (max: number) => `Your persona is longer than ${max} characters, so only its first ${max} were rewritten.`,
       },
-      /** New's Skills, Tools and MCP servers (ADR 0195), and what applying them came to after the create. */
+      /** New's Skills, Tools and MCP servers (ADR 0197), and what applying them came to after the create. */
       setup: {
         skills: "Skills",
         tools: "Tools",

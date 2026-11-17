@@ -79,9 +79,9 @@ export type ProfilesWiring = {
   /** Shows Settings → Persona, Memory or Skills on `name`. */
   showTab: (tab: "persona" | "memory" | "skills", name: string) => void;
   copyText: (text: string) => Promise<void>;
-  /** Generate with AI under New's Persona (ADR 0195), run as the profile in use; given only while connected. */
+  /** Generate with AI under New's Persona (ADR 0197), run as the profile in use; given only while connected. */
   rephrase?: RephraseWiring;
-  /** New's Skills and Tools (ADR 0195): read from the profile in use, applied to the new profile and read back. */
+  /** New's Skills and Tools (ADR 0197): read from the profile in use, applied to the new profile and read back. */
   setup?: SetupApis;
   /** Tells the owner what a create came to once its form has closed, through the app's own notice. */
   notify: (notice: Notice) => void;
@@ -857,7 +857,7 @@ export function ProfileForm({
   /** Asked before leaving with unsaved changes: `then` is where leaving goes (the persona link), else the dialog closes. */
   const [asking, setAsking] = useState<{ then?: () => void }>();
   const [madeNoModel, setMadeNoModel] = useState<{ name: string; error: string }>();
-  /** A profile made with chosen skills or tools that didn't all apply: what each came to (ADR 0195). */
+  /** A profile made with chosen skills or tools that didn't all apply: what each came to (ADR 0197). */
   const [outcome, setOutcome] = useState<{ name: string; items: SetupItem[]; modelError?: string }>();
   /** The chosen skills and tools being applied: how many items of how many are judged. */
   const [applying, setApplying] = useState<{ done: number; total: number }>();
@@ -1010,7 +1010,7 @@ export function ProfileForm({
   /**
    * After a create with chosen skills or tools: applies each to the new profile and reads it back, then closes with a
    * success notice only when everything is as chosen, else shows what isn't. A lost answer changes nothing more (ADR
-   * 0195). Closed meanwhile, the form says what it came to in the notice instead.
+   * 0197). Closed meanwhile, the form says what it came to in the notice instead.
    */
   const applyChosen = async (made: Awaited<ReturnType<typeof api.create>>) => {
     const { setup, skills, toolsets } = capabilities;

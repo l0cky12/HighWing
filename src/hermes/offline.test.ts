@@ -37,7 +37,7 @@ function offlineLaunch(server: FakeHermes, cache: ChatCache) {
   return readSaved(server.openPipe, server.refuse, cache);
 }
 
-const nas: SavedSignIn = { mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" };
+const nas: SavedSignIn = { mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" };
 
 const chat = (hermes: Hermes, id: string) => hermes.getSnapshot().chats.find((c) => c.id === id)!;
 
@@ -205,7 +205,7 @@ describe("Reading offline after a restart", () => {
 });
 
 describe("Signing in at launch", () => {
-  const details: SignInDetails = { mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam", password: "hunter2" };
+  const details: SignInDetails = { mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena", password: "hunter2" };
 
   const none = { load: async () => undefined, save: async () => {}, delete: async () => {} };
   const c: SavedConnection = { id: "0b6f3c1e-2d4a-4f8b-9c7e-5a1d2e3f4a5b", name: "hermes", addedAt: 0, ...details };
@@ -252,7 +252,7 @@ function slowPipe(server: FakeHermes) {
 }
 
 describe("Opening on the saved chats at launch (ADR 0089)", () => {
-  const details: SignInDetails = { mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam", password: "hunter2" };
+  const details: SignInDetails = { mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena", password: "hunter2" };
   const none = { load: async () => undefined, save: async () => {}, delete: async () => {} };
   const c: SavedConnection = { id: "0b6f3c1e-2d4a-4f8b-9c7e-5a1d2e3f4a5b", name: "hermes", addedAt: 0, ...details };
   /** An account that signs in and opens through `openPipe`, with `cache` as what this computer saved. */
@@ -404,7 +404,7 @@ describe("Opening on the saved chats at launch (ADR 0089)", () => {
 describe("Saved copies in localStorage", () => {
   let store: Map<string, string>;
   beforeEach(() => {
-    store = new Map([["hermes-chat.sign-in", '{"username":"liam"}']]);
+    store = new Map([["hermes-chat.sign-in", '{"username":"lena"}']]);
     vi.stubGlobal("localStorage", {
       get length() {
         return store.size;
@@ -508,9 +508,9 @@ describe("Saved copies stay apart, private and inert", () => {
   afterEach(() => void vi.unstubAllGlobals());
 
   const others: SavedSignIn[] = [
-    { ...nas, sshTarget: "liam@backup" },
+    { ...nas, sshTarget: "lena@backup" },
     { ...nas, username: "admin" },
-    { mode: "url", sshTarget: "liam@hermes", url: "http://10.0.0.5:9119", username: "liam" },
+    { mode: "url", sshTarget: "lena@hermes", url: "http://10.0.0.5:9119", username: "lena" },
   ];
 
   it("are kept apart per connection, profile and chat", async () => {
@@ -601,7 +601,7 @@ describe("Saved copies stay apart, private and inert", () => {
   });
 
   it("clearing deletes every connection's lists and Saved copies, and nothing else", () => {
-    store.set("hermes-chat.sign-in", '{"username":"liam"}');
+    store.set("hermes-chat.sign-in", '{"username":"lena"}');
     store.set("hermes-chat.draft.x", "half a thought");
     store.set("other-app", "x");
     for (const c of [nas, ...others].map(localChatCache)) {
@@ -611,7 +611,7 @@ describe("Saved copies stay apart, private and inert", () => {
     }
     localChatCache(nas).clear();
     expect([...store.keys()].filter((k) => k.includes("chats") || k.includes("transcript"))).toEqual([]);
-    expect(store.get("hermes-chat.sign-in")).toBe('{"username":"liam"}');
+    expect(store.get("hermes-chat.sign-in")).toBe('{"username":"lena"}');
     expect(store.get("hermes-chat.draft.x")).toBe("half a thought");
     expect(store.get("other-app")).toBe("x");
   });

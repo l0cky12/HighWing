@@ -2,7 +2,7 @@
 
 Captured on 2026-11-04 from the running Tauri debug build (WebKitGTK, frontend built in) on an Xvfb display with openbox. They're framebuffer captures of the 1280 × 820 window, or the 760-pixel window for `18` and `19`. They aren't mockups, and nothing was composited or retouched.
 
-The chat list comes from a stand-in dashboard with synthetic chats (`bridge.ts` here, the tests' `FakeHermes`), signed in by URL. That stand-in answered `session.create`, `GET /api/fs/list` and `GET /api/sessions?cwd_prefix=`. Everything in the Repository screen is real. The app ran the system `ssh` to the real Hermes server (`liam@hermes`, Hermes `f0d9488`, git 2.47.3, Python 3.13.5), which ran the helper against a synthetic repository made for this, `~/hc-repo-demo/wt-demo/forecast`, with a bare remote beside it. Each result was checked afterwards with plain Git over ssh.
+The chat list comes from a stand-in dashboard with synthetic chats (`bridge.ts` here, the tests' `FakeHermes`), signed in by URL. That stand-in answered `session.create`, `GET /api/fs/list` and `GET /api/sessions?cwd_prefix=`. Everything in the Repository screen is real. The app ran the system `ssh` to the real Hermes server (`lena@hermes`, Hermes `f0d9488`, git 2.47.3, Python 3.13.5), which ran the helper against a synthetic repository made for this, `~/hc-repo-demo/wt-demo/forecast`, with a bare remote beside it. Each result was checked afterwards with plain Git over ssh.
 
 1. `1-empty.png`: the Worktrees view of a repository with only its main checkout. The checkout has a changed file and an untracked file.
 2. `2-preview.png`: New worktree on a new branch `feature/hourly` from `main`. The preview shows:

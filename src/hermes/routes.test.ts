@@ -24,9 +24,9 @@ import { connect } from "./transport";
 
 const LAN: RouteDetails = { id: "lan", kind: "lan", target: "http://192.168.1.10:9119" };
 const TAILNET: RouteDetails = { id: "ts", kind: "tailscale", target: "http://hermes.tail1234.ts.net:9119" };
-const SSH: RouteDetails = { id: "ssh", kind: "ssh", target: "liam@hermes" };
+const SSH: RouteDetails = { id: "ssh", kind: "ssh", target: "lena@hermes" };
 
-const base: SignInDetails = { mode: "ssh", sshTarget: "", url: "", username: "liam", password: "hunter2" };
+const base: SignInDetails = { mode: "ssh", sshTarget: "", url: "", username: "lena", password: "hunter2" };
 const signIn = (routes: RouteDetails[], extra: Partial<SignInDetails> = {}) => ({ ...withRoutes(base, routes), ...extra });
 const where = (d: SignInDetails) => (d.mode === "ssh" ? d.sshTarget : d.url);
 
@@ -62,7 +62,7 @@ describe("Route addresses", () => {
     expect(normalizeTarget("lan", "[fd00::5]")).toBe("http://[fd00::5]:9119");
     expect(normalizeTarget("web", "hermes.example.com")).toBe("https://hermes.example.com");
     expect(normalizeTarget("web", "http://10.0.0.2:9119")).toBe("http://10.0.0.2:9119");
-    expect(normalizeTarget("ssh", " liam@hermes ")).toBe("liam@hermes");
+    expect(normalizeTarget("ssh", " lena@hermes ")).toBe("lena@hermes");
   });
 
   it("says why a route can't be used: plain http over the internet, a non-Tailscale address, a bad SSH target", () => {
@@ -85,16 +85,16 @@ describe("Route addresses", () => {
   it("guesses the kind of a connection made before routes from its host", () => {
     expect(kindOfUrl("http://hermes:9119")).toBe("lan");
     expect(kindOfUrl("http://192.168.1.10:9119")).toBe("lan");
-    expect(kindOfUrl("http://100.100.64.121:9119")).toBe("tailscale");
+    expect(kindOfUrl("http://100.90.10.20:9119")).toBe("tailscale");
     expect(kindOfUrl("https://hermes.tail1234.ts.net")).toBe("tailscale");
     expect(kindOfUrl("https://hermes.example.com")).toBe("web");
-    expect(routeFromAddress({ mode: "ssh", sshTarget: "liam@hermes", url: "x", username: "liam" })).toEqual({ id: "main", kind: "ssh", target: "liam@hermes" });
+    expect(routeFromAddress({ mode: "ssh", sshTarget: "lena@hermes", url: "x", username: "lena" })).toEqual({ id: "main", kind: "ssh", target: "lena@hermes" });
   });
 
   it("gives the Terminal the connection's SSH route, even when another route comes first", () => {
-    expect(sshAddressOf(signIn([LAN, SSH]))).toEqual({ mode: "ssh", sshTarget: "liam@hermes" });
+    expect(sshAddressOf(signIn([LAN, SSH]))).toEqual({ mode: "ssh", sshTarget: "lena@hermes" });
     expect(sshAddressOf(signIn([LAN, TAILNET]))).toEqual({ mode: "url", sshTarget: "", url: LAN.target });
-    expect(sshAddressOf({ mode: "url", sshTarget: "", url: "http://hermes:9119", username: "liam" })).toEqual({ mode: "url", sshTarget: "", url: "http://hermes:9119" });
+    expect(sshAddressOf({ mode: "url", sshTarget: "", url: "http://hermes:9119", username: "lena" })).toEqual({ mode: "url", sshTarget: "", url: "http://hermes:9119" });
   });
 });
 
@@ -107,7 +107,7 @@ describe("Connecting over routes", () => {
     expect(hermes.getSnapshot().route).toMatchObject({ url: LAN.target, via: { id: "lan", kind: "lan", index: 0, of: 3 } });
     expect(learned).toEqual(["home-server-id"]);
     // Several routes: each gives up sooner, and every route knows the connection's SSH target, for server pages.
-    expect(r.opened[0]).toMatchObject({ quick: true, sshRoute: "liam@hermes", expect: undefined });
+    expect(r.opened[0]).toMatchObject({ quick: true, sshRoute: "lena@hermes", expect: undefined });
   });
 
   it("falls back to the next route when one fails, and lists every route's failure when all do", async () => {
@@ -179,14 +179,14 @@ describe("Connecting over routes", () => {
 
   it("passes one route's own error on as it is, so a connection with one route fails as before", async () => {
     const r = routes();
-    r.down.set("liam@hermes", "SSH failed: ssh: connect to host hermes port 22: Connection refused");
-    const one = { ...base, sshTarget: "liam@hermes" };
+    r.down.set("lena@hermes", "SSH failed: ssh: connect to host hermes port 22: Connection refused");
+    const one = { ...base, sshTarget: "lena@hermes" };
     await expect(connect(routedPipe(one, r.open))).rejects.toThrow(/^SSH failed: ssh: connect to host hermes port 22: Connection refused$/);
     expect(r.opened[0]).toMatchObject({ quick: false });
     // No `via` on a connection with one route: nothing about it shows any different.
     r.down.clear();
     const hermes = await connect(routedPipe(one, r.open));
-    expect(hermes.getSnapshot().route).toEqual({ kind: "ssh", target: "liam@hermes", server: "home-server-id" });
+    expect(hermes.getSnapshot().route).toEqual({ kind: "ssh", target: "lena@hermes", server: "home-server-id" });
   });
 
   it("leaves out routes turned off, and ones the saved password wasn't saved for", async () => {
@@ -221,7 +221,7 @@ describe("Route health across a restart (#269)", () => {
     mode: "url",
     sshTarget: "",
     url: LAN.target,
-    username: "liam",
+    username: "lena",
     routes: [LAN, TAILNET, SSH].map(savedRoute),
   };
   function disk() {
@@ -335,11 +335,11 @@ describe("A route's sign-in", () => {
       mode: "url",
       sshTarget: "",
       url: "https://hermes.example.com",
-      username: "liam",
+      username: "lena",
       password: "hunter2",
       headers: [{ name: "CF-Access-Client-Id", value: "id" }],
       server: "abc",
     });
-    expect(singleRoute(signIn([web, SSH]), SSH)).toMatchObject({ mode: "ssh", sshTarget: "liam@hermes", headers: [] });
+    expect(singleRoute(signIn([web, SSH]), SSH)).toMatchObject({ mode: "ssh", sshTarget: "lena@hermes", headers: [] });
   });
 });

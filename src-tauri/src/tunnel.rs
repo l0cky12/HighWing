@@ -24,7 +24,7 @@ const READY_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Debug, thiserror::Error)]
 pub enum TunnelError {
-    #[error("Enter an SSH target such as liam@hermes or a host alias from ~/.ssh/config.")]
+    #[error("Enter an SSH target such as lena@hermes or a host alias from ~/.ssh/config.")]
     BadTarget,
     #[error("Couldn't start ssh: {0}")]
     Spawn(String),
@@ -464,7 +464,7 @@ except OSError:
     }
 
     async fn post_password(port: u16) {
-        let body = format!(r#"{{"username":"liam","password":"{PASSWORD}"}}"#);
+        let body = format!(r#"{{"username":"lena","password":"{PASSWORD}"}}"#);
         let mut s = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
         s.write_all(
             format!("POST /api/auth/password-login HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len())

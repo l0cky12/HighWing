@@ -68,7 +68,7 @@ const legibleGraph = `(() => {
 const sections = `(async () => {
   const h = window.shots.hermes;
   for (const id of ["caddy", "rust", "trip"]) await h.unsettle(id);
-  const scope = JSON.stringify(["ssh", "liam@hermes", "liam", h.getSnapshot().profile]);
+  const scope = JSON.stringify(["ssh", "lena@hermes", "lena", h.getSnapshot().profile]);
   localStorage.setItem("hermes-chat.snoozes", JSON.stringify({ v: 1, scopes: { [scope]: { trip: Date.now() + 3 * 3600e3, rust: Date.now() + 26 * 3600e3 } } }));
   window.dispatchEvent(new StorageEvent("storage", { key: "hermes-chat.snoozes" }));
   void h.send("nas", "Run a SMART check on every disk in tank");
@@ -103,7 +103,7 @@ const capture = `(async () => {
   const { hermes: h, server: s } = window.shots;
   const bytes = new Uint8Array(445924).map(() => Math.random() * 256);
   let bin = ""; for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
-  const shot = "/home/liam/.hermes/cache/images/computer_use_76f76bd5c54f4cee.png";
+  const shot = "/home/lena/.hermes/cache/images/computer_use_76f76bd5c54f4cee.png";
   await h.send("nas", "Open the router's admin page and tell me its firmware version.");
   const rt = s.runtimeIdOf("nas");
   s.event(rt, "message.start");
@@ -120,7 +120,9 @@ const capture = `(async () => {
   s.event(rt, "message.complete", { text: "The router runs firmware 4.2.1.", status: "complete" });
 })()`;
 // Subagents (ADR 0072): a reply in "NAS disk usage" that started three, one of which started one of its own, with tool
-// calls heard, one finished and one failed; the running one's output and roster row are on the server.
+// calls heard; the running one's output and roster row are on the server. `endSubagents` then ends three of them (one
+// finished, one failed, one stopped), which leaves the panel's list (ADR 0196): a scene that shows one of them opens it
+// first. `endAllSubagents` ends the rest too, which hides the panel.
 const subagents = `(async () => {
   const { hermes: h, server: s } = window.shots;
   await h.send("nas", "Find out why the tank pool lost 400 GB overnight");
@@ -153,18 +155,29 @@ const subagents = `(async () => {
   const media = { subagent_id: "sa-media", parent_id: "sa-snap", goal: "Walk tank/media/incoming and list every file over 10 GB with its owner and mtime", task_index: 0, task_count: 1, depth: 1, delegation_id: "dlg-3" };
   ev("subagent.tool", { ...media, tool_name: "terminal", tool_preview: "find /tank/media/incoming -size +10G -printf '%u %TY-%Tm-%Td %s %p\\\\n' | sort -k4 -n -r | awk '{ printf \\"%s %s %.1f GB %s\\\\n\\", $1, $2, $3 / 1e9, $4 }'", tool_count: 2 }, 40);
   ev("subagent.tool", { ...media, tool_name: "terminal", tool_preview: "du -sh /tank/media/incoming/*", tool_count: 3 }, 58);
-  ev("subagent.complete", { ...media, status: "interrupted", duration_seconds: 52,
-    summary: "Found three files over 10 GB in /tank/media/incoming, all owned by qbittorrent and written between 02:10 and 03:40 last night (Arcane.S02.2160p.mkv 162 GB, Dune.Part.Two.2160p.mkv 118 GB, Foundation.S03.2160p.mkv 96 GB). It had not yet checked whether any of them are also held by the 11-12 daily snapshot on tank/media, which would explain why deleting them doesn't give the space back." }, 72);
   ev("subagent.tool", { subagent_id: "sa-logs", task_index: 1, depth: 0, tool_name: "terminal", tool_preview: "journalctl --since yesterday -u zfs-zed", tool_count: 1 }, 4);
   ev("subagent.tool", { subagent_id: "sa-logs", task_index: 1, depth: 0, tool_name: "read_file", tool_preview: "/var/log/syslog", tool_count: 2 }, 19);
+  ev("subagent.tool", { subagent_id: "sa-docker", task_index: 2, depth: 0, tool_name: "terminal", tool_preview: "docker system df -v", tool_count: 1 }, 2);
+  at = null;
+  window.shots.endSubagents = () => {
+  ev("subagent.complete", { ...media, status: "interrupted", duration_seconds: 52,
+    summary: "Found three files over 10 GB in /tank/media/incoming, all owned by qbittorrent and written between 02:10 and 03:40 last night (Arcane.S02.2160p.mkv 162 GB, Dune.Part.Two.2160p.mkv 118 GB, Foundation.S03.2160p.mkv 96 GB). It had not yet checked whether any of them are also held by the 11-12 daily snapshot on tank/media, which would explain why deleting them doesn't give the space back." }, 72);
   at = 41.2;
   ev("subagent.complete", { subagent_id: "sa-logs", task_index: 1, depth: 0, status: "completed", duration_seconds: 41.2,
     summary: "Nothing unusual in the zed log. Syslog shows qBittorrent finished three downloads into /tank/media/incoming between 02:10 and 03:40, about 380 GB in all." });
-  ev("subagent.tool", { subagent_id: "sa-docker", task_index: 2, depth: 0, tool_name: "terminal", tool_preview: "docker system df -v", tool_count: 1 }, 2);
   at = 4.4;
   ev("subagent.complete", { subagent_id: "sa-docker", task_index: 2, depth: 0, status: "error", duration_seconds: 3.4,
     summary: "permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock" });
   at = null;
+  };
+  window.shots.endAllSubagents = () => {
+    window.shots.endSubagents();
+    at = 90;
+    ev("subagent.complete", { subagent_id: "sa-snap-diff", parent_id: "sa-snap", task_index: 0, task_count: 1, depth: 1, delegation_id: "dlg-2", status: "completed", duration_seconds: 26 });
+    ev("subagent.complete", { subagent_id: "sa-snap", task_index: 0, depth: 0, status: "completed", duration_seconds: 90 });
+    at = null;
+    s.subagents.nas = [];
+  };
   const row = (id, more) => ({ subagent_id: id, owner: rt, status: "running", accepting_steer: true, started_at: Date.now() / 1000 - 95, ...base, ...more });
   s.subagents.nas = [
     row("sa-snap", { goal: "List the snapshots on tank taken in the last 48 hours and their sizes", depth: 0, tool_count: 6, last_tool: "terminal",
@@ -173,6 +186,8 @@ const subagents = `(async () => {
   ];
 })()`;
 const openSubagents = click(".subagents-head", "Subagents");
+const endSubagents = "window.shots.endSubagents()";
+const endAllSubagents = "window.shots.endAllSubagents()";
 // A click from a script leaves the focus ring a mouse click wouldn't: the shot shows what the owner sees.
 const unfocus = "document.activeElement.blur()";
 const scenes = {
@@ -248,8 +263,12 @@ const scenes = {
     steps: [click("button", "NAS disk usage"), capture, click(".tool-line", "computer_use"), `document.querySelectorAll(".tool.open pre")[1].scrollTop = 150`],
   },
   "subagents-list": { query: "", ...hd, steps: [click("button", "NAS disk usage"), subagents, openSubagents] },
+  // Three of them end: only the running ones stay listed (ADR 0196).
+  "subagents-list-ended": { query: "", ...hd, steps: [click("button", "NAS disk usage"), subagents, openSubagents, endSubagents] },
+  // All of them end: the panel is gone.
+  "subagents-none": { query: "", ...hd, steps: [click("button", "NAS disk usage"), subagents, openSubagents, endAllSubagents] },
   "subagent-details": { query: "", ...hd, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "List the snapshots"), unfocus] },
-  "subagent-details-failed": { query: "", ...hd, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "Docker volumes"), unfocus] },
+  "subagent-details-failed": { query: "", ...hd, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "Docker volumes"), endSubagents, unfocus] },
   "subagent-details-light": { query: "?mode=light", ...hd, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "List the snapshots"), unfocus] },
   "subagent-details-small": { query: "", width: 1100, height: 760, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "List the snapshots"), unfocus] },
   "subagent-details-output": { query: "", ...hd, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "List the snapshots"), click("[role=tab]", "Output"), unfocus] },
@@ -258,9 +277,9 @@ const scenes = {
   // The tab strip from the keyboard: focus on the selected tab, moved with the arrow keys.
   "subagent-details-tabkeys": { query: "", ...hd, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "List the snapshots"), `document.querySelector(".subagent-tab[aria-selected=true]").focus()`, { press: "ArrowRight" }] },
   // A tool line the drawer cuts short, opened in full.
-  "subagent-details-whole": { query: "", width: 1100, height: 760, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "Walk tank/media"), click(".subagent-act-call", "find /tank"), unfocus] },
+  "subagent-details-whole": { query: "", width: 1100, height: 760, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "Walk tank/media"), endSubagents, click(".subagent-act-call", "find /tank"), unfocus] },
   // Stepped from the running one to the failed one with ›: the drawer keeps the taller height, so › stays put.
-  "subagent-details-step": { query: "", ...hd, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "List the snapshots"), click("button[aria-label='Next subagent']"), click("button[aria-label='Next subagent']"), unfocus] },
+  "subagent-details-step": { query: "", ...hd, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "List the snapshots"), click("button[aria-label='Next subagent']"), click("button[aria-label='Next subagent']"), endSubagents, unfocus] },
   // The drawer doesn't shrink back when a tab changes inside it: Activity, then Output, then the shorter Subagents tab.
   "subagent-details-hold": {
     query: "",
@@ -279,7 +298,7 @@ const scenes = {
     width: 1100,
     height: 760,
     steps: [
-      click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "Walk tank/media"), click(".subagent-act-call", "find /tank"),
+      click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "Walk tank/media"), endSubagents, click(".subagent-act-call", "find /tank"),
       click(".subagent-act-call", "find /tank"),
       `(() => { const b = [...document.querySelectorAll(".subagent-act-call")].find((e) => e.textContent.includes("find /tank"));
          if (b.disabled || b.getAttribute("aria-expanded") !== "false") throw new Error("closed line: disabled " + b.disabled + ", expanded " + b.getAttribute("aria-expanded")); })()`,
@@ -288,10 +307,10 @@ const scenes = {
   },
   "subagent-details-confirm": { query: "", ...hd, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "List the snapshots"), click(".subagent-stop", "Stop")] },
   "subagent-details-confirm-small": { query: "", width: 1100, height: 760, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "List the snapshots"), click(".subagent-stop", "Stop")] },
-  "subagent-details-done": { query: "", ...hd, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "Read the syslog"), unfocus] },
-  "subagent-details-stopped": { query: "", ...hd, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "Walk tank/media"), unfocus] },
-  "subagent-details-stopped-small": { query: "", width: 1100, height: 760, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "Walk tank/media"), unfocus] },
-  "subagent-details-failed-small": { query: "", width: 1100, height: 760, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "Docker volumes"), unfocus] },
+  "subagent-details-done": { query: "", ...hd, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "Read the syslog"), endSubagents, unfocus] },
+  "subagent-details-stopped": { query: "", ...hd, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "Walk tank/media"), endSubagents, unfocus] },
+  "subagent-details-stopped-small": { query: "", width: 1100, height: 760, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "Walk tank/media"), endSubagents, unfocus] },
+  "subagent-details-failed-small": { query: "", width: 1100, height: 760, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "Docker volumes"), endSubagents, unfocus] },
   "automation-history-light": { query: "?mode=light", height: 1400, steps: [click("button[aria-label='Automations']"), click("button", "triage-issues"), scrollTo(".delivery-list")] },
 };
 // Every Settings tab at 1920 × 1080 (#568): `settings-tab-<id>`, for a redesign's before and after.
@@ -330,7 +349,7 @@ const focusComposer = `document.querySelector("textarea[data-composer]").focus()
 // Stored times on the backup chat's messages, a minute apart from a fixed moment, so each message shows its timestamp.
 const stamped = `window.shots.server.transcripts.backup.forEach((m, i) => (m.timestamp = Date.UTC(2026, 10, 12, 9, 14 + i) / 1000))`;
 const openBackup = [stamped, click("button", "Nightly backup")];
-const reconnecting = `(() => { const s = window.shots.server; s.refuse = "Couldn't reach liam@hermes"; s.drop(); })()`;
+const reconnecting = `(() => { const s = window.shots.server; s.refuse = "Couldn't reach lena@hermes"; s.drop(); })()`;
 const signIn = { page: "signin.html", ready: "!!document.querySelector('.first-run input[type=password]')" };
 Object.assign(scenes, {
   "a11y-chat": { query: "", ...desk, steps: [...openBackup, focusComposer] },
@@ -350,10 +369,10 @@ const wsb = { width: 1280, height: 800 };
 const longSkills = `(() => {
   const s = window.shots.server.skills;
   const md = (name, description) => "---\\nname: " + name + "\\ndescription: " + description + "\\n---\\n\\nThe " + name + " skill's instructions.\\n";
-  s.add("default", { dir: "/home/liam/.hermes/skills/ops/zfs-scrub-and-snapshot-review", source: "hub", category: "home-lab-operations-storage-backups-and-snapshot-retention-weekly" },
+  s.add("default", { dir: "/home/lena/.hermes/skills/ops/zfs-scrub-and-snapshot-review", source: "hub", category: "home-lab-operations-storage-backups-and-snapshot-retention-weekly" },
     md("zfs-scrub-and-snapshot-review", "Run a scrub on every pool, read the result, then list the snapshots older than the retention policy and say which ones are safe to destroy before anything is deleted, with the space each would free."));
   s.platformDisabled.default = { tui: ["notes", "zfs-scrub-and-snapshot-review"] };
-  s.add("default", { dir: "/home/liam/.hermes/skills/code-review", source: "bundled" },
+  s.add("default", { dir: "/home/lena/.hermes/skills/code-review", source: "bundled" },
     md("code-review", "Review a diff for correctness first, then for tests that prove the change, then for names and structure; quote the line, say what breaks, and suggest the smallest fix that keeps the behaviour the author meant. Check error paths, concurrency and anything that writes, and say plainly when a change is fine as it is."));
 })()`;
 Object.assign(scenes, {
@@ -377,14 +396,14 @@ Object.assign(scenes, {
     ...wsb,
     steps: [
       `(() => {
-        const s = window.shots.server, path = "/home/liam/notes/backup-runbook.md";
+        const s = window.shots.server, path = "/home/lena/notes/backup-runbook.md";
         const args = { path }, t = 1_790_000_000;
         s.serverFiles[path] = "# Backup runbook\\n\\nThe nightly restic job runs at 02:30 from restic-backup.timer.\\n\\n## When it fails\\n\\n1. Check that no other restic process is running.\\n2. Clear a stale lock with restic unlock.\\n3. Re-run the backup by hand and confirm a new snapshot.\\n";
         s.transcripts.backup = [...s.transcripts.backup,
           { role: "user", text: "Write that down as a runbook in my notes." },
           { role: "assistant", text: "", tool_calls: [{ id: "w1", type: "function", function: { name: "write_file", arguments: JSON.stringify(args) } }] },
           { role: "tool", name: "write_file", tool_call_id: "w1", args, context: path, result: JSON.stringify({ bytes_written: 260, dirs_created: false, resolved_path: path, files_modified: [path] }) },
-          { role: "assistant", text: "Saved the runbook to \`/home/liam/notes/backup-runbook.md\`." }];
+          { role: "assistant", text: "Saved the runbook to \`/home/lena/notes/backup-runbook.md\`." }];
       })()`,
       click("button", "Nightly backup"),
       click(".tool-line", "write_file"),

@@ -9,7 +9,7 @@ import { DEFAULTS_VERSION, DefaultsConflict, NewerDefaultsError, cleanDraft, def
 import { projectLinks, projectScope, type LinksStorage } from "./projectLinks";
 import { ProjectsStore } from "./projects";
 
-const CONNECTION = { mode: "ssh" as const, sshTarget: "liam@hermes", url: "", username: "liam" };
+const CONNECTION = { mode: "ssh" as const, sshTarget: "lena@hermes", url: "", username: "lena" };
 const SCOPE = projectScope(CONNECTION, "default");
 const opus: ModelPick = { provider: "anthropic", model: "claude-opus-4-5", effort: "high" };
 const sonnet: ModelPick = { provider: "anthropic", model: "claude-sonnet-4-5" };

@@ -26,7 +26,7 @@ afterEach(async () => {
   localStorage.clear();
 });
 
-const SCOPE = projectScope({ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }, "default");
+const SCOPE = projectScope({ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }, "default");
 
 const budget: FakeProject = {
   id: "p_budget",
@@ -70,7 +70,7 @@ async function openDefaults(s: FakeHermes, instructions?: string) {
   if (instructions) await savedDefaults.save(SCOPE, "p_budget", 0, { instructions });
   const hermes = await connect(s.openPipe);
   running.push(hermes);
-  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} />);
+  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} />);
   await waitFor(() => expect(hermes.hasListed()).toBe(true));
   await act(async () => void (await hermes.idle()));
   const user = userEvent.setup();

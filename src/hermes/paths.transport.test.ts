@@ -87,7 +87,7 @@ describe("The folder a chat works in", () => {
       setItem: (k: string, v: string) => void store.set(k, v),
       removeItem: (k: string) => void store.delete(k),
     });
-    const here = { mode: "ssh" as const, sshTarget: "liam@hermes", url: "", username: "liam" };
+    const here = { mode: "ssh" as const, sshTarget: "lena@hermes", url: "", username: "lena" };
     const s = new FakeHermes();
     s.sessions = [row("in-app", 1, { pinned: true, cwd: "/srv/app" })];
     const hermes = await connect(s.openPipe, undefined, localChatCache(here));

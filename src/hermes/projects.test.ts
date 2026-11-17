@@ -15,7 +15,7 @@ afterEach(async () => {
   localStorage.clear();
 });
 
-const CONNECTION = { mode: "ssh" as const, sshTarget: "liam@hermes", url: "", username: "liam" };
+const CONNECTION = { mode: "ssh" as const, sshTarget: "lena@hermes", url: "", username: "lena" };
 const SCOPE = projectScope(CONNECTION, "default");
 
 /** A server with two chats, a repository with one extra worktree, and a plain folder. */

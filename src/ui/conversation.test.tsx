@@ -177,7 +177,7 @@ async function opened(server = new FakeHermes(), localStt = new FakeLocalStt()) 
   localStt.server = (audio, mime) => hermes.transcribe(audio, mime);
   const user = userEvent.setup();
   render(
-    <Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: `talker${++signIns}` }} onSignOut={async () => {}} localStt={localStt} />,
+    <Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: `talker${++signIns}` }} onSignOut={async () => {}} localStt={localStt} />,
   );
   await user.click(await screen.findByRole("button", { name: /^Nightly backup/ }));
   await settle(hermes);
@@ -248,7 +248,7 @@ describe("Starting a voice conversation", () => {
     const hermes = await connect(server.openPipe);
     running.push(hermes);
     const user = userEvent.setup();
-    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: `talker${++signIns}` }} onSignOut={async () => {}} />);
+    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: `talker${++signIns}` }} onSignOut={async () => {}} />);
     await user.click(await screen.findByRole("button", { name: /^Nightly backup/ }));
     await settle(hermes);
     await waitFor(() => expect(startButton().getAttribute("aria-disabled")).toBe("true"));
@@ -264,7 +264,7 @@ describe("Starting a voice conversation", () => {
     const hermes = await connect(server.openPipe);
     running.push(hermes);
     const user = userEvent.setup();
-    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: `talker${++signIns}` }} onSignOut={async () => {}} />);
+    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: `talker${++signIns}` }} onSignOut={async () => {}} />);
     await settle(hermes);
     await waitFor(() => expect(startButton().title).toMatch(/first message/));
     await user.click(startButton());

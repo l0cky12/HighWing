@@ -34,7 +34,7 @@ async function auditing() {
   const hermes = await connect(server.openPipe);
   running.push(hermes);
   const user = userEvent.setup();
-  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} />);
+  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} />);
   await user.click(await screen.findByRole("button", { name: /^Audit/ }));
   await settle(hermes);
   const runtime = server.runtimeIdOf("audit")!;
@@ -56,7 +56,7 @@ async function auditing() {
 describe("The Subagents panel", () => {
   it("shows a tree of who started whom, and opens one to its own activity and output, apart from the chat", async () => {
     const { server, user } = await auditing();
-    expect(within(panel()).getByText("3 running · 3 in all")).toBeTruthy();
+    expect(within(panel()).getByText("3 running")).toBeTruthy();
     await user.click(within(panel()).getByRole("button", { name: /Subagents/ }));
 
     const top = within(panel()).getByRole("list", { name: "Started by the chat's reply" });
@@ -212,20 +212,43 @@ describe("The Subagents panel", () => {
     expect(server.approvalAnswers).toEqual([]);
   });
 
-  it("shows a failed subagent while the reply goes on, and has no Steer or Stop for one that ended", async () => {
+  it("drops a subagent from the list once it ends, and hides the panel when none are left until another starts", async () => {
     const { server, user, runtime } = await auditing();
+    await user.click(within(panel()).getByRole("button", { name: /Subagents/ }));
     act(() => {
       server.event(runtime, "subagent.complete", who("sa-tests", "Read the tests", { status: "failed", summary: "pytest isn't installed." }));
       server.event(runtime, "message.delta", { text: "Carrying on without the tests." });
     });
-    expect(within(panel()).getByText("2 running · 1 failed · 3 in all")).toBeTruthy();
+    expect(within(panel()).getByText("2 running")).toBeTruthy();
+    expect(within(panel()).queryByRole("button", { name: /Read the tests/ })).toBeNull();
     expect(screen.getByText("Carrying on without the tests.")).toBeTruthy();
+
+    // The one above a running subagent stays, for it to hang from.
+    act(() => server.event(runtime, "subagent.complete", who("sa-auth", "Read the auth code", { status: "completed" })));
+    expect(within(panel()).getByText("1 running")).toBeTruthy();
+    expect(within(panel()).getByRole("list", { name: "Started by Read the auth code" })).toBeTruthy();
+
+    act(() => server.event(runtime, "subagent.complete", who("sa-expiry", "Check token expiry", { parent_id: "sa-auth", depth: 1, status: "completed" })));
+    expect(screen.queryByRole("region", { name: "Subagents" })).toBeNull();
+
+    act(() => server.event(runtime, "subagent.spawn_requested", who("sa-docs", "Read the docs")));
+    expect(within(panel()).getByText("1 running")).toBeTruthy();
+    expect(within(panel()).getAllByRole("button", { name: /Read/ }).map((b) => b.querySelector(".subagent-goal")?.textContent).filter(Boolean)).toEqual(["Read the docs"]);
+  });
+
+  it("keeps an open subagent in view when it ends, with no Steer or Stop, until the owner goes back", async () => {
+    const { server, user, runtime } = await auditing();
     await user.click(within(panel()).getByRole("button", { name: /Subagents/ }));
     await user.click(within(panel()).getByRole("button", { name: /Read the tests/ }));
+    act(() => server.event(runtime, "subagent.complete", who("sa-tests", "Read the tests", { status: "failed", summary: "pytest isn't installed." })));
     expect(within(panel()).getByText("pytest isn't installed.")).toBeTruthy();
     expect(within(panel()).queryByRole("button", { name: "Stop" })).toBeNull();
     expect(within(panel()).getByText("It has ended, so it can't be steered or stopped.")).toBeTruthy();
+    await user.click(within(panel()).getByRole("button", { name: "All subagents" }));
+    expect(within(panel()).getByText("2 running")).toBeTruthy();
+    expect(within(panel()).queryByRole("button", { name: /Read the tests/ })).toBeNull();
   });
+
   it("puts its activity, output and subagents on tabs the arrow keys move between, and Output only while it runs", async () => {
     const { server, user, runtime } = await auditing();
     await user.click(within(panel()).getByRole("button", { name: /Subagents/ }));

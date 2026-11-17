@@ -174,7 +174,7 @@ function theServer(...answers: (ServerPageError | Promise<void> | { url: string 
         }
         if (a instanceof Promise) await a;
         const u = new URL(url);
-        return { id, url: a && "url" in a ? a.url : `${u.protocol}//127.0.0.1:4100${id}${u.pathname}${u.search}`, target: "liam@hermes", at: `${u.hostname}:${u.port}` };
+        return { id, url: a && "url" in a ? a.url : `${u.protocol}//127.0.0.1:4100${id}${u.pathname}${u.search}`, target: "lena@hermes", at: `${u.hostname}:${u.port}` };
       })();
       return {
         page,
@@ -203,9 +203,9 @@ async function signedIn({ local = localDisk({}), web = theWeb(), pages = theServ
   server.transcripts = {
     fix: [
       { role: "user", text: "Why does the app crash?" },
-      { role: "tool", name: "read_file", context: "main.py", args: { path: "/home/liam/app/main.py" } },
+      { role: "tool", name: "read_file", context: "main.py", args: { path: "/home/lena/app/main.py" } },
       { role: "tool", name: "browser_navigate", context: "docs", args: { url: "https://docs.example.com/crash" } },
-      { role: "tool", name: "patch", context: "main.py", args: { path: "/home/liam/app/main.py" }, content: '{"success": true, "diff": "-a\\n+b"}' },
+      { role: "tool", name: "patch", context: "main.py", args: { path: "/home/lena/app/main.py" }, content: '{"success": true, "diff": "-a\\n+b"}' },
       {
         role: "assistant",
         text: "It reads a missing file. See [the docs](https://docs.example.com/crash) and [a mail](mailto:x@example.com). The fix runs at [the dev server](http://localhost:5173/app?v=2).",
@@ -213,22 +213,22 @@ async function signedIn({ local = localDisk({}), web = theWeb(), pages = theServ
     ],
   };
   server.serverFiles = {
-    "/home/liam/app/main.py": 'open("missing.txt")\n',
-    "/home/liam/app/README.md": "# App\n\nRead [the guide](https://guide.example.com/).\n\n<script>alert(1)</script>\n",
-    "/home/liam/app/index.html": '<h1>Hi</h1><script>parent.__TAURI_INTERNALS__.invoke("password_load")</script>',
-    "/home/liam/app/logo.png": "\x89PNG\r\n\x1a\nimage",
-    "/home/liam/app/app.bin": "\x7fELF\0\0\0\0",
-    "/home/liam/app/plan.docx": readFileSync("src/ui/fixtures/plan.docx", "latin1"),
-    "/home/liam/app/notes.pdf": "<html>not a pdf",
-    "/home/liam/app/bomb.docx": await bombDocx,
-    "/home/liam/app/.env": "SECRET=1",
+    "/home/lena/app/main.py": 'open("missing.txt")\n',
+    "/home/lena/app/README.md": "# App\n\nRead [the guide](https://guide.example.com/).\n\n<script>alert(1)</script>\n",
+    "/home/lena/app/index.html": '<h1>Hi</h1><script>parent.__TAURI_INTERNALS__.invoke("password_load")</script>',
+    "/home/lena/app/logo.png": "\x89PNG\r\n\x1a\nimage",
+    "/home/lena/app/app.bin": "\x7fELF\0\0\0\0",
+    "/home/lena/app/plan.docx": readFileSync("src/ui/fixtures/plan.docx", "latin1"),
+    "/home/lena/app/notes.pdf": "<html>not a pdf",
+    "/home/lena/app/bomb.docx": await bombDocx,
+    "/home/lena/app/.env": "SECRET=1",
   };
   const hermes = await connect(server.openPipe);
   const user = userEvent.setup();
   render(
     <Main
       hermes={hermes}
-      connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }}
+      connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }}
       localFiles={local}
       webPages={web}
       serverPages={pages}
@@ -290,10 +290,10 @@ describe("Opening the preview pane", () => {
     act(() => answer());
     expect(await within(pane()).findByText(/missing\.txt/)).toBeTruthy();
     server.rest["GET /api/fs/read-text"] = readText;
-    expect(within(pane()).getByText("Server").title).toContain("(liam@hermes)");
-    expect(address().value).toBe("/home/liam/app/main.py");
+    expect(within(pane()).getByText("Server").title).toContain("(lena@hermes)");
+    expect(address().value).toBe("/home/lena/app/main.py");
     expect(fsReads(server).map((r) => [r.path, r.query.get("path"), r.query.get("profile")])).toEqual([
-      ["/api/fs/read-text", "/home/liam/app/main.py", "default"],
+      ["/api/fs/read-text", "/home/lena/app/main.py", "default"],
     ]);
 
     await user.click(within(pane()).getByRole("button", { name: "Reload" }));
@@ -325,14 +325,14 @@ describe("Opening the preview pane", () => {
     await user.type(box, "docs/notes.md{Enter}");
     expect(within(pane()).getByRole("alert").textContent).toContain("starting with / or ~/");
     await user.clear(box);
-    await user.type(box, "file:///home/liam/notes.md{Enter}");
+    await user.type(box, "file:///home/lena/notes.md{Enter}");
     expect(within(pane()).getByRole("alert").textContent).toBe("To preview a file on this computer, use Open a file on this computer.");
     await user.clear(box);
     await user.type(box, `${location.origin}/{Enter}`);
     expect(within(pane()).getByRole("alert").textContent).toBe("Highwing's own pages don't open in the preview.");
 
     await user.clear(box);
-    await user.type(box, "/home/liam/app/README.md{Enter}");
+    await user.type(box, "/home/lena/app/README.md{Enter}");
     expect(await within(pane()).findByRole("heading", { name: "App" })).toBeTruthy();
   });
 });
@@ -347,7 +347,7 @@ describe("What the pane shows", () => {
   }
 
   it("renders a Markdown file without its raw HTML, and its links open in the pane", async () => {
-    const { user } = await openPath("/home/liam/app/README.md");
+    const { user } = await openPath("/home/lena/app/README.md");
     await within(pane()).findByRole("heading", { name: "App" });
     expect(pane().querySelector("script")).toBeNull();
     expect(within(pane()).getByText("<script>alert(1)</script>")).toBeTruthy();
@@ -361,22 +361,22 @@ describe("What the pane shows", () => {
   });
 
   it("renders an HTML file with scripts, forms and the network off", async () => {
-    await openPath("/home/liam/app/index.html");
-    const frame = await within(pane()).findByTitle("Rendered /home/liam/app/index.html");
+    await openPath("/home/lena/app/index.html");
+    const frame = await within(pane()).findByTitle("Rendered /home/lena/app/index.html");
     expect(frame.getAttribute("sandbox")).toBe("");
     expect(frame.getAttribute("srcdoc")).toMatch(/^<meta http-equiv="Content-Security-Policy" content="default-src 'none';/);
     expect(frame.getAttribute("src")).toBeNull();
   });
 
   it("shows an image", async () => {
-    await openPath("/home/liam/app/logo.png");
+    await openPath("/home/lena/app/logo.png");
     const img = await within(pane()).findByRole("img", { name: "logo.png" });
     expect(img.getAttribute("src")).toBe(`data:image/png;base64,${btoa("\x89PNG\r\n\x1a\nimage")}`);
   });
 
   it("shows a Word document as its text, in a frame that runs nothing (ADR 0186)", async () => {
-    const { server } = await openPath("/home/liam/app/plan.docx");
-    const frame = await within(pane()).findByTitle("Rendered /home/liam/app/plan.docx");
+    const { server } = await openPath("/home/lena/app/plan.docx");
+    const frame = await within(pane()).findByTitle("Rendered /home/lena/app/plan.docx");
     expect(frame.getAttribute("sandbox")).toBe("");
     const doc = frame.getAttribute("srcdoc")!;
     expect(doc).toMatch(/^<meta http-equiv="Content-Security-Policy" content="default-src 'none';/);
@@ -388,25 +388,25 @@ describe("What the pane shows", () => {
   });
 
   it("says when a file named like a document isn't one", async () => {
-    await openPath("/home/liam/app/notes.pdf");
+    await openPath("/home/lena/app/notes.pdf");
     expect((await within(pane()).findByRole("note")).textContent).toBe("No preview for this fileThis file is named like a PDF, but its bytes aren't one. It's 15 B.");
   });
 
   it("won't open a Word file that unpacks to more than the preview opens, though its directory says it's small", async () => {
-    await openPath("/home/liam/app/bomb.docx");
+    await openPath("/home/lena/app/bomb.docx");
     expect((await within(pane()).findByRole("alert", {}, { timeout: 10_000 })).textContent).toBe(
       "Couldn't show this documentIt unpacks to more than 100 MB, the most the preview opens of a Word document.",
     );
-    expect(within(pane()).queryByTitle("Rendered /home/liam/app/bomb.docx")).toBeNull();
+    expect(within(pane()).queryByTitle("Rendered /home/lena/app/bomb.docx")).toBeNull();
   });
 
   it("says why it can't show a binary file, a missing one, or one with credentials", async () => {
-    const { user } = await openPath("/home/liam/app/app.bin");
+    const { user } = await openPath("/home/lena/app/app.bin");
     expect((await within(pane()).findByRole("note")).textContent).toBe("No preview for this fileThe preview can't show binary files. It's 8 B.");
 
     for (const [path, why] of [
-      ["/home/liam/app/gone.py", "There's no file at this path on the Hermes server."],
-      ["/home/liam/app/.env", "Hermes doesn't show this file, since it may hold credentials."],
+      ["/home/lena/app/gone.py", "There's no file at this path on the Hermes server."],
+      ["/home/lena/app/.env", "Hermes doesn't show this file, since it may hold credentials."],
     ]) {
       await user.clear(address());
       await user.type(address(), `${path}{Enter}`);
@@ -854,7 +854,7 @@ describe("Back, Forward and Reload (issue #376)", () => {
   it("goes back from a server file to the page, which loads again in a new view through a new tunnel", async () => {
     const { user, view, pages } = await devServer();
     await user.clear(address());
-    await user.type(address(), "/home/liam/app/main.py{Enter}");
+    await user.type(address(), "/home/lena/app/main.py{Enter}");
     await within(pane()).findByText(/missing\.txt/);
     expect(view.closed).toEqual([1]);
     expect(pages.closed).toEqual(["1"]);
@@ -985,7 +985,7 @@ describe("Pages on the Hermes server's own loopback (issue #171)", () => {
     expect(pages.opened).toEqual(["http://localhost:5173/"]);
     expect(address().value).toBe("localhost:5173/app?v=2");
     expect(button("Server").title).toBe(
-      "localhost:5173 on the Hermes server, through SSH to liam@hermes. Click to open localhost:5173 on this computer instead.",
+      "localhost:5173 on the Hermes server, through SSH to lena@hermes. Click to open localhost:5173 on this computer instead.",
     );
     // The same sandbox as any web page.
     const frame = within(pane()).getByTitle(`Web page: ${APP_URL}`);
@@ -1062,7 +1062,7 @@ describe("Pages on the Hermes server's own loopback (issue #171)", () => {
   });
 
   it("says when ssh fails, with what ssh said", async () => {
-    const pages = theServer(new ServerPageError("ssh", "SSH failed: liam@hermes: Permission denied (publickey)."));
+    const pages = theServer(new ServerPageError("ssh", "SSH failed: lena@hermes: Permission denied (publickey)."));
     const { user } = await signedIn({ pages });
     await user.click(screen.getByRole("link", { name: "the dev server" }));
     const alert = await within(pane()).findByRole("alert");
@@ -1093,7 +1093,7 @@ describe("Pages on the Hermes server's own loopback (issue #171)", () => {
     const pages = theServer(new Promise<void>((resolve) => (ready = resolve)));
     const { user } = await signedIn({ pages });
     await user.click(screen.getByRole("link", { name: "the dev server" }));
-    expect(within(pane()).getByRole("status").textContent).toBe(" Opening localhost:5173 on the Hermes server, through SSH to liam@hermes…");
+    expect(within(pane()).getByRole("status").textContent).toBe(" Opening localhost:5173 on the Hermes server, through SSH to lena@hermes…");
     await user.click(within(pane()).getByRole("button", { name: "Close the side panel" }));
     expect(pages.closed).toEqual(["1"]);
     expect(pages.live.size).toBe(0);
@@ -1144,7 +1144,7 @@ describe("Pages on the Hermes server's own loopback (issue #171)", () => {
     await user.type(box, "ftp://localhost:21/{Enter}");
     expect(within(pane()).getByRole("alert").textContent).toBe("Only http:// and https:// pages open in the preview, and ftp: isn't a web address.");
     await user.clear(box);
-    await user.type(box, "ssh://liam@hermes{Enter}");
+    await user.type(box, "ssh://lena@hermes{Enter}");
     expect(within(pane()).getByRole("alert").textContent).toBe("Only http:// and https:// pages open in the preview, and ssh: isn't a web address.");
     expect(pages.opened).toEqual([]);
 
@@ -1478,7 +1478,7 @@ describe("Closing and resizing", () => {
     await user.click(screen.getByRole("button", { name: "Open the side panel" }));
     expect(within(pane()).getByRole("heading", { name: "Nothing open" })).toBeTruthy();
     expect(button("Back").disabled).toBe(true);
-    await user.type(address(), "/home/liam/app/main.py{Enter}");
+    await user.type(address(), "/home/lena/app/main.py{Enter}");
     await within(pane()).findByText(/missing\.txt/);
     expect(fsReads(server).at(-1)!.query.get("profile")).toBe("work");
   });
@@ -1580,12 +1580,12 @@ describe("The link menu (issue #240)", () => {
 
   it("leaves a same-page link's own menu alone, blocks it on an emptied file: link, and gives a web link in a previewed Markdown file the link menu", async () => {
     const { server, user } = await signedIn();
-    server.serverFiles["/home/liam/app/GUIDE.md"] =
+    server.serverFiles["/home/lena/app/GUIDE.md"] =
       "# Guide\n\nSee [Usage](#usage), [the site](https://guide.example.com/), [the hosts file](file://fileserver/etc/hosts) and [this server's](file:///etc/hosts).\n\n## Usage\n\nRun it.\n";
     await user.click(screen.getByRole("button", { name: "Open the side panel" }));
     await user.click(screen.getByRole("button", { name: "Preview" }));
     await user.click(within(pane()).getByRole("textbox"));
-    await user.paste("/home/liam/app/GUIDE.md");
+    await user.paste("/home/lena/app/GUIDE.md");
     await user.keyboard("{Enter}");
     await within(pane()).findByRole("heading", { name: "Guide" });
 

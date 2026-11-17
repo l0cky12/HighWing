@@ -1,12 +1,14 @@
 // An in-memory ChatCache for tests: `saved` holds each profile's list, `transcripts` the Saved copies by
 // `profile/chatId`, `profile` the one shown last, `pulled` the profiles whose older history the owner pulled, and
 // `outbox` each chat's messages Hermes hasn't confirmed and `queues` each chat's queue, by `profile/chatId`, and
-// `branches` each profile's branches and `replyTimes` its reply times, which `clear` keeps. Values are copied through JSON, as localStorage would, so nothing kept shares objects with the app.
+// `branches` each profile's branches, `replyTimes` its reply times and `sentHere` the images sent from here, which
+// `clear` keeps. Values are copied through JSON, as localStorage would, so nothing kept shares objects with the app.
 // It has no storage limit.
 import type { Chat, ChatQueue, OutgoingItem } from "./model";
 import { NO_BRANCHES, type BranchStore } from "./branch";
 import type { ChatCache, SavedTranscript } from "./transport";
 import { withReplyTime, type ReplyTime } from "./replyTimes";
+import { withSentHere, type SentHere } from "./sentImages";
 
 export type MemoryCache = ChatCache & {
   saved: Record<string, Chat[]>;
@@ -17,6 +19,7 @@ export type MemoryCache = ChatCache & {
   queues: Record<string, ChatQueue>;
   branches: Record<string, BranchStore>;
   replyTimes: Record<string, ReplyTime[]>;
+  sentHere: Record<string, SentHere[]>;
 };
 
 export function memoryCache({
@@ -33,6 +36,7 @@ export function memoryCache({
     queues: {},
     branches: {},
     replyTimes: {},
+    sentHere: {},
     load: (p) => cache.saved[p] ?? [],
     save: (p, chats) => void (cache.saved[p] = chats),
     loadTranscript: (p, id) => cache.transcripts[`${p}/${id}`],
@@ -72,6 +76,8 @@ export function memoryCache({
     },
     loadReplyTimes: (p) => [...(cache.replyTimes[p] ?? [])],
     saveReplyTime: (p, t) => void (cache.replyTimes[p] = withReplyTime(cache.replyTimes[p] ?? [], t)),
+    loadSentHere: (p) => [...(cache.sentHere[p] ?? [])],
+    saveSentHere: (p, chat, images) => void (cache.sentHere[p] = withSentHere(cache.sentHere[p] ?? [], chat, images)),
   };
   return cache;
 }

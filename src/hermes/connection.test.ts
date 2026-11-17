@@ -739,29 +739,29 @@ describe("Unsecure", () => {
   const url = (u: string, addresses: string[] = []): Route => ({ kind: "url", url: u, addresses });
 
   it.each<[string, Route, boolean]>([
-    ["SSH, always encrypted", { kind: "ssh", target: "liam@203.0.113.7" }, false],
+    ["SSH, always encrypted", { kind: "ssh", target: "lena@203.0.113.7" }, false],
     ["https", url("https://hermes.example.com"), false],
     ["wss", url("wss://hermes.example.com/hermes"), false],
     ["http to a public name", url("http://hermes.example.com:9119", ["203.0.113.7"]), true],
     ["ws to a public name", url("ws://hermes.example.com:9119"), true],
-    ["http to a LAN address", url("http://10.2.1.136:9119"), true],
+    ["http to a LAN address", url("http://192.168.50.10:9119"), true],
     ["http to loopback", url("http://127.0.0.1:9119"), false],
     ["http to IPv6 loopback", url("http://[::1]:9119"), false],
     ["http to localhost", url("http://localhost:9119", ["127.0.0.1", "::1"]), false],
-    ["http to a MagicDNS name", url("http://hermes.tail1234.ts.net:9119", ["100.100.64.121"]), false],
-    ["http to a Tailscale IPv4 address", url("http://100.100.64.121:9119"), false],
+    ["http to a MagicDNS name", url("http://hermes.tail1234.ts.net:9119", ["100.90.10.20"]), false],
+    ["http to a Tailscale IPv4 address", url("http://100.90.10.20:9119"), false],
     ["http to the top of the Tailscale range", url("http://100.127.255.255:9119"), false],
     ["http just past the Tailscale range", url("http://100.128.0.1:9119"), true],
     ["http just before the Tailscale range", url("http://100.63.255.255:9119"), true],
-    ["http to a Tailscale IPv6 address", url("http://[fd7a:115c:a1e0:ab12:4843:cd96:6264:4079]:9119"), false],
+    ["http to a Tailscale IPv6 address", url("http://[fd7a:115c:a1e0:ab12:4843:cd96:625a:a14]:9119"), false],
     ["http to an IPv6 ULA outside Tailscale's", url("http://[fd7a:115c:a1e1::1]:9119"), true],
-    ["http to an IPv4-mapped Tailscale address", url("http://[::ffff:100.100.64.121]:9119"), false],
-    ["http to a bare name in the Tailscale range", url("http://hermes:9119", ["100.100.64.121"]), false],
+    ["http to an IPv4-mapped Tailscale address", url("http://[::ffff:100.90.10.20]:9119"), false],
+    ["http to a bare name in the Tailscale range", url("http://hermes:9119", ["100.90.10.20"]), false],
     ["http to a bare name on Tailscale IPv6", url("http://hermes:9119", ["fd7a:115c:a1e0::5"]), false],
-    ["http to a bare name on the LAN", url("http://hermes:9119", ["10.2.1.136"]), true],
-    ["http to a bare name with one address outside", url("http://hermes:9119", ["100.100.64.121", "10.2.1.136"]), true],
+    ["http to a bare name on the LAN", url("http://hermes:9119", ["192.168.50.10"]), true],
+    ["http to a bare name with one address outside", url("http://hermes:9119", ["100.90.10.20", "192.168.50.10"]), true],
     ["http to a bare name that didn't resolve", url("http://hermes:9119"), true],
-    ["http to a dotted name in the Tailscale range", url("http://hermes.example.com:9119", ["100.100.64.121"]), true],
+    ["http to a dotted name in the Tailscale range", url("http://hermes.example.com:9119", ["100.90.10.20"]), true],
     ["http to ts.net itself", url("http://ts.net:9119"), true],
   ])("%s", async (_what, route, unsecure) => {
     const server = new FakeHermes();
@@ -774,9 +774,9 @@ describe("Unsecure", () => {
     vi.useFakeTimers();
     try {
       const server = new FakeHermes();
-      server.route = url("http://hermes:9119", ["100.100.64.121"]);
+      server.route = url("http://hermes:9119", ["100.90.10.20"]);
       const { hermes } = await signedIn(server);
-      server.route = url("http://hermes:9119", ["10.2.1.136"]);
+      server.route = url("http://hermes:9119", ["192.168.50.10"]);
       server.drop();
       await vi.advanceTimersByTimeAsync(1_000);
       expect(hermes.getSnapshot()).toMatchObject({ status: "connected", unsecure: true });

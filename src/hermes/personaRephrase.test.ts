@@ -1,4 +1,4 @@
-// What Generate with AI sends for a rough persona, and how it reads Hermes's answer (ADR 0195). All text is synthetic.
+// What Generate with AI sends for a rough persona, and how it reads Hermes's answer (ADR 0197). All text is synthetic.
 import { describe, expect, it } from "vitest";
 import { PERSONA_INPUT_MAX, REPHRASE_INSTRUCTIONS, REPHRASE_TOKENS, personaCut, rephraseCall, rephraseFrom } from "./personaRephrase";
 

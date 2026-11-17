@@ -12,7 +12,7 @@ afterEach(async () => {
   localStorage.clear();
 });
 
-const W: WorktreeStart = { target: "liam@hermes", repo: "/srv/app", id: "0123456789abcdef", path: "/srv/app-feature", branch: "feature/login", scope: "s" };
+const W: WorktreeStart = { target: "lena@hermes", repo: "/srv/app", id: "0123456789abcdef", path: "/srv/app-feature", branch: "feature/login", scope: "s" };
 
 function api(refuse: Partial<Record<RepoRequest["op"], RepoFailure>> = {}) {
   const calls: RepoRequest[] = [];
@@ -30,7 +30,7 @@ describe("startInWorktree", () => {
   it("holds the place, starts the chat, then confirms it with the chat's id and the same token", async () => {
     const { a, calls } = api();
     const order: string[] = [];
-    const started = await startInWorktree(a, W, { profile: "default", connection: "liam@hermes" }, async () => {
+    const started = await startInWorktree(a, W, { profile: "default", connection: "lena@hermes" }, async () => {
       order.push(`start after ${calls.map((c) => c.op).join(",")}`);
       return "20261104_chat";
     });

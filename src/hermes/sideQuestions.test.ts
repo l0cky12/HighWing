@@ -8,7 +8,7 @@ import { listServerCommands } from "./commands";
 import { localChatCache } from "./chatCache";
 import { chatMarkdown } from "./exportChat";
 
-const nas = { mode: "ssh" as const, sshTarget: "liam@nas", url: "", username: "liam" };
+const nas = { mode: "ssh" as const, sshTarget: "lena@nas", url: "", username: "lena" };
 
 const running: Hermes[] = [];
 afterEach(async () => {

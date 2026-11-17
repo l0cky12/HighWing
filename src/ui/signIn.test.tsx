@@ -6,14 +6,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { SignInFailure } from "../hermes/setup";
 import type { SignInDetails } from "../hermes/tauriPipe";
 import { SignIn } from "./SignIn";
-const connection = { id: "00000000-0000-4000-8000-000000000001", name: "Hermes", mode: "url" as const, sshTarget: "liam@hermes", url: "https://hermes.example.com", username: "liam", addedAt: 1 };
+const connection = { id: "00000000-0000-4000-8000-000000000001", name: "Hermes", mode: "url" as const, sshTarget: "lena@hermes", url: "https://hermes.example.com", username: "lena", addedAt: 1 };
 
 const invoke = vi.fn(async (_cmd: string, _args?: unknown): Promise<unknown> => ({ kind: "url", url: "", addresses: [] }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (cmd: string, args?: unknown) => invoke(cmd, args), Channel: class {} }));
 
 afterEach(cleanup);
 
-const blank: SignInDetails = { mode: "url", sshTarget: "liam@hermes", url: "https://hermes.example.com", username: "liam", password: "hunter2" };
+const blank: SignInDetails = { mode: "url", sshTarget: "lena@hermes", url: "https://hermes.example.com", username: "lena", password: "hunter2" };
 
 describe("Extra request headers on the sign-in screen", () => {
   it("adds, edits and removes header rows, and drops blank ones on Connect", async () => {
@@ -111,7 +111,7 @@ describe("The real pipe", () => {
     await tauriPipe({ ...blank, headers }, "saved-connection-1")(() => {}, "default");
     expect(invoke).toHaveBeenLastCalledWith("hermes_connect", expect.objectContaining({ target: { kind: "url", url: blank.url, headers } }));
     await tauriPipe({ ...blank, mode: "ssh", headers }, "saved-connection-1")(() => {}, "default");
-    expect(invoke).toHaveBeenLastCalledWith("hermes_connect", expect.objectContaining({ target: { kind: "ssh", target: "liam@hermes" } }));
+    expect(invoke).toHaveBeenLastCalledWith("hermes_connect", expect.objectContaining({ target: { kind: "ssh", target: "lena@hermes" } }));
   });
 });
 

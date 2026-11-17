@@ -16,7 +16,7 @@ const tauri = vi.hoisted(() => ({
   invoke: async (cmd: string, args?: { text: string; fileName: string; format: string }) => {
     if (cmd !== "chat_export") throw new Error(`${cmd} isn't available in tests`);
     tauri.saved.push(args!);
-    return `/home/liam/exports/${args!.fileName}`;
+    return `/home/lena/exports/${args!.fileName}`;
   },
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: tauri.invoke }));
@@ -48,7 +48,7 @@ describe("Exporting from the chat's More menu", () => {
     s.storeMessage("c1", { role: "assistant", text: "That key was revoked; make a new one." });
     const hermes = await connect(s.openPipe);
     running.push(hermes);
-    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} />);
+    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} />);
     await waitFor(() => expect(hermes.hasListed()).toBe(true));
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /Deploy keys/ }));
@@ -69,7 +69,7 @@ describe("Exporting from the chat's More menu", () => {
     expect(tauri.saved[0]).toMatchObject({ fileName: "Deploy keys.md", format: "markdown" });
     expect(tauri.saved[0].text).not.toContain(KEY);
     expect(tauri.saved[0].text).not.toContain("DB_HOST");
-    expect((await screen.findByRole("status")).textContent).toContain("Exported to /home/liam/exports/Deploy keys.md.");
+    expect((await screen.findByRole("status")).textContent).toContain("Exported to /home/lena/exports/Deploy keys.md.");
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "More" }));
   });

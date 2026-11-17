@@ -69,7 +69,7 @@ export class FakeServerFiles {
   /** The server's disk, by absolute path. Folders above a node needn't be listed: they exist. */
   nodes: Record<string, ServerNode> = {};
   /** `Path.home()` for the server's OS user: where a listing with no path starts. */
-  home = "/home/liam";
+  home = "/home/lena";
   /** Set: browsing is locked to this folder (`HERMES_DASHBOARD_FILES_ROOT`). */
   root?: string;
   /** Every path read, in order. */

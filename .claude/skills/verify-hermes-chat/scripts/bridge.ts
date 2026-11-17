@@ -65,7 +65,7 @@
 // HV_FAIL_PATCH=<id>,<id> answers 503 to every edit (PATCH) of those sessions, as a server that fails a write does.
 // HV_MEMORY_URL=<url> is the address `default`'s Honcho gives for its documentation and its API key's "Get one" link.
 // HV_BUNDLED=1 gives `default` five built-in skills (`provenance: bundled`), which a fresh profile is seeded with, for
-// New bot's Skills (ADR 0195).
+// New bot's Skills (ADR 0197).
 // HV_PERSONA_REPLY=<path>: an `llm.oneshot` whose input holds `<persona>` (New bot's Generate with AI) answers with that
 // file's text, read at each call; an empty file answers no text. Every other one-off call answers as FakeHermes does.
 // HV_SETTLING=<command>: a profile delete answers `settlement_pending` with that `retry_command` (empty: none).
@@ -204,7 +204,7 @@ server.mcp.catalogEntries = [
 // Clone a profile (ADR 0074): `default` has a persona and own skills to copy.
 server.souls.default = "You are Hermes, the house's ops assistant. Answer briefly and name the command to run.\n";
 for (const name of ["restic-unlock", "nginx-rotate", "vpn-mtu", "trip-planner", "disk-usage", "cert-renew"])
-  server.skills.add("default", { dir: `/home/liam/.hermes/skills/ops/${name}`, source: "agent", category: "ops" }, `---\nname: ${name}\ndescription: Synthetic ${name} skill.\n---\n\n## When to Use\n\nWhen asked about ${name}.\n`);
+  server.skills.add("default", { dir: `/home/lena/.hermes/skills/ops/${name}`, source: "agent", category: "ops" }, `---\nname: ${name}\ndescription: Synthetic ${name} skill.\n---\n\n## When to Use\n\nWhen asked about ${name}.\n`);
 
 if (process.env.HV_BUNDLED === "1")
   for (const name of ["arxiv", "git-helper", "hermes-agent", "recipes", "weather"])

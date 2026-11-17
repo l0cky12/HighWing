@@ -62,7 +62,7 @@ describe("Being brought forward", () => {
     const rust = fakeRust();
     const user = userEvent.setup();
     render(
-      <Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} summon={rust.api} onSignOut={async () => {}} />,
+      <Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} summon={rust.api} onSignOut={async () => {}} />,
     );
     await screen.findByRole("button", { name: /Nightly backup/ });
     await act(async () => void (await hermes.idle()));
@@ -121,7 +121,7 @@ describe("Starting a message with the text selected in another app (ADR 0172)", 
     rust.selections = selections;
     const user = userEvent.setup();
     // A server of its own each time, so no Draft is left from another test.
-    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: `liam@hermes-${++launches}`, url: "", username: "liam" }} summon={rust.api} onSignOut={async () => {}} />);
+    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: `lena@hermes-${++launches}`, url: "", username: "lena" }} summon={rust.api} onSignOut={async () => {}} />);
     await act(async () => void (await hermes.idle()));
     return { hermes, rust, user };
   }

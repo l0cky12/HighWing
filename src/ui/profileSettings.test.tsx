@@ -39,7 +39,7 @@ async function launch(setup: (s: FakeHermes) => void = () => {}, shown?: Map<str
   setup(server);
   const hermes = await connect(server.openPipe, undefined, memoryCache());
   running.push(hermes);
-  const connection = { mode: "ssh" as const, sshTarget: `liam@hermes-profiles-${++launches}`, url: "", username: "liam" };
+  const connection = { mode: "ssh" as const, sshTarget: `lena@hermes-profiles-${++launches}`, url: "", username: "lena" };
   render(<Main hermes={hermes} connection={connection} shown={shown} onSignOut={async () => {}} />);
   await waitFor(() => expect(hermes.hasListed()).toBe(true));
   await act(async () => void (await hermes.idle()));
@@ -132,7 +132,8 @@ describe("Settings → Profiles", { timeout: 30_000 }, () => {
     await user.click(within(dialog).getByRole("button", { name: /Save changes/ }));
     await waitFor(() => expect(server.profileMeta.default?.display_name).toBe("Main"));
     await waitFor(() => expect(option(screen.getByRole("listbox", { name: "Profiles" }), "default").textContent).toMatch(/Main \(default\)/));
-    expect(document.querySelector(".profile-name")?.textContent).toBe("Main (default)");
+    await waitFor(() => expect(document.querySelector(".profile-btn .profile-name")?.textContent).toBe("Main"));
+    expect(document.querySelector(".profile-btn .profile-id")?.textContent).toBe("default");
     // Persona's own picker names it the same way.
     await user.click(screen.getByRole("tab", { name: "Persona" }));
     await waitFor(() => expect([...document.querySelectorAll("option")].map((o) => o.textContent)).toContain("Main (default) (in use)"));

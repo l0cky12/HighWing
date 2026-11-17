@@ -22,8 +22,8 @@ function memoryStorage() {
   return storage satisfies DraftStorage;
 }
 
-const nas: SavedSignIn = { mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" };
-const direct: SavedSignIn = { mode: "url", sshTarget: "liam@hermes", url: "http://10.0.0.5:9119", username: "liam" };
+const nas: SavedSignIn = { mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" };
+const direct: SavedSignIn = { mode: "url", sshTarget: "lena@hermes", url: "http://10.0.0.5:9119", username: "lena" };
 
 describe("Composer drafts", () => {
   it("restores each chat's draft after a restart", () => {

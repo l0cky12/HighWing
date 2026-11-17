@@ -16,8 +16,8 @@ function memoryStorage(failWrites = false) {
   };
 }
 
-const ssh = { mode: "ssh" as const, sshTarget: "liam@hermes", url: "", username: "liam" };
-const url = { mode: "url" as const, sshTarget: "", url: "http://hermes:9119", username: "liam" };
+const ssh = { mode: "ssh" as const, sshTarget: "lena@hermes", url: "", username: "lena" };
+const url = { mode: "url" as const, sshTarget: "", url: "http://hermes:9119", username: "lena" };
 
 describe("PersonaStore", () => {
   it("keeps each connection and profile's edit apart, across a restart", () => {

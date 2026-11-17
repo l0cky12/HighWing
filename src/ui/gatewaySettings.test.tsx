@@ -236,7 +236,7 @@ describe("Settings → Gateways", () => {
         <SettingsScreen
           status="connected"
           unsecure={false}
-          username="liam"
+          username="lena"
           passwordSaved
           profile="default"
           olderPulled={false}
@@ -275,7 +275,7 @@ describe("Settings → Gateways", () => {
         <SettingsScreen
           status="connected"
           unsecure={false}
-          username="liam"
+          username="lena"
           passwordSaved
           profile="default"
           olderPulled={false}

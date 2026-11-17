@@ -27,7 +27,7 @@ afterEach(async () => {
 });
 
 let launches = 0;
-const HOME = "/home/liam/.hermes";
+const HOME = "/home/lena/.hermes";
 
 /**
  * Holds each dashboard answer while `on`, until `release`, and lists every REST path asked for meanwhile. A GET of
@@ -71,7 +71,7 @@ async function launch(held?: ReturnType<typeof gate>) {
   server.skills.add("default", { dir: `${HOME}/skills/release-notes`, source: "agent" }, "---\nname: release-notes\ndescription: Draft release notes\n---\n\n# Notes\n");
   const hermes = await connect(held ? held.wrap(server.openPipe) : server.openPipe, undefined, memoryCache());
   running.push(hermes);
-  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: `liam@hermes-clone-${++launches}`, url: "", username: "liam" }} onSignOut={async () => {}} />);
+  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: `lena@hermes-clone-${++launches}`, url: "", username: "lena" }} onSignOut={async () => {}} />);
   await waitFor(() => expect(hermes.hasListed()).toBe(true));
   await act(async () => void (await hermes.idle()));
   return { server, hermes, user: userEvent.setup() };

@@ -43,8 +43,8 @@ describe("reading SOUL.md", () => {
   it("names the profile's folder and distribution from the profile list", async () => {
     const { server, api } = await signedIn();
     server.distributions = { work: "acme-agents" };
-    expect(await api.home("default")).toEqual({ path: "/home/liam/.hermes", distribution: undefined });
-    expect(await api.home("work")).toEqual({ path: "/home/liam/.hermes/profiles/work", distribution: "acme-agents" });
+    expect(await api.home("default")).toEqual({ path: "/home/lena/.hermes", distribution: undefined });
+    expect(await api.home("work")).toEqual({ path: "/home/lena/.hermes/profiles/work", distribution: "acme-agents" });
     expect(await api.home("nope")).toBeUndefined();
   });
 
@@ -52,8 +52,8 @@ describe("reading SOUL.md", () => {
     const { server, api } = await signedIn();
     server.distributions = { work: "acme-agents" };
     expect(await api.profiles()).toEqual([
-      { name: "default", path: "/home/liam/.hermes", distribution: undefined },
-      { name: "work", path: "/home/liam/.hermes/profiles/work", distribution: "acme-agents" },
+      { name: "default", path: "/home/lena/.hermes", distribution: undefined },
+      { name: "work", path: "/home/lena/.hermes/profiles/work", distribution: "acme-agents" },
     ]);
     server.rest["GET /api/profiles"] = () => ({ profiles: [{ name: "default" }, { name: "Bad Name" }, { name: 7 }, { name: "work", path: "" }, { name: "work" }, null] });
     expect(await api.profiles()).toEqual([
@@ -72,7 +72,7 @@ describe("reading SOUL.md", () => {
     server.soulRoutes = true;
     delete server.otherProfiles.work;
     expect(await rejection(api.read("work"))).toMatchObject({ kind: "no-profile", status: 404 });
-    server.soulReadError = new RestError(500, `{"detail":"Could not read SOUL.md: [Errno 13] Permission denied: '/home/liam/.hermes/SOUL.md'"}`);
+    server.soulReadError = new RestError(500, `{"detail":"Could not read SOUL.md: [Errno 13] Permission denied: '/home/lena/.hermes/SOUL.md'"}`);
     expect(await rejection(api.read("default"))).toMatchObject({ kind: "permission", message: expect.stringContaining("Permission denied") });
     server.soulReadError = new RestError(403, `{"detail":"Forbidden"}`);
     expect(await rejection(api.read("default"))).toMatchObject({ kind: "permission" });
@@ -155,7 +155,7 @@ describe("saving SOUL.md", () => {
   it("keeps the edit and says why when Hermes refuses the write", async () => {
     const { server, api } = await signedIn();
     const base = await api.read("default");
-    server.soulWriteError = new RestError(500, `{"detail":"Could not write SOUL.md: [Errno 30] Read-only file system: '/home/liam/.hermes/SOUL.md'"}`);
+    server.soulWriteError = new RestError(500, `{"detail":"Could not write SOUL.md: [Errno 30] Read-only file system: '/home/lena/.hermes/SOUL.md'"}`);
     const e = await rejection(api.save("default", base, "# Mine\n"));
     expect(e).toMatchObject({ kind: "permission", status: 500, message: expect.stringContaining("Read-only file system") });
     expect(server.souls.default).toBe(SOUL);

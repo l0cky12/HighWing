@@ -1,6 +1,6 @@
 # New bot's persona rewrite, skills and tools: evidence
 
-Evidence for ADR 0195: New bot rewrites a rough persona with AI into a suggestion the owner applies, and applies the skills and tools the owner chose to the new bot, each read back.
+Evidence for ADR 0197: New bot rewrites a rough persona with AI into a suggestion the owner applies, and applies the skills and tools the owner chose to the new bot, each read back.
 
 ## Where the screenshots come from
 

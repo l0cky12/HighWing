@@ -1,12 +1,12 @@
 # Write with AI for SOUL.md: evidence
 
-Evidence for ADR 0197: Write with AI on Settings → Persona and in the New bot form.
+Evidence for ADR 0199: Write with AI on Settings → Persona and in the New bot form.
 
 ## Where the screenshots come from
 
 Every PNG here is from the native desktop app (Tauri, WebKitGTK), driven through WebDriver by the `verify-hermes-chat` skill (`.claude/skills/verify-hermes-chat/`), against its stand-in dashboard (`scripts/bridge.ts`, the repo's `FakeHermes` behind HTTP and WebSocket on loopback). Every profile is seeded test data: `default` (in use), `work`, and `ada`, a bot made during the run. Every suggestion is a fixed answer the stand-in was told to give with `POST /__oneshot`. No real model wrote any of this text.
 
-The BEFORE shots are from a build of `e87381b`, before this change. The AFTER shots are from a build of `a6bad64`.
+The BEFORE shots are from a build of `e87381b`, before this change. The AFTER shots are from a build of `a6bad64`. Its app source is the same as this branch's `cc06445`; the two differ only in two test lines that build a fake key at run time.
 
 | File | State |
 | --- | --- |

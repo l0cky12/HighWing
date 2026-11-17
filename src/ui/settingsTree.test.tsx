@@ -197,7 +197,7 @@ describe("Settings → General sections", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "General › Connection" }));
   });
 
-  it("lets the app's zoom keys out of the narrow sheet, and keeps its other shortcuts in (ADR 0198)", async () => {
+  it("lets the app's zoom keys out of the narrow sheet, and keeps its other shortcuts in (ADR 0199)", async () => {
     vi.stubGlobal("matchMedia", (q: string) => ({ matches: q === "(max-width: 900px)", media: q, addEventListener() {}, removeEventListener() {} }));
     const { user } = await shown();
     await user.click(screen.getByRole("button", { name: "General › Connection" }));

@@ -1008,7 +1008,7 @@ function moveBetweenChats(e: KeyboardEvent<HTMLElement>) {
 export const SETTLED_FIRST = 10;
 export const SETTLED_PAGE = 25;
 
-/** The sections drawn as drawers at the list's foot, Settled above Archived (ADR 0198). */
+/** The sections drawn as drawers at the list's foot, Settled above Archived (ADR 0199). */
 const DRAWERS = ["settled", "archived"] as const satisfies readonly SectionKey[];
 type DrawerKey = (typeof DRAWERS)[number];
 const isDrawer = (k: SectionKey): k is DrawerKey => (DRAWERS as readonly SectionKey[]).includes(k);
@@ -1305,7 +1305,7 @@ export function ChatList({
   onHide?: () => void;
   mode?: ListModes;
   shownBot?: ShownBot;
-  /** The list's width and its bounds, in CSS px, and what dragging its right edge does (ADR 0198); without it, the stylesheet's width. */
+  /** The list's width and its bounds, in CSS px, and what dragging its right edge does (ADR 0199); without it, the stylesheet's width. */
   resize?: { width: number; min: number; max: number; onResize: (width: number, done: boolean) => void };
 }) {
   const { chatSectionsShown: shown, chatSectionsCollapsed: collapsed } = useSyncExternalStore(subscribeUIPrefs, getUIPrefs);
@@ -1461,7 +1461,7 @@ export function ChatList({
       </div>
     );
   };
-  // The drawers at the list's foot, outside its scroll (ADR 0090, ADR 0198). Each can hold every chat the profile has
+  // The drawers at the list's foot, outside its scroll (ADR 0090, ADR 0199). Each can hold every chat the profile has
   // had, so a closed one draws no rows.
   const drawer = (k: DrawerKey) => {
     const open = !collapsed.includes(k);

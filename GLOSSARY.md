@@ -52,7 +52,7 @@ The owner's actions, from a chat's right-click menu or its header's More menu (P
 _Avoid_: favourite, star (starred models are the model picker's), sticky
 
 **Chat list section**:
-One of the chat list's groups: Pinned, Inbox, Snoozed and Working in the list's scroll, in that order, so Working sits right above Settled, then Settled and Archived, drawers at the list's foot that open upward with their own scroll (ADR 0090, ADR 0198). Each chat is in exactly one. Each has a header with its count that collapses or expands it; which are collapsed is kept on this computer across restarts. Settings → General picks which sections show, any mix but never none; a chat in a hidden section is still found by Search (ADR 0063).
+One of the chat list's groups: Pinned, Inbox, Snoozed and Working in the list's scroll, in that order, so Working sits right above Settled, then Settled and Archived, drawers at the list's foot that open upward with their own scroll (ADR 0090, ADR 0199). Each chat is in exactly one. Each has a header with its count that collapses or expands it; which are collapsed is kept on this computer across restarts. Settings → General picks which sections show, any mix but never none; a chat in a hidden section is still found by Search (ADR 0063).
 _Avoid_: group, folder, tab
 
 **Snooze** / **Unsnooze**:

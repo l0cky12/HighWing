@@ -123,7 +123,7 @@ describe("Switching profile in the app", () => {
   it("shows the switch under way, then the new profile's chats", async () => {
     const { server, hermes, user } = await launch();
     const list = server.rest["GET /api/sessions"];
-    // Held until released: the list, and the archived chats, which the Archived drawer lists as well (ADR 0198).
+    // Held until released: the list, and the archived chats, which the Archived drawer lists as well (ADR 0199).
     const held: (() => void)[] = [];
     const release = () => {
       server.rest["GET /api/sessions"] = list;

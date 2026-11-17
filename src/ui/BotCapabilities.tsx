@@ -32,10 +32,18 @@ type Inventory<T> = { kind: "unread" } | { kind: "reading" } | { kind: "read"; o
 type Option = { name: string };
 
 /**
+ * What a list read again after the profile in use changed did to the owner's choices. `dropped`: the new list lacks
+ * these names the owner had changed. `reset`: the list couldn't be read, or offers nothing, so the area went back to
+ * Hermes's defaults.
+ */
+export type Reread = { kind: "dropped"; names: string[] } | { kind: "reset" };
+
+/**
  * One area's choice, from the lists of `profile` (the profile in use). `read` lists the options; `start` is what Choose
  * begins with; `locked` is the value an option keeps whatever is picked, if any; `unsupported` tells a read the server
- * can't answer from one that failed. When the profile in use changes, a chosen list is read again from it, keeping the
- * owner's ticks for the names it still lists; any other list is read again on the next Choose.
+ * can't answer from one that failed. When the profile in use changes, a chosen list is read again from it: Choose
+ * starts over from that profile, with only the ticks the owner changed from the old start put back on top; `reread`
+ * says what that lost. Any other list is read again on the next Choose.
  */
 function useArea<T extends Option>(
   profile: string,
@@ -46,37 +54,47 @@ function useArea<T extends Option>(
 ) {
   const [inventory, setInventory] = useState<Inventory<T>>(read ? { kind: "unread" } : { kind: "unsupported" });
   const [choice, setChoice] = useState<Choice<string>>({ kind: "defaults" });
+  const [reread, setReread] = useState<Reread>();
   // Each read's number: one that ends after a newer read, Hermes's defaults, another profile or the form closing does nothing.
   const wanted = useRef(0);
   useEffect(() => () => void wanted.current++, []);
 
-  /** Ticks for `options`: as `kept` had a name it listed, else as Choose starts. */
-  const chosenFrom = (options: T[], kept?: { names: ReadonlySet<string>; on: ReadonlySet<string> }) => {
+  /** Ticks for `options`: as Choose starts, with the owner's `changes` (name to on) put back over it. */
+  const chosenFrom = (options: T[], changes?: ReadonlyMap<string, boolean>) => {
     if (!options.length) return setChoice({ kind: "defaults" });
     const first = new Set(start(options));
-    setChoice({ kind: "chosen", on: new Set(options.map((o) => o.name).filter((n) => (kept?.names.has(n) ? kept.on.has(n) : first.has(n)))) });
+    setChoice({ kind: "chosen", on: new Set(options.map((o) => o.name).filter((n) => changes?.get(n) ?? first.has(n))) });
   };
-  const load = async (kept?: { names: ReadonlySet<string>; on: ReadonlySet<string> }) => {
+  /** Reads the list; `changes`, on a read again for another profile, are the owner's changes from the old start. */
+  const load = async (changes?: ReadonlyMap<string, boolean>) => {
     if (!read) return;
     const n = ++wanted.current;
     setInventory({ kind: "reading" });
     setChoice({ kind: "defaults" });
+    setReread(undefined);
     try {
       const options = await read();
       if (n !== wanted.current) return;
       setInventory({ kind: "read", options });
-      chosenFrom(options, kept);
+      chosenFrom(options, changes);
+      if (!changes) return;
+      const dropped = [...changes.keys()].filter((name) => !options.some((o) => o.name === name));
+      setReread(!options.length ? { kind: "reset" } : dropped.length ? { kind: "dropped", names: dropped } : undefined);
     } catch (e) {
-      if (n === wanted.current) setInventory(unsupported(e) ? { kind: "unsupported", message: errorText(e) } : { kind: "failed", message: errorText(e) });
+      if (n !== wanted.current) return;
+      setInventory(unsupported(e) ? { kind: "unsupported", message: errorText(e) } : { kind: "failed", message: errorText(e) });
+      if (changes) setReread({ kind: "reset" });
     }
   };
   const choose = () => {
     if (!read || inventory.kind === "reading") return;
+    setReread(undefined);
     if (inventory.kind === "read") return chosenFrom(inventory.options);
     void load();
   };
   const useDefaults = () => {
     wanted.current++;
+    setReread(undefined);
     if (inventory.kind === "reading") setInventory({ kind: "unread" });
     setChoice({ kind: "defaults" });
   };
@@ -84,8 +102,10 @@ function useArea<T extends Option>(
   useEffect(() => {
     if (readFor.current === profile) return;
     readFor.current = profile;
-    if (choice.kind === "chosen" && inventory.kind === "read") void load({ names: new Set(inventory.options.map((o) => o.name)), on: choice.on });
-    else if (inventory.kind === "reading") void load();
+    if (choice.kind === "chosen" && inventory.kind === "read") {
+      const first = new Set(start(inventory.options));
+      void load(new Map(inventory.options.filter((o) => choice.on.has(o.name) !== first.has(o.name)).map((o) => [o.name, choice.on.has(o.name)])));
+    } else if (inventory.kind === "reading") void load();
     else if (read) {
       wanted.current++;
       setInventory({ kind: "unread" });
@@ -104,7 +124,7 @@ function useArea<T extends Option>(
       }
       return { kind: "chosen", on: next };
     });
-  return { inventory, choice, choose, useDefaults, set, locked };
+  return { inventory, choice, reread, choose, useDefaults, set, locked };
 }
 
 export type BotSetupState = ReturnType<typeof useBotSetup>;
@@ -144,6 +164,7 @@ export function BotCapabilities({ state, profile, disabled }: { state: BotSetupS
         defaultsHint={s.skillsDefaults}
         chosenHint={s.skillsFrom(profile)}
         emptyNote={s.noBuiltIn(profile)}
+        profile={profile}
         disabled={disabled}
         describe={(o: SkillOption) => ({ label: o.name, detail: o.description, lockedWhy: o.locked && s[o.locked] })}
       />
@@ -154,6 +175,7 @@ export function BotCapabilities({ state, profile, disabled }: { state: BotSetupS
         defaultsHint={s.toolsDefaults}
         chosenHint={s.toolsFrom(profile)}
         emptyNote={s.unsupported}
+        profile={profile}
         disabled={disabled}
         describe={(o: ToolsetOption) => ({ label: o.label, detail: o.description, lockedWhy: o.changeable ? undefined : s.unchangeable })}
       />
@@ -172,6 +194,7 @@ function AreaPicker<T extends Option>({
   defaultsHint,
   chosenHint,
   emptyNote,
+  profile,
   disabled,
   describe,
 }: {
@@ -181,6 +204,7 @@ function AreaPicker<T extends Option>({
   defaultsHint: string;
   chosenHint: string;
   emptyNote: string;
+  profile: string;
   disabled: boolean;
   describe: (o: T) => { label: string; detail: string; lockedWhy?: string };
 }) {
@@ -188,7 +212,7 @@ function AreaPicker<T extends Option>({
   const group = useId();
   const hintId = useId();
   const [filter, setFilter] = useState("");
-  const { inventory, choice } = area;
+  const { inventory, choice, reread } = area;
   const choosing = choice.kind === "chosen" || inventory.kind === "reading";
   const options = inventory.kind === "read" ? inventory.options : [];
   const needle = filter.trim().toLowerCase();
@@ -210,6 +234,11 @@ function AreaPicker<T extends Option>({
       <div id={hintId} className="set-hint">
         {cannot ? (inventory.message ? s.unsupportedWhy(inventory.message) : s.unsupported) : choice.kind === "chosen" ? chosenHint : defaultsHint}
       </div>
+      {reread && (
+        <SettingNote tone="warn" role="status">
+          {reread.kind === "dropped" ? s.switchDropped(profile, reread.names.join(", ")) : s.switchReset(profile)}
+        </SettingNote>
+      )}
       {inventory.kind === "reading" && (
         <div className="small muted" role="status">
           <Spinner /> {s.reading}

@@ -10,6 +10,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { TEXT_TASK } from "../hermes/modelSettings";
 import { FakeHermes } from "../hermes/fakeHermes";
 import { memoryCache } from "../hermes/memoryCache";
+import { RestError } from "../hermes/pipe";
 import { connect, type Hermes } from "../hermes/transport";
 import { en } from "../i18n/en";
 import { LocaleContext } from "../i18n/locale";
@@ -554,19 +555,23 @@ describe("Skills, Tools and MCP servers", () => {
     expect(within(tools).getByRole("radio", { name: "Choose" })).toHaveProperty("checked", true);
   });
 
-  it("reads the lists and the rewrite's model again from a profile switched to, keeping the owner's ticks", async () => {
+  it("reads the lists and the rewrite's model again from a profile switched to, keeping only the ticks the owner changed", async () => {
     const { server, user, switchProfile } = await open({
       seed: (s) => {
         s.otherProfiles = { work: [] };
         s.skills.add("work", { dir: "/home/liam/.hermes/profiles/work/skills/arxiv", source: "bundled" }, "---\nname: arxiv\ndescription: The arxiv skill\n---\nDo arxiv.\n");
-        s.toolsetsOn.work = new Set(["file"]);
+        s.toolsetsOn.work = new Set(["file", "discord"]);
       },
     });
     await user.type(persona(), ROUGH);
     await waitFor(() => expect(hintOf(generate())).toMatch(/the Text generation model of default\./));
     const tools = within(dialog()).getByRole("group", { name: "Tools" });
     await user.click(within(tools).getByRole("radio", { name: "Choose" }));
-    await user.click(await within(tools).findByLabelText(/Terminal & Processes/));
+    await user.click(await within(tools).findByLabelText(/File Operations/));
+    await user.click(within(tools).getByLabelText(/Image Generation/));
+    const skills = within(dialog()).getByRole("group", { name: "Skills" });
+    await user.click(within(skills).getByRole("radio", { name: "Choose" }));
+    await user.click(await within(skills).findByLabelText(/recipes/));
     const read = (path: string, profile: string) => server.restRequests.filter((r) => r.method === "GET" && r.path === path && r.query.get("profile") === profile).length;
     const auxReads = server.restRequests.filter((r) => r.path === "/api/model/auxiliary").length;
     switchProfile("work");
@@ -574,13 +579,30 @@ describe("Skills, Tools and MCP servers", () => {
     expect(read("/api/tools/toolsets", "work")).toBe(1);
     await waitFor(() => expect(hintOf(generate())).toMatch(/the Text generation model of work\./));
     expect(server.restRequests.filter((r) => r.path === "/api/model/auxiliary").length).toBe(auxReads + 1);
-    expect(within(tools).getByLabelText(/Terminal & Processes/)).toHaveProperty("checked", false);
-    expect(within(tools).getByLabelText(/Web Search/)).toHaveProperty("checked", true);
-    const skills = within(dialog()).getByRole("group", { name: "Skills" });
-    await user.click(within(skills).getByRole("radio", { name: "Choose" }));
+    const ticked = (label: RegExp) => (within(tools).getByLabelText(label) as HTMLInputElement).checked;
+    // The owner's own changes, over what work has on.
+    expect([ticked(/File Operations/), ticked(/Image Generation/)]).toEqual([false, true]);
+    // Left as the owner found them: now as work has them.
+    expect([ticked(/Discord/), ticked(/Web Search/), ticked(/Terminal & Processes/)]).toEqual([true, false, false]);
+    expect(within(tools).queryByRole("status")).toBeNull();
     await within(skills).findByLabelText(/arxiv/);
     expect(read("/api/skills", "work")).toBe(1);
     expect(within(skills).queryByLabelText(/recipes/)).toBeNull();
+    expect(within(skills).getByRole("status").textContent).toBe(en.profiles.form.setup.switchDropped("work", "recipes"));
+  });
+
+  it("says the choice went back to Hermes's defaults when the list can't be read again from a profile switched to", async () => {
+    const { server, user, switchProfile } = await open({ seed: (s) => (s.otherProfiles = { work: [] }) });
+    const tools = within(dialog()).getByRole("group", { name: "Tools" });
+    await user.click(within(tools).getByRole("radio", { name: "Choose" }));
+    await within(tools).findByLabelText(/File Operations/);
+    server.restTap = (req) => {
+      if (req.path === "/api/tools/toolsets" && req.query.get("profile") === "work") throw new RestError(500, JSON.stringify({ detail: "Internal Server Error" }));
+    };
+    switchProfile("work");
+    await within(tools).findByText(en.profiles.form.setup.switchReset("work"));
+    expect(within(tools).getByRole("radio", { name: "Hermes's defaults" })).toHaveProperty("checked", true);
+    expect(within(tools).getByRole("alert").textContent).toMatch(/^Couldn't read the list: Internal Server Error/);
   });
 
   it("says when Delete removed the profile but not this computer's data for it", async () => {

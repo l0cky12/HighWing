@@ -487,6 +487,10 @@ export const en = {
         unsupported: "This Hermes server can't list them here, so the new profile gets Hermes's defaults.",
         unsupportedWhy: (why: string) => `${why} The new profile gets Hermes's defaults.`,
         noneMatch: "Nothing matches.",
+        switchDropped: (profile: string, names: string) =>
+          `The profile in use is now ${profile}, so the list was read again from it. It doesn't list ${names}, so what you chose for those was dropped.`,
+        switchReset: (profile: string) =>
+          `The profile in use is now ${profile}, so the list was read again from it, and what you chose here went back to Hermes's defaults.`,
         noBuiltIn: (profile: string) => `Hermes lists no built-in skills for ${profile}, so there's nothing to choose.`,
         essential: "Hermes keeps this one on.",
         unsendable: "Highwing can't send this skill's name to Hermes, so it stays as Hermes sets it.",

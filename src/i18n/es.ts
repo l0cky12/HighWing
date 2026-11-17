@@ -468,6 +468,10 @@ export const es: Catalogue = {
         unsupported: "Este servidor de Hermes no puede listarlas aquí, así que el perfil nuevo recibe lo predeterminado de Hermes.",
         unsupportedWhy: (why) => `${why} El perfil nuevo recibe lo predeterminado de Hermes.`,
         noneMatch: "Nada coincide.",
+        switchDropped: (profile, names) =>
+          `El perfil en uso ahora es ${profile}, así que la lista se volvió a leer de él. No lista ${names}, así que lo que elegiste para esas se descartó.`,
+        switchReset: (profile) =>
+          `El perfil en uso ahora es ${profile}, así que la lista se volvió a leer de él, y lo que elegiste aquí volvió a lo predeterminado de Hermes.`,
         noBuiltIn: (profile) => `Hermes no lista habilidades integradas en ${profile}, así que no hay nada que elegir.`,
         essential: "Hermes siempre la mantiene activada.",
         unsendable: "Highwing no puede enviar a Hermes el nombre de esta habilidad, así que queda como la deja Hermes.",

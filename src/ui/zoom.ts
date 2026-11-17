@@ -1,4 +1,4 @@
-// The whole app's zoom (ADR 0200): Ctrl+= one step in, Ctrl+- one step out, Ctrl+0 back to 100%. The webview zooms
+// The whole app's zoom (ADR 0201): Ctrl+= one step in, Ctrl+- one step out, Ctrl+0 back to 100%. The webview zooms
 // natively, as a browser does, so layout stays in CSS pixels and the web page view's placement (ADR 0081) scales with
 // it. Kept in the display preferences, so the app opens at the zoom it was left at.
 import { getCurrentWebview } from "@tauri-apps/api/webview";

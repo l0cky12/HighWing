@@ -49,9 +49,9 @@ export type UIPrefs = {
   screenshotShortcut: string | null;
   /** How wide the owner made the preview pane, in px; null until they resize it. */
   previewWidth: number | null;
-  /** How wide the owner dragged the chat list, in CSS px; null until they resize it (ADR 0200). */
+  /** How wide the owner dragged the chat list, in CSS px; null until they resize it (ADR 0201). */
   sidebarWidth: number | null;
-  /** How far the whole app is zoomed, one of ZOOM_LEVELS; 1 is unzoomed (ADR 0200). */
+  /** How far the whole app is zoomed, one of ZOOM_LEVELS; 1 is unzoomed (ADR 0201). */
   zoom: number;
   /** The owner's message templates (templates.ts, ADR 0028). */
   templates: Template[];

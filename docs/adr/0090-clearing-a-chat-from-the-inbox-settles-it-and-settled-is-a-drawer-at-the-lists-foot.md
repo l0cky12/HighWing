@@ -1,6 +1,6 @@
 # Clearing a chat from the Inbox settles it, and Settled is a drawer at the list's foot
 
-> **Partly superseded by [ADR 0200](0200-archived-is-a-drawer-under-settled-the-chat-list-resizes-from-its-edge-and-ctrl-plus-and-minus-zoom-the-app.md).** Archived is no longer in the list's scroll: it is a second drawer at the foot, under Settled.
+> **Partly superseded by [ADR 0201](0201-archived-is-a-drawer-under-settled-the-chat-list-resizes-from-its-edge-and-ctrl-plus-and-minus-zoom-the-app.md).** Archived is no longer in the list's scroll: it is a second drawer at the foot, under Settled.
 
 Issue #278. ADR 0063 split the Active chats out of the way into their own section, Unsettled. They were Active chats the owner cleared from the Inbox, kept on this computer only, and each one came back to the Inbox when anything new happened in it. So the list had two places for chats out of the way, Unsettled and Settled, with a button for each (Clear and Settle) and different rules. ADR 0063 also moved Settled from a drawer at the list's foot into the list's scroll, just under Unsettled. With dozens of chats in each, the owner had to scroll past both to find Settled. The owner asked for one place for chats cleared from the Inbox, at the bottom of the list.
 

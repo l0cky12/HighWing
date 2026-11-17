@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// The whole app's zoom (ADR 0200): Ctrl+= in, Ctrl+- out, Ctrl+0 back to 100%, kept across a restart.
+// The whole app's zoom (ADR 0201): Ctrl+= in, Ctrl+- out, Ctrl+0 back to 100%, kept across a restart.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { UI_PREFS_KEY, getUIPrefs, setUIPrefs } from "../hermes/uiPrefs";
 import { followZoomKeys } from "./zoom";

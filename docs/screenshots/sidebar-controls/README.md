@@ -1,6 +1,6 @@
 # Archived under Settled, a resizable chat list, and app zoom
 
-Shots of the native app (`.claude/skills/verify-hermes-chat`), driven with real pointer and key input against the stand-in dashboard, with made-up chats. ADR 0200.
+Shots of the native app (`.claude/skills/verify-hermes-chat`), driven with real pointer and key input against the stand-in dashboard, with made-up chats. ADR 0201.
 
 | File | Shows |
 | --- | --- |

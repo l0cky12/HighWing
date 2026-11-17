@@ -1,5 +1,5 @@
 // The chat list's sections, in the order shown (ADR 0063): the list's scroll, then Settled and Archived, the drawers at
-// its foot (ADR 0090, ADR 0199). Their own module, so the display preferences (uiPrefs.ts)
+// its foot (ADR 0090, ADR 0200). Their own module, so the display preferences (uiPrefs.ts)
 // and the sorting that fills them (snooze.ts) can both name them.
 
 export const SECTION_KEYS = ["pinned", "inbox", "snoozed", "working", "settled", "archived"] as const;

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Dragging the chat list's right edge makes it narrower or wider, never hidden; the width is kept (ADR 0199).
+// Dragging the chat list's right edge makes it narrower or wider, never hidden; the width is kept (ADR 0200).
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";

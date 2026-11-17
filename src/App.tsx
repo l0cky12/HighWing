@@ -197,7 +197,7 @@ const PANEL_COMPACT_WIDTH = 640;
 /** The narrowest the chat gets beside the preview pane; narrower than this and the pane covers the chat instead. */
 const CHAT_MIN_WIDTH = 440;
 const PREVIEW_DEFAULT_WIDTH = 480;
-/** The chat list's width until the owner drags its edge, and how narrow and wide a drag can make it (ADR 0199). */
+/** The chat list's width until the owner drags its edge, and how narrow and wide a drag can make it (ADR 0200). */
 const LIST_DEFAULT_WIDTH = 272;
 const LIST_MIN_WIDTH = 200;
 const LIST_MAX_WIDTH = 560;

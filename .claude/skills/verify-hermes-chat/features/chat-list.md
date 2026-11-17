@@ -1,6 +1,6 @@
 # Chat list and the Settled drawer
 
-The chat list beside the chat shows one profile's chats in sections: Pinned, Inbox, Snoozed, and Working last, in the list's scroll. Settled is a drawer at the panel's foot, outside the scroll (ADR 0090), and Archived is a second drawer under it, until Settings turns it off (ADR 0199). Each header opens its drawer upward, the two sharing at most half the panel, each with its own scroll, and closes it again. The list's right edge drags it between 200 and 560 pixels wide, and Ctrl+=, Ctrl+- and Ctrl+0 zoom the whole app (ADR 0199). Open or closed is kept across restarts. Settle, from a row's hover button or right-click menu, is the one way to clear a chat from the Inbox. Unsettle moves a Settled chat back.
+The chat list beside the chat shows one profile's chats in sections: Pinned, Inbox, Snoozed, and Working last, in the list's scroll. Settled is a drawer at the panel's foot, outside the scroll (ADR 0090), and Archived is a second drawer under it, until Settings turns it off (ADR 0200). Each header opens its drawer upward, the two sharing at most half the panel, each with its own scroll, and closes it again. The list's right edge drags it between 200 and 560 pixels wide, and Ctrl+=, Ctrl+- and Ctrl+0 zoom the whole app (ADR 0200). Open or closed is kept across restarts. Settle, from a row's hover button or right-click menu, is the one way to clear a chat from the Inbox. Unsettle moves a Settled chat back.
 
 ## Sub-features
 

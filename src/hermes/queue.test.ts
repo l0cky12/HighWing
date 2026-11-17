@@ -10,8 +10,8 @@ import { restartHold, unsaved } from "./unsaved";
 import { snapshotDrafts } from "./updates";
 import { type Hermes, connect } from "./transport";
 
-const nas: SavedSignIn = { mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" };
-const SCRIPT = { path: "/home/liam/rotate.sh", name: "rotate.sh", size: 9, kind: "file" as const };
+const nas: SavedSignIn = { mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" };
+const SCRIPT = { path: "/home/lena/rotate.sh", name: "rotate.sh", size: 9, kind: "file" as const };
 
 let store: Map<string, string>;
 /** While set, writes to localStorage throw, as when it is full. */
@@ -807,7 +807,7 @@ describe("Isolation", () => {
     const q = await replying();
     q.hermes().enqueue("c1", "nas only");
     expect(localChatCache(nas).loadQueues("default").c1.items).toHaveLength(1);
-    expect(localChatCache({ ...nas, sshTarget: "liam@other" }).loadQueues("default")).toEqual({});
+    expect(localChatCache({ ...nas, sshTarget: "lena@other" }).loadQueues("default")).toEqual({});
     expect(localChatCache({ ...nas, username: "someone" }).loadQueues("default")).toEqual({});
   });
 
@@ -844,9 +844,9 @@ describe("Storage", () => {
   });
 
   it("a malformed kept queue loads as nothing", () => {
-    store.set(`hermes-chat.queue.${JSON.stringify(["ssh", "liam@hermes", "liam", "default", "c1"])}`, "{not json");
+    store.set(`hermes-chat.queue.${JSON.stringify(["ssh", "lena@hermes", "lena", "default", "c1"])}`, "{not json");
     store.set(
-      `hermes-chat.queue.${JSON.stringify(["ssh", "liam@hermes", "liam", "default", "c2"])}`,
+      `hermes-chat.queue.${JSON.stringify(["ssh", "lena@hermes", "lena", "default", "c2"])}`,
       JSON.stringify({ items: [{ id: 1 }, { id: "a", text: "ok" }] }),
     );
     expect(localChatCache(nas).loadQueues("default")).toEqual({ c2: { items: [{ id: "a", text: "ok" }] } });

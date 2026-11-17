@@ -42,7 +42,7 @@ async function launch(live: Live[]) {
   running.push(hermes);
   render(
     <LocaleContext value={p}>
-      <Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes-i18n", url: "", username: "liam" }} onSignOut={async () => {}} />
+      <Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes-i18n", url: "", username: "lena" }} onSignOut={async () => {}} />
     </LocaleContext>,
   );
   await waitFor(() => expect(hermes.hasListed()).toBe(true));

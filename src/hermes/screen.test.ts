@@ -133,7 +133,7 @@ describe("display.* over the connection", () => {
     const back = await hermes.screen.handBack("viewer-1");
     expect(back.holder).toBe("agent");
     await vi.waitFor(() => expect(leases.map(([, l]) => l.holder)).toEqual(["human", "agent"]));
-    expect(leases[0][0]).toBe("/home/liam/.hermes");
+    expect(leases[0][0]).toBe("/home/lena/.hermes");
     off();
 
     const asked = server.requests.filter((r) => r.method.startsWith("display."));

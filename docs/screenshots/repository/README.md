@@ -2,7 +2,7 @@
 
 Captured on 2026-11-03 from the running Tauri debug build (WebKitGTK) on an Xvfb display. These are framebuffer captures of the 1280 × 820 window (`7-narrow.png` is the window at 760 × 820, cropped to it). They aren't mockups, and nothing was composited or retouched.
 
-The chat list comes from a stand-in dashboard with synthetic chats (`docs/screenshots/slash-commands/bridge.ts`), signed in by URL, so the screen asked for an SSH target. Everything in the Repository screen is real. The app ran the system `ssh` to the real Hermes server (`liam@hermes`), which ran the helper against two synthetic repositories made for this in `~/hc-repo-demo` on that server:
+The chat list comes from a stand-in dashboard with synthetic chats (`docs/screenshots/slash-commands/bridge.ts`), signed in by URL, so the screen asked for an SSH target. Everything in the Repository screen is real. The app ran the system `ssh` to the real Hermes server (`lena@hermes`), which ran the helper against two synthetic repositories made for this in `~/hc-repo-demo` on that server:
 
 - `weather-api`: branch `feature/login`, one commit ahead of its upstream (a bare repository beside it), a staged rename, `src/auth.ts` with one change staged and another not, a changed binary file, and an untracked file.
 - `conflict`: a merge stopped on a conflict in `config.yml`.
@@ -49,7 +49,7 @@ Also checked, not pictured: a push to a GitHub repository the server's credentia
 
 ## Consolidation fixes (#66)
 
-Captured on 2026-11-04 the same way: a build of the app with its frontend built in, on an Xvfb display with openbox, signed in by URL to the synthetic stand-in dashboard. Everything in the Repository screen came from the real server (`liam@hermes`, Hermes `f0d9488`, git 2.47.3, Python 3.13.5), in two synthetic repositories made for this in `~/hc-repo-demo`. Each result was checked over ssh afterwards.
+Captured on 2026-11-04 the same way: a build of the app with its frontend built in, on an Xvfb display with openbox, signed in by URL to the synthetic stand-in dashboard. Everything in the Repository screen came from the real server (`lena@hermes`, Hermes `f0d9488`, git 2.47.3, Python 3.13.5), in two synthetic repositories made for this in `~/hc-repo-demo`. Each result was checked over ssh afterwards.
 
 - `26-new-branch-push.png`: `issue66-newbranch` on `review/forecast-copy`, a new branch made at `57a1fb6`. Its bare remote already has that commit as `feature/forecast`, but has no `review/forecast-copy`. The card says so, and Push is offered. Before this fix, the branch counted as zero commits ahead, so the card said "Nothing to push" and Push was disabled, which blocked the branch and any pull request for it.
 - `27-new-branch-pushed.png`: the push. On the server afterwards, `git ls-remote origin` listed `refs/heads/review/forecast-copy` at `57a1fb6`, and the branch tracked `origin/review/forecast-copy`.

@@ -55,8 +55,8 @@ describe("the list of what this computer keeps per profile", () => {
   });
 });
 
-const home: ScopeSource = { id: "c1", mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" };
-const other: ScopeSource = { id: "c2", mode: "ssh", sshTarget: "liam@other", url: "", username: "liam" };
+const home: ScopeSource = { id: "c1", mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" };
+const other: ScopeSource = { id: "c2", mode: "ssh", sshTarget: "lena@other", url: "", username: "lena" };
 const key = (prefix: string, c: ScopeSource, ...rest: string[]) => prefix + connectionScope(c, ...rest);
 const doc = (scopes: Record<string, unknown>) => JSON.stringify({ v: 1, scopes });
 

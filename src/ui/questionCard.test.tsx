@@ -21,7 +21,7 @@ afterEach(() => {
   localStorage.clear();
 });
 
-const connection = { mode: "ssh" as const, sshTarget: "liam@hermes", url: "", username: "liam" };
+const connection = { mode: "ssh" as const, sshTarget: "lena@hermes", url: "", username: "lena" };
 const focused = () => document.activeElement;
 const composer = () => screen.getByPlaceholderText<HTMLTextAreaElement>("Message Hermes");
 const settle = (hermes: Hermes) => act(async () => void (await hermes.idle()));

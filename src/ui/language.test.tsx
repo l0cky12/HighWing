@@ -28,7 +28,7 @@ function settings(desktop: string[]) {
       <SettingsScreen
         status="connected"
         unsecure={false}
-        username="liam"
+        username="lena"
         passwordSaved
         profile="default"
         olderPulled={false}

@@ -27,8 +27,8 @@ import {
 } from "./repo";
 
 const status = (entries: Status["entries"], branch: Partial<Status["branch"]> = {}): Status => ({
-  top: "/home/liam/app",
-  gitDir: "/home/liam/app/.git",
+  top: "/home/lena/app",
+  gitDir: "/home/lena/app/.git",
   head: "1e6a7627084ab1d090745282b589f5d3de623b23",
   index: "i1",
   branch: { oid: "1e6a7627084ab1d090745282b589f5d3de623b23", head: "main", detached: false, upstream: null, ahead: null, behind: null, ...branch },
@@ -134,9 +134,9 @@ describe("parseDiff", () => {
 
 describe("where the screen reads from", () => {
   it("uses its own target, else the Terminal's, else the sign-in's", () => {
-    expect(repoTarget({ mode: "ssh", sshTarget: "liam@hermes" }, null, null)).toBe("liam@hermes");
-    expect(repoTarget({ mode: "ssh", sshTarget: "liam@hermes" }, null, "liam@other")).toBe("liam@other");
-    expect(repoTarget({ mode: "ssh", sshTarget: "liam@hermes" }, " box ", "liam@other")).toBe("box");
+    expect(repoTarget({ mode: "ssh", sshTarget: "lena@hermes" }, null, null)).toBe("lena@hermes");
+    expect(repoTarget({ mode: "ssh", sshTarget: "lena@hermes" }, null, "lena@other")).toBe("lena@other");
+    expect(repoTarget({ mode: "ssh", sshTarget: "lena@hermes" }, " box ", "lena@other")).toBe("box");
     expect(repoTarget({ mode: "url", sshTarget: "" }, null, null)).toBe("");
     expect(repoTarget({ mode: "url", sshTarget: "", url: "http://hermes:9119" }, null, null)).toBe("hermes");
     expect(repoTarget({ mode: "url", sshTarget: "", url: "http://localhost:9119" }, null, null)).toBe("");

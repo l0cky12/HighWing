@@ -73,7 +73,7 @@ describe("reading a project's context folder", () => {
 
   it("says where a project with no folder would get one, from the profile's folder as Hermes reports it", async () => {
     const { files } = await signedIn();
-    expect(await files.read("default", bare)).toEqual({ kind: "noFolder", writes: "all", creates: "/home/liam/.hermes/projects/reading-list" });
+    expect(await files.read("default", bare)).toEqual({ kind: "noFolder", writes: "all", creates: "/home/lena/.hermes/projects/reading-list" });
   });
 
   it("counts a PDF's extracted text, and reads a file's text again only once the file changes", async () => {
@@ -137,9 +137,9 @@ describe("changing a project's context files", () => {
     if (state.kind !== "noFolder") throw new Error(state.kind);
     const added: string[] = [];
     const dir = await files.folderFor(state, async (path) => void added.push(path));
-    expect(dir).toBe("/home/liam/.hermes/projects/reading-list/context");
+    expect(dir).toBe("/home/lena/.hermes/projects/reading-list/context");
     expect(server.context.made).toEqual([dir]);
-    expect(added).toEqual(["/home/liam/.hermes/projects/reading-list"]);
+    expect(added).toEqual(["/home/lena/.hermes/projects/reading-list"]);
   });
 
   it("makes the context folder in a main folder that has none", async () => {

@@ -118,7 +118,7 @@ async fn stub_with(extra: Vec<ExtraHeader>) -> (Dashboard, Shared) {
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     let base = Url::parse(&format!("http://{addr}/")).unwrap();
     let sign_in =
-        SignIn { credential: hermes_chat::transport::Credential::password("liam", "hunter2"), headers: hermes_chat::transport::extra_headers(&extra).unwrap() };
+        SignIn { credential: hermes_chat::transport::Credential::password("lena", "hunter2"), headers: hermes_chat::transport::extra_headers(&extra).unwrap() };
     let dashboard = Dashboard::sign_in(hermes_chat::transport::client(&sign_in.headers).unwrap(), &base, &sign_in).await.unwrap();
     (dashboard, shared)
 }

@@ -70,7 +70,7 @@ async fn says_when_the_site_cant_be_reached() {
 
 #[tokio::test]
 async fn checks_only_web_addresses() {
-    for bad in ["file:///etc/passwd", "tauri://localhost/", "https://liam:pw@example.com/"] {
+    for bad in ["file:///etc/passwd", "tauri://localhost/", "https://lena:pw@example.com/"] {
         assert!(web_page::check(bad, UA).await.is_err(), "{bad}");
     }
 }
@@ -107,7 +107,7 @@ async fn opens_the_page_in_the_browser_and_names_it() {
     assert_eq!(open(&app, "https://www.google.com/search?q=a b;$(id)").await.unwrap(), "Helium Browser");
     // One argument, the checked address, with nothing a shell would act on.
     assert_eq!(std::fs::read_to_string(dir.join("args")).unwrap(), "https://www.google.com/search?q=a%20b;$(id)\n");
-    for bad in ["file:///etc/passwd", "tauri://localhost/", "https://liam:pw@example.com/"] {
+    for bad in ["file:///etc/passwd", "tauri://localhost/", "https://lena:pw@example.com/"] {
         assert!(open(&app, bad).await.is_err(), "{bad}");
     }
     std::fs::remove_dir_all(dir).unwrap();

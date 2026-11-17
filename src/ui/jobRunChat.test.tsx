@@ -64,7 +64,7 @@ async function launch(s = server()) {
   const hermes = await connect(s.openPipe);
   running.push(hermes);
   const tray = new FakeTray();
-  render(<Main hermes={hermes} tray={tray} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} />);
+  render(<Main hermes={hermes} tray={tray} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} />);
   await waitFor(() => expect(hermes.hasListed()).toBe(true));
   await act(async () => void (await hermes.idle()));
   return { s, hermes, tray, user: userEvent.setup() };

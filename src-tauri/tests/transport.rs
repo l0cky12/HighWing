@@ -29,7 +29,7 @@ const READY: &str =
     r#"{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{"skin":{},"change_events":true,"heartbeat":true,"replay_epoch":"e1"}}}"#;
 
 async fn login(Json(body): Json<Value>) -> Response {
-    if body == json!({"provider": "basic", "username": "liam", "password": "hunter2"}) {
+    if body == json!({"provider": "basic", "username": "lena", "password": "hunter2"}) {
         (
             AppendHeaders([
                 (header::SET_COOKIE, "hermes_session_at=AT; Path=/; HttpOnly; SameSite=Lax"),
@@ -512,7 +512,7 @@ async fn sign_in_at(base: &Url, sign_in: &SignIn) -> Result<Dashboard, Transport
 }
 
 fn sign_in(password: &str) -> SignIn {
-    SignIn { credential: Credential::password("liam", password), headers: Default::default() }
+    SignIn { credential: Credential::password("lena", password), headers: Default::default() }
 }
 
 fn header(name: &str, value: &str) -> ExtraHeader {
@@ -1425,8 +1425,8 @@ async fn resolves_the_host_name_of_a_direct_url() {
 
 #[tokio::test]
 async fn a_direct_url_to_an_ip_address_needs_no_lookup() {
-    let direct = transport::resolve_direct(" http://100.100.64.121:9119/ ").await.expect("parsed");
-    assert_eq!(direct.base.as_str(), "http://100.100.64.121:9119/");
+    let direct = transport::resolve_direct(" http://100.90.10.20:9119/ ").await.expect("parsed");
+    assert_eq!(direct.base.as_str(), "http://100.90.10.20:9119/");
     assert!(direct.addresses.is_empty());
 }
 
@@ -1448,7 +1448,7 @@ async fn a_direct_ws_url_is_signed_in_to_over_http() {
 #[tokio::test]
 async fn refuses_a_direct_url_that_is_not_http_or_ws() {
     // A user or password in the URL would be saved and shown; the password field is for that.
-    for typed in ["hermes:9119", "liam@hermes", "ftp://hermes/", "file:///etc/passwd", "", "http://liam:hunter2@hermes:9119"] {
+    for typed in ["hermes:9119", "lena@hermes", "ftp://hermes/", "file:///etc/passwd", "", "http://lena:hunter2@hermes:9119"] {
         let err = transport::resolve_direct(typed).await.err().unwrap();
         assert!(matches!(err, TransportError::BadUrl), "{typed}: {err:?}");
     }
@@ -1882,7 +1882,7 @@ async fn refuses_a_folder_a_missing_file_or_a_relative_path_for_the_preview() {
 #[tokio::test]
 async fn only_files_picked_in_the_open_dialog_can_be_read_for_the_preview() {
     let picked = transport::PickedFiles::default();
-    assert_eq!(picked.read("/home/liam/.ssh/id_ed25519").await.err().unwrap().to_string(), "it wasn't picked in the Open dialog");
+    assert_eq!(picked.read("/home/lena/.ssh/id_ed25519").await.err().unwrap().to_string(), "it wasn't picked in the Open dialog");
     let dir = scratch("picked-files");
     let notes = dir.join("notes.md");
     std::fs::write(&notes, "notes").unwrap();
@@ -2879,15 +2879,15 @@ fn plain_http_to_100_64_goes_only_over_tailscale() {
         base: Url::parse(url).unwrap(),
         addresses: addresses.iter().map(|a| a.parse().unwrap()).collect(),
     };
-    let tailnet = |_: IpAddr| Some("100.119.13.105".parse().unwrap());
-    let carrier = |_: IpAddr| Some("10.2.1.121".parse().unwrap());
-    let both = |ip: IpAddr| Some(if ip.to_string() == "100.100.64.121" { "100.119.13.105" } else { "10.2.1.121" }.parse().unwrap());
-    for url in ["http://100.100.64.121:9119/", "http://[::ffff:100.100.64.121]:9119/"] {
+    let tailnet = |_: IpAddr| Some("100.90.10.30".parse().unwrap());
+    let carrier = |_: IpAddr| Some("192.168.50.20".parse().unwrap());
+    let both = |ip: IpAddr| Some(if ip.to_string() == "100.90.10.20" { "100.90.10.30" } else { "192.168.50.20" }.parse().unwrap());
+    for url in ["http://100.90.10.20:9119/", "http://[::ffff:100.90.10.20]:9119/"] {
         assert!(transport::check_plain_http_from(&direct(url, &[]), tailnet).is_ok(), "{url}");
     }
-    assert!(transport::check_plain_http_from(&direct("http://hermes:9119/", &["100.100.64.121", "192.168.1.10"]), both).is_ok());
-    assert!(transport::check_plain_http_from(&direct("https://100.100.64.121/", &[]), carrier).is_ok());
-    for (url, addresses) in [("http://100.64.0.1:9119/", &[][..]), ("http://hermes:9119/", &["100.100.64.121", "100.64.0.1"][..])] {
+    assert!(transport::check_plain_http_from(&direct("http://hermes:9119/", &["100.90.10.20", "192.168.1.10"]), both).is_ok());
+    assert!(transport::check_plain_http_from(&direct("https://100.90.10.20/", &[]), carrier).is_ok());
+    for (url, addresses) in [("http://100.64.0.1:9119/", &[][..]), ("http://hermes:9119/", &["100.90.10.20", "100.64.0.1"][..])] {
         let refused = transport::check_plain_http_from(&direct(url, addresses), both).unwrap_err();
         assert!(matches!(refused, TransportError::PlainHttpNotTailscale(_)), "{url}: {refused:?}");
         let said = refused.to_string();
@@ -2934,7 +2934,7 @@ fn bearer(headers: &HeaderMap) -> Option<&str> {
 async fn token_me(headers: HeaderMap) -> Response {
     match bearer(&headers) {
         Some("GOOD") => Json(json!({"user_id": "deployment-token", "provider": "session-token", "expires_at": 0})).into_response(),
-        Some("BASIC") => Json(json!({"user_id": "liam", "provider": "basic", "expires_at": 0})).into_response(),
+        Some("BASIC") => Json(json!({"user_id": "lena", "provider": "basic", "expires_at": 0})).into_response(),
         Some("abcd") => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"detail": "abcd"}))).into_response(),
         Some("deadbeef1234") => Json(json!({"user_id": "x", "provider": "deadbeef1234"})).into_response(),
         Some("echo-header") => {
@@ -3081,7 +3081,7 @@ async fn a_password_goes_to_the_provider_hermes_listed() {
     );
     let base = serve(app).await;
     let with = |provider: &str| SignIn {
-        credential: Credential::Password { provider: provider.into(), username: "liam".into(), password: "hunter2".into() },
+        credential: Credential::Password { provider: provider.into(), username: "lena".into(), password: "hunter2".into() },
         headers: Default::default(),
     };
     sign_in_at(&base, &with("team-sso")).await.expect("signed in");

@@ -39,7 +39,7 @@ fn any_other_page_may_not() {
         "http://127.0.0.1:1420/",
         "about:blank",
         "data:text/html,hi",
-        "file:///home/liam/x.html",
+        "file:///home/lena/x.html",
     ] {
         assert!(!is_app_page(&url(page), Some(&dev)), "{page}");
     }

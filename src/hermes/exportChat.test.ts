@@ -230,9 +230,9 @@ describe("A chat as JSON", () => {
 describe("Saving an image", () => {
   it("hands the PNG and its file name to the Save dialog, and says where it went", async () => {
     const saved: string[][] = [];
-    const notice = await saveImage("iVBORw0KGgo=", "Fix.png", async (png, name) => (saved.push([png, name]), "/home/liam/Fix.png"));
+    const notice = await saveImage("iVBORw0KGgo=", "Fix.png", async (png, name) => (saved.push([png, name]), "/home/lena/Fix.png"));
     expect(saved).toEqual([["iVBORw0KGgo=", "Fix.png"]]);
-    expect(notice).toMatch(/^Exported to \/home\/liam\/Fix\.png\./);
+    expect(notice).toMatch(/^Exported to \/home\/lena\/Fix\.png\./);
     expect(await saveImage("iVBORw0KGgo=", "Fix.png", async () => null)).toBeUndefined();
   });
 });
@@ -251,9 +251,9 @@ describe("The suggested file name", () => {
 describe("Saving an export", () => {
   it("hands the Markdown and file name to the Save dialog, and says where it went", async () => {
     const saved: string[][] = [];
-    const notice = await saveExport("# Fix\n", "Fix.md", "markdown", async (md, name, format) => (saved.push([md, name, format]), "/home/liam/notes/Fix.md"));
+    const notice = await saveExport("# Fix\n", "Fix.md", "markdown", async (md, name, format) => (saved.push([md, name, format]), "/home/lena/notes/Fix.md"));
     expect(saved).toEqual([["# Fix\n", "Fix.md", "markdown"]]);
-    expect(notice).toMatch(/^Exported to \/home\/liam\/notes\/Fix\.md\. Read it before you share it/);
+    expect(notice).toMatch(/^Exported to \/home\/lena\/notes\/Fix\.md\. Read it before you share it/);
   });
 
   it("does nothing when the owner cancels", async () => {

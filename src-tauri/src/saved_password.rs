@@ -259,7 +259,7 @@ mod tests {
     #[test]
     fn a_token_goes_only_to_an_address_it_was_entered_for() {
         let lan: Address = ["url".into(), "http://hermes:9119".into()];
-        let ssh: Address = ["ssh".into(), "liam@hermes".into()];
+        let ssh: Address = ["ssh".into(), "lena@hermes".into()];
         let saved = TokenEntry::read(&TokenEntry::new(vec![lan.clone(), ssh.clone()], "t0k3n".into()).to_json()).unwrap();
         assert_eq!(saved.token_for(&lan), Some("t0k3n"));
         assert_eq!(saved.token_for(&ssh), Some("t0k3n"));

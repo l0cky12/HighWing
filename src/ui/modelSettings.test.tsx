@@ -27,7 +27,7 @@ function Shell({ hermes }: { hermes: Hermes }) {
     <SettingsScreen
       status="connected"
       unsecure={false}
-      username="liam"
+      username="lena"
       passwordSaved
       profile="default"
       olderPulled={false}

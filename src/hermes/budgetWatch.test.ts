@@ -20,7 +20,7 @@ function memoryStorage(): Storage {
 }
 
 const NOW = Date.parse("2026-11-18T12:00:00Z");
-const connection = { id: "c1", mode: "url" as const, url: "http://hermes", username: "liam" } as never;
+const connection = { id: "c1", mode: "url" as const, url: "http://hermes", username: "lena" } as never;
 
 /** Hermes with chats in profile `ops` costing what `spent` holds now, all started this morning. */
 function hermes(spent: { usd: number }) {

@@ -53,7 +53,7 @@ describe("Settings tabs", () => {
       <SettingsScreen
         status="connected"
         unsecure={false}
-        username="liam"
+        username="lena"
         passwordSaved
         profile="default"
         olderPulled={false}

@@ -63,7 +63,7 @@ async function signedIn() {
   const hermes = await connect(server.openPipe);
   running.push(hermes);
   const user = userEvent.setup();
-  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} />);
+  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} />);
   await screen.findByRole("button", { name: /Nightly backup/ });
   await settle(hermes);
   return { server, hermes, user };
@@ -451,7 +451,7 @@ describe("Compare", () => {
     }];
     server.serverDirs = new Set(["/srv", "/srv/lab"]);
     server.files["/tmp/smart.txt"] = "sda reallocated 12";
-    const conn = { mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" } as const;
+    const conn = { mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" } as const;
     await savedDefaults.save(projectScope(conn, "default"), "p_lab", 0, { instructions: "Answer for the home lab.", folder: "/srv/lab" });
     const hermes = await connect(server.openPipe);
     running.push(hermes);
@@ -526,7 +526,7 @@ describe("Compare", () => {
 
   it("says the message went only to the other chat when this one can't start, and keeps no screenshot the other chat took", async () => {
     const server = new FakeHermes();
-    const conn = { mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" } as const;
+    const conn = { mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" } as const;
     const hermes = await connect(server.openPipe, undefined, localChatCache(conn));
     running.push(hermes);
     let retained = new Set<string>();

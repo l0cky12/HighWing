@@ -70,8 +70,8 @@ function file() {
   return f;
 }
 
-const conn = { mode: "ssh" as const, sshTarget: "liam@hermes.lan", url: "", username: "liam" };
-const moved = { mode: "url" as const, sshTarget: "", url: "https://hermes.example.com", username: "liam" };
+const conn = { mode: "ssh" as const, sshTarget: "lena@hermes.lan", url: "", username: "lena" };
+const moved = { mode: "url" as const, sshTarget: "", url: "https://hermes.example.com", username: "lena" };
 
 function env(): BackupEnv & { storage: MemStorage; tags: ReturnType<typeof file>; defaults: ReturnType<typeof file> } {
   return { storage: new MemStorage(), tags: file(), defaults: file() };
@@ -88,7 +88,7 @@ async function populated() {
   // Keyed as chatCache.ts keys them (it writes the webview's own localStorage).
   s.setItem(key("queue", "default", "chat-a"), JSON.stringify({
     items: [
-      { id: "q1", text: "Then run the tests", attachments: [{ path: "/home/liam/.local/share/shot.png", name: "shot.png", size: 10, kind: "image" }] },
+      { id: "q1", text: "Then run the tests", attachments: [{ path: "/home/lena/.local/share/shot.png", name: "shot.png", size: 10, kind: "image" }] },
       { id: "q2", text: "", attachments: [{ path: "/tmp/only-a-file.txt", name: "f", size: 1, kind: "file" }] },
     ],
   }));
@@ -118,7 +118,7 @@ async function populated() {
     }),
   );
   s.setItem("hermes-chat.appearance", JSON.stringify({ scheme: "dark", uiSize: 15 }));
-  s.setItem("hermes-chat.terminal-target", "liam@hermes.lan");
+  s.setItem("hermes-chat.terminal-target", "lena@hermes.lan");
   // Not part of a backup: a sign-in, a Saved copy, and a Failed message.
   s.setItem("hermes-chat.sign-in", JSON.stringify(conn));
   s.setItem(key("transcript", "default", "chat-a"), '{"savedAt":1}');
@@ -160,8 +160,8 @@ describe("a backup", () => {
     const manifest = JSON.parse(entries[0].text);
     expect(manifest).toMatchObject({ format: "hermes-chat-backup", schema: 1 });
     expect(Object.values(manifest.places)).toEqual([
-      { mode: "ssh", target: "liam@hermes.lan", username: "liam", profile: "default" },
-      { mode: "ssh", target: "liam@hermes.lan", username: "liam", profile: "work" },
+      { mode: "ssh", target: "lena@hermes.lan", username: "lena", profile: "default" },
+      { mode: "ssh", target: "lena@hermes.lan", username: "lena", profile: "work" },
     ]);
     expect(manifest.files.drafts).toMatchObject({ file: "drafts.json", records: 3, sha256: await sha256(entries[3].text) });
     // The queue's text goes, its files don't; a message that was only a file is left out.
@@ -206,7 +206,7 @@ describe("a backup", () => {
       ["tpl-2", scope],
     ]);
     expect(JSON.parse(fresh.storage.getItem("hermes-chat.appearance")!)).toMatchObject({ scheme: "dark", uiSize: 15 });
-    expect(fresh.storage.getItem("hermes-chat.terminal-target")).toBe("liam@hermes.lan");
+    expect(fresh.storage.getItem("hermes-chat.terminal-target")).toBe("lena@hermes.lan");
     expect(fresh.storage.getItem("hermes-chat.sign-in")).toBeNull();
 
     // Restoring the same backup again changes nothing.
@@ -546,7 +546,7 @@ describe("reading a backup", () => {
     from.storage.setItem("hermes-ui-prefs", JSON.stringify({ v: 1, templates: [{ id: "t", name: "N", description: "", body: "b", project: { scope, id: "p", name: "P" } }] }));
     const entries = await makeBackup(from, CATEGORY_IDS);
     const backup = await readBackup(entries);
-    expect(Object.values(backup.manifest.places)).toEqual([{ mode: "ssh", target: "liam@hermes.lan", username: "liam", profile: "default" }]);
+    expect(Object.values(backup.manifest.places)).toEqual([{ mode: "ssh", target: "lena@hermes.lan", username: "lena", profile: "default" }]);
     expect(entries.map((e) => e.text).join("")).not.toContain(here.id);
 
     const into = env();

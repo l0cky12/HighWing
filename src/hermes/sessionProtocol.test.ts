@@ -43,7 +43,7 @@ describe("the canonical session protocol", () => {
   it("is explained on the sign-in screen", async () => {
     const server = new FakeHermes();
     server.readyPayload = CANONICAL_READY;
-    const d: SignInDetails = { mode: "url", sshTarget: "", url: "http://hermes:9120", username: "liam", password: "pw" };
+    const d: SignInDetails = { mode: "url", sshTarget: "", url: "http://hermes:9120", username: "lena", password: "pw" };
     const shown = await connect(server.openPipe).catch((e: unknown) => explainSignIn(signInError(e), d));
     expect(shown).toMatchObject({
       stage: "chat",

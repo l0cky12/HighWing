@@ -51,7 +51,7 @@ function Shell({ hermes, guard }: { hermes: Hermes; guard?: (go: () => void) => 
     <SettingsScreen
       status="connected"
       unsecure={false}
-      username="liam"
+      username="lena"
       passwordSaved
       profile="default"
       olderPulled={false}

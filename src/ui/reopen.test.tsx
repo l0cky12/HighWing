@@ -47,7 +47,7 @@ async function launch(s: FakeHermes, cache?: MemoryCache, { reopenLast = "launch
   render(
     <Main
       hermes={hermes}
-      connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }}
+      connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }}
       reopenLast={reopenLast ?? undefined}
       shown={shown}
       onSignOut={async () => {}}
@@ -156,7 +156,7 @@ describe("across a restart", () => {
 
     const hermes = await connect(s.openPipe, undefined, cache);
     running.push(hermes);
-    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} reopenLast="launch" onSignOut={async () => {}} />);
+    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} reopenLast="launch" onSignOut={async () => {}} />);
     // First render: the saved list already has it, so the New chat pane never shows.
     expect(onScreen()).toBe("Nightly backup");
     await waitFor(() => expect(hermes.hasListed()).toBe(true));
@@ -227,7 +227,7 @@ describe("across a restart", () => {
     const hermes = await connect(s.openPipe);
     running.push(hermes);
     const user = userEvent.setup();
-    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} reopenLast="launch" onSignOut={async () => {}} />);
+    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} reopenLast="launch" onSignOut={async () => {}} />);
     await user.keyboard("{Control>}n{/Control}");
     release();
     await waitFor(() => expect(hermes.hasListed()).toBe(true));

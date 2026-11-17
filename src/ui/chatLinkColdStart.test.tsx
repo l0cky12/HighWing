@@ -26,7 +26,7 @@ vi.mock("@tauri-apps/api/core", () => ({
       case "hermes_connect": {
         const channel = args.onEvent as { onmessage: (e: PipeEvent) => void };
         pipe = await fake.openPipe((e) => channel.onmessage(e), args.profile as string);
-        return { kind: "ssh", target: "liam@hermes", addresses: [] };
+        return { kind: "ssh", target: "lena@hermes", addresses: [] };
       }
       case "hermes_send":
         return pipe!.send(args.frame as string);
@@ -60,7 +60,7 @@ afterEach(cleanup);
 
 describe("A chat link at launch", () => {
   it("waits through the sign-in screen, then opens its chat once signed in", async () => {
-    const connection = { mode: "ssh" as const, sshTarget: "liam@hermes", url: "", username: "liam" };
+    const connection = { mode: "ssh" as const, sshTarget: "lena@hermes", url: "", username: "lena" };
     // Signed in before, but the password isn't saved, so the sign-in screen asks.
     localStorage.setItem("hermes-chat.sign-in", JSON.stringify(connection));
     const ref = connectionRefs(localStorage).refFor(connection);

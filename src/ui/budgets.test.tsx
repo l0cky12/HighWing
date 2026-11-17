@@ -9,7 +9,7 @@ import { BUDGET_NOTES, type BudgetId } from "../hermes/budgets";
 import { UsageAnalytics } from "./UsageAnalytics";
 
 const NOW = Date.parse("2026-11-18T12:00:00Z");
-const connection = { id: "c1", mode: "url" as const, url: "http://hermes", username: "liam" } as never;
+const connection = { id: "c1", mode: "url" as const, url: "http://hermes", username: "lena" } as never;
 
 afterEach(() => {
   cleanup();

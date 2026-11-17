@@ -370,7 +370,7 @@ export const APP_VERBS: AppVerb[] = [
   {
     method: "shell.exec",
     shape: "dock",
-    params: () => ({ command: "rm -f -- '/home/liam/.hermes/bot-desktop/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml'" }),
+    params: () => ({ command: "rm -f -- '/home/lena/.hermes/bot-desktop/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml'" }),
     route: "authority",
     answer: { code: 4001, message: "invalid_params" },
     canonical: "As for the check: the authority has no shell.exec without a session.",
@@ -380,7 +380,7 @@ export const APP_VERBS: AppVerb[] = [
     method: "shell.exec",
     shape: "clipboard",
     params: () => ({
-      command: "DISPLAY=':42' XAUTHORITY='/home/liam/.hermes/bot-desktop/Xauthority' xclip -selection clipboard -o | tail -c +1 | head -c 1999 | od -An -v -tx1 | tr -d ' \\n'",
+      command: "DISPLAY=':42' XAUTHORITY='/home/lena/.hermes/bot-desktop/Xauthority' xclip -selection clipboard -o | tail -c +1 | head -c 1999 | od -An -v -tx1 | tr -d ' \\n'",
     }),
     route: "authority",
     answer: { code: 4001, message: "invalid_params" },

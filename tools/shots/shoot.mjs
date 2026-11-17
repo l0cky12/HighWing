@@ -68,7 +68,7 @@ const legibleGraph = `(() => {
 const sections = `(async () => {
   const h = window.shots.hermes;
   for (const id of ["caddy", "rust", "trip"]) await h.unsettle(id);
-  const scope = JSON.stringify(["ssh", "liam@hermes", "liam", h.getSnapshot().profile]);
+  const scope = JSON.stringify(["ssh", "lena@hermes", "lena", h.getSnapshot().profile]);
   localStorage.setItem("hermes-chat.snoozes", JSON.stringify({ v: 1, scopes: { [scope]: { trip: Date.now() + 3 * 3600e3, rust: Date.now() + 26 * 3600e3 } } }));
   window.dispatchEvent(new StorageEvent("storage", { key: "hermes-chat.snoozes" }));
   void h.send("nas", "Run a SMART check on every disk in tank");
@@ -103,7 +103,7 @@ const capture = `(async () => {
   const { hermes: h, server: s } = window.shots;
   const bytes = new Uint8Array(445924).map(() => Math.random() * 256);
   let bin = ""; for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
-  const shot = "/home/liam/.hermes/cache/images/computer_use_76f76bd5c54f4cee.png";
+  const shot = "/home/lena/.hermes/cache/images/computer_use_76f76bd5c54f4cee.png";
   await h.send("nas", "Open the router's admin page and tell me its firmware version.");
   const rt = s.runtimeIdOf("nas");
   s.event(rt, "message.start");
@@ -330,7 +330,7 @@ const focusComposer = `document.querySelector("textarea[data-composer]").focus()
 // Stored times on the backup chat's messages, a minute apart from a fixed moment, so each message shows its timestamp.
 const stamped = `window.shots.server.transcripts.backup.forEach((m, i) => (m.timestamp = Date.UTC(2026, 10, 12, 9, 14 + i) / 1000))`;
 const openBackup = [stamped, click("button", "Nightly backup")];
-const reconnecting = `(() => { const s = window.shots.server; s.refuse = "Couldn't reach liam@hermes"; s.drop(); })()`;
+const reconnecting = `(() => { const s = window.shots.server; s.refuse = "Couldn't reach lena@hermes"; s.drop(); })()`;
 const signIn = { page: "signin.html", ready: "!!document.querySelector('.first-run input[type=password]')" };
 Object.assign(scenes, {
   "a11y-chat": { query: "", ...desk, steps: [...openBackup, focusComposer] },
@@ -350,10 +350,10 @@ const wsb = { width: 1280, height: 800 };
 const longSkills = `(() => {
   const s = window.shots.server.skills;
   const md = (name, description) => "---\\nname: " + name + "\\ndescription: " + description + "\\n---\\n\\nThe " + name + " skill's instructions.\\n";
-  s.add("default", { dir: "/home/liam/.hermes/skills/ops/zfs-scrub-and-snapshot-review", source: "hub", category: "home-lab-operations-storage-backups-and-snapshot-retention-weekly" },
+  s.add("default", { dir: "/home/lena/.hermes/skills/ops/zfs-scrub-and-snapshot-review", source: "hub", category: "home-lab-operations-storage-backups-and-snapshot-retention-weekly" },
     md("zfs-scrub-and-snapshot-review", "Run a scrub on every pool, read the result, then list the snapshots older than the retention policy and say which ones are safe to destroy before anything is deleted, with the space each would free."));
   s.platformDisabled.default = { tui: ["notes", "zfs-scrub-and-snapshot-review"] };
-  s.add("default", { dir: "/home/liam/.hermes/skills/code-review", source: "bundled" },
+  s.add("default", { dir: "/home/lena/.hermes/skills/code-review", source: "bundled" },
     md("code-review", "Review a diff for correctness first, then for tests that prove the change, then for names and structure; quote the line, say what breaks, and suggest the smallest fix that keeps the behaviour the author meant. Check error paths, concurrency and anything that writes, and say plainly when a change is fine as it is."));
 })()`;
 Object.assign(scenes, {
@@ -377,14 +377,14 @@ Object.assign(scenes, {
     ...wsb,
     steps: [
       `(() => {
-        const s = window.shots.server, path = "/home/liam/notes/backup-runbook.md";
+        const s = window.shots.server, path = "/home/lena/notes/backup-runbook.md";
         const args = { path }, t = 1_790_000_000;
         s.serverFiles[path] = "# Backup runbook\\n\\nThe nightly restic job runs at 02:30 from restic-backup.timer.\\n\\n## When it fails\\n\\n1. Check that no other restic process is running.\\n2. Clear a stale lock with restic unlock.\\n3. Re-run the backup by hand and confirm a new snapshot.\\n";
         s.transcripts.backup = [...s.transcripts.backup,
           { role: "user", text: "Write that down as a runbook in my notes." },
           { role: "assistant", text: "", tool_calls: [{ id: "w1", type: "function", function: { name: "write_file", arguments: JSON.stringify(args) } }] },
           { role: "tool", name: "write_file", tool_call_id: "w1", args, context: path, result: JSON.stringify({ bytes_written: 260, dirs_created: false, resolved_path: path, files_modified: [path] }) },
-          { role: "assistant", text: "Saved the runbook to \`/home/liam/notes/backup-runbook.md\`." }];
+          { role: "assistant", text: "Saved the runbook to \`/home/lena/notes/backup-runbook.md\`." }];
       })()`,
       click("button", "Nightly backup"),
       click(".tool-line", "write_file"),

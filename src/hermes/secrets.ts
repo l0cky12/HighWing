@@ -92,7 +92,7 @@ const SHAPES: Shape[] = [
     flag: when((v) => v.replace(/=+$/, "").length >= 16 && /\d/.test(v)),
   },
   // A token can be the user name alone (`https://sk_abc@host/`), so any user part counts, up to the last `@` before the
-  // path. An SSH login alone (`ssh://liam@hermes`, how a route is named) is no secret, and support needs to see it.
+  // path. An SSH login alone (`ssh://lena@hermes`, how a route is named) is no secret, and support needs to see it.
   {
     kind: "URL credentials",
     label: "password in a link",

@@ -55,7 +55,7 @@ function server() {
 async function launch(s = server()) {
   const hermes = await connect(s.openPipe);
   running.push(hermes);
-  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} />);
+  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} />);
   await waitFor(() => expect(hermes.hasListed()).toBe(true));
   await act(async () => void (await hermes.idle()));
   const user = userEvent.setup();
@@ -163,7 +163,7 @@ function props(io: UsageIo, over: Partial<UsageAnalyticsProps> = {}): UsageAnaly
     projectChats: {},
     connected: true,
     onOpenChat: vi.fn(),
-    saveCsv: vi.fn(async () => "/home/liam/usage.csv"),
+    saveCsv: vi.fn(async () => "/home/lena/usage.csv"),
     onClose: vi.fn(),
     ...over,
   };
@@ -261,7 +261,7 @@ describe("The Usage screen", () => {
 
   it("exports the chats it counts as CSV, saved only where the owner picks", async () => {
     const io: UsageIo = { page: async () => ({ rows: [fixtureRow("a", 1, 1000, { title: '=cmd|"x"' }), fixtureRow("b", 1, 2000, { model: "m2" })], total: 2 }), session: vi.fn(), hermesTotals: async () => ({ totals: {} }) };
-    const saveCsv = vi.fn(async () => "/home/liam/usage.csv");
+    const saveCsv = vi.fn(async () => "/home/lena/usage.csv");
     const user = userEvent.setup();
     render(<UsageAnalytics {...props(io, { saveCsv })} />);
     await waitFor(() => expect(tile("Chats")).toBe("2"));
@@ -274,7 +274,7 @@ describe("The Usage screen", () => {
     expect(lines).toHaveLength(2);
     expect(lines[1]).toContain(`"'=cmd|""x"""`);
     expect(lines[1]).toMatch(/Hermes stored session totals,complete$/);
-    await waitFor(() => expect(screen.getByText("Saved 1 chats to /home/liam/usage.csv.")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Saved 1 chats to /home/lena/usage.csv.")).toBeTruthy());
   });
 
   it("doesn't call a cost Included when a profile couldn't be read", async () => {

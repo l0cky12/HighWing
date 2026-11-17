@@ -32,7 +32,7 @@ afterEach(async () => {
   localStorage.clear();
 });
 
-const HOME = "/home/liam/.hermes";
+const HOME = "/home/lena/.hermes";
 const DIR = `${HOME}/skills/writing/release-notes`;
 const skill = (name: string, description: string, body: string) => `---\nname: ${name}\ndescription: ${description}\nx-custom: keep\n---\n\n${body}`;
 const NOTES = skill("release-notes", "Write release notes from merged PRs.", "## When to Use\n\nFollow references/style.md.\n");
@@ -59,9 +59,9 @@ function Shell({ hermes, profile, status }: { hermes: Hermes; profile: string; s
   return (
     <SettingsScreen
       status={status}
-      route={{ kind: "ssh", target: "liam@hermes" }}
+      route={{ kind: "ssh", target: "lena@hermes" }}
       unsecure={false}
-      username="liam"
+      username="lena"
       passwordSaved
       profile={profile}
       olderPulled={false}
@@ -359,7 +359,7 @@ describe("An unsaved skill edit in the app", () => {
     const s = server();
     const hermes = await connect(s.openPipe, undefined, memoryCache());
     running.push(hermes);
-    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes-skills", url: "", username: "liam" }} onSignOut={async () => {}} />);
+    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes-skills", url: "", username: "lena" }} onSignOut={async () => {}} />);
     await waitFor(() => expect(hermes.hasListed()).toBe(true));
     await act(async () => void (await hermes.idle()));
     const user = userEvent.setup();
@@ -396,7 +396,7 @@ describe("Settings → Skills as cards of rows (#174, ADR 0059)", () => {
     expect(within(head).getByRole("heading", { level: 2 }).textContent).toBe("Skills");
     expect(head.querySelector(".page-slot")!.textContent).toMatch(/Editing profile\s*default/);
     expect(head.querySelector(".page-slot .badge")).toBeNull();
-    expect([...head.querySelectorAll(".page-meta .meta-chip")].map((c) => [c.firstElementChild!.textContent, c.querySelector("code")!.textContent])).toEqual([["Server", "ssh://liam@hermes"]]);
+    expect([...head.querySelectorAll(".page-meta .meta-chip")].map((c) => [c.firstElementChild!.textContent, c.querySelector("code")!.textContent])).toEqual([["Server", "ssh://lena@hermes"]]);
     expect(within(head.querySelector(".page-actions") as HTMLElement).getByRole("button", { name: /Reload/ })).toBeTruthy();
     expect(list().parentElement).toBe(card);
     expect(list().classList.contains("set-block")).toBe(true);
@@ -472,7 +472,7 @@ describe("Settings → Skills as cards of rows (#174, ADR 0059)", () => {
     running.push(hermes);
     render(
       <SettingsSearching.Provider value>
-        <SkillSettings api={hermes.skills} profile="default" status="connected" server="liam@hermes" onDirtyChange={() => {}} />
+        <SkillSettings api={hermes.skills} profile="default" status="connected" server="lena@hermes" onDirtyChange={() => {}} />
       </SettingsSearching.Provider>,
     );
     await screen.findByRole("list", { name: "Skills" });

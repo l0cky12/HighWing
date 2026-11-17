@@ -29,13 +29,13 @@ describe("Hermes transport", () => {
       branches: { links: {}, attempts: [] },
       botPictures: {},
       status: "connected",
-      route: { kind: "ssh", target: "liam@hermes" },
+      route: { kind: "ssh", target: "lena@hermes" },
       unsecure: false,
     });
   });
 
   it("explains a chat connection that fails once signed in on the sign-in screen, at the chat stage (#550)", async () => {
-    const d: SignInDetails = { mode: "url", sshTarget: "", url: "https://hermes.example.com", username: "liam", password: "pw", headers: [{ name: "CF-Access-Client-Id", value: "id" }] };
+    const d: SignInDetails = { mode: "url", sshTarget: "", url: "https://hermes.example.com", username: "lena", password: "pw", headers: [{ name: "CF-Access-Client-Id", value: "id" }] };
     const failure = (open: OpenPipe) => connect(open).catch((e: unknown) => explainSignIn(signInError(e), d));
     const canonical = new FakeHermes();
     canonical.readyPayload = { ...canonical.readyPayload, session_authority: true };
@@ -441,7 +441,7 @@ describe("Hermes transport", () => {
     await expect(
       connect(async (onEvent) => {
         onEvent({ kind: "closed", reason: "closed by the server (4401 )" });
-        return { route: { kind: "ssh", target: "liam@hermes" }, send: async () => {}, request: async () => "", getLimited: async () => "", statFiles: async () => [], sendFile: async () => {}, transcribe: async () => ({ text: "" }), speak: async () => ({ mime: "audio/mpeg", audio: new Uint8Array() }), voiceSetup: async () => ({ transcribe: false, speak: false }), toolsetGuards: async () => ({ noMcp: [], noMcpUnclear: [], savedLists: [], codingFocus: false, disabledEverywhere: [], disabledUnclear: false }), saveProviderKey: async () => ({ verified: true }), removeProviderKey: async () => {}, providerSignIns: async () => [], customEndpoints: async () => [], saveEndpoint: async () => ({ outcome: "saved", id: "", checked: true }), download: async () => undefined, pickUpload: async () => undefined, discardUpload: async () => {}, upload: async () => "", saveText: async () => "", fsSaveText: async () => "", cancelTransfer: async () => {}, close: async () => {} };
+        return { route: { kind: "ssh", target: "lena@hermes" }, send: async () => {}, request: async () => "", getLimited: async () => "", statFiles: async () => [], sendFile: async () => {}, transcribe: async () => ({ text: "" }), speak: async () => ({ mime: "audio/mpeg", audio: new Uint8Array() }), voiceSetup: async () => ({ transcribe: false, speak: false }), toolsetGuards: async () => ({ noMcp: [], noMcpUnclear: [], savedLists: [], codingFocus: false, disabledEverywhere: [], disabledUnclear: false }), saveProviderKey: async () => ({ verified: true }), removeProviderKey: async () => {}, providerSignIns: async () => [], customEndpoints: async () => [], saveEndpoint: async () => ({ outcome: "saved", id: "", checked: true }), download: async () => undefined, pickUpload: async () => undefined, discardUpload: async () => {}, upload: async () => "", saveText: async () => "", fsSaveText: async () => "", cancelTransfer: async () => {}, close: async () => {} };
       }),
     ).rejects.toThrow("4401");
   });

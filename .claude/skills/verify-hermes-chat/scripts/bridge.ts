@@ -197,7 +197,7 @@ server.mcp.catalogEntries = [
 // Clone a profile (ADR 0074): `default` has a persona and own skills to copy.
 server.souls.default = "You are Hermes, the house's ops assistant. Answer briefly and name the command to run.\n";
 for (const name of ["restic-unlock", "nginx-rotate", "vpn-mtu", "trip-planner", "disk-usage", "cert-renew"])
-  server.skills.add("default", { dir: `/home/liam/.hermes/skills/ops/${name}`, source: "agent", category: "ops" }, `---\nname: ${name}\ndescription: Synthetic ${name} skill.\n---\n\n## When to Use\n\nWhen asked about ${name}.\n`);
+  server.skills.add("default", { dir: `/home/lena/.hermes/skills/ops/${name}`, source: "agent", category: "ops" }, `---\nname: ${name}\ndescription: Synthetic ${name} skill.\n---\n\n## When to Use\n\nWhen asked about ${name}.\n`);
 
 const memoryUrl = process.env.HV_MEMORY_URL;
 const honcho = memoryUrl ? { ...HONCHO, docsUrl: memoryUrl, fields: HONCHO.fields.map((f) => (f.kind === "secret" ? { ...f, url: memoryUrl } : f)) } : HONCHO;

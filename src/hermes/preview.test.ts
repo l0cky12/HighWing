@@ -37,7 +37,7 @@ describe("Opening a web page", () => {
   it("refuses other schemes, credentials in the address, and the app's own origin", () => {
     for (const raw of ["javascript:alert(1)", "file:///etc/passwd", "tauri://localhost/", "ipc://localhost/cmd", "data:text/html,<b>x</b>", "ftp://x"])
       expect(checkWebUrl(raw, APP), raw).toHaveProperty("error");
-    expect(checkWebUrl("https://liam:hunter2@example.com", APP)).toEqual({
+    expect(checkWebUrl("https://lena:hunter2@example.com", APP)).toEqual({
       error: "Web addresses with a username or password in them don't open in the preview.",
     });
     // In `npm run app` the app itself is served over http.
@@ -48,14 +48,14 @@ describe("Opening a web page", () => {
 
 describe("The pane's address box", () => {
   it("opens a full path on the server, or a web page", () => {
-    expect(parseAddress("/home/liam/notes.md", APP)).toEqual({ target: { kind: "server", path: "/home/liam/notes.md" } });
+    expect(parseAddress("/home/lena/notes.md", APP)).toEqual({ target: { kind: "server", path: "/home/lena/notes.md" } });
     expect(parseAddress("~/project/README.md", APP)).toEqual({ target: { kind: "server", path: "~/project/README.md" } });
     expect(parseAddress("https://example.com", APP)).toEqual({ target: { kind: "web", url: "https://example.com/" } });
   });
 
   it("explains a relative path, a file:// address, and an empty box", () => {
     expect(parseAddress("docs/notes.md", APP)).toHaveProperty("error", expect.stringContaining("starting with / or ~/"));
-    expect(parseAddress("file:///home/liam/notes.md", APP)).toEqual({ error: "To preview a file on this computer, use Open a file on this computer." });
+    expect(parseAddress("file:///home/lena/notes.md", APP)).toEqual({ error: "To preview a file on this computer, use Open a file on this computer." });
     expect(parseAddress("   ", APP)).toHaveProperty("error");
   });
 });
@@ -214,7 +214,7 @@ describe("A page's address in the view (issue #376)", () => {
 
 describe("What a tool call can preview", () => {
   it("finds the server file a file tool used", () => {
-    expect(toolTargets(tool("read_file", { path: "/home/liam/app/main.py", offset: 1 }), APP)).toEqual([{ kind: "server", path: "/home/liam/app/main.py" }]);
+    expect(toolTargets(tool("read_file", { path: "/home/lena/app/main.py", offset: 1 }), APP)).toEqual([{ kind: "server", path: "/home/lena/app/main.py" }]);
     expect(toolTargets(tool("write_file", { path: "~/notes.md", content: "x" }), APP)).toEqual([{ kind: "server", path: "~/notes.md" }]);
   });
 
@@ -227,8 +227,8 @@ describe("What a tool call can preview", () => {
   });
 
   it("finds MEDIA: files in the result, each once, and skips relative paths", () => {
-    const t = tool("image_generate", { path: "out.png" }, "Saved MEDIA:/home/liam/.hermes/images/cat.png and MEDIA:/home/liam/.hermes/images/cat.png.");
-    expect(toolTargets(t, APP)).toEqual([{ kind: "server", path: "/home/liam/.hermes/images/cat.png" }]);
+    const t = tool("image_generate", { path: "out.png" }, "Saved MEDIA:/home/lena/.hermes/images/cat.png and MEDIA:/home/lena/.hermes/images/cat.png.");
+    expect(toolTargets(t, APP)).toEqual([{ kind: "server", path: "/home/lena/.hermes/images/cat.png" }]);
   });
 
   it("finds nothing in a tool call that names no file or page", () => {
@@ -249,8 +249,8 @@ async function server(files: FakeHermes["serverFiles"]) {
 
 describe("Reading a Server file", () => {
   it("reads text through dashboard REST, for the profile shown", async () => {
-    const { s, hermes } = await server({ "/home/liam/app/main.py": 'print("hi")\n' });
-    expect(await hermes.readServerFile("/home/liam/app/main.py")).toEqual({
+    const { s, hermes } = await server({ "/home/lena/app/main.py": 'print("hi")\n' });
+    expect(await hermes.readServerFile("/home/lena/app/main.py")).toEqual({
       kind: "text",
       text: 'print("hi")\n',
       language: "python",
@@ -259,7 +259,7 @@ describe("Reading a Server file", () => {
       truncated: false,
     });
     const req = s.restRequests.at(-1)!;
-    expect([req.method, req.path, req.query.get("path"), req.query.get("profile")]).toEqual(["GET", "/api/fs/read-text", "/home/liam/app/main.py", "default"]);
+    expect([req.method, req.path, req.query.get("path"), req.query.get("profile")]).toEqual(["GET", "/api/fs/read-text", "/home/lena/app/main.py", "default"]);
   });
 
   it("says when only the first 512 KB is shown", async () => {
@@ -276,29 +276,29 @@ describe("Reading a Server file", () => {
   });
 
   it("reads an image as a data URL", async () => {
-    const { s, hermes } = await server({ "/home/liam/cat.png": "\x89PNG\r\n\x1a\nbytes" });
-    const v = await hermes.readServerFile("/home/liam/cat.png");
+    const { s, hermes } = await server({ "/home/lena/cat.png": "\x89PNG\r\n\x1a\nbytes" });
+    const v = await hermes.readServerFile("/home/lena/cat.png");
     expect(v).toEqual({ kind: "image", src: `data:image/png;base64,${btoa("\x89PNG\r\n\x1a\nbytes")}`, size: 13 });
     expect(s.restRequests.at(-1)!.path).toBe("/api/fs/read-data-url");
   });
 
   it("reads a PDF or Word file's bytes, without reading it as text first", async () => {
-    const { s, hermes } = await server({ "/home/liam/report.pdf": "%PDF-1.7\0\0\0binary", "/home/liam/Plan.DOCX": "PK\x03\x04word" });
-    expect(await hermes.readServerFile("/home/liam/report.pdf")).toEqual({ kind: "document", format: "pdf", bytes: bytes("%PDF-1.7\0\0\0binary"), size: 17 });
-    expect(await hermes.readServerFile("/home/liam/Plan.DOCX")).toEqual({ kind: "document", format: "docx", bytes: bytes("PK\x03\x04word"), size: 8 });
+    const { s, hermes } = await server({ "/home/lena/report.pdf": "%PDF-1.7\0\0\0binary", "/home/lena/Plan.DOCX": "PK\x03\x04word" });
+    expect(await hermes.readServerFile("/home/lena/report.pdf")).toEqual({ kind: "document", format: "pdf", bytes: bytes("%PDF-1.7\0\0\0binary"), size: 17 });
+    expect(await hermes.readServerFile("/home/lena/Plan.DOCX")).toEqual({ kind: "document", format: "docx", bytes: bytes("PK\x03\x04word"), size: 8 });
     expect(s.restRequests.filter((r) => r.path.startsWith("/api/fs/")).map((r) => r.path)).toEqual(["/api/fs/read-data-url", "/api/fs/read-data-url"]);
   });
 
   it("knows a document by the type Hermes gives when its name doesn't say", async () => {
-    const { s, hermes } = await server({ "/home/liam/download": "PK\x03\x04\0word" });
+    const { s, hermes } = await server({ "/home/lena/download": "PK\x03\x04\0word" });
     const readText = s.rest["GET /api/fs/read-text"];
     s.rest["GET /api/fs/read-text"] = (req) => ({ ...(readText(req) as object), mimeType: DOCX_MIME });
-    expect(await hermes.readServerFile("/home/liam/download")).toMatchObject({ kind: "document", format: "docx" });
+    expect(await hermes.readServerFile("/home/lena/download")).toMatchObject({ kind: "document", format: "docx" });
   });
 
   it("won't show a document whose bytes aren't one, or a binary file that isn't an image or a document", async () => {
-    const { hermes } = await server({ "/home/liam/fake.pdf": "<html>", "/usr/bin/tool": "\x7fELF\0\0\0" });
-    expect(await hermes.readServerFile("/home/liam/fake.pdf")).toEqual({
+    const { hermes } = await server({ "/home/lena/fake.pdf": "<html>", "/usr/bin/tool": "\x7fELF\0\0\0" });
+    expect(await hermes.readServerFile("/home/lena/fake.pdf")).toEqual({
       kind: "unsupported",
       reason: "This file is named like a PDF, but its bytes aren't one.",
       size: 6,
@@ -307,10 +307,10 @@ describe("Reading a Server file", () => {
   });
 
   it("explains a missing file, a folder, and a credentials file Hermes refuses", async () => {
-    const { hermes } = await server({ "/home/liam/app": { dir: true }, "/home/liam/app/.env": "SECRET=1" });
-    await expect(hermes.readServerFile("/home/liam/gone.txt")).rejects.toThrow("There's no file at this path on the Hermes server.");
-    await expect(hermes.readServerFile("/home/liam/app")).rejects.toThrow("This path is a folder on the Hermes server, not a file.");
-    await expect(hermes.readServerFile("/home/liam/app/.env")).rejects.toThrow("Hermes doesn't show this file, since it may hold credentials.");
+    const { hermes } = await server({ "/home/lena/app": { dir: true }, "/home/lena/app/.env": "SECRET=1" });
+    await expect(hermes.readServerFile("/home/lena/gone.txt")).rejects.toThrow("There's no file at this path on the Hermes server.");
+    await expect(hermes.readServerFile("/home/lena/app")).rejects.toThrow("This path is a folder on the Hermes server, not a file.");
+    await expect(hermes.readServerFile("/home/lena/app/.env")).rejects.toThrow("Hermes doesn't show this file, since it may hold credentials.");
   });
 
   it("says when the server can't read files at all", async () => {
@@ -326,9 +326,9 @@ describe("Reading a Server file", () => {
   });
 
   it("doesn't show a data URL that isn't an image", async () => {
-    const { s, hermes } = await server({ "/home/liam/fake.svg": "x" });
+    const { s, hermes } = await server({ "/home/lena/fake.svg": "x" });
     s.rest["GET /api/fs/read-data-url"] = () => ({ dataUrl: "data:text/html;base64,PHNjcmlwdD4=" });
-    expect(await hermes.readServerFile("/home/liam/fake.svg")).toMatchObject({ kind: "unsupported", reason: "The preview can't show text/html files." });
+    expect(await hermes.readServerFile("/home/lena/fake.svg")).toMatchObject({ kind: "unsupported", reason: "The preview can't show text/html files." });
   });
 });
 
@@ -340,17 +340,17 @@ describe("Reading a Local file", () => {
   });
 
   it("reads a PDF or Word file's bytes", async () => {
-    expect(await readLocalFile({ path: "/home/liam/a.pdf", name: "a.pdf" }, io({}))).toEqual({ kind: "document", format: "pdf", bytes: bytes("%PDF-1.4"), size: 8 });
-    expect(await readLocalFile({ path: "/home/liam/b.docx", name: "b.docx" }, io({}))).toMatchObject({ kind: "document", format: "docx" });
-    expect(await readLocalFile({ path: "/home/liam/fake.docx", name: "fake.docx" }, io({}))).toMatchObject({
+    expect(await readLocalFile({ path: "/home/lena/a.pdf", name: "a.pdf" }, io({}))).toEqual({ kind: "document", format: "pdf", bytes: bytes("%PDF-1.4"), size: 8 });
+    expect(await readLocalFile({ path: "/home/lena/b.docx", name: "b.docx" }, io({}))).toMatchObject({ kind: "document", format: "docx" });
+    expect(await readLocalFile({ path: "/home/lena/fake.docx", name: "fake.docx" }, io({}))).toMatchObject({
       kind: "unsupported",
       reason: "This file is named like a Word document, but its bytes aren't one.",
     });
   });
 
   it("reads an image as an object URL, and text as text", async () => {
-    expect(await readLocalFile({ path: "/home/liam/cat.png", name: "cat.png" }, io({}))).toEqual({ kind: "image", src: "blob:/home/liam/cat.png" });
-    expect(await readLocalFile({ path: "/home/liam/notes.md", name: "notes.md" }, io({}))).toEqual({
+    expect(await readLocalFile({ path: "/home/lena/cat.png", name: "cat.png" }, io({}))).toEqual({ kind: "image", src: "blob:/home/lena/cat.png" });
+    expect(await readLocalFile({ path: "/home/lena/notes.md", name: "notes.md" }, io({}))).toEqual({
       kind: "text",
       text: "hello",
       language: "markdown",
@@ -361,7 +361,7 @@ describe("Reading a Local file", () => {
   });
 
   it("won't show a binary file", async () => {
-    expect(await readLocalFile({ path: "/home/liam/disk.img", name: "disk.img" }, io({ binary: true, size: 4096 }))).toEqual({
+    expect(await readLocalFile({ path: "/home/lena/disk.img", name: "disk.img" }, io({ binary: true, size: 4096 }))).toEqual({
       kind: "unsupported",
       reason: "The preview can't show binary files.",
       size: 4096,

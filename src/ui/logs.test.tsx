@@ -221,7 +221,7 @@ describe("Logs in Settings → Diagnostics", () => {
     s.rest["GET /api/logs"] = (req) => ({ file: req.query.get("file"), lines: [`2026-11-04 10:00:00,000 INFO agent: hello from ${req.query.get("profile")}\n`] });
     const hermes = await connect(s.openPipe);
     running.push(hermes);
-    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} />);
+    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} />);
     await waitFor(() => expect(hermes.hasListed()).toBe(true));
     await act(async () => void (await hermes.idle()));
     expect(screen.queryByRole("button", { name: "Logs" })).toBeNull();
@@ -253,7 +253,7 @@ describe("Logs in Settings → Diagnostics", () => {
     const s = new FakeHermes();
     const hermes = await connect(s.openPipe);
     running.push(hermes);
-    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} />);
+    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} />);
     await waitFor(() => expect(hermes.hasListed()).toBe(true));
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Settings" }));
@@ -284,9 +284,9 @@ function SettingsWith({
   return (
     <SettingsScreen
       status="connected"
-      route={{ kind: "ssh", target: "liam@hermes" }}
+      route={{ kind: "ssh", target: "lena@hermes" }}
       unsecure={false}
-      username="liam"
+      username="lena"
       passwordSaved
       profile={profile}
       olderPulled={false}

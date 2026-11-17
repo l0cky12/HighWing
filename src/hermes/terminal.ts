@@ -96,7 +96,7 @@ const LOOPBACK = /^(localhost|.*\.localhost|127(\.\d{1,3}){3}|0\.0\.0\.0|::1?|::
 /**
  * The SSH target a web-address sign-in points at: the address's host, with no user, so ssh's own defaults pick the
  * rest (a `Host` entry in ~/.ssh/config, else your user name here). `http://hermes:9119` gives `hermes`, and
- * `https://hermes.tail36fb9.ts.net` gives that name. Empty for a host on this computer (ssh there would open a shell
+ * `https://hermes.tail1234.ts.net` gives that name. Empty for a host on this computer (ssh there would open a shell
  * here, not on the server), a host ssh would read as an option, or an address that isn't http(s).
  */
 export function sshTargetFromUrl(url: string | undefined): string {

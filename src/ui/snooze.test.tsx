@@ -414,7 +414,7 @@ describe("Snoozing in the app", () => {
     const hermes = await connect(server.openPipe);
     running.push(hermes);
     const user = userEvent.setup();
-    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} />);
+    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} />);
     await screen.findByRole("button", { name: /Deploy notes/ });
     await act(async () => void (await hermes.idle()));
     return { server, hermes, user };

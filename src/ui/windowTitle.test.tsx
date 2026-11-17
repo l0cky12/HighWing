@@ -44,7 +44,7 @@ describe("the window title", () => {
     ];
     const hermes = await connect(server.openPipe, undefined, memoryCache());
     running.push(hermes);
-    const view = render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@title", url: "", username: "liam" }} onSignOut={async () => {}} />);
+    const view = render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@title", url: "", username: "lena" }} onSignOut={async () => {}} />);
     await waitFor(() => expect(hermes.hasListed()).toBe(true));
     await act(async () => void (await hermes.idle()));
     // Launch opens a new chat (ADR 0162): no chat yet, two unread.

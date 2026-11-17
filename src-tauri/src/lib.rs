@@ -2375,7 +2375,7 @@ mod tests {
     /// is the only other one. The status read still comes first, before the password or token (ADR 0120).
     #[tokio::test]
     async fn a_sign_in_opens_one_http_connection_for_status_sign_in_and_ticket() {
-        let password = super::SignInWith::Password { username: "liam".into(), password: "hunter2".into(), provider: None };
+        let password = super::SignInWith::Password { username: "lena".into(), password: "hunter2".into(), provider: None };
         let token = super::SignInWith::Token { token: Some("GOOD".into()), connection: None };
         let bearer = Some("Bearer GOOD".to_owned());
         for (credential, sign_in, auth) in [(password, "/auth/password-login", None), (token, "/api/auth/me", bearer)] {
@@ -2407,7 +2407,7 @@ mod tests {
             let base = format!("http://{}/", listener.local_addr().unwrap());
             tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
             let target = super::Target::Url { url: base, headers: Vec::new() };
-            let password = super::SignInWith::Password { username: "liam".into(), password: "hunter2".into(), provider: None };
+            let password = super::SignInWith::Password { username: "lena".into(), password: "hunter2".into(), provider: None };
             let on_event = tauri::ipc::Channel::new(|_| Ok(()));
             let failed =
                 super::open_connection(target, password, "default".into(), on_event, None, false, None, super::Steps::default()).await.err().expect("refused");
@@ -2449,7 +2449,7 @@ mod tests {
         attempt: &str,
         limit: Option<usize>,
     ) -> Result<super::Route, String> {
-        let password = super::SignInWith::Password { username: "liam".into(), password: "hunter2".into(), provider: None };
+        let password = super::SignInWith::Password { username: "lena".into(), password: "hunter2".into(), provider: None };
         super::hermes_connect(
             app.state(),
             app.state(),
@@ -2578,7 +2578,7 @@ mod tests {
             .build(tauri::test::mock_context(tauri::test::noop_assets()))
             .unwrap();
         let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default()).build().unwrap();
-        let password = super::SignInWith::Password { username: "liam".into(), password: "hunter2".into(), provider: None };
+        let password = super::SignInWith::Password { username: "lena".into(), password: "hunter2".into(), provider: None };
         app.state::<AppState>().slots.insert(id("server-one"), Slot::new(Attempt::new("A"), connect(&base, password).await));
 
         let dir = std::env::temp_dir().join(format!("hermes-chat-344-{}", std::process::id()));

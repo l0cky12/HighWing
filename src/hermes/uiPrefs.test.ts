@@ -444,7 +444,7 @@ describe("Clear local cache", () => {
   it("deletes the chat lists and Saved copies and keeps the display preferences", () => {
     setUIPrefs({ theme: "dark", statusBar: ["model"], modelPicker: { provider: "anthropic", model: "claude-opus-5-5" } });
     const prefsBefore = localStorage.getItem(UI_PREFS_KEY);
-    const cache = localChatCache({ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" });
+    const cache = localChatCache({ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" });
     cache.save("default", []);
     cache.saveTranscript("default", "a", [{ kind: "user", id: "1", text: "hi" }]);
     expect(cache.bytes()).toBeGreaterThan(0);

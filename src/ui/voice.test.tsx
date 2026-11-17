@@ -125,7 +125,7 @@ async function signedIn(server = new FakeHermes(), localStt = new FakeLocalStt()
   localStt.server = (audio, mime) => hermes.transcribe(audio, mime);
   const user = userEvent.setup();
   render(
-    <Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: `liam${++signIns}` }} onSignOut={async () => {}} localStt={localStt} />,
+    <Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: `lena${++signIns}` }} onSignOut={async () => {}} localStt={localStt} />,
   );
   await screen.findByRole("button", { name: /Nightly backup/ });
   await settle(hermes);

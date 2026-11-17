@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { firstPick, methodLabel, methodsNote, offered, readMethods, withMethod } from "./signInMethods";
 import type { Methods, Reached, SignInDetails, SignInMethod } from "./tauriPipe";
 
-const d: SignInDetails = { mode: "url", sshTarget: "", url: "http://hermes:9119", username: "liam", password: "hunter2" };
+const d: SignInDetails = { mode: "url", sshTarget: "", url: "http://hermes:9119", username: "lena", password: "hunter2" };
 const basic: SignInMethod = { method: "password", provider: "basic", label: "Basic" };
 const ldap: SignInMethod = { method: "password", provider: "ldap", label: "Company login" };
 const token: SignInMethod = { method: "token" };
@@ -42,7 +42,7 @@ describe("Sign-in methods", () => {
 
   it("switching method drops what belonged to the other: a typed token, the password, the provider", () => {
     const tok = withMethod(d, token);
-    expect(tok).toMatchObject({ method: "token", password: "", username: "liam" });
+    expect(tok).toMatchObject({ method: "token", password: "", username: "lena" });
     const typed = { ...tok, token: "GOOD", savedToken: "id-1" };
     const back = withMethod(typed, ldap);
     expect(back).toMatchObject({ provider: "ldap", password: "" });

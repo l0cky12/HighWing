@@ -10,7 +10,7 @@ import { RepositoryScreen } from "./Repository";
 
 afterEach(cleanup);
 
-const TOP = "/home/liam/app";
+const TOP = "/home/lena/app";
 
 function statusOf(over: Partial<Status> = {}): Status {
   return {
@@ -74,7 +74,7 @@ function show(api: RepoApi, props: Partial<Parameters<typeof RepositoryScreen>[0
   // StrictMode, as the app runs: effects mount, unmount and mount again.
   render(
     <StrictMode>
-      <RepositoryScreen api={api} initialTarget="liam@hermes" initialPath={TOP} recent={[]} suggestions={[]} onOpened={onOpened} onTarget={onTarget} onClose={() => {}} {...props} />
+      <RepositoryScreen api={api} initialTarget="lena@hermes" initialPath={TOP} recent={[]} suggestions={[]} onOpened={onOpened} onTarget={onTarget} onClose={() => {}} {...props} />
     </StrictMode>,
   );
   return { onOpened, onTarget };
@@ -85,7 +85,7 @@ describe("Repository screen", () => {
     const { api, calls } = standard();
     const { onOpened } = show(api);
     expect(await screen.findByText(TOP)).toBeTruthy();
-    expect(calls[0]).toEqual({ target: "liam@hermes", request: { op: "status", repo: TOP } });
+    expect(calls[0]).toEqual({ target: "lena@hermes", request: { op: "status", repo: TOP } });
     expect(screen.getByText("feature/login")).toBeTruthy();
     expect(screen.getByText("2 ahead of origin/feature/login, as of the last fetch.")).toBeTruthy();
     expect(onOpened).toHaveBeenCalledWith(TOP);
@@ -164,10 +164,10 @@ describe("Repository screen", () => {
 
   it("says when the folder isn't a repository", async () => {
     const { api } = fakeApi(() => {
-      throw new RepoFailure("not-repo", "/home/liam isn't in a Git repository.");
+      throw new RepoFailure("not-repo", "/home/lena isn't in a Git repository.");
     });
-    show(api, { initialPath: "/home/liam" });
-    expect((await screen.findByRole("alert")).textContent).toContain("Couldn't read /home/liam: /home/liam isn't in a Git repository.");
+    show(api, { initialPath: "/home/lena" });
+    expect((await screen.findByRole("alert")).textContent).toContain("Couldn't read /home/lena: /home/lena isn't in a Git repository.");
   });
 
   it("asks for an SSH target when there is none, and keeps the one given", async () => {
@@ -176,20 +176,20 @@ describe("Repository screen", () => {
     const { onTarget } = show(api, { initialTarget: "" });
     expect(screen.getByText("Enter the SSH target of the Hermes server first.")).toBeTruthy();
     expect(calls).toEqual([]);
-    await user.type(screen.getByLabelText("SSH target"), "liam@box");
+    await user.type(screen.getByLabelText("SSH target"), "lena@box");
     await user.click(screen.getByRole("button", { name: "Use this target" }));
-    expect(onTarget).toHaveBeenCalledWith("liam@box");
+    expect(onTarget).toHaveBeenCalledWith("lena@box");
     await user.click(screen.getByRole("button", { name: "Open" }));
     await screen.findByText(TOP);
-    expect(calls[0]).toEqual({ target: "liam@box", request: { op: "status", repo: TOP } });
+    expect(calls[0]).toEqual({ target: "lena@box", request: { op: "status", repo: TOP } });
   });
 
   it("offers the project's folders and recent ones when nothing is open", async () => {
     const user = userEvent.setup();
     const { api, calls } = standard();
-    show(api, { initialPath: "", recent: ["/srv/old"], suggestions: [{ label: "Website", path: "/home/liam/site" }] });
-    await user.click(screen.getByRole("button", { name: /Website \/home\/liam\/site/ }));
-    await waitFor(() => expect(calls[0].request).toEqual({ op: "status", repo: "/home/liam/site" }));
+    show(api, { initialPath: "", recent: ["/srv/old"], suggestions: [{ label: "Website", path: "/home/lena/site" }] });
+    await user.click(screen.getByRole("button", { name: /Website \/home\/lena\/site/ }));
+    await waitFor(() => expect(calls[0].request).toEqual({ op: "status", repo: "/home/lena/site" }));
     expect(screen.queryByRole("button", { name: /Recent \/srv\/old/ })).toBeNull();
   });
 
@@ -621,7 +621,7 @@ describe("Repository screen, late answers from another place", () => {
 
   const scoped = (suggest: (i: string, input: string) => Promise<string>, suggestScope: string, api: RepoApi) => (
     <StrictMode>
-      <RepositoryScreen api={api} initialTarget="liam@hermes" initialPath={TOP} recent={[]} suggestions={[]} onOpened={() => {}} onTarget={() => {}} onClose={() => {}} suggest={suggest} suggestScope={suggestScope} />
+      <RepositoryScreen api={api} initialTarget="lena@hermes" initialPath={TOP} recent={[]} suggestions={[]} onOpened={() => {}} onTarget={() => {}} onClose={() => {}} suggest={suggest} suggestScope={suggestScope} />
     </StrictMode>
   );
 

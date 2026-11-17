@@ -56,7 +56,7 @@ async function launch() {
   server.souls = { default: "# Default persona\n", work: "# Work persona\n", ops: "" };
   const hermes = await connect(server.openPipe, undefined, memoryCache());
   running.push(hermes);
-  const connection: SavedSignIn = { mode: "ssh", sshTarget: `liam@hermes-${++launches}`, url: "", username: "liam" };
+  const connection: SavedSignIn = { mode: "ssh", sshTarget: `lena@hermes-${++launches}`, url: "", username: "lena" };
   const refs = connectionRefs(localStorage);
   const inbox = linkInbox();
   render(<WithLinks hermes={hermes} connection={connection} inbox={inbox} refs={refs} />);
@@ -347,7 +347,7 @@ describe("Copy chat link", () => {
     expect(copied).toHaveLength(1);
     const parsed = parseChatLink(copied[0]);
     expect(parsed.ok && parsed.link).toMatchObject({ profile: "default", chatId: "nas" });
-    for (const leak of [connection.sshTarget, "@", "liam", "password", "token"]) expect(copied[0]).not.toContain(leak);
+    for (const leak of [connection.sshTarget, "@", "lena", "password", "token"]) expect(copied[0]).not.toContain(leak);
 
     await user.click(screen.getByText("Nightly backup"));
     await open(copied[0]);

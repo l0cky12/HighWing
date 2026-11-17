@@ -1369,7 +1369,7 @@ mod tests {
 
     #[test]
     fn ssh_arguments_are_fixed_options_one_forward_and_the_target_last() {
-        let args = ssh_args("liam@hermes", Path::new("/run/user/1000/hermes-chat-page-1-1-a/s"), &page("http://localhost:3000/")).unwrap();
+        let args = ssh_args("lena@hermes", Path::new("/run/user/1000/hermes-chat-page-1-1-a/s"), &page("http://localhost:3000/")).unwrap();
         let args: Vec<&str> = args.iter().map(|a| a.to_str().unwrap()).collect();
         assert_eq!(
             args,
@@ -1405,7 +1405,7 @@ mod tests {
                 "-L",
                 "/run/user/1000/hermes-chat-page-1-1-a/s:localhost:3000",
                 "--",
-                "liam@hermes",
+                "lena@hermes",
             ]
         );
         let fwd = |raw: &str| {
@@ -1421,7 +1421,7 @@ mod tests {
     #[test]
     fn a_target_that_could_be_an_option_or_more_than_one_argument_is_refused() {
         let p = page("http://localhost:3000/");
-        for t in ["", "  ", "-oProxyCommand=sh", "liam@hermes -L 1:2:3", "a\tb", "a\nb"] {
+        for t in ["", "  ", "-oProxyCommand=sh", "lena@hermes -L 1:2:3", "a\tb", "a\nb"] {
             assert!(ssh_args(t, Path::new("/tmp/d/s"), &p).is_err(), "{t:?}");
         }
         // Surrounding whitespace is trimmed, as the sign-in does.
@@ -1432,10 +1432,10 @@ mod tests {
     #[test]
     fn on_windows_each_connection_is_an_ssh_with_the_same_options_that_listens_on_nothing() {
         let p = page("http://[::1]:8080/");
-        let stdio = stdio_args("liam@hermes", &p).unwrap();
-        let socket = ssh_args("liam@hermes", Path::new("/tmp/d/s"), &p).unwrap();
+        let stdio = stdio_args("lena@hermes", &p).unwrap();
+        let socket = ssh_args("lena@hermes", Path::new("/tmp/d/s"), &p).unwrap();
         assert_eq!(stdio[..stdio.len() - 8], socket[2..socket.len() - 8], "the same options, without -N -T");
-        assert_eq!(stdio[stdio.len() - 4..], ["-W", "[::1]:8080", "--", "liam@hermes"]);
+        assert_eq!(stdio[stdio.len() - 4..], ["-W", "[::1]:8080", "--", "lena@hermes"]);
         assert!(!stdio.iter().any(|a| a == "-L" || a == "-D" || a == "-R"), "ssh listens on nothing: {stdio:?}");
     }
 
@@ -1464,9 +1464,9 @@ mod tests {
     #[test]
     fn lists_what_listens_on_the_server_with_the_tunnels_options_and_no_forward() {
         let p = page("http://localhost:3000/");
-        let listing = listening_args(" liam@hermes ").unwrap();
-        let tunnel = ssh_args("liam@hermes", Path::new("/tmp/d/s"), &p).unwrap();
-        assert_eq!(listing[listing.len() - 4..], ["--", "liam@hermes", "ss", "-ltnpH"]);
+        let listing = listening_args(" lena@hermes ").unwrap();
+        let tunnel = ssh_args("lena@hermes", Path::new("/tmp/d/s"), &p).unwrap();
+        assert_eq!(listing[listing.len() - 4..], ["--", "lena@hermes", "ss", "-ltnpH"]);
         assert!(!listing.iter().any(|a| a == "-L" || a == "-N"));
         let forwarding = tunnel.iter().position(|a| a == "ForkAfterAuthentication=no").unwrap() - 1;
         assert_eq!(listing[..listing.len() - 6], tunnel[1..forwarding], "the tunnel's options up to a tunnel's own");
@@ -1671,17 +1671,17 @@ while True:
         let port = web_server("from the server").await;
         let pages = Arc::new(ServerPages::default());
         let (got, on_event) = events();
-        let opened = open_page(&pages, &fake.program, "liam@hermes", &format!("http://localhost:{port}/app"), on_event).await.unwrap();
+        let opened = open_page(&pages, &fake.program, "lena@hermes", &format!("http://localhost:{port}/app"), on_event).await.unwrap();
 
         let local = Url::parse(&opened.url).unwrap();
         assert_eq!(local.host_str(), Some("127.0.0.1"));
         assert_ne!(local.port(), Some(port));
         assert_eq!(local.path(), "/app");
-        assert_eq!((opened.target.as_str(), opened.at.clone()), ("liam@hermes", format!("localhost:{port}")));
+        assert_eq!((opened.target.as_str(), opened.at.clone()), ("lena@hermes", format!("localhost:{port}")));
         assert!(get(&opened.url).await.unwrap().ends_with("from the server"));
 
         let (pid, socket, args) = fake.ran();
-        assert!(args.ends_with(&format!(":localhost:{port} -- liam@hermes")), "{args}");
+        assert!(args.ends_with(&format!(":localhost:{port} -- lena@hermes")), "{args}");
         assert!(!ended(pid));
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(std::fs::metadata(socket.parent().unwrap()).unwrap().permissions().mode() & 0o777, 0o700);
@@ -2219,7 +2219,7 @@ while True:
         std::fs::create_dir_all(&dir).unwrap();
         let program = dir.join("ssh");
         crate::test_common::write_executable(&program, &format!("#!/bin/sh\nyes '{LINE}' | head -c 300000\n"));
-        let out = listening(program.to_str().unwrap(), "liam@hermes").await.expect("a long listing is cut, not failed");
+        let out = listening(program.to_str().unwrap(), "lena@hermes").await.expect("a long listing is cut, not failed");
         assert!(out.len() as u64 <= LISTENING_KEPT);
         assert!(out.lines().all(|l| l == LINE), "every line kept is whole");
         assert_eq!(crate::dev_servers::parse_ss(&out).iter().map(|l| l.port).collect::<Vec<_>>(), [5173]);

@@ -58,9 +58,9 @@ function Shell({ hermes, profile, status, guard }: { hermes: Hermes; profile: st
   return (
     <SettingsScreen
       status={status}
-      route={{ kind: "ssh", target: "liam@hermes" }}
+      route={{ kind: "ssh", target: "lena@hermes" }}
       unsecure={false}
-      username="liam"
+      username="lena"
       passwordSaved
       profile={profile}
       olderPulled={false}
@@ -106,9 +106,9 @@ describe("Settings → Memory", () => {
     const { user } = await shown();
     // The page header names the profile, the server and the file; the file from ~, in full on hover.
     expect(pageHead().querySelector(".page-slot")!.textContent!.trim()).toBe("Editing profile default");
-    expect(chip("Server")!.textContent).toBe("ssh://liam@hermes");
+    expect(chip("Server")!.textContent).toBe("ssh://lena@hermes");
     expect(chip("File")!.textContent).toBe("~/.hermes/memories/MEMORY.md");
-    expect(chip("File")!.title).toBe("/home/liam/.hermes/memories/MEMORY.md");
+    expect(chip("File")!.title).toBe("/home/lena/.hermes/memories/MEMORY.md");
     expect(within(pageHead()).getByText(/2 entries, \d+ characters/)).toBeTruthy();
     const files = screen.getByRole("group", { name: "Memory: sections" });
     expect(within(files).getAllByRole("button").map((t) => t.textContent)).toEqual(["Agent notes", "User profile"]);
@@ -116,7 +116,7 @@ describe("Settings → Memory", () => {
     // How a saved edit reaches chats is the header's summary box.
     expect(within(pageHead()).getByText("Saved edits reach new chats. Chats already going keep the memory they started with.").closest("section.applies-box")).toBeTruthy();
     await user.click(file(/User profile/));
-    expect(chip("File")!.title).toBe("/home/liam/.hermes/memories/USER.md");
+    expect(chip("File")!.title).toBe("/home/lena/.hermes/memories/USER.md");
     expect(entry(SAM)).toBeTruthy();
   });
 
@@ -599,7 +599,7 @@ describe("Settings → Memory states", () => {
 
   it("says when Hermes refuses for lack of permission", async () => {
     const s = server();
-    s.handlers["learning.frames"] = (r) => s.fail(r.id, 5000, "learning.frames failed: [Errno 13] Permission denied: '/home/liam/.hermes/memories/MEMORY.md'");
+    s.handlers["learning.frames"] = (r) => s.fail(r.id, 5000, "learning.frames failed: [Errno 13] Permission denied: '/home/lena/.hermes/memories/MEMORY.md'");
     await shown({ s, wait: false });
     expect((await screen.findByRole("alert")).textContent).toMatch(/Hermes refused.*Permission denied/);
   });
@@ -632,7 +632,7 @@ describe("Settings → Memory as cards of rows (ADR 0059)", () => {
   async function alone() {
     const hermes = await connect(server().openPipe, "default");
     running.push(hermes);
-    render(<MemorySettings api={hermes.memory} profile="default" status="connected" server="ssh://liam@hermes" onDirtyChange={() => {}} />);
+    render(<MemorySettings api={hermes.memory} profile="default" status="connected" server="ssh://lena@hermes" onDirtyChange={() => {}} />);
     await screen.findByRole("list", { name: "Agent notes entries" });
   }
 
@@ -779,7 +779,7 @@ async function launchApp({ openChat = false } = {}) {
   const s = server();
   const hermes = await connect(s.openPipe, undefined, memoryCache());
   running.push(hermes);
-  const connection = { mode: "ssh" as const, sshTarget: `liam@hermes-mem-${++launches}`, url: "", username: "liam" };
+  const connection = { mode: "ssh" as const, sshTarget: `lena@hermes-mem-${++launches}`, url: "", username: "lena" };
   const refs = connectionRefs(localStorage);
   const main = (link?: Parameters<typeof Main>[0]["link"]) => <Main hermes={hermes} connection={connection} refs={refs} link={link} onSignOut={async () => {}} />;
   const view = render(main());
@@ -816,7 +816,7 @@ describe("Chat beside a memory screen that can't save", () => {
     prepare(s);
     const hermes = await connect(s.openPipe, undefined, memoryCache());
     running.push(hermes);
-    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: `liam@hermes-mem-${++launches}`, url: "", username: "liam" }} onSignOut={async () => {}} />);
+    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: `lena@hermes-mem-${++launches}`, url: "", username: "lena" }} onSignOut={async () => {}} />);
     await waitFor(() => expect(hermes.hasListed()).toBe(true));
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /Settings/ }));

@@ -60,7 +60,7 @@ async function launch(setup: (server: FakeHermes) => void = () => {}) {
   servers.push(server);
   const hermes = await connect(server.openPipe, undefined, memoryCache());
   running.push(hermes);
-  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: `liam@hermes-${++launches}`, url: "", username: "liam" }} onSignOut={async () => {}} />);
+  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: `lena@hermes-${++launches}`, url: "", username: "lena" }} onSignOut={async () => {}} />);
   await waitFor(() => expect(hermes.hasListed()).toBe(true));
   await act(async () => void (await hermes.idle()));
   await act(async () => void (await hermes.checkOtherProfiles()));
@@ -1425,7 +1425,7 @@ describe("The chat list panel's two modes", () => {
     const { hermes, user } = await launch();
     await openScribe(user);
     cleanup();
-    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: `liam@hermes-${launches}`, url: "", username: "liam" }} onSignOut={async () => {}} />);
+    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: `lena@hermes-${launches}`, url: "", username: "lena" }} onSignOut={async () => {}} />);
     await waitFor(() => expect(names()).toEqual(["Hermes", "Scribe"]));
     expect(shownMode()).toBe("Bots");
     expect(current()).toEqual([null, null]);

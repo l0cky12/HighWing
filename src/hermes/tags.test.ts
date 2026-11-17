@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { TagsStore, previewBulk, type TagsFile } from "./tags";
 import { projectScope } from "./projectLinks";
 
-const conn = { mode: "ssh" as const, sshTarget: "liam@hermes", url: "", username: "liam" };
+const conn = { mode: "ssh" as const, sshTarget: "lena@hermes", url: "", username: "lena" };
 const DEFAULT = projectScope(conn, "default");
 const WORK = projectScope(conn, "work");
 

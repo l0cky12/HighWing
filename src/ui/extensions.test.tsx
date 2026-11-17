@@ -42,7 +42,7 @@ async function launch(extensions: Extensions) {
   running.push(hermes);
   render(
     <ExtensionsContext.Provider value={extensions}>
-      <Main hermes={hermes} connection={{ mode: "ssh", sshTarget: `liam@ext-${++launches}`, url: "", username: "liam" }} onSignOut={async () => {}} />
+      <Main hermes={hermes} connection={{ mode: "ssh", sshTarget: `lena@ext-${++launches}`, url: "", username: "lena" }} onSignOut={async () => {}} />
     </ExtensionsContext.Provider>,
   );
   await waitFor(() => expect(hermes.hasListed()).toBe(true));

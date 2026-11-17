@@ -8,12 +8,12 @@ const b64 = (s: string) => btoa(s);
 async function signedIn() {
   const server = new FakeHermes();
   server.files = {
-    "/home/liam/Pictures/rack.png": "\x89PNG fake",
-    "/home/liam/notes/disk report.txt": "sda 92%",
-    "/home/liam/big.png": { size: 26 * MiB },
-    "/home/liam/huge.iso": { size: 300 * MiB },
-    "/home/liam/scan.pdf": { size: 40 * MiB },
-    "/home/liam/notes": { dir: true },
+    "/home/lena/Pictures/rack.png": "\x89PNG fake",
+    "/home/lena/notes/disk report.txt": "sda 92%",
+    "/home/lena/big.png": { size: 26 * MiB },
+    "/home/lena/huge.iso": { size: 300 * MiB },
+    "/home/lena/scan.pdf": { size: 40 * MiB },
+    "/home/lena/notes": { dir: true },
   };
   const hermes = await connect(server.openPipe);
   const id = await hermes.newChat();
@@ -24,12 +24,12 @@ async function signedIn() {
 describe("Choosing files to attach", () => {
   it("names each file and sorts images from other files", async () => {
     const { hermes } = await signedIn();
-    const got = await hermes.checkAttachments(["/home/liam/Pictures/rack.png", "/home/liam/notes/disk report.txt", "/home/liam/scan.pdf"]);
+    const got = await hermes.checkAttachments(["/home/lena/Pictures/rack.png", "/home/lena/notes/disk report.txt", "/home/lena/scan.pdf"]);
     expect(got).toEqual({
       attachments: [
-        { path: "/home/liam/Pictures/rack.png", name: "rack.png", size: 9, kind: "image" },
-        { path: "/home/liam/notes/disk report.txt", name: "disk report.txt", size: 7, kind: "file" },
-        { path: "/home/liam/scan.pdf", name: "scan.pdf", size: 40 * MiB, kind: "file" },
+        { path: "/home/lena/Pictures/rack.png", name: "rack.png", size: 9, kind: "image" },
+        { path: "/home/lena/notes/disk report.txt", name: "disk report.txt", size: 7, kind: "file" },
+        { path: "/home/lena/scan.pdf", name: "scan.pdf", size: 40 * MiB, kind: "file" },
       ],
       refused: [],
     });
@@ -37,7 +37,7 @@ describe("Choosing files to attach", () => {
 
   it("refuses images over 25 MB and other files over 256 MB, the most Hermes takes", async () => {
     const { hermes } = await signedIn();
-    const got = await hermes.checkAttachments(["/home/liam/big.png", "/home/liam/huge.iso", "/home/liam/Pictures/rack.png"]);
+    const got = await hermes.checkAttachments(["/home/lena/big.png", "/home/lena/huge.iso", "/home/lena/Pictures/rack.png"]);
     expect(got.attachments.map((a) => a.name)).toEqual(["rack.png"]);
     expect(got.refused).toEqual([
       "big.png is 26 MB. Hermes takes images up to 25 MB.",
@@ -47,7 +47,7 @@ describe("Choosing files to attach", () => {
 
   it("refuses folders and files it can't read", async () => {
     const { hermes } = await signedIn();
-    const got = await hermes.checkAttachments(["/home/liam/notes", "/home/liam/gone.txt"]);
+    const got = await hermes.checkAttachments(["/home/lena/notes", "/home/lena/gone.txt"]);
     expect(got).toEqual({
       attachments: [],
       refused: ["Couldn't attach notes: it's a folder", "Couldn't attach gone.txt: No such file or directory (os error 2)"],
@@ -58,7 +58,7 @@ describe("Choosing files to attach", () => {
 describe("Sending attachments", () => {
   it("sends an image as base64 before the message that goes with it", async () => {
     const { server, hermes, id, runtime, chat } = await signedIn();
-    const { attachments } = await hermes.checkAttachments(["/home/liam/Pictures/rack.png"]);
+    const { attachments } = await hermes.checkAttachments(["/home/lena/Pictures/rack.png"]);
     await hermes.send(id, "Which cable is loose?", attachments);
 
     expect(server.requests.slice(-2).map((r) => [r.method, r.params])).toEqual([
@@ -73,8 +73,8 @@ describe("Sending attachments", () => {
 
   it("stages other files in the chat's workspace and puts their @file: refs before the message", async () => {
     const { server, hermes, id, runtime } = await signedIn();
-    const { attachments } = await hermes.checkAttachments(["/home/liam/notes/disk report.txt", "/home/liam/scan.pdf"]);
-    server.files["/home/liam/scan.pdf"] = "%PDF-1.7";
+    const { attachments } = await hermes.checkAttachments(["/home/lena/notes/disk report.txt", "/home/lena/scan.pdf"]);
+    server.files["/home/lena/scan.pdf"] = "%PDF-1.7";
     await hermes.send(id, "Summarise these", attachments);
 
     expect(server.last("file.attach")!.params).toEqual({
@@ -87,7 +87,7 @@ describe("Sending attachments", () => {
 
   it("asks about the image when it is sent with no text, and titles a new chat after it", async () => {
     const { server, hermes, id, chat } = await signedIn();
-    const { attachments } = await hermes.checkAttachments(["/home/liam/Pictures/rack.png"]);
+    const { attachments } = await hermes.checkAttachments(["/home/lena/Pictures/rack.png"]);
     await hermes.send(id, "", attachments);
 
     expect(server.last("prompt.submit")!.params.text).toBe("What do you see in this image?");
@@ -112,7 +112,7 @@ describe("Sending attachments", () => {
 
   it("doesn't send the message if an attachment fails, and takes back the images already queued", async () => {
     const { server, hermes, id, runtime, chat } = await signedIn();
-    const { attachments } = await hermes.checkAttachments(["/home/liam/Pictures/rack.png", "/home/liam/notes/disk report.txt"]);
+    const { attachments } = await hermes.checkAttachments(["/home/lena/Pictures/rack.png", "/home/lena/notes/disk report.txt"]);
     server.handlers["file.attach"] = (r) => server.fail(r.id, 5028, "No space left on device");
     await hermes.send(id, "Check these", attachments);
     await hermes.idle();
@@ -128,8 +128,8 @@ describe("Sending attachments", () => {
 
   it("re-checks the size when sending, in case the file grew", async () => {
     const { server, hermes, id, chat } = await signedIn();
-    const { attachments } = await hermes.checkAttachments(["/home/liam/Pictures/rack.png"]);
-    server.files["/home/liam/Pictures/rack.png"] = { size: 30 * MiB };
+    const { attachments } = await hermes.checkAttachments(["/home/lena/Pictures/rack.png"]);
+    server.files["/home/lena/Pictures/rack.png"] = { size: 30 * MiB };
     await hermes.send(id, "Which cable is loose?", attachments);
 
     expect(server.requests.map((r) => r.method)).not.toContain("image.attach_bytes");
@@ -138,7 +138,7 @@ describe("Sending attachments", () => {
 
   it("lets Stop wait until the attachments and message are sent", async () => {
     const { server, hermes, id } = await signedIn();
-    const { attachments } = await hermes.checkAttachments(["/home/liam/notes/disk report.txt"]);
+    const { attachments } = await hermes.checkAttachments(["/home/lena/notes/disk report.txt"]);
     await Promise.all([hermes.send(id, "Check", attachments), hermes.stop(id)]);
     expect(server.requests.map((r) => r.method).slice(-3)).toEqual(["file.attach", "prompt.submit", "session.interrupt"]);
   });

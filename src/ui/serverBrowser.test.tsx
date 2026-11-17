@@ -26,7 +26,7 @@ afterEach(async () => {
   localStorage.clear();
 });
 
-const PM_CHROMIUM = "/home/liam/.hermes/hermes-agent/pm/store/chromium/chrome-linux64/chrome";
+const PM_CHROMIUM = "/home/lena/.hermes/hermes-agent/pm/store/chromium/chrome-linux64/chrome";
 
 function botDesktop(status: Record<string, unknown>, profiles?: Record<string, Record<string, unknown>>): FakeHermes["display"] {
   return {
@@ -197,7 +197,7 @@ describe("in the app", () => {
     render(
       <Main
         hermes={hermes}
-        connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }}
+        connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }}
         webPages={{ check: async () => ({ kind: "allowed" }) as never, httpsAnswers: async () => true, openInBrowser: async () => null, devServers: async () => ({ server: { kind: "listed", ports: [] }, local: [] }) }}
         onSignOut={async () => {}}
       />,

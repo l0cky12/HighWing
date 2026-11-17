@@ -14,8 +14,8 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: (cmd: string, args?: unknown) =
 
 afterEach(cleanup);
 
-const connection = { id: "00000000-0000-4000-8000-000000000001", name: "Hermes", mode: "url" as const, sshTarget: "", url: "http://hermes:9119", username: "liam", addedAt: 1 };
-const blank: SignInDetails = { mode: "url", sshTarget: "", url: "http://hermes:9119", username: "liam", password: "" };
+const connection = { id: "00000000-0000-4000-8000-000000000001", name: "Hermes", mode: "url" as const, sshTarget: "", url: "http://hermes:9119", username: "lena", addedAt: 1 };
+const blank: SignInDetails = { mode: "url", sshTarget: "", url: "http://hermes:9119", username: "lena", password: "" };
 const both: Methods = { methods: [{ method: "password", provider: "basic", label: "Basic" }, { method: "token" }] };
 const passwordOnly: Methods = { methods: [{ method: "password", provider: "basic", label: "Basic" }] };
 
@@ -141,7 +141,7 @@ describe("The real pipe", () => {
     await tauriPipe({ ...blank, password: "hunter2", provider: "ldap" }, connection.id)(() => {}, "default");
     expect(invoke).toHaveBeenLastCalledWith(
       "hermes_connect",
-      expect.objectContaining({ credential: { method: "password", username: "liam", password: "hunter2", provider: "ldap" } }),
+      expect.objectContaining({ credential: { method: "password", username: "lena", password: "hunter2", provider: "ldap" } }),
     );
     invoke.mockResolvedValueOnce({ route: { kind: "url", url: "", addresses: [] }, ready: "{}" });
     await tauriProbe.run({ ...blank, method: "token", token: "tok-123" }, "default");

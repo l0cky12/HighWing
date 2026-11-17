@@ -29,7 +29,7 @@ async function setup(files: Record<string, string> = { "/srv/out/notes.md": utf8
   return { server, hermes, store };
 }
 
-const ref = (o: Partial<ArtifactRef> = {}): ArtifactRef => ({ scope: "ssh:liam@hermes\ndefault", profile: "default", path: "/srv/out/notes.md", host: false, ...o });
+const ref = (o: Partial<ArtifactRef> = {}): ArtifactRef => ({ scope: "ssh:lena@hermes\ndefault", profile: "default", path: "/srv/out/notes.md", host: false, ...o });
 
 /** Opens `r` and waits until it is read. */
 async function opened(store: ArtifactStore, r = ref()) {
@@ -351,7 +351,7 @@ describe("artifacts", () => {
   });
 
   it("keeps two connections' or profiles' copies of one path apart, and a host file apart from the tools' one", () => {
-    expect(artifactKey(ref())).not.toBe(artifactKey(ref({ scope: "ssh:liam@other\ndefault" })));
+    expect(artifactKey(ref())).not.toBe(artifactKey(ref({ scope: "ssh:lena@other\ndefault" })));
     expect(artifactKey(ref())).not.toBe(artifactKey(ref({ host: true })));
   });
 

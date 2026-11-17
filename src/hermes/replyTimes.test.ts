@@ -52,7 +52,7 @@ describe("Reply times", () => {
 });
 
 describe("Reply times on this computer", () => {
-  const nas: SavedSignIn = { mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" };
+  const nas: SavedSignIn = { mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" };
   afterEach(() => vi.unstubAllGlobals());
   function memoryStorage() {
     const store = new Map<string, string>();
@@ -78,7 +78,7 @@ describe("Reply times on this computer", () => {
       { chat: "b", at: 2, ms: 800 },
     ]);
     expect(localChatCache(nas).loadReplyTimes("work")).toEqual([]);
-    expect(localChatCache({ ...nas, sshTarget: "liam@other" }).loadReplyTimes("default")).toEqual([]);
+    expect(localChatCache({ ...nas, sshTarget: "lena@other" }).loadReplyTimes("default")).toEqual([]);
 
     await renameProfileLocally(nas, "default", "home");
     expect(localChatCache(nas).loadReplyTimes("default")).toEqual([]);

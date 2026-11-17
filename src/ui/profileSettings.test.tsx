@@ -39,7 +39,7 @@ async function launch(setup: (s: FakeHermes) => void = () => {}, shown?: Map<str
   setup(server);
   const hermes = await connect(server.openPipe, undefined, memoryCache());
   running.push(hermes);
-  const connection = { mode: "ssh" as const, sshTarget: `liam@hermes-profiles-${++launches}`, url: "", username: "liam" };
+  const connection = { mode: "ssh" as const, sshTarget: `lena@hermes-profiles-${++launches}`, url: "", username: "lena" };
   render(<Main hermes={hermes} connection={connection} shown={shown} onSignOut={async () => {}} />);
   await waitFor(() => expect(hermes.hasListed()).toBe(true));
   await act(async () => void (await hermes.idle()));

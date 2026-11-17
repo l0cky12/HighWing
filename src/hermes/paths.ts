@@ -80,7 +80,7 @@ function mentionIn(body: string, isPath: (w: string) => boolean): PathMention | 
 }
 
 /**
- * A code span that is one full path with spaces in its names (`/home/liam/My Documents/report.md:12`): it names a
+ * A code span that is one full path with spaces in its names (`/home/lena/My Documents/report.md:12`): it names a
  * file by its extension or a folder by its last `/`. A word after a space that starts with `-`, `/` or `~/` is an
  * argument, so `/usr/bin/ls -la` and `/usr/bin/cat /tmp/a.txt` are commands, and their paths link one by one.
  */

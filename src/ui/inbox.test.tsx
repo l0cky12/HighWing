@@ -46,7 +46,7 @@ async function launch(setup: (server: FakeHermes) => void = () => {}, notified: 
   const hermes = await connect(server.openPipe, undefined, memoryCache(), async (_, actions) => void notified.push(actions));
   running.push(hermes);
   const tray = new FakeTray();
-  render(<Main hermes={hermes} tray={tray} connection={{ mode: "ssh", sshTarget: `liam@hermes-${++launches}`, url: "", username: "liam" }} onSignOut={async () => {}} />);
+  render(<Main hermes={hermes} tray={tray} connection={{ mode: "ssh", sshTarget: `lena@hermes-${++launches}`, url: "", username: "lena" }} onSignOut={async () => {}} />);
   await waitFor(() => expect(hermes.hasListed()).toBe(true));
   await act(async () => void (await hermes.idle()));
   await act(async () => void (await hermes.checkOtherProfiles()));
@@ -68,7 +68,7 @@ describe("The inbox", () => {
     openInbox();
     expect(rowNames()).toEqual(["Needs approval: Migrate db", "Completed, unread: Release notes", "Completed, unread: Deploy plan"]);
     const approval = rows()[0];
-    expect(approval.getAttribute("aria-label")).toMatch(/^Needs approval: Migrate db, in work on ssh:\/\/liam@hermes, 5m ago\. Hermes is waiting for your answer/);
+    expect(approval.getAttribute("aria-label")).toMatch(/^Needs approval: Migrate db, in work on ssh:\/\/lena@hermes, 5m ago\. Hermes is waiting for your answer/);
     expect(within(approval).getByText(/ago$/).tagName).toBe("TIME");
     // Focus goes to the first entry, so the keyboard can start there.
     expect(document.activeElement).toBe(approval);

@@ -23,7 +23,7 @@ import {
 } from "./screenApps";
 import { connect } from "./transport";
 
-const HOME = "/home/liam/.hermes";
+const HOME = "/home/lena/.hermes";
 const DOCK = dockFile(HOME);
 /** Hermes's one Chromium profile for the screen (tools/bot_desktop/browser.py `profile_dir`), where sign-ins last. */
 const PROFILE = `${HOME}/bot-desktop/browser-profile`;
@@ -45,7 +45,7 @@ describe("What the server has", () => {
   });
 
   it("names the dock's layout file under the profile's Hermes home, quoted for the shell", () => {
-    expect(DOCK).toBe("/home/liam/.hermes/bot-desktop/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml");
+    expect(DOCK).toBe("/home/lena/.hermes/bot-desktop/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml");
     expect(shellQuote("/home/o'neil/.hermes")).toBe(`'/home/o'\\''neil/.hermes'`);
     expect(execFileSync("sh", ["-c", `printf %s ${shellQuote("/a b/o'neil $HOME")}`], { encoding: "utf8" })).toBe("/a b/o'neil $HOME");
   });

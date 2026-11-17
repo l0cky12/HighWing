@@ -54,7 +54,7 @@ let launches = 0;
 async function launch(s = server(), onSignOut = async () => {}) {
   const hermes = await connect(s.openPipe, undefined, memoryCache());
   running.push(hermes);
-  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: `liam@hermes-${++launches}`, url: "", username: "liam" }} onSignOut={onSignOut} />);
+  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: `lena@hermes-${++launches}`, url: "", username: "lena" }} onSignOut={onSignOut} />);
   await waitFor(() => expect(hermes.hasListed()).toBe(true));
   await act(async () => void (await hermes.idle()));
   const user = userEvent.setup();
@@ -271,7 +271,7 @@ describe("The artifact editor", () => {
     render(
       <Main
         hermes={hermes}
-        connection={{ mode: "ssh", sshTarget: `liam@hermes-${++launches}`, url: "", username: "liam" }}
+        connection={{ mode: "ssh", sshTarget: `lena@hermes-${++launches}`, url: "", username: "lena" }}
         onSignOut={async () => {}}
         personaStore={new PersonaStore(memoryStorage())}
         guardClose={async (a) => {

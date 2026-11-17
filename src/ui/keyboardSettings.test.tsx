@@ -39,7 +39,7 @@ async function signedIn(keybindings: Record<string, string[]> = {}) {
   server.transcripts = { backup: [{ role: "user", text: "Why did the backup fail?" }], nas: [{ role: "user", text: "How full is the NAS?" }] };
   const hermes = await connect(server.openPipe);
   const user = userEvent.setup();
-  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} />);
+  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} />);
   await screen.findByRole("button", { name: /Nightly backup/ });
   await settle(hermes);
   return { server, hermes, user };

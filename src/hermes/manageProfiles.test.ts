@@ -34,7 +34,7 @@ describe("Settings → Profiles' calls", () => {
       s.profileMeta.default = { display_name: "Main" };
       s.gatewaysRunning.add("work");
       s.distributions.research = "papers";
-      s.skills.add("work", { dir: "/home/liam/.hermes/profiles/work/skills/a", source: "agent" }, "---\nname: a\ndescription: A\n---\n");
+      s.skills.add("work", { dir: "/home/lena/.hermes/profiles/work/skills/a", source: "agent" }, "---\nname: a\ndescription: A\n---\n");
     });
     expect(await api.list()).toEqual([
       { name: "default", isDefault: true, displayName: "Main", description: "", skillCount: 0 },

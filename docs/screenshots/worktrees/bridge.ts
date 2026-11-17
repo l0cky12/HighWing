@@ -10,7 +10,7 @@ import { FakeHermes, row } from "../../../src/hermes/fakeHermes";
 import type { Pipe } from "../../../src/hermes/pipe";
 
 const port = Number(process.argv[2] ?? 47800);
-const DEMO = "/home/liam/hc-repo-demo/wt-demo";
+const DEMO = "/home/lena/hc-repo-demo/wt-demo";
 const server = new FakeHermes();
 server.sessions = [
   row("forecast", 0.02, { pinned: true, title: "Forecast service: plan the hourly view", message_count: 2, cwd: `${DEMO}/forecast` }),

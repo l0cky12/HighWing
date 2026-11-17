@@ -31,7 +31,7 @@ async function openChat() {
   const hermes = await connect(server.openPipe);
   running.push(hermes);
   const user = userEvent.setup();
-  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} />);
+  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} />);
   await user.click(await screen.findByRole("button", { name: /Nightly backup/ }));
   await act(async () => void (await hermes.idle()));
   return { server, user };

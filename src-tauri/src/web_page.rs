@@ -305,7 +305,7 @@ mod tests {
         let plain = listener(Some("HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n")).await;
         assert_eq!(https_answers(&format!("https://127.0.0.1:{plain}/")).await, Ok(false));
         assert!(https_answers(&format!("http://127.0.0.1:{plain}/")).await.is_err());
-        assert!(https_answers("https://liam:pw@example.com/").await.is_err());
+        assert!(https_answers("https://lena:pw@example.com/").await.is_err());
     }
 
     #[tokio::test]
@@ -319,7 +319,7 @@ mod tests {
     fn accepts_only_http_pages_without_credentials() {
         assert_eq!(web_url(" https://www.google.com/ ").unwrap().as_str(), "https://www.google.com/");
         assert!(web_url("http://127.0.0.1:8000/x").is_ok());
-        for bad in ["file:///etc/passwd", "javascript:alert(1)", "tauri://localhost/", "https://liam:pw@example.com/", "nope"] {
+        for bad in ["file:///etc/passwd", "javascript:alert(1)", "tauri://localhost/", "https://lena:pw@example.com/", "nope"] {
             assert!(web_url(bad).is_err(), "{bad}");
         }
     }

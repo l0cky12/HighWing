@@ -95,12 +95,12 @@ function show(initialTarget: string, api = new FakeTerminals()) {
 
 describe("Terminal on the server", () => {
   it("connects straight away to the sign-in's SSH target, at the terminal's size", async () => {
-    const { api, onRunning } = show("liam@hermes");
+    const { api, onRunning } = show("lena@hermes");
     await act(async () => {});
-    expect(api.opened).toMatchObject([{ target: "liam@hermes", cols: 100, rows: 30 }]);
+    expect(api.opened).toMatchObject([{ target: "lena@hermes", cols: 100, rows: 30 }]);
     expect(screen.getByRole("status").textContent?.trim()).toBe("Connecting…");
     expect(screen.queryByLabelText("SSH target")).toBeNull();
-    act(() => api.opened[0].emit(out("Welcome to hermes\r\nliam@hermes:~$ ")));
+    act(() => api.opened[0].emit(out("Welcome to hermes\r\nlena@hermes:~$ ")));
     expect(screen.getByRole("status").textContent).toBe("Connected");
     expect(xterms[0].written.join("")).toContain("Welcome to hermes");
     expect(onRunning).toHaveBeenLastCalledWith(true);
@@ -175,7 +175,7 @@ describe("Terminal on this computer", () => {
     await act(async () => {});
     expect(api.opened).toHaveLength(1);
     expect(screen.queryByLabelText("SSH target")).toBeNull();
-    act(() => api.opened[0].emit(out("liam@laptop:~$ ")));
+    act(() => api.opened[0].emit(out("lena@laptop:~$ ")));
     expect(screen.getByRole("status").textContent).toBe("Connected");
     act(() => api.opened[0].emit({ kind: "exit", code: 255 }));
     // 255 is ssh's own failure; for a local shell it is only an exit status.
@@ -191,7 +191,7 @@ describe("The Terminal tab", () => {
     const local = new FakeTerminals();
     const onRunning = vi.fn();
     const tab = (kind: "server" | "local") => (
-      <TerminalTab server={{ api: server, initialTarget: "liam@hermes", onTarget: () => {} }} local={{ api: local }} shown shells={shellsAt(kind)} onShow={() => {}} onClose={() => {}} onLocal={() => {}} onRunning={onRunning} />
+      <TerminalTab server={{ api: server, initialTarget: "lena@hermes", onTarget: () => {} }} local={{ api: local }} shown shells={shellsAt(kind)} onShow={() => {}} onClose={() => {}} onLocal={() => {}} onRunning={onRunning} />
     );
     const { rerender } = render(tab("server"));
     await act(async () => {});
@@ -257,11 +257,11 @@ describe("Which computer the Terminal opens on", () => {
   it("opens on the Hermes server by default, over ssh to the sign-in's target, and starts nothing on this computer", async () => {
     const server = new FakeTerminals();
     const local = new FakeTerminals();
-    render(<Panel server={server} local={local} initialTarget="liam@hermes" />);
+    render(<Panel server={server} local={local} initialTarget="lena@hermes" />);
     await act(async () => {});
     expect(pressed(/Hermes server/)).toBe("true");
     expect(pressed(/This computer/)).toBe("false");
-    expect(server.opened.map((o) => o.target)).toEqual(["liam@hermes"]);
+    expect(server.opened.map((o) => o.target)).toEqual(["lena@hermes"]);
     expect(local.opened).toHaveLength(0);
     expect(screen.getByRole("group", { name: "Which computer" })).toBeTruthy();
   });
@@ -269,7 +269,7 @@ describe("Which computer the Terminal opens on", () => {
   it("remembers the computer picked last, and opens on it next time", async () => {
     const server = new FakeTerminals();
     const local = new FakeTerminals();
-    const first = render(<Panel server={server} local={local} initialTarget="liam@hermes" />);
+    const first = render(<Panel server={server} local={local} initialTarget="lena@hermes" />);
     await act(async () => {});
     await act(async () => fireEvent.click(screen.getByRole("button", { name: /This computer/ })));
     expect(getUIPrefs().terminalKind).toBe("local");
@@ -279,14 +279,14 @@ describe("Which computer the Terminal opens on", () => {
     // The app again, later: this computer's shell is the one shown and started; the server's waits to be picked.
     const server2 = new FakeTerminals();
     const local2 = new FakeTerminals();
-    render(<Panel server={server2} local={local2} initialTarget="liam@hermes" />);
+    render(<Panel server={server2} local={local2} initialTarget="lena@hermes" />);
     await act(async () => {});
     expect(pressed(/This computer/)).toBe("true");
     expect(local2.opened).toHaveLength(1);
     expect(server2.opened).toHaveLength(0);
     await act(async () => fireEvent.click(screen.getByRole("button", { name: /Hermes server/ })));
     expect(getUIPrefs().terminalKind).toBe("server");
-    expect(server2.opened.map((o) => o.target)).toEqual(["liam@hermes"]);
+    expect(server2.opened.map((o) => o.target)).toEqual(["lena@hermes"]);
   });
 
   it("says plainly when there's no SSH target, and offers to set one", async () => {
@@ -302,10 +302,10 @@ describe("Which computer the Terminal opens on", () => {
     expect(document.activeElement).toBe(field);
     const set = screen.getByRole("button", { name: /Set and connect/ }) as HTMLButtonElement;
     expect(set.disabled).toBe(true);
-    fireEvent.change(field, { target: { value: "liam@hermes" } });
+    fireEvent.change(field, { target: { value: "lena@hermes" } });
     await act(async () => fireEvent.click(set));
-    expect(onTarget).toHaveBeenCalledWith("liam@hermes");
-    expect(server.opened.map((o) => o.target)).toEqual(["liam@hermes"]);
+    expect(onTarget).toHaveBeenCalledWith("lena@hermes");
+    expect(server.opened.map((o) => o.target)).toEqual(["lena@hermes"]);
     expect(screen.queryByText("No SSH target for the Hermes server.")).toBeNull();
   });
 
@@ -318,7 +318,7 @@ describe("Which computer the Terminal opens on", () => {
     act(() => server.opened[0].emit({ kind: "exit", code: 255 }));
     expect(screen.getByText(/took/).textContent).toMatch(/took hermes from the address you sign in with/);
     // Typing another target is the owner's own: the note goes.
-    fireEvent.change(screen.getByLabelText("SSH target"), { target: { value: "liam@hermes" } });
+    fireEvent.change(screen.getByLabelText("SSH target"), { target: { value: "lena@hermes" } });
     expect(screen.queryByText(/from the address you sign in with/)).toBeNull();
   });
 
@@ -333,9 +333,9 @@ describe("Which computer the Terminal opens on", () => {
     expect(onTarget).not.toHaveBeenCalled();
     act(() => server.opened[1].emit({ kind: "exit", code: 255 }));
     expect(screen.getByText(/from the address you sign in with/)).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("SSH target"), { target: { value: "liam@hermes" } });
+    fireEvent.change(screen.getByLabelText("SSH target"), { target: { value: "lena@hermes" } });
     await act(async () => fireEvent.click(screen.getByRole("button", { name: /Connect again/ })));
-    expect(onTarget).toHaveBeenCalledWith("liam@hermes");
+    expect(onTarget).toHaveBeenCalledWith("lena@hermes");
   });
 
   it("doesn't blame the guess when the owner ended the session", async () => {
@@ -358,7 +358,7 @@ describe("Which computer the Terminal opens on", () => {
   });
 
   it("doesn't say there's no target when the sign-in has one", async () => {
-    render(<Panel server={new FakeTerminals()} local={new FakeTerminals()} initialTarget="liam@hermes" />);
+    render(<Panel server={new FakeTerminals()} local={new FakeTerminals()} initialTarget="lena@hermes" />);
     await act(async () => {});
     expect(screen.queryByText("No SSH target for the Hermes server.")).toBeNull();
     expect(screen.queryByRole("button", { name: /Use this computer instead/ })).toBeNull();
@@ -367,7 +367,7 @@ describe("Which computer the Terminal opens on", () => {
   it("keeps the other computer's shell running when the switch is used", async () => {
     const server = new FakeTerminals();
     const local = new FakeTerminals();
-    render(<Panel server={server} local={local} initialTarget="liam@hermes" />);
+    render(<Panel server={server} local={local} initialTarget="lena@hermes" />);
     await act(async () => {});
     act(() => server.opened[0].emit(out("$ ")));
     await act(async () => fireEvent.click(screen.getByRole("button", { name: /This computer/ })));
@@ -391,7 +391,7 @@ describe("A folder shell (ADR 0167)", () => {
   beforeEach(() => localStorage.clear());
   afterEach(() => localStorage.clear());
 
-  async function panel(initialTarget = "liam@hermes") {
+  async function panel(initialTarget = "lena@hermes") {
     const server = new FakeTerminals();
     const local = new FakeTerminals();
     const held: Held = {};
@@ -409,18 +409,18 @@ describe("A folder shell (ADR 0167)", () => {
 
   it("is an ssh of its own started in the folder, shown beside the owner's shell, which is left as it was", async () => {
     const { server, openIn, onRunning } = await panel();
-    act(() => server.opened[0].emit(out("liam@hermes:~$ vim notes")));
+    act(() => server.opened[0].emit(out("lena@hermes:~$ vim notes")));
     await openIn("/srv/app/docs");
     expect(server.opened.map((o) => [o.target, o.folder])).toEqual([
-      ["liam@hermes", undefined],
-      ["liam@hermes", "/srv/app/docs"],
+      ["lena@hermes", undefined],
+      ["lena@hermes", "/srv/app/docs"],
     ]);
     expect(chip(/^docs/).getAttribute("aria-pressed")).toBe("true");
     expect(chip(/^docs/).title).toBe("/srv/app/docs\nA shell started in this folder on the Hermes server");
     expect(pressed(/Hermes server/)).toBe("false");
-    expect(xterms[1].written.join("")).toContain("── ssh liam@hermes, in /srv/app/docs ──");
+    expect(xterms[1].written.join("")).toContain("── ssh lena@hermes, in /srv/app/docs ──");
     expect(screen.getByLabelText("Terminal on the server, in /srv/app/docs")).toBeTruthy();
-    act(() => server.opened[1].emit(out("liam@hermes:/srv/app/docs$ ")));
+    act(() => server.opened[1].emit(out("lena@hermes:/srv/app/docs$ ")));
     expect(onRunning).toHaveBeenLastCalledWith({ server: true, local: false });
     expect(screen.getAllByRole("img", { name: "(running)" })).toHaveLength(2);
     // Nothing was typed into either shell, and the owner's is still running.

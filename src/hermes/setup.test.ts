@@ -7,8 +7,8 @@ import { RestError } from "./pipe";
 
 const READY = JSON.stringify({ jsonrpc: "2.0", method: "event", params: { type: "gateway.ready", payload: { skin: {} } } });
 const STATUS = JSON.stringify({ version: "0.22.5", auth_required: true, auth_providers: ["basic", "conduit-local-live"] });
-const ssh: SignInDetails = { mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam", password: "hunter2" };
-const url: SignInDetails = { mode: "url", sshTarget: "", url: "http://hermes.example.com:9119", username: "liam", password: "hunter2" };
+const ssh: SignInDetails = { mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena", password: "hunter2" };
+const url: SignInDetails = { mode: "url", sshTarget: "", url: "http://hermes.example.com:9119", username: "lena", password: "hunter2" };
 
 /** A probe that answers once, with `probed` or by failing with `failure`. */
 const answering = (answer: Probed | ProbeFailure): Probe => ({
@@ -22,9 +22,9 @@ const answering = (answer: Probed | ProbeFailure): Probe => ({
 describe("Whether this computer is set up", () => {
   it("counts any saved sign-in, so an existing install never sees first-run setup", () => {
     expect(isSetUp({ mode: "ssh", sshTarget: "", url: "", username: "" })).toBe(false);
-    expect(isSetUp({ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "" })).toBe(true);
-    expect(isSetUp({ mode: "url", sshTarget: "", url: "http://hermes:9119", username: "liam" })).toBe(true);
-    expect(isSetUp({ mode: "ssh", sshTarget: " ", url: "", username: "liam" })).toBe(true);
+    expect(isSetUp({ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "" })).toBe(true);
+    expect(isSetUp({ mode: "url", sshTarget: "", url: "http://hermes:9119", username: "lena" })).toBe(true);
+    expect(isSetUp({ mode: "ssh", sshTarget: " ", url: "", username: "lena" })).toBe(true);
   });
 
   it("names what is missing before a test can run", () => {
@@ -38,18 +38,18 @@ describe("Testing a connection", () => {
   it("passes with the route, whether it's Unsecure, and the Hermes version", async () => {
     const route = { kind: "url" as const, url: url.url, addresses: ["203.0.113.5"] };
     expect(await testConnection(answering({ route, status: STATUS, ready: READY }), url)).toEqual({ ok: true, route, unsecure: true, version: "0.22.5" });
-    const tailnet = { kind: "url" as const, url: "http://hermes:9119", addresses: ["100.100.64.121"] };
+    const tailnet = { kind: "url" as const, url: "http://hermes:9119", addresses: ["100.90.10.20"] };
     expect(await testConnection(answering({ route: tailnet, status: '{"auth_required":true}', ready: READY }), url)).toMatchObject({ ok: true, unsecure: false, version: undefined });
   });
 
   it("fails on a server that speaks the canonical protocol", async () => {
     const ready = JSON.stringify({ jsonrpc: "2.0", method: "event", params: { type: "gateway.ready", payload: { session_authority: true } } });
-    const out = await testConnection(answering({ route: { kind: "ssh", target: "liam@hermes" }, status: STATUS, ready }), ssh);
+    const out = await testConnection(answering({ route: { kind: "ssh", target: "lena@hermes" }, status: STATUS, ready }), ssh);
     expect(out).toMatchObject({ ok: false, stage: "chat", problem: "Highwing can't talk to this server yet." });
   });
 
   it("fails when the first frame isn't gateway.ready", async () => {
-    const out = await testConnection(answering({ route: { kind: "ssh", target: "liam@hermes" }, status: STATUS, ready: "{}" }), ssh);
+    const out = await testConnection(answering({ route: { kind: "ssh", target: "lena@hermes" }, status: STATUS, ready: "{}" }), ssh);
     expect(out).toMatchObject({ ok: false, stage: "chat", detail: "Hermes's first message on the chat connection wasn't gateway.ready." });
   });
 
@@ -69,15 +69,15 @@ describe("Explaining a failed test", () => {
   const why = (f: ProbeFailure, d = ssh) => explain(f, d);
 
   it("tells an SSH key problem from a host key, a name and a server that's down", () => {
-    expect(why({ stage: "address", message: "SSH failed: liam@hermes: Permission denied (publickey)." })).toMatchObject({
+    expect(why({ stage: "address", message: "SSH failed: lena@hermes: Permission denied (publickey)." })).toMatchObject({
       problem: "The server didn't accept your SSH key.",
-      fixes: expect.arrayContaining([expect.stringContaining("ssh-add"), "Check it from a terminal: ssh -o BatchMode=yes liam@hermes true"]),
+      fixes: expect.arrayContaining([expect.stringContaining("ssh-add"), "Check it from a terminal: ssh -o BatchMode=yes lena@hermes true"]),
     });
     expect(why({ stage: "address", message: "SSH failed: Host key verification failed." }).fixes[0]).toContain("ssh-keygen -R hermes");
     expect(why({ stage: "address", message: "SSH failed: ssh: Could not resolve hostname hermse: Name or service not known" }).problem).toBe(
       'This computer couldn\'t find the host "hermes".',
     );
-    expect(why({ stage: "address", message: "SSH failed: ssh: connect to host 10.2.1.136 port 22: Connection timed out" }).problem).toBe(
+    expect(why({ stage: "address", message: "SSH failed: ssh: connect to host 192.168.50.10 port 22: Connection timed out" }).problem).toBe(
       "The server didn't answer over SSH.",
     );
     expect(why({ stage: "address", message: "SSH didn't open the tunnel within 20s." }).problem).toBe("The server didn't answer over SSH.");
@@ -227,7 +227,7 @@ describe("Explaining what the sign-in screen shows", () => {
 
   it("shows Sign out's keyring note as it is, not as an unreachable server", () => {
     const note = "Signed out, but couldn't delete the saved password from the system keyring: no Secret Service on the bus";
-    const why = explainSignIn(note, { mode: "url", sshTarget: "", url: "http://hermes:9119", username: "liam", password: "", headers: [] });
+    const why = explainSignIn(note, { mode: "url", sshTarget: "", url: "http://hermes:9119", username: "lena", password: "", headers: [] });
     expect([why.problem, why.fixes]).toEqual([note, []]);
   });
 });

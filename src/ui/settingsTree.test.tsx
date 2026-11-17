@@ -52,9 +52,9 @@ function Shell({ hermes, guard, providers = false, providersApi, toolsets = fals
   return (
     <SettingsScreen
       status="connected"
-      route={{ kind: "ssh", target: "liam@hermes" }}
+      route={{ kind: "ssh", target: "lena@hermes" }}
       unsecure={false}
-      username="liam"
+      username="lena"
       passwordSaved
       profile="default"
       olderPulled={false}
@@ -296,7 +296,7 @@ describe("Settings → Memory sections", () => {
     expect(head()).toEqual({ title: "User profile", eyebrow: "Memory" });
     expect(await screen.findByRole("list", { name: "User profile entries" })).toBeTruthy();
     // The header's File chip names the file shown, under ~, in full on hover.
-    const file = await screen.findByTitle("/home/liam/.hermes/memories/USER.md");
+    const file = await screen.findByTitle("/home/lena/.hermes/memories/USER.md");
     expect(file.textContent).toBe("~/.hermes/memories/USER.md");
     expect(file.closest(".meta-chip")!.textContent).toBe("File~/.hermes/memories/USER.md");
     expect(file.closest("header.page-head")).toBeTruthy();

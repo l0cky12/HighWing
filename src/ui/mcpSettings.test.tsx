@@ -339,7 +339,7 @@ describe("Settings → MCP servers: the tab", () => {
         <SettingsScreen
           status="connected"
           unsecure={false}
-          username="liam"
+          username="lena"
           passwordSaved
           profile="default"
           olderPulled={false}

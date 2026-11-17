@@ -44,7 +44,7 @@ async fn a_proxy_in_the_environment_never_sees_a_dashboard_or_server_page_reques
 
     let sign_in = http
         .post(format!("http://127.0.0.1:{dashboard_port}/api/auth/password-login"))
-        .body(r#"{"username":"liam","password":"correct-horse-battery-staple"}"#)
+        .body(r#"{"username":"lena","password":"correct-horse-battery-staple"}"#)
         .timeout(Duration::from_secs(5))
         .send()
         .await;

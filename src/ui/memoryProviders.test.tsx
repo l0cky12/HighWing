@@ -221,7 +221,7 @@ describe("Settings → Memory → External memory", () => {
     const appearance = appearanceStore({ getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => void storage.set(k, v) }, document.createElement("html"));
     render(
       <SettingsScreen
-        status="connected" unsecure={false} username="liam" passwordSaved profile="default" olderPulled={false} cacheBytes={() => 0}
+        status="connected" unsecure={false} username="lena" passwordSaved profile="default" olderPulled={false} cacheBytes={() => 0}
         appearance={appearance} listFonts={async () => ({ all: [], mono: [] })} modelSettings={hermes.modelSettings} memory={hermes.memory} memoryProviders={hermes.memoryProviders}
         onMemoryDirty={(d) => void dirty.push(d)} onClearCache={() => {}} onPullOlder={async () => []} onSignOut={async () => {}} onClose={() => {}}
       />,

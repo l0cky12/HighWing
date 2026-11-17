@@ -41,7 +41,7 @@ async function launch() {
   running.push(hermes);
   const tray = new FakeTray();
   const view = render(
-    <Main hermes={hermes} tray={tray} connection={{ mode: "ssh", sshTarget: `liam@tray-${++launches}`, url: "", username: "liam" }} onSignOut={async () => {}} />,
+    <Main hermes={hermes} tray={tray} connection={{ mode: "ssh", sshTarget: `lena@tray-${++launches}`, url: "", username: "lena" }} onSignOut={async () => {}} />,
   );
   await waitFor(() => expect(hermes.hasListed()).toBe(true));
   await act(async () => void (await hermes.idle()));

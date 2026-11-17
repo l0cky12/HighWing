@@ -252,7 +252,7 @@ export function TerminalScreen({
                   <strong>No SSH target for the Hermes server.</strong>
                 </p>
                 <p className="muted">
-                  This connection signs in with a web address that doesn't name the server (one on this computer, such as localhost), so the app can't tell how to reach it over ssh. Set an SSH target, such as liam@hermes, to open a shell there. The app keeps it for this connection. Your ~/.ssh/config, keys and agent apply.
+                  This connection signs in with a web address that doesn't name the server (one on this computer, such as localhost), so the app can't tell how to reach it over ssh. Set an SSH target, such as lena@hermes, to open a shell there. The app keeps it for this connection. Your ~/.ssh/config, keys and agent apply.
                 </p>
               </div>
             ) : (
@@ -272,7 +272,7 @@ export function TerminalScreen({
             <div className="terminal-connect-row">
               <label>
                 <span>SSH target</span>
-                <input ref={targetField} className="mono" value={target} placeholder="liam@hermes" spellCheck={false} autoCapitalize="off" onChange={(e) => setTarget(e.target.value)} />
+                <input ref={targetField} className="mono" value={target} placeholder="lena@hermes" spellCheck={false} autoCapitalize="off" onChange={(e) => setTarget(e.target.value)} />
               </label>
               <button className="btn primary" type="submit" disabled={!target.trim()}>
                 <Plug size={14} /> {noTarget ? "Set and connect" : state.kind === "idle" ? "Connect" : "Connect again"}

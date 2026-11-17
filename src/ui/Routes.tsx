@@ -26,7 +26,7 @@ const PLACEHOLDER: Record<RouteKind, string> = {
   lan: "192.168.1.10:9119",
   tailscale: "hermes.tail1234.ts.net:9119",
   web: "https://hermes.example.com",
-  ssh: "liam@hermes",
+  ssh: "lena@hermes",
 };
 
 const HINT: Record<RouteKind, string> = {

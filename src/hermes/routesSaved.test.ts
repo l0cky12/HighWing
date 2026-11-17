@@ -35,8 +35,8 @@ function keyring(value?: string): Keyring & { value?: string } {
 
 const LAN: RouteDetails = { id: "lan", kind: "lan", target: "http://192.168.1.10:9119" };
 const WEB: RouteDetails = { id: "web", kind: "web", target: "https://hermes.example.com", headers: [{ name: "CF-Access-Client-Secret", value: "s3cret" }] };
-const SSH: RouteDetails = { id: "ssh", kind: "ssh", target: "liam@hermes" };
-const base: SignInDetails = { mode: "ssh", sshTarget: "", url: "", username: "liam", password: "hunter2" };
+const SSH: RouteDetails = { id: "ssh", kind: "ssh", target: "lena@hermes" };
+const base: SignInDetails = { mode: "ssh", sshTarget: "", url: "", username: "lena", password: "hunter2" };
 
 /** An account whose connect reports `server` as the install it reached. */
 function account(server = "a1b2c3d4e5f60718293a4b5c6d7e8f90") {
@@ -68,7 +68,7 @@ describe("A connection with several routes", () => {
       routes: [
         { id: "lan", kind: "lan", target: LAN.target },
         { id: "web", kind: "web", target: WEB.target, off: true },
-        { id: "ssh", kind: "ssh", target: "liam@hermes" },
+        { id: "ssh", kind: "ssh", target: "lena@hermes" },
       ],
       server: "a1b2c3d4e5f60718293a4b5c6d7e8f90",
     });
@@ -95,17 +95,17 @@ describe("A connection with several routes", () => {
             mode: "ssh",
             sshTarget: "old@hermes",
             url: "",
-            username: "liam",
+            username: "lena",
             addedAt: 1,
             server: "not-a-hash",
-            routes: [{ id: "BAD ID", kind: "lan", target: "x" }, { id: "t", kind: "teleport", target: "x" }, { id: "s", kind: "ssh", target: "liam@hermes" }, { id: "s", kind: "lan", target: "dupe" }],
+            routes: [{ id: "BAD ID", kind: "lan", target: "x" }, { id: "t", kind: "teleport", target: "x" }, { id: "s", kind: "ssh", target: "lena@hermes" }, { id: "s", kind: "lan", target: "dupe" }],
           },
         ],
       }),
     );
     const c = new Connections(store).recent()[0];
-    expect(c.routes).toEqual([{ id: "s", kind: "ssh", target: "liam@hermes" }]);
-    expect(c.sshTarget).toBe("liam@hermes");
+    expect(c.routes).toEqual([{ id: "s", kind: "ssh", target: "lena@hermes" }]);
+    expect(c.sshTarget).toBe("lena@hermes");
     expect(c.server).toBeUndefined();
   });
 
@@ -126,8 +126,8 @@ describe("The password of a connection with routes", () => {
     await signIn(c, withRoutes(base, [LAN, WEB, SSH]), a);
     expect(JSON.parse(password.value!)).toEqual({
       v: 2,
-      username: "liam",
-      routes: [JSON.stringify(["url", LAN.target]), JSON.stringify(["url", WEB.target]), JSON.stringify(["ssh", "liam@hermes"])],
+      username: "lena",
+      routes: [JSON.stringify(["url", LAN.target]), JSON.stringify(["url", WEB.target]), JSON.stringify(["ssh", "lena@hermes"])],
       password: "hunter2",
     });
     expect(JSON.parse(headers.value!)).toEqual({ v: 2, routes: [{ url: WEB.target, headers: WEB.headers }] });
@@ -193,7 +193,7 @@ describe("The password of a connection with routes", () => {
     connections.save({ ...connections.get(c.id)!, username: "someone" });
     expect(await savedSignIn(connections.get(c.id)!, a)).toBeUndefined();
     // Nor does a list where no route is one it was saved for.
-    connections.save({ ...connections.get(c.id)!, username: "liam", routes: [ts] });
+    connections.save({ ...connections.get(c.id)!, username: "lena", routes: [ts] });
     expect(await savedSignIn(connections.get(c.id)!, a)).toBeUndefined();
 
     // The sign-in screen's form has every route and no password; typing it saves it for all of them.
@@ -205,9 +205,9 @@ describe("The password of a connection with routes", () => {
 
   it("from before routes, counts for the one route its address is", async () => {
     const { a, connections, password } = account();
-    const c = { ...connections.draft({ ...base, sshTarget: "liam@hermes" }), routes: [LAN, SSH] };
+    const c = { ...connections.draft({ ...base, sshTarget: "lena@hermes" }), routes: [LAN, SSH] };
     connections.save(c);
-    password.value = JSON.stringify({ v: 1, for: addressKey({ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }), password: "hunter2" });
+    password.value = JSON.stringify({ v: 1, for: addressKey({ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }), password: "hunter2" });
     const saved = (await savedSignIn(connections.get(c.id)!, a))!;
     expect(saved.routes).toEqual([{ ...LAN, locked: true }, SSH]);
   });
@@ -226,7 +226,7 @@ describe("The password of a connection with routes", () => {
 });
 
 describe("Explaining a route", () => {
-  const ssh: SignInDetails = { ...base, sshTarget: "liam@hermes" };
+  const ssh: SignInDetails = { ...base, sshTarget: "lena@hermes" };
   const lan: SignInDetails = { ...base, mode: "url", url: LAN.target };
 
   it("names a wrong server, something that isn't Hermes, and plain http over the internet", () => {
@@ -261,7 +261,7 @@ describe("Explaining a route", () => {
     const why = explainSignIn(new RoutesFailedError(failures), lan);
     expect(why).toMatchObject({
       problem: "None of this connection's routes reached Hermes.",
-      fixes: ["LAN, http://192.168.1.10:9119: timed out", "SSH, ssh://liam@hermes: SSH failed: refused"],
+      fixes: ["LAN, http://192.168.1.10:9119: timed out", "SSH, ssh://lena@hermes: SSH failed: refused"],
     });
   });
 });

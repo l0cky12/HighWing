@@ -8,7 +8,7 @@ import type { SignInDetails } from "./tauriPipe";
 import { connect, readSaved } from "./transport";
 import { RestError } from "./pipe";
 
-const details: SignInDetails = { mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam", password: "hunter2" };
+const details: SignInDetails = { mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena", password: "hunter2" };
 
 function memoryKeyring(password?: string): Keyring & { password?: string; broken?: string } {
   const k: Keyring & { password?: string; broken?: string } = {
@@ -63,7 +63,7 @@ describe("Saved password", () => {
     const { account: a, c, keyring, saved } = account();
     await signIn(c, details, a);
     expect(JSON.parse(keyring.password!)).toEqual({ v: 1, for: addressKey(details), password: "hunter2" });
-    expect(addressOf(saved())).toEqual({ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" });
+    expect(addressOf(saved())).toEqual({ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" });
     expect(a.connections.current()?.id).toBe(c.id);
   });
 
@@ -93,7 +93,7 @@ describe("Saved password", () => {
   });
 
   it("asks when the keyring entry isn't one this app saved for the address", async () => {
-    for (const stored of ["hunter2", "{}", '{"v":1,"password":"hunter2"}', entry({ ...details, sshTarget: "liam@elsewhere" }), "null", "42"]) {
+    for (const stored of ["hunter2", "{}", '{"v":1,"password":"hunter2"}', entry({ ...details, sshTarget: "lena@elsewhere" }), "null", "42"]) {
       const { account: a, c } = account(memoryKeyring(stored));
       expect(await savedSignIn(c, a), stored).toBeUndefined();
     }
@@ -113,7 +113,7 @@ describe("Saved password", () => {
     const { hermes } = await signIn(c, details, a);
     await hermes.close();
     keyring.broken = "the keyring is locked";
-    await signIn(saved(), { ...details, sshTarget: "liam@new-host" }, a);
+    await signIn(saved(), { ...details, sshTarget: "lena@new-host" }, a);
     keyring.broken = undefined;
     // The keyring still holds the old address's password, but the connection is at the new address now.
     expect(JSON.parse(keyring.password!).for).toBe(addressKey(details));
@@ -136,7 +136,7 @@ describe("Extra request headers", () => {
     const first = account();
     await signIn(first.c, access, first.account);
     expect(JSON.parse(first.headerKeyring.password!)).toEqual({ url: "https://hermes.example.com", headers: access.headers });
-    expect(addressOf(first.saved())).toEqual({ mode: "url", sshTarget: "liam@hermes", url: "https://hermes.example.com", username: "liam" });
+    expect(addressOf(first.saved())).toEqual({ mode: "url", sshTarget: "lena@hermes", url: "https://hermes.example.com", username: "lena" });
     expect(JSON.stringify(first.saved())).not.toContain("s3cret");
     expect(await savedSignIn(first.saved(), first.account)).toEqual(access);
   });
@@ -215,7 +215,7 @@ describe("Sign out", () => {
     expect(server.closed).toBe(true);
     expect(keyring.password).toBeUndefined();
     // The next sign-in screen still has everything but the password.
-    expect(saved().username).toBe("liam");
+    expect(saved().username).toBe("lena");
     expect(await savedSignIn(saved(), a)).toBeUndefined();
   });
 
@@ -355,7 +355,7 @@ describe("Clear local cache", () => {
 
     it("counts and deletes only the chat lists, keeping the sign-in and the profile shown last", () => {
       const store = new Map<string, string>([
-        ["hermes-chat.sign-in", '{"username":"liam"}'],
+        ["hermes-chat.sign-in", '{"username":"lena"}'],
         ["hermes-chat.profile", "work"],
         ["hermes-chat.chats.default", "[]"],
         ["hermes-chat.chats.work", '[{"id":"w"}]'],
@@ -372,9 +372,9 @@ describe("Clear local cache", () => {
       });
       // localStorage keeps text as UTF-16: two bytes a character, key and value.
       const listBytes = 2 * ("hermes-chat.chats.default[]".length + 'hermes-chat.chats.work[{"id":"w"}]'.length);
-      expect(localChatCache({ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }).bytes()).toBe(listBytes);
-      localChatCache({ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }).clear();
-      expect(localChatCache({ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }).bytes()).toBe(0);
+      expect(localChatCache({ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }).bytes()).toBe(listBytes);
+      localChatCache({ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }).clear();
+      expect(localChatCache({ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }).bytes()).toBe(0);
       expect([...store.keys()]).toEqual(["hermes-chat.sign-in", "hermes-chat.profile", "other-app"]);
     });
   });

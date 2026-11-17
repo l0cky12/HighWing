@@ -279,10 +279,10 @@ mod tests {
 
     #[test]
     fn each_user_and_session_has_a_pipe_of_its_own() {
-        let name = pipe_name("WORKGROUP", "Liam O'Neil", "Console");
-        assert_eq!(name, r"\\.\pipe\net.l0cky12.HermesChat-workgroup-liam_o_neil-console");
-        assert_eq!(name, pipe_name("workgroup", "LIAM O'NEIL", "console"));
-        assert_ne!(name, pipe_name("WORKGROUP", "Liam O'Neil", "RDP-Tcp#3"));
+        let name = pipe_name("WORKGROUP", "Lena O'Neil", "Console");
+        assert_eq!(name, r"\\.\pipe\net.l0cky12.HermesChat-workgroup-lena_o_neil-console");
+        assert_eq!(name, pipe_name("workgroup", "LENA O'NEIL", "console"));
+        assert_ne!(name, pipe_name("WORKGROUP", "Lena O'Neil", "RDP-Tcp#3"));
         assert_ne!(name, pipe_name("WORKGROUP", "Ann", "Console"));
         // A backslash would start a new path part; it never gets through.
         assert_eq!(pipe_name(r"A\B", "u", "s").matches('\\').count(), 4);

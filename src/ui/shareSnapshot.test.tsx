@@ -36,8 +36,8 @@ afterEach(async () => {
 });
 
 const KEY = "sk-ant-api03-Zx8Kq2LmN4pR7tVw9yBc";
-const HOST: SnapshotHost = { endpoint: "https://s3.us-east-1.amazonaws.com", region: "us-east-1", bucket: "liam-shares", prefix: "hermes-chat-snapshots/", keyId: "AKIAEXAMPLE" };
-const URL = "https://s3.us-east-1.amazonaws.com/liam-shares/hermes-chat-snapshots/abcdefghijklmnopqrstuvwxyz.html?X-Amz-Signature=1";
+const HOST: SnapshotHost = { endpoint: "https://s3.us-east-1.amazonaws.com", region: "us-east-1", bucket: "lena-shares", prefix: "hermes-chat-snapshots/", keyId: "AKIAEXAMPLE" };
+const URL = "https://s3.us-east-1.amazonaws.com/lena-shares/hermes-chat-snapshots/abcdefghijklmnopqrstuvwxyz.html?X-Amz-Signature=1";
 const LIVE: Published = {
   outcome: "live",
   snapshot: {
@@ -115,7 +115,7 @@ describe("Share snapshot", () => {
 
     expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Publish this page?" }));
     expect(screen.getByText("s3.us-east-1.amazonaws.com")).toBeTruthy();
-    expect(screen.getByText("liam-shares")).toBeTruthy();
+    expect(screen.getByText("lena-shares")).toBeTruthy();
     expect(screen.getByText("hermes-chat-snapshots/")).toBeTruthy();
     expect((screen.getByRole("radio", { name: "1 day" }) as HTMLInputElement).checked).toBe(true);
     expect(screen.getByText(/can miss a secret written another way/)).toBeTruthy();
@@ -262,7 +262,7 @@ describe("Share snapshot from the chat's More menu", () => {
     s.storeMessage("c1", { role: "assistant", text: "That key was revoked; make a new one." });
     const hermes = await connect(s.openPipe);
     running.push(hermes);
-    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" }} onSignOut={async () => {}} />);
+    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} />);
     await waitFor(() => expect(hermes.hasListed()).toBe(true));
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /Deploy keys/ }));

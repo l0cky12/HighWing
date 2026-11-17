@@ -52,7 +52,7 @@ async function launch({ souls = { default: SOUL, work: "# Work persona\n" } as R
   const store = new PersonaStore(storage);
   const close = vi.fn();
   const window = { ask: undefined as undefined | ((close: () => void) => void), close, guarded: 0 };
-  const connection = { mode: "ssh" as const, sshTarget: `liam@hermes-${++launches}`, url: "", username: "liam" };
+  const connection = { mode: "ssh" as const, sshTarget: `lena@hermes-${++launches}`, url: "", username: "lena" };
   const refs = connectionRefs(localStorage);
   const main = (link?: Parameters<typeof Main>[0]["link"]) => (
     <Main
@@ -114,12 +114,12 @@ describe("Settings → Persona", () => {
     await openPersona(user);
     const box = await editor();
     expect(box.value).toBe(SOUL);
-    expect(chip("Server").textContent).toContain("liam@hermes");
+    expect(chip("Server").textContent).toContain("lena@hermes");
     expect(within(slot()).getByRole<HTMLSelectElement>("combobox", { name: "Profile" }).value).toBe("default");
     expect(slot().textContent!.trim()).toMatch(/^Editing profile/);
     // The file shows from ~, and in full on hover.
     expect(chip("File").textContent).toBe("~/.hermes/SOUL.md");
-    expect(chip("File").title).toBe("/home/liam/.hermes/SOUL.md");
+    expect(chip("File").title).toBe("/home/lena/.hermes/SOUL.md");
     expect(within(applies()).getByText(/Hermes reads SOUL.md when a chat starts/).textContent).toMatch(/doesn't need to restart, and Highwing never restarts it/);
     // Plain text, never rendered: the Markdown shows as typed.
     expect(document.querySelector(".persona strong")).toBeNull();
@@ -264,7 +264,7 @@ describe("Settings → Persona", () => {
     const { server, user, store, connection } = await launch();
     await openPersona(user);
     await edit(user, "# Mine\n");
-    server.soulWriteError = new RestError(500, `{"detail":"Could not write SOUL.md: [Errno 13] Permission denied: '/home/liam/.hermes/SOUL.md'"}`);
+    server.soulWriteError = new RestError(500, `{"detail":"Could not write SOUL.md: [Errno 13] Permission denied: '/home/lena/.hermes/SOUL.md'"}`);
     await user.click(screen.getByRole("button", { name: /^Save$/ }));
     const alert = await screen.findByText(/isn't allowed to save SOUL.md.*Permission denied.*still here, and kept on this computer/);
     expect(alert).toBeTruthy();
@@ -610,7 +610,7 @@ describe("leaving an unsaved persona edit", () => {
     expect(work.value).toBe("# Work persona\n");
     // The default profile's kept edit isn't offered here.
     expect(screen.queryByText(/Changes you didn't save/)).toBeNull();
-    expect(chip("File").title).toBe("/home/liam/.hermes/profiles/work/SOUL.md");
+    expect(chip("File").title).toBe("/home/lena/.hermes/profiles/work/SOUL.md");
     await edit(user, "# Work, edited\n", "work");
     await user.click(screen.getByRole("button", { name: /^Save$/ }));
     await screen.findByText(/Saved SOUL.md/);
@@ -692,7 +692,7 @@ describe("editing another profile's persona (#190)", () => {
     const work = await editor("work");
     expect(work.value).toBe("# Work persona\n");
     // The notes are the picked profile's: its file, its distribution, and that the app is using another profile.
-    expect(chip("File").title).toBe("/home/liam/.hermes/profiles/work/SOUL.md");
+    expect(chip("File").title).toBe("/home/lena/.hermes/profiles/work/SOUL.md");
     expect(await screen.findByText(/installed from the/)).toBeTruthy();
     expect(screen.getByText(/profile distribution/).textContent).toContain("acme-agents");
     expect(screen.getByText(/Highwing is using the/).textContent).toMatch(/using the default profile.*chats on the work profile/s);

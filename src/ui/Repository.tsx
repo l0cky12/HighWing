@@ -364,7 +364,7 @@ export function RepositoryScreen({
             spellCheck={false}
             id={`${pathId}-target`}
             className="mono"
-            placeholder="liam@hermes or a host alias from ~/.ssh/config"
+            placeholder="lena@hermes or a host alias from ~/.ssh/config"
             value={targetDraft}
             autoFocus
             onChange={(e) => setTargetDraft(e.target.value)}

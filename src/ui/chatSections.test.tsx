@@ -544,7 +544,7 @@ describe("Settings → General: chat list sections", () => {
 });
 
 describe("Clearing from the Inbox, in the app", () => {
-  const connection = { mode: "ssh" as const, sshTarget: "liam@hermes", url: "", username: "liam" };
+  const connection = { mode: "ssh" as const, sshTarget: "lena@hermes", url: "", username: "lena" };
   async function signedIn(server = new FakeHermes()) {
     if (!server.sessions.length) server.sessions = [row("a", 1, { pinned: true, title: "Deploy notes" }), row("b", 2, { pinned: true, title: "Groceries" })];
     const hermes = await connect(server.openPipe);
@@ -619,7 +619,7 @@ describe("Clearing from the Inbox, in the app", () => {
 });
 
 describe("Pinning, in the app", () => {
-  const connection = { mode: "ssh" as const, sshTarget: "liam@hermes", url: "", username: "liam" };
+  const connection = { mode: "ssh" as const, sshTarget: "lena@hermes", url: "", username: "lena" };
   async function signedIn(server = new FakeHermes()) {
     if (!server.sessions.length)
       server.sessions = [

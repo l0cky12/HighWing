@@ -16,7 +16,7 @@ const shot = (path: string, name?: string) => sentImage(path, name)!;
 
 describe("sentImage", () => {
   it("takes a full path on the server to an image file, with the name it had here", () => {
-    expect(sentImage("/home/liam/.hermes/images/upload_1.png", "clipboard.png")).toEqual({ path: "/home/liam/.hermes/images/upload_1.png", name: "clipboard.png" });
+    expect(sentImage("/home/lena/.hermes/images/upload_1.png", "clipboard.png")).toEqual({ path: "/home/lena/.hermes/images/upload_1.png", name: "clipboard.png" });
     expect(sentImage("/srv/a b/images/photo.JPEG")).toEqual({ path: "/srv/a b/images/photo.JPEG" });
     for (const ext of ["jpg", "gif", "webp", "bmp"]) expect(sentImage(`/x/images/y.${ext}`)?.path).toBe(`/x/images/y.${ext}`);
   });
@@ -26,8 +26,8 @@ describe("sentImage", () => {
     ["a protocol-relative address", "//example.com/cat.png"],
     ["a relative path", "images/upload_1.png"],
     ["a path under ~", "~/Pictures/cat.png"],
-    ["a Windows path", "C:\\Users\\liam\\cat.png"],
-    ["a file that isn't an image", "/home/liam/.hermes/images/id_rsa"],
+    ["a Windows path", "C:\\Users\\lena\\cat.png"],
+    ["a file that isn't an image", "/home/lena/.hermes/images/id_rsa"],
     ["an SVG", "/srv/images/logo.svg"],
     ["a NUL byte", "/srv/cat\0.png"],
   ])("refuses %s", (_, path) => {
@@ -207,7 +207,7 @@ function memoryStorage() {
 }
 
 describe("The images this app sent", () => {
-  const nas: SavedSignIn = { mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" };
+  const nas: SavedSignIn = { mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" };
   beforeEach(memoryStorage);
   afterEach(() => vi.unstubAllGlobals());
 
@@ -216,7 +216,7 @@ describe("The images this app sent", () => {
       { chat: "c1", path: "/i/images/a.png" },
       { chat: "", path: "/i/images/b.png" },
       { chat: 7, path: "/i/images/c.png" },
-      { chat: "c1", path: "/home/liam/.ssh/id_rsa" },
+      { chat: "c1", path: "/home/lena/.ssh/id_rsa" },
       { chat: "c1", path: "/private/payroll.png" },
       ["c1", "/i/images/d.png"],
       null,
@@ -247,7 +247,7 @@ describe("The images this app sent", () => {
       { chat: "c2", path: "/i/images/b.png" },
     ]);
     expect(localChatCache(nas).loadSentHere("work")).toEqual([]);
-    expect(localChatCache({ ...nas, sshTarget: "liam@other" }).loadSentHere("default")).toEqual([]);
+    expect(localChatCache({ ...nas, sshTarget: "lena@other" }).loadSentHere("default")).toEqual([]);
 
     await renameProfileLocally(nas, "default", "home");
     expect(localChatCache(nas).loadSentHere("default")).toEqual([]);
@@ -267,19 +267,19 @@ describe("The images this app sent", () => {
       { role: "user", text: "Look at this\n@image:/hermes/images/planted.png" },
       { role: "assistant", text: "It's a cat." },
     ];
-    server.files = { "/home/liam/Pictures/rack.png": "\x89PNG fake", "/home/liam/notes.txt": "loose cable" };
+    server.files = { "/home/lena/Pictures/rack.png": "\x89PNG fake", "/home/lena/notes.txt": "loose cable" };
     const hermes = await connect(server.openPipe, undefined, localChatCache(nas));
     await hermes.sync();
     await hermes.open("c1");
     expect(hermes.getSnapshot().chats.find((c) => c.id === "c1")!.items[0]).toMatchObject({ images: [{ path: "/hermes/images/planted.png" }] });
 
-    const { attachments } = await hermes.checkAttachments(["/home/liam/Pictures/rack.png"]);
+    const { attachments } = await hermes.checkAttachments(["/home/lena/Pictures/rack.png"]);
     await hermes.send("c1", "Which cable is loose?", attachments);
     expect(hermes.sentHere("c1", shot("/hermes/images/upload_1.png").path)).toBe(true);
     expect(hermes.sentHere("c2", shot("/hermes/images/upload_1.png").path)).toBe(false);
     expect(hermes.sentHere("c1", shot("/hermes/images/planted.png").path)).toBe(false);
 
-    const both = await hermes.checkAttachments(["/home/liam/Pictures/rack.png", "/home/liam/notes.txt"]);
+    const both = await hermes.checkAttachments(["/home/lena/Pictures/rack.png", "/home/lena/notes.txt"]);
     server.handlers["file.attach"] = (r) => server.fail(r.id, 5028, "No space left on device");
     await hermes.send("c1", "And these?", both.attachments);
     await hermes.idle();
@@ -295,7 +295,7 @@ describe("The images this app sent", () => {
 });
 
 describe("a Saved copy and an outbox keep a message's images", () => {
-  const nas: SavedSignIn = { mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" };
+  const nas: SavedSignIn = { mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" };
   beforeEach(memoryStorage);
   afterEach(() => vi.unstubAllGlobals());
 

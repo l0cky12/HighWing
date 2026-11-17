@@ -15,9 +15,9 @@ const HEADER = "v1.0-SENTINEL-cf-access-secret";
 const LAN: RouteDetails = { id: "k3x9q2ab", kind: "lan", target: "http://192.168.1.10:9119" };
 const TAILNET: RouteDetails = { id: "7hd0aa1c", kind: "tailscale", target: "http://hermes-box.tail1234.ts.net:9119" };
 const WEB: RouteDetails = { id: "w3b0", kind: "web", target: "https://hermes.example.com", headers: [{ name: "Cf-Access-Client-Secret", value: HEADER }] };
-const SSH: RouteDetails = { id: "main", kind: "ssh", target: "liam@nasbox" };
+const SSH: RouteDetails = { id: "main", kind: "ssh", target: "lena@nasbox" };
 const ROUTES = [LAN, TAILNET, WEB, SSH];
-const base: SignInDetails = { mode: "ssh", sshTarget: "", url: "", username: "liam", password: PASSWORD, token: TOKEN };
+const base: SignInDetails = { mode: "ssh", sshTarget: "", url: "", username: "lena", password: PASSWORD, token: TOKEN };
 const details = (routes = ROUTES): SignInDetails => withRoutes(base, routes);
 const FORBIDDEN = [
   PASSWORD,
@@ -28,7 +28,7 @@ const FORBIDDEN = [
   "tail1234",
   "hermes.example.com",
   "nasbox",
-  "liam",
+  "lena",
   "203.0.113.77",
   "fd7a:115c",
   "realhost",
@@ -52,10 +52,10 @@ const RAW = [
   `Authorization: Bearer ${TOKEN}`,
   "ssh: Could not resolve hostname realhost: Name or service not known",
   "ssh: connect to host nasbox port 22: Connection refused",
-  "liam@nasbox: Permission denied (publickey,password).",
+  "lena@nasbox: Permission denied (publickey,password).",
   "Connection closed by 203.0.113.77 port 22",
   "kex_exchange_identification: read: Connection reset by peer\r\nConnection reset by 192.168.1.10 port 22",
-  `Wrong username or password for liam at hermes.example.com (${PASSWORD})`,
+  `Wrong username or password for lena at hermes.example.com (${PASSWORD})`,
   `The connection closed before Hermes was ready: closed by the server (1008 ${HEADER})`,
   new RoutesFailedError(ROUTES.map((route) => ({ route, message: "Can't reach the Hermes dashboard" }))).message,
   `\x1b[1mBearer ${TOKEN}\x1b[0m eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJl`,

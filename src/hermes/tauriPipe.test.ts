@@ -8,19 +8,19 @@ import { type SignInDetails, tauriPipe } from "./tauriPipe";
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke, Channel: class {} }));
 
-const nas: SignInDetails = { mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam", password: "pw" };
+const nas: SignInDetails = { mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena", password: "pw" };
 
 beforeEach(() => {
   invoke.mockReset();
   invoke.mockImplementation((command: string) =>
-    command === "hermes_connect" ? Promise.resolve({ kind: "ssh", target: "liam@hermes" }) : Promise.reject("The connection to Hermes is closed."),
+    command === "hermes_connect" ? Promise.resolve({ kind: "ssh", target: "lena@hermes" }) : Promise.reject("The connection to Hermes is closed."),
   );
 });
 
 describe("A Rust command that fails", () => {
   it.each<[string, (p: Pipe) => Promise<unknown>]>([
     ["send", (p) => p.send("{}")],
-    ["statFiles", (p) => p.statFiles(["/home/liam/rotate.sh"])],
+    ["statFiles", (p) => p.statFiles(["/home/lena/rotate.sh"])],
     ["discardUpload", (p) => p.discardUpload(1)],
     ["cancelTransfer", (p) => p.cancelTransfer(1)],
     ["close", (p) => p.close()],

@@ -121,14 +121,14 @@ mod tests {
     fn the_script_fits_in_single_quotes_and_is_the_same_every_time() {
         assert!(!SCRIPT.contains('\''), "the remote command wraps the script in single quotes");
         assert!(!one_line().contains('\n'));
-        let cmd = ssh_command("liam@hermes", false).unwrap();
+        let cmd = ssh_command("lena@hermes", false).unwrap();
         let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_string_lossy().into_owned()).collect();
         let dashdash = args.iter().position(|a| a == "--").unwrap();
-        assert_eq!(args[dashdash + 1], "liam@hermes");
+        assert_eq!(args[dashdash + 1], "lena@hermes");
         assert_eq!(args[dashdash + 2], format!("exec sh -c '{}' highwing-screen-apps ask", one_line()));
         assert_eq!(args.len(), dashdash + 3);
         assert!(args.windows(2).any(|w| w == ["-o", "BatchMode=yes"]));
-        let with_password = ssh_command("liam@hermes", true).unwrap();
+        let with_password = ssh_command("lena@hermes", true).unwrap();
         let last = with_password.as_std().get_args().last().unwrap().to_string_lossy().into_owned();
         assert!(last.ends_with("highwing-screen-apps password"));
         assert_eq!(ssh_command("-oProxyCommand=x", false).err(), Some(RepoError::BadTarget));

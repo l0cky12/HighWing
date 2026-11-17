@@ -7,7 +7,7 @@ import { connect, type Hermes } from "./transport";
 import { localChatCache } from "./chatCache";
 import { controlOf, draftProblem, goalArg, readBackProblem, setGoal, type Control, type GoalDraft } from "./goals";
 
-const nas = { mode: "ssh" as const, sshTarget: "liam@nas", url: "", username: "liam" };
+const nas = { mode: "ssh" as const, sshTarget: "lena@nas", url: "", username: "lena" };
 
 const running: Hermes[] = [];
 afterEach(async () => {

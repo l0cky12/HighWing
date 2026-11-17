@@ -39,7 +39,7 @@ export class FakeLocalStt implements LocalSttApi {
     language: "auto",
   };
   downloaded = new Set<string>();
-  dir = "/home/liam/.local/share/hermes-chat/whisper-models";
+  dir = "/home/lena/.local/share/hermes-chat/whisper-models";
   /** What the next transcription here hears, or the error it fails with. */
   heard: string | Error = "Check the backup logs";
   /** Holds every transcription here until it resolves. */

@@ -258,6 +258,6 @@ describe("adding files", () => {
     expect(folderSlug("Budget Tracker 2026!", "p_1")).toBe("budget-tracker-2026");
     expect(folderSlug("日本語", "p_1")).toBe("project-p_1");
     expect(folderSlug("x".repeat(60), "p_1")).toHaveLength(48);
-    expect(defaultFolder("/home/liam/.hermes/profiles/work/", "Budget Tracker", "p_1")).toBe("/home/liam/.hermes/profiles/work/projects/budget-tracker");
+    expect(defaultFolder("/home/lena/.hermes/profiles/work/", "Budget Tracker", "p_1")).toBe("/home/lena/.hermes/profiles/work/projects/budget-tracker");
   });
 });

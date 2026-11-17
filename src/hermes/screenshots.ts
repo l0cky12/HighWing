@@ -272,6 +272,12 @@ export class ScreenshotDesk {
    */
   numbersIn = (key: string): ReadonlyMap<string, number> => this.numbers.get(key)?.of ?? UNNUMBERED;
 
+  /** No staged image in the chat gets a number up to `n`: a mark in its words gives it. */
+  reserve(key: string, n: number) {
+    const was = this.numbers.get(key) ?? { of: UNNUMBERED, next: 1 };
+    if (n >= was.next) this.numbers.set(key, { ...was, next: n + 1 });
+  }
+
   private restage(key: string, files: readonly Attachment[]) {
     const was = this.numbers.get(key) ?? { of: UNNUMBERED, next: 1 };
     if (!files.length) {

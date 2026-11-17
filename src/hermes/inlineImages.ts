@@ -7,7 +7,7 @@ import type { Attachment, SentImage } from "./model";
 /** A mark in a message's words: the image it places (`n`, counted from 1) and the name it shows. */
 export type ImageMark = { start: number; end: number; n: number; name: string };
 
-const MARK = /\[image ([1-9]\d{0,2}): ([^[\]\n]{1,255})\]/g;
+const MARK = /\[image ([1-9]\d{0,8}): ([^[\]\n]{1,255})\]/g;
 
 /** `[image 2: shot.png]`. A name can't end the mark early or break the line. */
 export const markText = (n: number, name: string) => `[image ${n}: ${name.replace(/[[\]\r\n]/g, "_").slice(0, 255) || "image"}]`;

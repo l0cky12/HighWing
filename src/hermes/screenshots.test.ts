@@ -282,6 +282,11 @@ describe("Each chat's staged attachments", () => {
     desk.change({ kind: "added", key: "chat-b", attachments: [file("/c/other.png")] });
     expect([...desk.numbersIn("chat-a")]).toEqual([["/c/new.png", 8]]);
     expect([...desk.numbersIn("chat-b")]).toEqual([["/c/other.png", 1]]);
+    // The owner deletes the old marks; Undo could bring them back, so their numbers stay taken.
+    desk.reserve("chat-b", 7);
+    words["chat-b"] = "";
+    desk.change({ kind: "added", key: "chat-b", attachments: [file("/c/later.png")] });
+    expect(desk.numbersIn("chat-b").get("/c/later.png")).toBe(8);
   });
 
   it("tells the composer that checked a capture once it is staged, so it can mark where it goes", async () => {

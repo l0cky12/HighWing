@@ -37,7 +37,7 @@ import { wakeFull } from "../hermes/snooze";
 import { AttachmentChip, InlineSentImage, Previews, SentImages, readPreview } from "./previews";
 import { InlineMarks, type ComposerMark } from "./inlineMarks";
 import { sentWith } from "../hermes/sentImages";
-import { carried, marksIn, markText, placeImages, sentText, withMarks } from "../hermes/inlineImages";
+import { carried, highestMark, marksIn, markText, placeImages, sentText, withMarks } from "../hermes/inlineImages";
 import { Speaker } from "./speaker";
 import { DictationNoteView, DictationStrip, ListenButton, MicButton, type VoiceApi, listenBlocked, micBlocked, useDictation, useVoiceSetup } from "./Voice";
 import { withTranscript } from "../hermes/voice";
@@ -1837,6 +1837,8 @@ function Composer({
   const attachments = useSyncExternalStore(screenshots.subscribe, () => screenshots.stagedIn(draftKey));
   // Each staged image's number, which its mark in the words gives (inlineImages.ts, ADR 0197).
   const numbers = useSyncExternalStore(screenshots.subscribe, () => screenshots.numbersIn(draftKey));
+  // A number a mark in the words has given stays taken after the mark goes, since Undo can bring it back.
+  useEffect(() => screenshots.reserve(draftKey, highestMark(text)), [screenshots, draftKey, text]);
   const marks: ComposerMark[] = useMemo(() => {
     const by = new Map(attachments.flatMap((a) => (numbers.has(a.path) ? [[numbers.get(a.path)!, a] as const] : [])));
     return marksIn(text, (n) => by.has(n)).map((m) => ({ ...m, file: by.get(m.n)! }));

@@ -24,6 +24,8 @@ describe("withMarks", () => {
 describe("markText", () => {
   it("keeps a name with brackets or line breaks from ending the mark or the line", () => {
     expect(markText(2, "a]b[c\nd.png")).toBe("[image 2: a_b_c_d.png]");
+    expect(placeImages(markText(1000, "late.png"), []).pieces).toEqual(["[image 1000: late.png]"]);
+    expect(sentText(markText(1000, "late.png"), [image("/s/k.png", "late.png")], new Map([["/s/k.png", 1000]]))).toBe("[image 1: late.png]");
   });
 });
 

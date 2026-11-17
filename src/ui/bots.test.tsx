@@ -238,7 +238,6 @@ describe("New bot in the Bots view", () => {
     expect(server.restRequests.find((r) => r.method === "POST" && r.path === "/api/profiles")?.body).toEqual({
       name: "ada",
       soul: "You are Ada. You summarise papers briefly.",
-      keep_skills: ["arxiv"],
     });
     expect(server.souls.ada).toBe("You are Ada. You summarise papers briefly.");
     expect([...(server.skills.disabled.ada ?? [])]).toEqual(["recipes"]);
@@ -264,7 +263,7 @@ describe("New bot in the Bots view", () => {
     await user.click(screen.getByRole("button", { name: "New bot" }));
     await user.type(within(form()).getByLabelText("Name"), "scribe");
     expect(within(form()).getByText("There's already a profile named scribe. Pick another name.")).toBeTruthy();
-    expect(within(form()).getByRole("button", { name: /Create bot/ })).toHaveProperty("disabled", true);
+    expect(within(form()).getByRole("button", { name: /Create bot/ }).getAttribute("aria-disabled")).toBe("true");
     expect(server.restRequests.filter((r) => r.method !== "GET")).toEqual([]);
   });
 
@@ -332,14 +331,14 @@ describe("New bot in the Bots view", () => {
     await user.click(screen.getByRole("button", { name: "New bot" }));
     await user.type(within(form()).getByLabelText("Name"), "scribe");
     const create = within(form()).getByRole("button", { name: /Create bot/ });
-    expect(create).toHaveProperty("disabled", true);
+    expect(create.getAttribute("aria-disabled")).toBe("true");
     expect(within(form()).getByRole("status").textContent).toBe("Wait for the list of profiles, so the name can be checked against it.");
     await user.click(create);
     await user.keyboard("{Enter}");
     expect(server.restRequests.filter((r) => r.method !== "GET")).toEqual([]);
     await arrive(rosterOf({ profiles: [{ name: "default", canonical_session: null }, { name: "scribe", canonical_session: null }] }));
     expect(within(form()).getByText("There's already a profile named scribe. Pick another name.")).toBeTruthy();
-    expect(create).toHaveProperty("disabled", true);
+    expect(create.getAttribute("aria-disabled")).toBe("true");
     expect(server.restRequests.filter((r) => r.method !== "GET")).toEqual([]);
   });
 

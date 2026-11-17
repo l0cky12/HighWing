@@ -1,17 +1,9 @@
 // New profile's Skills and Tools (botSetup.ts, ADR 0195) through the real transport against FakeHermes, whose create
-// follows `hermes_cli/web_routers/profiles.py` at `f0d94882`: keep_skills and no_skills in the create, best-effort, then
-// each choice read back from the new profile and its toolsets set one at a time. All data is synthetic.
+// follows `hermes_cli/web_routers/profiles.py` at `f0d94882`: the create carries neither, Hermes seeds its built-in
+// skills all on, and each choice is then applied to the new profile alone, one switch or toolset change at a time, and
+// read back. All data is synthetic.
 import { describe, expect, it } from "vitest";
-import {
-  applyToolsets,
-  checkSkills,
-  createFields,
-  retrySkill,
-  retryToolset,
-  skillOptions,
-  toolsetOptions,
-  type SetupItem,
-} from "./botSetup";
+import { applySkills, applyToolsets, retrySkill, retryToolset, skillOptions, toolsetOptions, type SetupItem, type SkillOption } from "./botSetup";
 import { FakeHermes } from "./fakeHermes";
 import { memoryCache } from "./memoryCache";
 import { connect } from "./transport";
@@ -30,65 +22,81 @@ async function signedIn(setup: (s: FakeHermes) => void = () => {}) {
 }
 
 const states = (items: SetupItem[]) => Object.fromEntries(items.map((i) => [i.name, i.state.kind === "failed" ? i.state.miss.kind : i.state.kind]));
-const createBody = (server: FakeHermes) => server.restRequests.find((r) => r.method === "POST" && r.path === "/api/profiles")?.body;
+const toggles = (server: FakeHermes) => server.restRequests.filter((r) => r.method === "PUT" && r.path === "/api/skills/toggle").map((r) => [r.query.get("profile"), r.body]);
+const option = (name: string): SkillOption => ({ name, description: `The ${name} skill`, ...(name === "hermes-agent" && { locked: "essential" as const }) });
 
-describe("What a create carries for the owner's choice", () => {
-  it("adds nothing for Hermes's defaults, the kept skills sorted, or none at all", () => {
-    expect(createFields({ skills: { kind: "defaults" }, toolsets: { kind: "chosen", on: new Set(["web"]) } })).toEqual({});
-    expect(createFields({ skills: { kind: "chosen", on: new Set(["recipes", "arxiv"]) }, toolsets: { kind: "defaults" } })).toEqual({ keepSkills: ["arxiv", "recipes"] });
-    expect(createFields({ skills: { kind: "chosen", on: new Set() }, toolsets: { kind: "defaults" } })).toEqual({ noSkills: true });
-  });
-
-  it("sends a defaults create exactly as before, and keep_skills or no_skills when chosen", async () => {
-    const { server, hermes } = await signedIn();
-    await hermes.manageProfiles.create({ name: "plain", soul: "You are terse." });
-    expect(createBody(server)).toEqual({ name: "plain", soul: "You are terse." });
-    server.restRequests.length = 0;
-    expect(await hermes.manageProfiles.create({ name: "picky", keepSkills: ["arxiv", "hermes-agent"] })).toEqual({ name: "picky", answered: true, modelSet: true, skillsDisabled: 2 });
-    expect(createBody(server)).toEqual({ name: "picky", keep_skills: ["arxiv", "hermes-agent"] });
-    server.restRequests.length = 0;
-    await hermes.manageProfiles.create({ name: "bare", noSkills: true });
-    expect(createBody(server)).toEqual({ name: "bare", no_skills: true });
-    expect(server.skills.folders.bare ?? []).toEqual([]);
-  });
-
-  it("never sends both", async () => {
-    const { server, hermes } = await signedIn();
-    await expect(hermes.manageProfiles.create({ name: "both", keepSkills: ["arxiv"], noSkills: true })).rejects.toMatchObject({ failure: { kind: "unsent" } });
-    expect(createBody(server)).toBeUndefined();
-  });
-});
-
-describe("Skills, read back from the new profile", () => {
-  it("offers only the built-in skills listed for the profile in use, with the one Hermes keeps on marked", async () => {
+describe("Skills, applied to the new profile and read back", () => {
+  it("offers only the built-in skills listed for the profile in use, with the one Hermes keeps on locked", async () => {
     const { apis } = await signedIn();
-    expect(skillOptions(await apis.skills.rows("default"))).toEqual(BUILT_IN.map((name) => ({ name, description: `The ${name} skill`, essential: name === "hermes-agent" })));
+    expect(skillOptions(await apis.skills.rows("default"))).toEqual(BUILT_IN.map(option));
   });
 
-  it("finds each chosen skill on and each other one off", async () => {
-    const { hermes, apis } = await signedIn();
-    const on = new Set(["arxiv", "hermes-agent"]);
-    await hermes.manageProfiles.create({ name: "picky", ...createFields({ skills: { kind: "chosen", on }, toolsets: { kind: "defaults" } }) });
-    expect(states(await checkSkills(apis, "picky", BUILT_IN, on))).toEqual({ arxiv: "applied", "git-helper": "applied", "hermes-agent": "applied", recipes: "applied" });
+  it("locks a built-in skill whose name this app doesn't send, and never switches it", async () => {
+    const { server, hermes, apis } = await signedIn((s) =>
+      s.skills.add("default", { dir: "/home/liam/.hermes/skills/odd", source: "bundled" }, "---\nname: a//b\ndescription: Odd\n---\nOdd.\n"),
+    );
+    const options = skillOptions(await apis.skills.rows("default"));
+    expect(options.find((o) => o.name === "a//b")).toEqual({ name: "a//b", description: "Odd", locked: "unsendable" });
+    await hermes.manageProfiles.create({ name: "picky" });
+    const items = await applySkills(apis, "picky", options, new Set());
+    expect(items.map((i) => i.name)).toEqual(BUILT_IN);
+    expect(toggles(server).map(([, body]) => body)).toEqual([
+      { name: "arxiv", enabled: false },
+      { name: "git-helper", enabled: false },
+      { name: "recipes", enabled: false },
+    ]);
   });
 
-  it("names each skill Hermes didn't turn off, and Try again turns it off and reads it back", async () => {
-    const { server, hermes, apis } = await signedIn((s) => (s.profileKeepSkillsFails = true));
-    const on = new Set(["arxiv", "hermes-agent"]);
-    const made = await hermes.manageProfiles.create({ name: "picky", keepSkills: [...on] });
-    expect(made.skillsDisabled).toBe(0);
-    const items = await checkSkills(apis, "picky", BUILT_IN, on);
-    expect(states(items)).toEqual({ arxiv: "applied", "git-helper": "readOn", "hermes-agent": "applied", recipes: "readOn" });
+  it("turns off only the skills the owner unticked, on the new profile alone, and reads the ticked ones back on", async () => {
+    const { server, hermes, apis } = await signedIn();
+    await hermes.manageProfiles.create({ name: "picky" });
+    const items = await applySkills(apis, "picky", BUILT_IN.map(option), new Set(["arxiv", "hermes-agent"]));
+    expect(states(items)).toEqual({ arxiv: "applied", "git-helper": "applied", "hermes-agent": "applied", recipes: "applied" });
+    expect(toggles(server)).toEqual([
+      ["picky", { name: "git-helper", enabled: false }],
+      ["picky", { name: "recipes", enabled: false }],
+    ]);
+    expect([...(server.skills.disabled.picky ?? [])].sort()).toEqual(["git-helper", "recipes"]);
+    expect(server.skills.disabled.default ?? new Set()).toEqual(new Set());
+  });
+
+  it("never touches a skill the owner wasn't shown, even when none is chosen", async () => {
+    const { server, hermes, apis } = await signedIn();
+    await hermes.manageProfiles.create({ name: "bare" });
+    // `recipes` is seeded in the new profile, but wasn't in the list the owner chose from.
+    const items = await applySkills(apis, "bare", ["arxiv", "git-helper"].map(option), new Set());
+    expect(states(items)).toEqual({ arxiv: "applied", "git-helper": "applied" });
+    expect([...(server.skills.disabled.bare ?? [])].sort()).toEqual(["arxiv", "git-helper"]);
+    expect((await apis.skills.rows("bare")).find((r) => r.name === "recipes")?.enabled).toBe(true);
+  });
+
+  it("says Hermes's words when a switch fails, and Try again judges it as the first apply did", async () => {
+    const { server, hermes, apis } = await signedIn((s) => (s.skills.toggleRefusal = { status: 400, detail: "Skill changes are locked on this server." }));
+    await hermes.manageProfiles.create({ name: "picky" });
+    const items = await applySkills(apis, "picky", BUILT_IN.map(option), new Set(["arxiv", "hermes-agent"]));
+    expect(states(items)).toEqual({ arxiv: "applied", "git-helper": "said", "hermes-agent": "applied", recipes: "said" });
+    expect(items.find((i) => i.name === "recipes")?.state).toEqual({ kind: "failed", miss: { kind: "said", text: expect.stringContaining("Skill changes are locked on this server.") } });
+    server.skills.toggleRefusal = undefined;
     const fixed = await retrySkill(apis, "picky", items.find((i) => i.name === "recipes")!);
-    expect(fixed.state).toEqual({ kind: "applied" });
+    expect(fixed).toMatchObject({ name: "recipes", want: false, state: { kind: "applied" } });
     expect(server.skills.disabled.picky?.has("recipes")).toBe(true);
+  });
+
+  it("counts a skill chosen off that the new profile doesn't list as applied, first time and on Try again, without a switch", async () => {
+    const { server, hermes, apis } = await signedIn();
+    await hermes.manageProfiles.create({ name: "picky" });
+    const gone: SetupItem = { area: "skill", name: "weather", label: "weather", want: false, state: { kind: "failed", miss: { kind: "said", text: "x" } } };
+    expect(states(await applySkills(apis, "picky", [option("weather")], new Set()))).toEqual({ weather: "applied" });
+    expect((await retrySkill(apis, "picky", gone)).state).toEqual({ kind: "applied" });
+    expect((await retrySkill(apis, "picky", { ...gone, want: true })).state).toEqual({ kind: "failed", miss: { kind: "missing" } });
+    expect(toggles(server)).toEqual([]);
   });
 
   it("marks every skill unchecked with why when the list can't be read", async () => {
     const { server, hermes, apis } = await signedIn();
-    await hermes.manageProfiles.create({ name: "picky", keepSkills: ["arxiv"] });
+    await hermes.manageProfiles.create({ name: "picky" });
     server.skills.routes = false;
-    const items = await checkSkills(apis, "picky", ["arxiv", "recipes"], new Set(["arxiv"]));
+    const items = await applySkills(apis, "picky", ["arxiv", "recipes"].map(option), new Set(["arxiv"]));
     expect(items.map((i) => i.state)).toEqual([0, 1].map(() => ({ kind: "failed", miss: { kind: "said", text: expect.stringMatching(/no GET \/api\/skills route/) } })));
   });
 });
@@ -119,7 +127,7 @@ describe("Tools, set on the new profile and read back", () => {
     expect(item).toMatchObject({ name: "computer_use", want: true, state: { kind: "confirm", cautions: [{ kind: "install", keys: ["cua_driver"] }] } });
     expect(server.toolsetWrites).toEqual([]);
     const applied = await retryToolset(apis, "desk", item, item.state.kind === "confirm" ? item.state.cautions : []);
-    expect(applied.state).toEqual({ kind: "applied" });
+    expect(applied.state).toEqual({ kind: "applied", notes: [{ kind: "installing", keys: "cua_driver" }] });
     expect(server.toolsetWrites).toEqual([{ profile: "desk", name: "computer_use", enabled: true }]);
   });
 

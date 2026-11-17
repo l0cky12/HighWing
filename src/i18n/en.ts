@@ -460,6 +460,8 @@ export const en = {
         failed: (why: string) => `Hermes couldn't rewrite it: ${why} Your persona is unchanged.`,
         blockedAsking: "Wait for the rewrite, or stop it, before creating.",
         blockedOpen: "Replace the persona with the suggestion, or discard it, before creating.",
+        noText: "Hermes answered with no text.",
+        cut: (max: number) => `Your persona is longer than ${max} characters, so only its first ${max} were rewritten.`,
       },
       /** New's Skills, Tools and MCP servers (ADR 0195), and what applying them came to after the create. */
       setup: {
@@ -469,7 +471,8 @@ export const en = {
         defaults: "Hermes's defaults",
         choose: "Choose",
         skillsDefaults: "Every built-in skill Hermes gives a new profile, all on.",
-        skillsFrom: (profile: string) => `The built-in skills Hermes gives a new profile, as listed for ${profile}. One turned off stays installed, but isn't offered to the model.`,
+        skillsFrom: (profile: string) =>
+          `The built-in skills listed for ${profile}. Once the profile is made, each one you turn off is turned off there, then read back; it stays installed, but isn't offered to the model. Any built-in skill this list doesn't show stays as Hermes sets it.`,
         toolsDefaults: "The toolsets Hermes turns on for a new profile.",
         toolsFrom: (profile: string) => `Starts from what ${profile} has on. Applied once the profile is made, then read back.`,
         filterSkills: "Filter skills",
@@ -486,6 +489,7 @@ export const en = {
         noneMatch: "Nothing matches.",
         noBuiltIn: (profile: string) => `Hermes lists no built-in skills for ${profile}, so there's nothing to choose.`,
         essential: "Hermes keeps this one on.",
+        unsendable: "Highwing can't send this skill's name to Hermes, so it stays as Hermes sets it.",
         unchangeable: "Highwing can't send this toolset's name to Hermes, so it stays as Hermes sets it.",
         mcpNote:
           "Highwing can't add MCP servers while creating a profile: Hermes would have to copy them without their secrets, and it has no way to yet. After creating, add them in Settings → MCP servers.",
@@ -514,9 +518,18 @@ export const en = {
         keep: "Keep it as is",
         done: "Done",
         deleted: (name: string) => `Deleted ${name}, since not everything you chose applied.`,
+        deletedLocalKept: (name: string) => `Deleted ${name} on Hermes, since not everything you chose applied, but some of this computer's data for it couldn't be removed.`,
         deleteFailed: (why: string) => `It wasn't deleted: ${why}`,
         keptPartly: (name: string, missed: string) => `Created ${name}, but these aren't as you chose: ${missed}.`,
         theModel: "the model",
+        alsoDid: "Hermes also",
+        /** What Hermes did besides a toolset change it read back as chosen. */
+        note: {
+          installing: (keys: string, label: string) => `Hermes started installing ${keys} on the server for ${label}, in the background.`,
+          warning: (why: string, label: string) => `Hermes answered with an error (${why}), but reads ${label} back as chosen.`,
+          mcpBack: (label: string) => `Turning ${label} on cleared no_mcp, so new chats are offered the profile's MCP servers again.`,
+          everywhereBack: (label: string) => `Hermes removed ${label} from agent.disabled_toolsets, so it's back on every platform that lists it.`,
+        },
       },
     },
     del: {

@@ -381,11 +381,6 @@ export class FakeHermes {
   profileCreateLost?: string;
   /** While set, `POST /api/profiles` makes the profile but not its model, and answers `model_error` with this. */
   profileModelError?: string;
-  /**
-   * While set, a create's `keep_skills` step fails after the profile is made, which Hermes logs and answers as
-   * `skills_disabled: 0` (`_best_effort`), leaving every seeded skill on.
-   */
-  profileKeepSkillsFails?: boolean;
   /** The profiles whose gateway runs, as `GET /api/profiles` reports them (`gateway_running`). */
   gatewaysRunning = new Set<string>();
   /**
@@ -2338,12 +2333,11 @@ export class FakeHermes {
     } else {
       this.profileEnv[name] = {};
       this.souls[name] = typeof body.soul === "string" ? body.soul : "You are Hermes, a helpful assistant.\n";
-      // `seed_profile_skills`: Hermes's bundled skills, here the ones `default` has as bundled; none after `no_skills`.
-      if (body.no_skills !== true)
-        for (const skill of (this.skills.folders.default ?? []).filter((s) => s.source === "bundled")) {
-          const dir = `${FakeSkills.home(name)}${skill.dir.slice(FakeSkills.home("default").length)}`;
-          this.skills.add(name, { ...skill, dir }, this.skills.file(skill.dir));
-        }
+      // `seed_profile_skills`: Hermes's bundled skills, here the ones `default` has as bundled.
+      for (const skill of (this.skills.folders.default ?? []).filter((s) => s.source === "bundled")) {
+        const dir = `${FakeSkills.home(name)}${skill.dir.slice(FakeSkills.home("default").length)}`;
+        this.skills.add(name, { ...skill, dir }, this.skills.file(skill.dir));
+      }
       const provider = typeof body.provider === "string" ? body.provider.trim() : "";
       const model = typeof body.model === "string" ? body.model.trim() : "";
       if (provider && model) {
@@ -2355,19 +2349,6 @@ export class FakeHermes {
       }
     }
     if (typeof body.description === "string" && body.description.trim()) this.profileMeta[name] = { ...this.profileMeta[name], description: body.description.trim() };
-    // `_disable_unselected_skills`, best-effort: every installed skill whose folder isn't kept goes on `skills.disabled`.
-    let skillsDisabled = 0;
-    const keep = Array.isArray(body.keep_skills) ? body.keep_skills.filter((k): k is string => typeof k === "string" && !!k.trim()).map((k) => k.trim()) : [];
-    if (source === undefined && keep.length && !this.profileKeepSkillsFails) {
-      const disabled = (this.skills.disabled[name] ??= new Set());
-      for (const skill of this.skills.folders[name] ?? []) {
-        const folder = skill.dir.slice(skill.dir.lastIndexOf("/") + 1);
-        if (!keep.includes(folder) && !disabled.has(folder)) {
-          disabled.add(folder);
-          skillsDisabled++;
-        }
-      }
-    }
     if (this.profileCreateLost) throw new Error(this.profileCreateLost);
     return {
       ok: true,
@@ -2376,7 +2357,7 @@ export class FakeHermes {
       model_set: modelSet,
       model_error: modelError,
       mcp_written: 0,
-      skills_disabled: skillsDisabled,
+      skills_disabled: 0,
       hub_installs: [],
       soul_set: typeof body.soul === "string",
     };

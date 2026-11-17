@@ -7,7 +7,7 @@ import { Wand2 } from "lucide-react";
 import { ASK_DEADLINE_MS } from "../hermes/artifacts";
 import type { Call } from "../hermes/instructionsAI";
 import { shortName } from "../hermes/models";
-import { rephraseCall, rephraseFrom } from "../hermes/personaRephrase";
+import { PERSONA_INPUT_MAX, personaCut, rephraseCall, rephraseFrom } from "../hermes/personaRephrase";
 import { deadline } from "../hermes/remoteFiles";
 import { errorText } from "../hermes/values";
 import { useLocale } from "../i18n/locale";
@@ -18,12 +18,13 @@ export type RephraseWiring = { ask: (call: Call) => Promise<string>; model: () =
 
 /**
  * Where a rewrite stands. `asking`: call `n` is out, written from `before`. `suggestion`: Hermes's answer, as the owner
- * edits it, written from `before`; Replace persona asks again first when the box no longer holds that.
+ * edits it, written from `before`; Replace persona asks again first when the box no longer holds that. `cut`: only the
+ * first `PERSONA_INPUT_MAX` characters of `before` were sent.
  */
 export type Rephrase =
   | { kind: "idle" }
   | { kind: "asking"; n: number; before: string }
-  | { kind: "suggestion"; before: string; text: string }
+  | { kind: "suggestion"; before: string; text: string; cut: boolean }
   | { kind: "failed"; message: string };
 
 type ModelRead = { kind: "reading" } | { kind: "read"; provider: string; model: string } | { kind: "failed"; message: string };
@@ -51,6 +52,10 @@ export function usePersonaRephrase({ wiring, connected, profile, text }: { wirin
       live = false;
       // eslint-disable-next-line react-hooks/exhaustive-deps -- a call counter, not a node: bumping it on close drops any answer still on its way
       latest.current++;
+      out.current = undefined;
+      // Wiring goes with the connection: a rewrite dropped then is over, so it no longer holds Create back.
+      setState((s) => (s.kind === "asking" ? { kind: "idle" } : s));
+      setModel({ kind: "reading" });
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- read once per open form, and again only once it has wiring
   }, [wired]);
@@ -81,8 +86,9 @@ export function usePersonaRephrase({ wiring, connected, profile, text }: { wirin
     const before = text;
     setState({ kind: "asking", n, before });
     try {
-      const answer = await deadline(wiring.ask(rephraseCall(before)), ASK_DEADLINE_MS);
-      if (latest.current === n) setState({ kind: "suggestion", before, text: rephraseFrom(answer) });
+      const answer = rephraseFrom(await deadline(wiring.ask(rephraseCall(before)), ASK_DEADLINE_MS));
+      if (latest.current !== n) return;
+      setState(answer === undefined ? { kind: "failed", message: w.noText } : { kind: "suggestion", before, text: answer, cut: personaCut(before) });
     } catch (e) {
       if (latest.current === n) setState({ kind: "failed", message: errorText(e) });
     } finally {
@@ -172,6 +178,7 @@ export function RephrasePanel({
             onChange={(e) => r.edit(e.target.value)}
           />
           <div id={noteId} className="set-hint">
+            {state.cut && `${w.cut(PERSONA_INPUT_MAX)} `}
             {w.suggestionHint}
           </div>
           {stale && (

@@ -442,6 +442,8 @@ export const es: Catalogue = {
         failed: (why) => `Hermes no pudo reescribirla: ${why} Tu persona no cambió.`,
         blockedAsking: "Espera a que termine la reescritura, o detenla, antes de crear.",
         blockedOpen: "Reemplaza la persona con la sugerencia, o descártala, antes de crear.",
+        noText: "Hermes respondió sin texto.",
+        cut: (max) => `Tu persona tiene más de ${max} caracteres, así que solo se reescribieron los primeros ${max}.`,
       },
       setup: {
         skills: "Habilidades",
@@ -450,7 +452,8 @@ export const es: Catalogue = {
         defaults: "Lo predeterminado de Hermes",
         choose: "Elegir",
         skillsDefaults: "Todas las habilidades integradas que Hermes da a un perfil nuevo, activadas.",
-        skillsFrom: (profile) => `Las habilidades integradas que Hermes da a un perfil nuevo, tal como aparecen en ${profile}. Una desactivada sigue instalada, pero no se ofrece al modelo.`,
+        skillsFrom: (profile) =>
+          `Las habilidades integradas que aparecen en ${profile}. Una vez creado el perfil, cada una que desactives se desactiva allí y se vuelve a leer; sigue instalada, pero no se ofrece al modelo. Las habilidades integradas que esta lista no muestra quedan como las deja Hermes.`,
         toolsDefaults: "Los conjuntos de herramientas que Hermes activa en un perfil nuevo.",
         toolsFrom: (profile) => `Empieza con lo que ${profile} tiene activado. Se aplica una vez creado el perfil, y luego se vuelve a leer.`,
         filterSkills: "Filtrar habilidades",
@@ -467,6 +470,7 @@ export const es: Catalogue = {
         noneMatch: "Nada coincide.",
         noBuiltIn: (profile) => `Hermes no lista habilidades integradas en ${profile}, así que no hay nada que elegir.`,
         essential: "Hermes siempre la mantiene activada.",
+        unsendable: "Highwing no puede enviar a Hermes el nombre de esta habilidad, así que queda como la deja Hermes.",
         unchangeable: "Highwing no puede enviar a Hermes el nombre de este conjunto, así que queda como lo deja Hermes.",
         mcpNote:
           "Highwing no puede añadir servidores MCP al crear un perfil: Hermes tendría que copiarlos sin sus secretos, y aún no tiene forma de hacerlo. Después de crearlo, añádelos en Ajustes → Servidores MCP.",
@@ -495,9 +499,17 @@ export const es: Catalogue = {
         keep: "Dejarlo así",
         done: "Hecho",
         deleted: (name) => `Se borró ${name}, porque no se aplicó todo lo que elegiste.`,
+        deletedLocalKept: (name) => `Se borró ${name} en Hermes, porque no se aplicó todo lo que elegiste, pero no se pudieron quitar algunos de sus datos en este equipo.`,
         deleteFailed: (why) => `No se borró: ${why}`,
         keptPartly: (name, missed) => `Se creó ${name}, pero esto no quedó como lo elegiste: ${missed}.`,
         theModel: "el modelo",
+        alsoDid: "Hermes además",
+        note: {
+          installing: (keys, label) => `Hermes empezó a instalar ${keys} en el servidor para ${label}, en segundo plano.`,
+          warning: (why, label) => `Hermes respondió con un error (${why}), pero ${label} quedó como lo elegiste.`,
+          mcpBack: (label) => `Activar ${label} quitó no_mcp, así que a los chats nuevos se les vuelven a ofrecer los servidores MCP del perfil.`,
+          everywhereBack: (label) => `Hermes quitó ${label} de agent.disabled_toolsets, así que vuelve a estar en todas las plataformas que lo incluyen.`,
+        },
       },
     },
     del: {

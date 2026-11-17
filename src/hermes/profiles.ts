@@ -233,18 +233,8 @@ export const profileFieldsOf = (row: Pick<ProfileRow, "description" | "model" | 
   model: row.provider || row.model ? { provider: row.provider ?? "", model: row.model ?? "" } : null,
 });
 
-/**
- * What a create answered. `modelError`: why Hermes didn't set the model it was given, in its words. `skillsDisabled`:
- * how many built-in skills Hermes turned off for `keepSkills`, as it counted them; Hermes logs a failure there and
- * answers 0, so only reading the skills back tells.
- */
-export type Created = { name: string; answered: boolean; modelSet: boolean; modelError?: string; skillsDisabled?: number };
-
-/**
- * A new profile's fields. `keepSkills`: the built-in skills to keep on, by folder name; Hermes turns off every other
- * one it seeded. `noSkills`: start with none seeded. At most one of the two is sent (ADR 0195).
- */
-export type NewProfile = { name: string; description?: string; provider?: string; model?: string; soul?: string; keepSkills?: readonly string[]; noSkills?: boolean };
+/** What a create answered. `modelError`: why Hermes didn't set the model it was given, in its words. */
+export type Created = { name: string; answered: boolean; modelSet: boolean; modelError?: string };
 
 /** How a delete ended: gone, with Hermes still settling its identity (`retryCommand`), or already gone before. */
 export type Removed = { kind: "deleted" } | { kind: "settling"; retryCommand?: string } | { kind: "alreadyGone" };
@@ -287,30 +277,19 @@ export class ProfilesApi {
    * Makes a blank profile: Hermes's empty `.env` and built-in skills, with only what's given. A lost answer is settled by
    * the list: listed means made (`answered: false`, since whether the model was set is then unknown).
    */
-  async create(fields: NewProfile): Promise<Created> {
+  async create(fields: { name: string; description?: string; provider?: string; model?: string; soul?: string }): Promise<Created> {
     const { name } = fields;
     if (name === "default" || !PROFILE_ID.test(name)) throw new ProfileError({ kind: "unsent", message: `"${name}" isn't a name Hermes takes for a new profile.` });
-    if (fields.keepSkills?.length && fields.noSkills) throw new ProfileError({ kind: "unsent", message: "A new profile keeps some built-in skills or none, not both." });
     const body = {
       name,
       ...(fields.description?.trim() && { description: fields.description.trim() }),
       ...(fields.provider && fields.model && { provider: fields.provider, model: fields.model }),
       ...(fields.soul !== undefined && { soul: fields.soul }),
-      ...(fields.keepSkills?.length && { keep_skills: [...fields.keepSkills] }),
-      ...(fields.noSkills && { no_skills: true }),
     };
     try {
       const res = await this.call("create", "POST", "api/profiles", body, this.timeouts.createMs, `creating ${name}`);
       const wanted = !!(body.provider && body.model);
-      const counted = typeof res.skills_disabled === "number" && Number.isSafeInteger(res.skills_disabled) && res.skills_disabled >= 0;
-      const disabled = body.keep_skills && counted ? (res.skills_disabled as number) : undefined;
-      return {
-        name,
-        answered: true,
-        modelSet: !wanted || res.model_set === true,
-        ...(wanted && res.model_set !== true && { modelError: trimmedNonBlank(res.model_error) }),
-        ...(disabled !== undefined && { skillsDisabled: disabled }),
-      };
+      return { name, answered: true, modelSet: !wanted || res.model_set === true, ...(wanted && res.model_set !== true && { modelError: trimmedNonBlank(res.model_error) }) };
     } catch (e) {
       if (!(e instanceof ProfileError) || e.failure.kind !== "lost") throw e;
       if (await this.listed(name)) return { name, answered: false, modelSet: false };

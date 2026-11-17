@@ -18,19 +18,24 @@ export const REPHRASE_INSTRUCTIONS = [
   "Answer with only the persona: no preamble, no explanation, no quotes, no code fence.",
 ].join(" ");
 
-/** The call that rewrites `text`, the owner's rough persona, cut at `PERSONA_INPUT_MAX` characters. */
+/** Whether `rephraseCall` sends only the first `PERSONA_INPUT_MAX` characters of `text`. */
+export const personaCut = (text: string) => [...text].length > PERSONA_INPUT_MAX;
+
+/**
+ * The call that rewrites `text`, the owner's rough persona, cut at `PERSONA_INPUT_MAX` characters. A closing persona tag
+ * in the owner's text is turned into look-alike brackets, so the data can't end before the owner's text does.
+ */
 export function rephraseCall(text: string): Call {
+  const own = [...text].slice(0, PERSONA_INPUT_MAX).join("").replace(/<(\s*\/\s*persona\b[^>]*)>?/gi, "‹$1›");
   return {
     instructions: REPHRASE_INSTRUCTIONS,
-    input: ["The owner's rough persona to rewrite:", `<persona>${[...text].slice(0, PERSONA_INPUT_MAX).join("")}</persona>`].join("\n"),
+    input: ["The owner's rough persona to rewrite:", `<persona>${own}</persona>`].join("\n"),
     maxTokens: REPHRASE_TOKENS,
   };
 }
 
-/** Hermes's answer as the suggested persona; throws if it holds no text. The `<persona>` tags come off if it echoed them. */
-export function rephraseFrom(answer: string): string {
+/** Hermes's answer as the suggested persona, or undefined if it holds no text. The `<persona>` tags come off if it echoed them. */
+export function rephraseFrom(answer: string): string | undefined {
   const m = /^\s*<persona>([\s\S]*)<\/persona>\s*$/.exec(answer);
-  const text = (m ? m[1] : answer).trim();
-  if (!text) throw new Error("Hermes answered with no text.");
-  return text;
+  return (m ? m[1] : answer).trim() || undefined;
 }

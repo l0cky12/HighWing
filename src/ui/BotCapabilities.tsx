@@ -12,6 +12,7 @@ import {
   type BotSetup,
   type Choice,
   type Miss,
+  type Note,
   type SetupApis,
   type SetupItem,
   type SkillOption,
@@ -89,7 +90,7 @@ export function useBotSetup(apis: SetupApis | undefined, profile: string) {
   const skills = useArea<SkillOption>(
     apis && (async () => skillOptions(await apis.skills.rows(profile))),
     (options) => options.map((o) => o.name),
-    (o) => (o.essential ? true : undefined),
+    (o) => (o.locked ? true : undefined),
     (e) => e instanceof SkillsError && e.kind === "unsupported",
   );
   const toolsets = useArea<ToolsetOption>(
@@ -118,7 +119,7 @@ export function BotCapabilities({ state, profile, disabled }: { state: BotSetupS
         chosenHint={s.skillsFrom(profile)}
         emptyNote={s.noBuiltIn(profile)}
         disabled={disabled}
-        describe={(o: SkillOption) => ({ label: o.name, detail: o.description, lockedWhy: o.essential ? s.essential : undefined })}
+        describe={(o: SkillOption) => ({ label: o.name, detail: o.description, lockedWhy: o.locked && s[o.locked] })}
       />
       <AreaPicker
         area={state.toolsets}
@@ -242,9 +243,17 @@ function OptionRow<T extends Option>({
 }) {
   const id = useId();
   const why = useId();
+  // A locked box stays focusable, so its reason is read with it, and ignores a change.
   return (
     <div className="bot-setup-item">
-      <input id={id} type="checkbox" checked={on} disabled={locked} aria-describedby={lockedWhy ? why : undefined} onChange={(e) => onChange(e.target.checked)} />
+      <input
+        id={id}
+        type="checkbox"
+        checked={on}
+        aria-disabled={locked || undefined}
+        aria-describedby={lockedWhy ? why : undefined}
+        onChange={(e) => !locked && onChange(e.target.checked)}
+      />
       <label htmlFor={id}>
         <span className="mono" translate="no">
           {label}
@@ -304,11 +313,44 @@ function missText(l: Locale, m: Miss): string {
 
 const itemName = (l: Locale, i: SetupItem) => (i.area === "skill" ? l.profiles.form.setup.skill(i.label) : l.profiles.form.setup.toolset(i.label));
 
+/** What Hermes did besides the change, for one applied item, in the catalogue's words. */
+function noteText(l: Locale, n: Note, label: string): string {
+  const w = l.profiles.form.setup.note;
+  switch (n.kind) {
+    case "installing":
+      return w.installing(n.keys, label);
+    case "warning":
+      return w.warning(n.text, label);
+    case "mcpBack":
+      return w.mcpBack(label);
+    case "everywhereBack":
+      return w.everywhereBack(label);
+  }
+}
+
+const notesOf = (l: Locale, items: readonly SetupItem[]) => items.flatMap((i) => (i.state.kind === "applied" ? (i.state.notes ?? []).map((n) => noteText(l, n, i.label)) : []));
+
+/**
+ * The notice a create with chosen skills or tools closes with: created with them only when every item read back as
+ * chosen and the model was set, else, in the bad tone, what isn't as chosen. Either repeats what else Hermes did.
+ */
+export function outcomeNotice(l: Locale, name: string, items: readonly SetupItem[], modelError?: string): Notice {
+  const s = l.profiles.form.setup;
+  const notes = notesOf(l, items);
+  const warned = items.some((i) => i.state.kind === "applied" && i.state.notes?.some((n) => n.kind === "warning"));
+  if (allApplied(items) && !modelError) return { tone: warned ? "warn" : "muted", text: [s.createdWith(name), ...notes].join(" "), open: name };
+  const missed = [...items.filter((i) => i.state.kind !== "applied").map((i) => itemName(l, i)), ...(modelError ? [s.theModel] : [])];
+  return { tone: "bad", text: [s.keptPartly(name, missed.join(", ")), ...notes].join(" "), open: name };
+}
+
+/** How deleting the profile the form made ended: gone, gone with this computer's data for it left, or not deleted. */
+export type Removal = { kind: "deleted" } | { kind: "localKept" } | { kind: "failed"; why: string };
+
 /**
  * What applying the owner's choices came to, for a profile Hermes made. Shown only when something isn't as chosen:
- * each such item with why, Try again or Apply anyway, and the profile's fate, Delete it or Keep it as is. Once every
- * item is applied, Done closes with the notice a full success gets. `modelError`: Hermes didn't set the model chosen.
- * `remove` deletes the profile, resolving the words of why it couldn't, if it couldn't.
+ * each such item with why, Try again or Apply anyway, what else Hermes did for those applied, and the profile's fate,
+ * Delete it or Keep it as is. Once every item is applied, Done closes with the notice a full success gets.
+ * `modelError`: Hermes didn't set the model chosen. `remove` deletes the profile.
  */
 export function SetupOutcome({
   name,
@@ -322,7 +364,7 @@ export function SetupOutcome({
   first: SetupItem[];
   modelError?: string;
   apis: SetupApis;
-  remove: () => Promise<string | undefined>;
+  remove: () => Promise<Removal>;
   onFinish: (notice: Notice, select?: string) => void;
 }) {
   const l = useLocale();
@@ -338,6 +380,7 @@ export function SetupOutcome({
   }, []);
   const key = (i: SetupItem) => `${i.area}:${i.name}`;
   const missed = items.filter((i) => i.state.kind !== "applied");
+  const notes = notesOf(l, items);
   const done = allApplied(items) && !modelError;
   const busy = working !== undefined || deleting;
 
@@ -352,16 +395,14 @@ export function SetupOutcome({
   const del = async () => {
     setDeleting(true);
     setDeleteError(undefined);
-    const why = await remove();
+    const r = await remove();
     if (!live.current) return;
-    if (why === undefined) return onFinish({ tone: "warn", text: s.deleted(name) });
-    setDeleteError(s.deleteFailed(why));
+    if (r.kind === "deleted") return onFinish({ tone: "warn", text: s.deleted(name) });
+    if (r.kind === "localKept") return onFinish({ tone: "bad", text: s.deletedLocalKept(name) });
+    setDeleteError(s.deleteFailed(r.why));
     setDeleting(false);
   };
-  const keep = () => {
-    const names = [...missed.map((i) => itemName(l, i)), ...(modelError ? [s.theModel] : [])];
-    onFinish({ tone: "bad", text: s.keptPartly(name, names.join(", ")), open: name }, name);
-  };
+  const finish = () => onFinish(outcomeNotice(l, name, items, modelError), name);
 
   return (
     <>
@@ -374,7 +415,12 @@ export function SetupOutcome({
             <li key={key(i)}>
               <span className="bot-setup-outcome-name">{itemName(l, i)}</span>{" "}
               <span className="muted small">{i.want ? s.wantOn : s.wantOff}</span>
-              {i.state.kind === "failed" && <div className="small">{missText(l, i.state.miss)}</div>}
+              {i.state.kind === "failed" && (
+                // Hermes's or the call's own words are data, not the catalogue's.
+                <div className="small" translate={i.state.miss.kind === "said" ? "no" : undefined}>
+                  {missText(l, i.state.miss)}
+                </div>
+              )}
               {i.state.kind === "confirm" && <Cautions cautions={i.state.cautions} toolset={i.state.toolset} />}
               <button className="btn" disabled={busy} onClick={() => void again(i, i.state.kind === "confirm")}>
                 {working === key(i) ? (
@@ -391,6 +437,15 @@ export function SetupOutcome({
           ))}
         </ul>
       )}
+      {notes.length > 0 && (
+        <ul className="bot-setup-outcome" aria-label={s.alsoDid}>
+          {notes.map((n) => (
+            <li key={n} className="small">
+              {n}
+            </li>
+          ))}
+        </ul>
+      )}
       {deleteError && (
         <p className="sign-in-error small" role="alert">
           {deleteError}
@@ -398,7 +453,7 @@ export function SetupOutcome({
       )}
       <div className="confirm-actions">
         {done ? (
-          <button className="btn primary" autoFocus onClick={() => onFinish({ tone: "muted", text: s.createdWith(name), open: name }, name)}>
+          <button className="btn primary" autoFocus onClick={finish}>
             {s.done}
           </button>
         ) : (
@@ -406,7 +461,7 @@ export function SetupOutcome({
             <button className="btn danger" disabled={busy} onClick={() => void del()}>
               {deleting && <Spinner />} {deleting ? s.deleting : s.deleteIt(name)}
             </button>
-            <button className="btn primary" autoFocus disabled={busy} onClick={keep}>
+            <button className="btn primary" autoFocus disabled={busy} onClick={finish}>
               {s.keep}
             </button>
           </>

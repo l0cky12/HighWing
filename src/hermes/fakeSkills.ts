@@ -42,6 +42,8 @@ export class FakeSkills {
   writeLost?: string;
   /** While set, `PUT …/toggle` saves, then fails this way. */
   toggleLost?: string;
+  /** While set, `PUT …/toggle` refuses with this status and reason and writes nothing. */
+  toggleRefusal?: { status: number; detail: string };
   /** Runs as a `PUT …/content` arrives, before it writes: another client's write in the middle of a Save. */
   beforeWrite?: () => void;
   /** Runs after a `PUT …/content` wrote: another client writing again before the read-back. */
@@ -164,6 +166,7 @@ export class FakeSkills {
       return () => {
         this.scope(profile);
         const { name, enabled } = req.body as { name: string; enabled: boolean };
+        if (this.toggleRefusal) throw answered(this.toggleRefusal.status, this.toggleRefusal.detail);
         const set = (this.disabled[profile || "default"] ??= new Set());
         if (enabled) set.delete(name);
         else if (name !== "hermes-agent") set.add(name);

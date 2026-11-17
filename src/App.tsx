@@ -48,7 +48,7 @@ import { signInError, testSignIn, type SignInError, type TestOutcome } from "./h
 import { isOutgoing, isWaiting, type Attachment, type Chat, type ConnectionStatus, type Found, type Hit, type SentReference } from "./hermes/model";
 import { shortName, type ModelCatalog, type ModelPick } from "./hermes/models";
 import { ChatList, Rail, leavingNote } from "./ui/Sidebar";
-import { lookShown } from "./ui/BotFace";
+import { lookShown, type BotLookShown } from "./ui/BotFace";
 import { type ChatLink, type ConnectionRefs, checkConnection, connectionKey, connectionLabel, connectionRefs, formatChatLink, locateChat, parseChatLink } from "./hermes/chatLinks";
 import { desktopLinks, type LinkInbox } from "./hermes/tauriLinks";
 import { ChatLinkNotice, type LinkNoticeView } from "./ui/ChatLinkNotice";
@@ -2387,8 +2387,25 @@ export function Main({
   const shownChat = chats.find((c) => c.id === active.chatId);
   const roster = bots?.roster ?? [];
   const waitingInBots = botsWaiting(roster, (b) => activityOf(b, roster), profile);
-  // The shown profile as a bot: the chat list's profile switcher and Bot Chat row name it.
+  // The shown profile as a bot: the chat list's profile switcher and Bot Chat row name it, and so does each pane.
   const shownBot = hasBotMode ? roster.find((b) => b.profile === profile) : undefined;
+  const shownName = shownBot?.name;
+  const shownColor = shownBot?.color;
+  const shownPicture = shownBot && botPictures[shownBot.profile];
+  const shownLook = useMemo<BotLookShown | undefined>(
+    () => (shownName === undefined ? undefined : { name: shownName, color: shownColor, picture: shownPicture }),
+    [shownName, shownColor, shownPicture],
+  );
+  // Where Alt+B goes back to from the Bot Chat: the chat the owner left for it. Kept for this run, in this profile only.
+  const beforeBotChat = useRef<string | null>(null);
+  useEffect(() => {
+    beforeBotChat.current = null;
+  }, [profile]);
+  const onBotChat = !!shownChat && isBotChat(shownChat);
+  const goToBotChat = (b: Bot) => {
+    if (!onBotChat) beforeBotChat.current = active.chatId;
+    openBot(b, "open");
+  };
   // A display name saved in Settings → Profiles is part of `default`'s bot name, so the roster is read again for it.
   const rosterRead = !!bots;
   useEffect(() => {
@@ -2977,6 +2994,17 @@ export function Main({
           e.preventDefault();
           setListOpen((o) => !o);
           return;
+        case "botChat":
+          if (!onChat || !shownBot) return;
+          e.preventDefault();
+          if (!onBotChat) goToBotChat(shownBot);
+          else {
+            const back = beforeBotChat.current;
+            beforeBotChat.current = null;
+            if (back && chats.some((c) => c.id === back && !isBotChat(c))) openChat(back);
+            else newChat();
+          }
+          return;
         case "chatListMode":
           if (!hasBotMode) return;
           e.preventDefault();
@@ -3059,7 +3087,9 @@ export function Main({
         pane={p.key}
         tabs={p.tabs.map((id) => {
           const c = id === null ? undefined : chats.find((c) => c.id === id);
-          return { id, title: c?.title ?? "New chat", running: c?.running, unread: c?.unread };
+          // A Bot Chat's tab names its bot, as its header does.
+          const title = c && isBotChat(c) && shownName !== undefined ? shownName : (c?.title ?? "New chat");
+          return { id, title, running: c?.running, unread: c?.unread };
         })}
         current={p.chatId}
         onPick={(id) => openChat(id, { pane: p.key })}
@@ -3100,6 +3130,7 @@ export function Main({
           hermes={hermes}
           connection={connection}
           profile={profile}
+          bot={shownLook}
           status={status}
           paneKey={p.key}
           chatId={p.chatId}
@@ -3429,10 +3460,11 @@ export function Main({
           shownBot={
             shownBot && {
               bot: shownBot,
-              look: lookShown(shownBot, botPictures),
+              look: shownLook ?? lookShown(shownBot, botPictures),
               activity: activityOf(shownBot, roster),
-              selected: !covering && !!shownChat && isBotChat(shownChat),
-              onOpen: () => openBot(shownBot, "open"),
+              selected: !covering && onBotChat,
+              keys: keys.botChat[0],
+              onOpen: () => goToBotChat(shownBot),
             }
           }
           bots={(under) =>
@@ -4170,6 +4202,7 @@ function ChatView({
   hermes,
   connection,
   profile,
+  bot,
   status,
   paneKey,
   chatId,
@@ -4231,6 +4264,8 @@ function ChatView({
   hermes: Hermes;
   connection: SavedConnection;
   profile: string;
+  /** The profile's bot, when Hermes has Bot Mode (ChatPane's `bot`). */
+  bot?: BotLookShown;
   status: ConnectionStatus;
   paneKey: string;
   chatId: string | null;
@@ -4726,6 +4761,7 @@ function ChatView({
     <ChatPane
       key={`${profile}/${chat.id}`}
       chat={chat}
+      bot={bot}
       projects={projectNames}
       server={server}
       snoozedUntil={snoozedUntil}

@@ -35,6 +35,7 @@ export const COMMANDS = {
   findPrev: { title: "Previous match", group: "chat", scope: "find", when: "findFocus", defaults: ["Shift+Enter", "ArrowUp"] },
   findClose: { title: "Close the find bar", group: "chat", scope: "find", when: "findFocus", defaults: ["Escape"] },
   newChat: { title: "New chat", group: "threads", scope: "app", when: "Always", defaults: ["Ctrl+N"] },
+  botChat: { title: "Open this profile's Bot Chat, or go back to the chat before it", group: "threads", scope: "app", when: "botMode", defaults: ["Alt+B"] },
   chatBelow: { title: "Open the chat below", group: "threads", scope: "app", when: "chatOnScreen", defaults: ["Alt+ArrowDown"] },
   chatAbove: { title: "Open the chat above", group: "threads", scope: "app", when: "chatOnScreen", defaults: ["Alt+ArrowUp"] },
   rowDown: { title: "Next chat in the list", group: "threads", scope: "chatRow", when: "chatRowFocus", defaults: ["ArrowDown"] },

@@ -1093,7 +1093,7 @@ function ModeSwitch({ value, onChange, inbox, waiting, replying }: Omit<ListMode
     go(CHAT_LIST_MODES[to]);
   };
   const waits: Record<ChatListMode, { text?: string; badge?: ReactNode }> = {
-    chats: inbox > 0 ? { text: w.inbox(inbox), badge: <span className="sb-mode-count">{inbox}</span> } : {},
+    chats: inbox > 0 ? { text: w.inbox(inbox), badge: <span className="sb-mode-count">{l.fmt.number(inbox)}</span> } : {},
     bots:
       waiting > 0
         ? {
@@ -1101,7 +1101,7 @@ function ModeSwitch({ value, onChange, inbox, waiting, replying }: Omit<ListMode
             badge: (
               <span className="sb-mode-count is-needs-you">
                 <ShieldAlert size={12} aria-hidden />
-                {waiting}
+                {l.fmt.number(waiting)}
               </span>
             ),
           }
@@ -1203,7 +1203,8 @@ function BotChatRow({ bot, look, activity, selected, keys, onOpen }: ShownBot) {
   const l = useLocale();
   const w = l.chatList;
   const whose = w.botChatOf(bot.name);
-  const tip = [keys ? w.withKeys(whose, chordLabel(keys)) : whose, bot.botChat?.preview].filter(Boolean).join("\n");
+  const named = keys ? w.withKeys(whose, chordLabel(keys)) : whose;
+  const tip = bot.botChat?.preview ? w.lastMessage(named, bot.botChat.preview) : named;
   return (
     <div className={`row sb-botchat-row${selected ? " sel" : ""}${activity ? ` is-${activity}` : ""}`}>
       <button className="row-open" aria-label={whose} aria-current={selected || undefined} aria-keyshortcuts={keys ? ariaKeys([keys]) : undefined} title={tip} onClick={onOpen}>

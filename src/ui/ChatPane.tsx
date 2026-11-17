@@ -9,6 +9,7 @@ import type { ApprovalChoice, AttachCheck, Attachment, Chat, ChatQueue, Connecti
 import { SOURCE_LABEL, isOutgoing, isWaiting } from "../hermes/model";
 import { useLocale } from "../i18n/locale";
 import type { SkillCall } from "../hermes/skillCommands";
+import { BotFace, type BotLookShown } from "./BotFace";
 import { STEER, typedCommand } from "../hermes/commands";
 import type { ScreenshotDesk } from "../hermes/screenshots";
 import type { Reference, ReferenceDesk } from "../hermes/chatReferences";
@@ -443,6 +444,7 @@ export function ChatPane({
   screenshotKeys,
   projects,
   server,
+  bot,
   snoozedUntil,
   notice,
   banner,
@@ -519,6 +521,8 @@ export function ChatPane({
   projects?: string[];
   /** The server and profile the chat is on, shown while more than one connection is live (ADR 0125). */
   server?: string;
+  /** The profile's bot, when Hermes has Bot Mode: the message box and an empty chat name it, and a Bot Chat's header shows it. */
+  bot?: BotLookShown;
   /** When the chat wakes, if the owner snoozed it and it hasn't woken yet (snooze.ts). */
   snoozedUntil?: number;
   /** Shown at the top of the transcript: what a new chat starts with. */
@@ -556,6 +560,9 @@ export function ChatPane({
   onCheckpoints?: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const words = useLocale().chat;
+  // Every Bot Chat has the same title, so its header names its bot.
+  const botOfChat = isBotChat(chat) ? bot : undefined;
   const keys = useBindings();
   const labels = (chords: readonly Chord[]) => chords.map(chordLabel).join(" or ");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -923,10 +930,11 @@ export function ChatPane({
       <header className="chat-head">
         <div className="chat-title">
           {chat.source !== "app" && <SourceIcon source={chat.source} size={13} />}
-          <span>{chat.title}</span>
+          {botOfChat && <BotFace bot={botOfChat} size="sm" />}
+          <span translate={botOfChat ? "no" : undefined}>{botOfChat?.name ?? chat.title}</span>
           {isBotChat(chat) ? (
-            <span className="badge" title="Its bot's one continuous chat, opened from the Bots view">
-              Bot
+            <span className="badge" title={words.botChatTip}>
+              {words.botChat}
             </span>
           ) : policy.readOnly === "jobRun" ? (
             <span className="badge" title="One run of a scheduled job, as Hermes stored it">
@@ -1081,7 +1089,7 @@ export function ChatPane({
           {!chat.loading && !notLoaded && blocks.length === 0 && policy.readOnly === "jobRun" && <div className="unloaded-chat">Hermes has stored no messages for this run yet.</div>}
           {!chat.loading && !notLoaded && blocks.length === 0 && !policy.readOnly && (
             <div className="empty-state">
-              <div className="empty-chat">What should Hermes work on?</div>
+              <div className="empty-chat">{words.workOn(bot?.name ?? "Hermes")}</div>
               <ul className="empty-keys" aria-label="Keyboard shortcuts">
                 <li><kbd>{chordParts(keys.newChat[0]).join(" ")}</kbd> New chat</li>
                 <li><kbd>{chordParts(keys.search[0]).join(" ")}</kbd> Search chats</li>
@@ -1170,6 +1178,7 @@ export function ChatPane({
         </div>
       ) : (
       <Composer
+        placeholder={words.messageTo(bot?.name ?? "Hermes")}
         offline={status !== "connected"}
         queueing={queueing}
         onQueue={compare ? undefined : queueApi?.add}
@@ -1740,6 +1749,7 @@ function ToolGroup({ tools }: { tools: ToolItem[] }) {
 }
 
 function Composer({
+  placeholder,
   offline,
   queueing = false,
   onQueue,
@@ -1772,6 +1782,7 @@ function Composer({
   followUp,
   compare,
 }: {
+  placeholder: string;
   offline: boolean;
   /** Enter, and the Queue button, add the message to the chat's queue (`onQueue`, which says why it couldn't). */
   queueing?: boolean;
@@ -2263,7 +2274,7 @@ function Composer({
           data-composer
           rows={1}
           autoFocus={autoFocus}
-          placeholder="Message Hermes"
+          placeholder={placeholder}
           spellCheck={spellCheck}
           value={text}
           {...slash.inputProps}

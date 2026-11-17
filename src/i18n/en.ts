@@ -16,6 +16,12 @@ export const en = {
     now: "now",
   },
   chat: {
+    /** The message box and an empty chat, naming the profile's bot, or Hermes on a server without Bot Mode. */
+    messageTo: (name: string) => `Message ${name}`,
+    workOn: (name: string) => `What should ${name} work on?`,
+    /** A Bot Chat's header: its bot's face and name, and this badge. */
+    botChat: "Bot Chat",
+    botChatTip: "Its bot's one continuous chat",
     /** A Returned result's card (ADR 0175): its title when Hermes sent none, and its header's tooltip. */
     returned: {
       work: "Background work finished",
@@ -308,6 +314,8 @@ export const en = {
     /** The shown profile's Bot Chat, one row above its chats. */
     botChat: "Bot Chat",
     botChatOf: (name: string) => `${name}'s Bot Chat`,
+    /** The Bot Chat row's tip: whose it is and its chord, then its last message. */
+    lastMessage: (tip: string, last: string) => `${tip}\n${last}`,
     /** In Bots mode, the shown profile's chats under its bot's row. */
     chatsOf: (name: string) => `${name}'s chats`,
     inInbox: "In the Inbox",

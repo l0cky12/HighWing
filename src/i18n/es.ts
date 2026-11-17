@@ -14,6 +14,10 @@ export const es: Catalogue = {
     now: "ahora",
   },
   chat: {
+    messageTo: (name) => `Mensaje para ${name}`,
+    workOn: (name) => `¿En qué debería trabajar ${name}?`,
+    botChat: "Bot Chat",
+    botChatTip: "La conversación continua de su bot",
     returned: {
       work: "Terminó un trabajo en segundo plano",
       process: "Terminó un proceso en segundo plano",
@@ -289,6 +293,7 @@ export const es: Catalogue = {
     showBots: "Mostrar los bots",
     botChat: "Bot Chat",
     botChatOf: (name) => `Bot Chat de ${name}`,
+    lastMessage: (tip, last) => `${tip}\n${last}`,
     chatsOf: (name) => `Chats de ${name}`,
     inInbox: "En la Bandeja de entrada",
     allChats: (n) => (n === 1 ? "Ver el chat" : `Ver los ${n} chats`),

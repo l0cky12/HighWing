@@ -25,7 +25,7 @@ import type { MemorySource } from "../hermes/memory";
 import { EditingProfile, ProfileInUse, SearchHeads, SettingsPage } from "./SettingsPage";
 import type { PlatformId } from "../hermes/gateways";
 import { SettingRow, SettingsSearching, SettingsSection } from "./SettingRows";
-import { pickApp } from "./keybindings";
+import { isZoomKey, pickApp } from "./keybindings";
 import { isTextEdit } from "./editKeys";
 import { trapTab } from "./modal";
 import type { Chat, ConnectionStatus } from "../hermes/model";
@@ -1222,7 +1222,7 @@ export function SettingsScreen({
       e.stopPropagation();
       return setSheet(false);
     }
-    if (!isTextEdit(e)) e.stopPropagation();
+    if (!isTextEdit(e) && !isZoomKey(e)) e.stopPropagation();
     trapTab(e, sideRef.current);
   };
   useEffect(() => {

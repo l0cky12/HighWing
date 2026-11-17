@@ -1,7 +1,7 @@
 // Icon rail beside a chat list (ADR 0001), ported from the prototype's variants C and A, with the profile's tools in one
 // Server group and tips that show at once (ADR 0050, 0116). Server files and the Terminal live in the side panel only. The list's header is the profile switcher. Settings opens from the
 // rail's foot. Right-clicking a chat opens its menu (ChatMenu.tsx).
-import { memo, useCallback, useEffect, useId, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore, type DragEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore, type DragEvent, type CSSProperties, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { BarChart3, Bot as BotIcon, Building2, CalendarClock, Loader, MessagesSquare, ShieldAlert, Check, ChevronDown, ChevronRight, CircleAlert, Copy, Hourglass, LockOpen, PanelLeftClose, Pin, Search, Settings, SquareKanban, SquarePen, Trash2, Webhook, FolderGit2 } from "lucide-react";
 import { waitingLabel, type Handoff } from "../hermes/dispatched";
@@ -1509,6 +1509,8 @@ export function ChatList({
       onContextMenu={menuForFocusedRow}
     >
       {resize && <ResizeHandle edge="right" className="list-resize" label="Resize the chat list" {...resize} />}
+      {/* Its own box, so a window too short for all of it (a small one, or zoomed in) scrolls it whole. */}
+      <div className="sb-body">
       <div className={`sb-head${mode ? " sb-head-modes" : ""}`}>
         {mode ? <ModeSwitch {...mode} inbox={sections.inbox.length} waiting={mode.waiting.length} /> : switcher}
         {onHide && (
@@ -1595,9 +1597,14 @@ export function ChatList({
               })
             }
           </div>
-          {drawers.length > 0 && <div className="sb-foot">{drawers.map(drawer)}</div>}
+          {drawers.length > 0 && (
+            <div className="sb-foot" style={{ "--drawers": drawers.length, "--open": drawers.filter((k) => !collapsed.includes(k)).length } as CSSProperties}>
+              {drawers.map(drawer)}
+            </div>
+          )}
         </>
       )}
+      </div>
       {customFor && !customGone && (
         <SnoozeDialog
           title={customFor.title}

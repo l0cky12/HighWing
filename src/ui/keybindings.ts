@@ -161,6 +161,12 @@ export const FIXED: readonly FixedKey[] = [
     group: "panels",
   },
   { title: "Close the focused chat tab", keys: [chord("Delete")], when: "chatTabFocus", group: "panels" },
+  {
+    title: "Make the chat list or the side panel narrower or wider, or the narrowest or widest it gets",
+    keys: [chord("ArrowLeft"), chord("ArrowRight"), chord("Home"), chord("End")],
+    when: "panelEdgeFocus",
+    group: "panels",
+  },
   { title: "Move the split's divider", keys: [chord("ArrowLeft"), chord("ArrowRight"), chord("ArrowUp"), chord("ArrowDown")], when: "dividerFocus", group: "panels" },
   { title: "Go up to the parent folder in Files", keys: [chord("Alt+ArrowUp")], when: "fileBrowserFocus", group: "panels" },
 ];
@@ -287,6 +293,12 @@ export function typeNewLine(e: KeyboardEvent | ReactKeyboardEvent): void {
 
 /** Which app-wide command a key press is. Every window listener asks this, so one press runs one command. */
 export const pickApp = (e: KeyboardEvent | ReactKeyboardEvent) => pick(e, "app");
+
+/** Whether a key press zooms the app (zoom.ts): a sheet or palette that keeps the app's keys lets these through. */
+export const isZoomKey = (e: KeyboardEvent | ReactKeyboardEvent) => {
+  const command = pickApp(e);
+  return command === "zoomIn" || command === "zoomOut" || command === "zoomReset";
+};
 
 /**
  * Each command that shares a chord with another it could both fire with (the same scope, or either app-wide), or with

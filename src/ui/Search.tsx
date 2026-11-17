@@ -13,7 +13,7 @@ import { previewBulk, type BulkPreview, type ScopeTags } from "../hermes/tags";
 import { SourceIcon, Spinner, highlight, useReturnFocus } from "./bits";
 import { useLocale } from "../i18n/locale";
 import { isTextEdit } from "./editKeys";
-import { chordLabel, pick, useBindings } from "./keybindings";
+import { chordLabel, isZoomKey, pick, useBindings } from "./keybindings";
 import { trapTab } from "./modal";
 import { errorText } from "../hermes/values";
 
@@ -229,7 +229,7 @@ export function SearchPalette({
         // in its fields, which the window runs (editKeys.ts). Tab stays inside it. Escape closes an open panel first,
         // applying nothing, then the palette.
         onKeyDown={(e) => {
-          if (!passKey(e) && !isTextEdit(e)) e.stopPropagation();
+          if (!passKey(e) && !isTextEdit(e) && !isZoomKey(e)) e.stopPropagation();
           // A Tab chord the owner gave a result key is the input's, not the trap's.
           if (!e.defaultPrevented) trapTab(e, box.current);
           if (pick(e, "palette") !== "paletteClose") return;

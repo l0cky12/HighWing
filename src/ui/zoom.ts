@@ -17,8 +17,8 @@ function stepZoom(now: number, by: number): number {
 
 /**
  * Zooms the webview to the kept zoom now and whenever it changes, and runs the zoom keys: on the window, for the life
- * of the app, so Sign in and Settings zoom too. A control that takes the key first (the Terminal keeps every key, the
- * search palette all but its own) keeps it. Returns the function that stops it.
+ * of the app, so Sign in and Settings zoom too. A control that takes the key first (the Terminal keeps every key) keeps
+ * it; the search palette and Settings' narrow sheet, which keep the app's other keys, let these through. Returns the function that stops it.
  */
 export function followZoomKeys(zoomTo: (factor: number) => Promise<void> = (f) => getCurrentWebview().setZoom(f)): () => void {
   let shown = 1;

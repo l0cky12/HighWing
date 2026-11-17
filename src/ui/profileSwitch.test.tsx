@@ -123,9 +123,13 @@ describe("Switching profile in the app", () => {
   it("shows the switch under way, then the new profile's chats", async () => {
     const { server, hermes, user } = await launch();
     const list = server.rest["GET /api/sessions"];
-    let release!: () => void;
-    server.rest["GET /api/sessions"] = (req: RestRequest) =>
-      new Promise((resolve) => (release = () => ((server.rest["GET /api/sessions"] = list), resolve(list(req)))));
+    // Held until released: the list, and the archived chats, which the Archived drawer lists as well (ADR 0197).
+    const held: (() => void)[] = [];
+    const release = () => {
+      server.rest["GET /api/sessions"] = list;
+      held.splice(0).forEach((go) => go());
+    };
+    server.rest["GET /api/sessions"] = (req: RestRequest) => new Promise((resolve) => held.push(() => resolve(list(req))));
 
     await pickProfile(user, "work");
     expect((await screen.findByRole("status", { name: "Switching profile" })).textContent).toMatch(/Loading work's chats/);

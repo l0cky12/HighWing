@@ -197,6 +197,22 @@ describe("Settings → General sections", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "General › Connection" }));
   });
 
+  it("lets the app's zoom keys out of the narrow sheet, and keeps its other shortcuts in (ADR 0197)", async () => {
+    vi.stubGlobal("matchMedia", (q: string) => ({ matches: q === "(max-width: 900px)", media: q, addEventListener() {}, removeEventListener() {} }));
+    const { user } = await shown();
+    await user.click(screen.getByRole("button", { name: "General › Connection" }));
+    const heard: string[] = [];
+    const listen = (e: KeyboardEvent) => heard.push(e.key);
+    window.addEventListener("keydown", listen);
+    try {
+      await user.keyboard("{Control>}={/Control}{Control>}-{/Control}{Control>}0{/Control}{Control>}k{/Control}");
+    } finally {
+      window.removeEventListener("keydown", listen);
+    }
+    expect(heard.filter((k) => k !== "Control")).toEqual(["=", "-", "0"]);
+    expect(screen.getByRole("dialog", { name: "Settings" })).toBeTruthy();
+  });
+
   it("closes the narrow sheet on a click outside it, behind a scrim that assistive tech never sees", async () => {
     vi.stubGlobal("matchMedia", (q: string) => ({ matches: q === "(max-width: 900px)", media: q, addEventListener() {}, removeEventListener() {} }));
     const { user } = await shown();

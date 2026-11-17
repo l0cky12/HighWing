@@ -6,12 +6,13 @@
 // bot, Clone, Pin, Hide and Delete, through Settings → Profiles' own dialogs and `Hermes.editBot`, which never writes
 // over a change made elsewhere. In the chat list panel a right-click on a row opens Chat, Settings and Delete (ADR
 // 0194), the same row's open, Edit bot and Delete bot. Every word comes from the catalogue (ADR 0100).
-import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
-import { ChevronDown, ChevronRight, Copy, EyeOff, Eye, Loader, MessageSquare, MoreHorizontal, Pencil, Pin, PinOff, Plus, RefreshCw, Search, Settings2, ShieldAlert, SquarePen, Trash2, X } from "lucide-react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from "react";
+import { ArrowRight, ChevronDown, ChevronRight, Copy, EyeOff, Eye, Loader, MessageSquare, MoreHorizontal, Pencil, Pin, PinOff, Plus, RefreshCw, Search, Settings2, ShieldAlert, SquarePen, Trash2, X } from "lucide-react";
 import { BotModeUnsupportedError, type Bot, type BotActivity, type BotLook } from "../hermes/bots";
 import type { EditResult, Edits } from "../hermes/fieldMerge";
 import { PROFILE_ROUTES, profileFailure, type ProfileAction, type ProfileRow } from "../hermes/profiles";
-import { composing, useReturnFocus } from "./bits";
+import { Age, Spinner, composing, useReturnFocus } from "./bits";
+import type { Chat } from "../hermes/model";
 import { Menu } from "./ChatMenu";
 import { CloneProfileDialog } from "./CloneProfile";
 import { pick } from "./keybindings";
@@ -621,6 +622,7 @@ export function usePanelBotMenu({
  * disclosure, Up and Down between them. A row in another profile than `profile` asks first while `leaving` says what
  * switching leaves behind. `current`: the profile of the bot whose Bot Chat is open. `query`: show only the bots whose name
  * holds it, in any case. `moreButton`: false leaves out each row's ⋯, so the menu opens only by a right-click or a key.
+ * `under`: drawn under `profile`'s row, the shown profile's chats in the chat list's Bots mode, on the way of Up and Down.
  */
 export function BotList({
   bots,
@@ -635,6 +637,7 @@ export function BotList({
   onNewChat,
   onMenu,
   moreButton = true,
+  under,
 }: {
   bots?: Bot[];
   query?: string;
@@ -649,6 +652,7 @@ export function BotList({
   /** Opens a bot's menu at a point of the window; without it the rows have no menu. `open`: opens the bot as its row does. */
   onMenu?: (bot: Bot, x: number, y: number, open: () => void) => void;
   moreButton?: boolean;
+  under?: ReactNode;
 }) {
   const l = useLocale();
   const w = l.bots;
@@ -672,7 +676,7 @@ export function BotList({
       return onMenu(bot, r.left + 24, r.bottom, () => go(bot, "open"));
     }
     if (composing(e) || (e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
-    const rows = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>(".bots-open"));
+    const rows = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>(".bots-open, .bots-under button"));
     const at = rows.indexOf(document.activeElement as HTMLButtonElement);
     if (at < 0) return;
     e.preventDefault();
@@ -684,7 +688,7 @@ export function BotList({
   const matching = (bots ?? []).filter((b) => b.name.toLowerCase().includes(q));
   const shown = matching.filter((b) => !b.hidden).sort((a, b) => Number(b.pinned) - Number(a.pinned));
   const hidden = matching.filter((b) => b.hidden);
-  const row = (b: Bot) => (
+  const row = (b: Bot) => [
     <Row
       key={b.profile}
       bot={b}
@@ -696,8 +700,13 @@ export function BotList({
       onNewChat={() => go(b, "new")}
       onMenu={onMenu && ((x, y) => onMenu(b, x, y, () => go(b, "open")))}
       moreButton={moreButton}
-    />
-  );
+    />,
+    under && b.profile === profile && (
+      <li key={`${b.profile}-under`} className="bots-under">
+        {under}
+      </li>
+    ),
+  ];
 
   return (
     <>
@@ -726,6 +735,58 @@ export function BotList({
       </ul>
       {bots && q && !matching.length && <div className="empty-hint inbox-empty">{w.noMatch(query.trim())}</div>}
     </>
+  );
+}
+
+/**
+ * The shown profile's chats under its bot's row in the chat list's Bots mode (snooze.ts `chatsUnderBot`), on a thread
+ * from its face, then All N chats, which shows them all in Chats mode. An Inbox chat carries the accent mark. `selectedId`:
+ * the chat in the active pane; `alsoShownId`: the one in the other pane.
+ */
+export function BotChatsUnder({
+  name,
+  chats,
+  inbox,
+  total,
+  selectedId,
+  alsoShownId,
+  onOpen,
+  onAll,
+}: {
+  name: string;
+  chats: readonly Chat[];
+  inbox: ReadonlySet<string>;
+  total: number;
+  selectedId: string | null;
+  alsoShownId: string | null;
+  onOpen: (id: string) => void;
+  onAll: () => void;
+}) {
+  const w = useLocale().chatList;
+  return (
+    <ul className="bots-chats" role="group" aria-label={w.chatsOf(name)}>
+      {chats.map((c) => (
+        <li key={c.id} className={`row${c.id === selectedId ? " sel" : ""}${c.id === alsoShownId && c.id !== selectedId ? " shown" : ""}${c.unread ? " unread" : ""}`}>
+          <button className="row-open" data-chat={c.id} aria-current={c.id === selectedId || undefined} onClick={() => onOpen(c.id)}>
+            {inbox.has(c.id) ? <span className="bots-chat-mark" role="img" aria-label={w.inInbox} title={w.inInbox} /> : <span className="bots-chat-mark is-none" aria-hidden />}
+            <span className="row-title" translate="no">
+              {c.title}
+            </span>
+            <span className="row-meta">{c.running ? <Spinner /> : <Age at={c.updatedAt} />}</span>
+          </button>
+        </li>
+      ))}
+      {total > 0 ? (
+        <li>
+          <button className="bots-under-all" onClick={onAll}>
+            {w.allChats(total)}
+            <ArrowRight size={12} aria-hidden />
+          </button>
+        </li>
+      ) : (
+        <li className="empty-hint">{w.noChats}</li>
+      )}
+    </ul>
   );
 }
 

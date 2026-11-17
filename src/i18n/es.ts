@@ -289,6 +289,10 @@ export const es: Catalogue = {
     showBots: "Mostrar los bots",
     botChat: "Bot Chat",
     botChatOf: (name) => `Bot Chat de ${name}`,
+    chatsOf: (name) => `Chats de ${name}`,
+    inInbox: "En la Bandeja de entrada",
+    allChats: (n) => (n === 1 ? "Ver el chat" : `Ver los ${n} chats`),
+    noChats: "Todavía no hay chats.",
   },
   profiles: {
     title: "Perfiles en este servidor",

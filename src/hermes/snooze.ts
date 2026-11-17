@@ -411,6 +411,21 @@ export function chatSections(
   return s;
 }
 
+/**
+ * The chats under the shown profile's bot in the chat list's Bots mode: the Pinned, Inbox and Working ones first, up to
+ * five; then the newest Settled until there are three; then whatever chat each pane shows (`shown`), wherever it is.
+ */
+export function chatsUnderBot(s: ChatSections, shown: readonly (string | null)[]): Chat[] {
+  const near = [...s.pinned, ...s.inbox, ...s.working].slice(0, 5);
+  near.push(...s.settled.slice(0, Math.max(0, 3 - near.length)));
+  const every = Object.values(s).flat();
+  for (const id of shown) {
+    const c = every.find((x) => x.id === id);
+    if (c && !near.includes(c)) near.push(c);
+  }
+  return near;
+}
+
 /** Where a chat list row dropped on the Settled drawer or the Inbox puts its chat: settled or not, or undefined when the drop would change nothing or the chat is archived (ADR 0090). */
 export const settleByDrop = (chat: Chat | undefined, on: "settled" | "inbox"): boolean | undefined =>
   !chat || chat.archived || chat.settled === (on === "settled") ? undefined : on === "settled";

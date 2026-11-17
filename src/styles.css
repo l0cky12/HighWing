@@ -2845,6 +2845,31 @@ label.memory-pick { cursor: pointer; }
 .sb-bots .inbox-leave { margin: 0 0 8px; }
 .sb-bots .inbox-row:hover { background: var(--hover); }
 .sb-bots .bots-row.is-current { background: var(--hover-2); box-shadow: inset 0 0 0 1px var(--line); }
+/* In the panel a row is the name line and the last message; the description is in the Bots view. */
+.sb-bots .bots-desc { display: none; }
+.sb-bots .bots-open { padding: 8px 8px 8px 6px; }
+.sb-bots .bots-row { position: relative; }
+/* The pen takes the time's place while the row is hovered or focused, as a chat row's actions do, so the text keeps the width. */
+.sb-bots .bots-row > .bots-new { position: absolute; top: 6px; right: 6px; width: 24px; height: 20px; margin: 0; border-radius: 6px; display: none; background: var(--raised-2); }
+.sb-bots .bots-row:hover > .bots-new, .sb-bots .bots-row:focus-within > .bots-new { display: grid; }
+.sb-bots .bots-row > .bots-new:hover { background: var(--raised-3); }
+.sb-bots .bots-row:hover .inbox-line > :not(.bots-name), .sb-bots .bots-row:focus-within .inbox-line > :not(.bots-name) { visibility: hidden; }
+/* The shown profile's chats under its bot's row, on a thread from its face. */
+.bots-under { list-style: none; }
+.bots-chats { list-style: none; margin: 0 0 6px 23px; padding: 0 0 0 7px; border-left: 1px solid var(--line-2); }
+.bots-chats .row { height: 30px; }
+.bots-chats .row-open { gap: 7px; padding-left: 6px; }
+.bots-chats .row-title { font-size: calc(13rem / 14); }
+.bots-chats .row:hover .row-meta, .bots-chats .row:focus-within .row-meta { display: flex; }
+.bots-chats .empty-hint { padding: 4px 8px; }
+.bots-chat-mark { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.bots-chat-mark.is-none { background: none; }
+.bots-under-all {
+  display: inline-flex; align-items: center; gap: 4px; height: 26px; margin: 1px 0 2px; padding: 0 8px 0 19px; border-radius: 7px;
+  font-size: calc(12rem / 14); font-weight: 500; color: var(--muted);
+}
+.bots-under-all:hover { color: var(--text); background: var(--hover); }
+.bots-under-all:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .sb-bots .bots-hidden { padding: 4px 6px; }
 
 /* The chat list panel's two modes (Sidebar.tsx ModeSwitch): Chats and Bots, as tabs at its top. */

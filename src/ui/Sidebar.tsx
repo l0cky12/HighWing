@@ -10,11 +10,11 @@ import { SOURCE_LABEL, isWaiting } from "../hermes/model";
 import { CHECK_EVERY_MS, totalUnread, type CheckTimesStore } from "../hermes/otherProfiles";
 import type { Route } from "../hermes/pipe";
 import { RenameConflict, TitleModelUnavailable, type Snapshot } from "../hermes/transport";
-import { SECTION_LABEL, chatSections, inboxSettle, settleByDrop, wakeFull, wakeLabel, type InboxSettle, type Pins, type SectionKey, type Snoozes } from "../hermes/snooze";
+import { SECTION_LABEL, chatSections, chatsUnderBot, inboxSettle, settleByDrop, wakeFull, wakeLabel, type InboxSettle, type Pins, type SectionKey, type Snoozes } from "../hermes/snooze";
 import { CHAT_LIST_MODES, getUIPrefs, setUIPrefs, subscribe as subscribeUIPrefs, type ChatListMode } from "../hermes/uiPrefs";
 import { namedByProfile, type Bot, type BotActivity } from "../hermes/bots";
 import { BotFace, lookShown, type BotLookShown } from "./BotFace";
-import { BotSwitchQuestion } from "./Bots";
+import { BotChatsUnder, BotSwitchQuestion } from "./Bots";
 import { ChatMenu, type ChatPin, type ChatProjects, type ChatSnooze, type ChatTags } from "./ChatMenu";
 import { SnoozeDialog, useSnoozeClock } from "./Snooze";
 import { DeleteChatDialog } from "./DeleteChat";
@@ -996,6 +996,7 @@ function menuForFocusedRow(e: ReactMouseEvent<HTMLElement>) {
 
 /** Up and Down move focus between the chats in the list, top to bottom through its sections, without opening them. */
 function moveBetweenChats(e: KeyboardEvent<HTMLElement>) {
+  if (e.defaultPrevented) return;
   const command = pick(e, "chatRow");
   if ((command !== "rowDown" && command !== "rowUp") || !(e.target as Element).classList.contains("row-open")) return;
   e.preventDefault();
@@ -1293,8 +1294,8 @@ export function ChatList({
   shownBot,
 }: {
   profile: string;
-  /** In Bots mode, the bots, which fill the panel under New chat and Search. */
-  bots?: ReactNode;
+  /** In Bots mode, the bots, which fill the panel under New chat and Search, given the shown profile's chats to draw under its bot. */
+  bots?: (under: ReactNode) => ReactNode;
   projectSwitcher?: ReactNode;
   /** The profile's Saved filters (Tags.tsx), under the project switcher. */
   savedFilters?: ReactNode;
@@ -1357,7 +1358,7 @@ export function ChatList({
   onHide?: () => void;
   /** The panel's two modes and the switch at its top (`ModeSwitch`); none for a Hermes without Bot Mode, whose panel is the chats alone. */
   mode?: ListModes;
-  /** The shown profile as a bot, once the roster names it, for Chats mode. */
+  /** The shown profile as a bot, once the roster names it: in Chats mode its Bot Chat row, in Bots mode its chats' label. */
   shownBot?: ShownBot;
 }) {
   const { chatSectionsShown: shown, chatSectionsCollapsed: collapsed } = useSyncExternalStore(subscribeUIPrefs, getUIPrefs);
@@ -1586,7 +1587,20 @@ export function ChatList({
         <div className="sb-scroll sb-bots">
           {switchStatus}
           {syncNote}
-          {bots}
+          {bots?.(
+            shownBot && (
+              <BotChatsUnder
+                name={shownBot.bot.name}
+                chats={chatsUnderBot(sections, [selectedId, alsoShownId])}
+                inbox={new Set(sections.inbox.map((c) => c.id))}
+                total={chats.filter((c) => !c.archived).length}
+                selectedId={selectedId}
+                alsoShownId={alsoShownId}
+                onOpen={onOpen}
+                onAll={() => mode?.onChange("chats")}
+              />
+            ),
+          )}
         </div>
       ) : (
         <>

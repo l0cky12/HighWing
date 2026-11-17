@@ -3435,9 +3435,8 @@ export function Main({
               onOpen: () => openBot(shownBot, "open"),
             }
           }
-          bots={
-            botsInList &&
-            (bots ? (
+          bots={(under) =>
+            bots ? (
               <BotList
                 bots={bots.roster}
                 pictures={botPictures}
@@ -3449,10 +3448,11 @@ export function Main({
                 onNewChat={(b) => openBot(b, "new")}
                 onMenu={panelBotMenu.onMenu}
                 moreButton={false}
+                under={under}
               />
             ) : (
               <div className="empty-hint">{words.bots.reading}</div>
-            ))
+            )
           }
             projectSwitcher={
               <ProjectSwitcher

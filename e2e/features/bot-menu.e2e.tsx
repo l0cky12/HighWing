@@ -58,7 +58,7 @@ it("opens Chat, Settings and Delete on a right-click on a bot in the chat list p
 });
 
 it("Settings edits that bot and its row reads the change back", async () => {
-  const { app, server, rowOf } = await botMode();
+  const { app, server, panel, rowOf } = await botMode();
   await rowOf("Scratch").click({ button: "right" });
   await app.getByRole("menuitem", { name: "Settings" }).click();
   const dialog = app.getByRole("dialog", { name: "Edit bot: Scratch" });
@@ -67,7 +67,8 @@ it("Settings edits that bot and its row reads the change back", async () => {
   await shot("settings-editor");
   await dialog.getByRole("button", { name: /Save changes/ }).click();
   await expect.element(dialog).not.toBeInTheDocument();
-  await expect.element(rowOf("Scratch").getByText("Disposable test bot, edited from the panel")).toBeVisible();
+  // The panel doesn't draw a bot's description (the Bots view does), but its row's name says it once read back.
+  await expect.element(panel.getByRole("button", { name: /^Scratch\. Disposable test bot, edited from the panel\./ })).toBeInTheDocument();
   await shot("settings-saved");
   expect(writes(server)).toEqual(["PUT /api/profiles/scratch/description"]);
   expect(server.profileMeta.scratch.description).toBe("Disposable test bot, edited from the panel");

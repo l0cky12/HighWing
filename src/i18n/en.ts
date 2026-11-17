@@ -308,6 +308,11 @@ export const en = {
     /** The shown profile's Bot Chat, one row above its chats. */
     botChat: "Bot Chat",
     botChatOf: (name: string) => `${name}'s Bot Chat`,
+    /** In Bots mode, the shown profile's chats under its bot's row. */
+    chatsOf: (name: string) => `${name}'s chats`,
+    inInbox: "In the Inbox",
+    allChats: (n: number) => (n === 1 ? "All 1 chat" : `All ${n} chats`),
+    noChats: "No chats yet.",
   },
   profiles: {
     title: "Profiles on this server",

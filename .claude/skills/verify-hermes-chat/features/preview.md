@@ -10,7 +10,7 @@ The side panel's Preview tab is a small browser only the owner drives. One toolb
 - `preview-back-forward-reload`: Back and Forward go back and forward in the same page view (the page comes from the page cache, no new request); Reload loads it again.
 - `preview-badge`: clicking the badge of a loopback page opens it from the other side.
 - `preview-second-view`: after a file in between, Back makes a new page view; keys, Escape and a menu over the page still work.
-- `preview-page-size`: the row under the address (web pages only): the Device select, Responsive and 17 devices under Standard, and the Width and Height fields. A device or a typed size lays the page out at that size, scaled to fit; Responsive gives it the box again (ADR 0197).
+- `preview-page-size`: the row under the address (web pages only): the Device select, Responsive and 17 devices under Standard, and the Width and Height fields. A device or a typed size lays the page out at that size, scaled to fit; Responsive gives it the box again (ADR 0198).
 - `preview-hermes-asks`: the stand-in asks the app `preview.read` and every `preview.act` action; each answer is -32601 and the page doesn't move.
 
 ## How to get to it (user POV)

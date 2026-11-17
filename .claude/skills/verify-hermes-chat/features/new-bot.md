@@ -11,7 +11,8 @@ The Bots view's New bot (the New profile form) makes a profile from a name, a de
 - `new-bot-tools`: Choose, untick and tick toolsets; the new profile has them set, and the profile in use doesn't change.
 - `new-bot-mcp-note`: the MCP servers note.
 - `new-bot-partial`: a toolset with a caution leaves the dialog open on what isn't applied, with Apply anyway, Delete and Keep it as is.
-- `new-bot-progress`: while the choices are applied, the line under the form counts them, "n of m done".
+- `new-bot-progress`: while the choices are applied, the line under the form counts them; only the count, "n of m done…", is the live region.
+- `new-bot-outcome-scrolled`: a form scrolled down to Tools shows its outcome, and the leave question, from the top.
 - `new-bot-settling`: Delete from the outcome, when Hermes is still settling the profile, says so with its command.
 - `new-bot-set-model`: a create with Choose whose model Hermes didn't set offers Set model… (Settings → Profiles' New profile only).
 - `new-bot-narrow`: the form at 760 px wide scrolls, with no horizontal scroll.
@@ -38,7 +39,8 @@ Preconditions:
 - **Error.** Empty the `HV_PERSONA_REPLY` file, then Generate with AI: `wait '[role=alert]' "couldn't rewrite"`, and the persona keeps what was typed.
 - **Double Create.** Click Create bot twice quickly: `hv state` `profileCreates` holds one body.
 - **Partial.** Tools → Choose → tick **Computer Use**, Create: `wait .bot-setup-outcome`. **Apply anyway** sets it and lists "Hermes started installing…" under Hermes also; **Done** repeats it in the notice. **Delete <name>** removes it (`hv state` `profiles`), **Keep it as is** closes with a notice naming what isn't applied.
-- **Progress.** With `HV_DELAY_MS=1500`, Tools → Choose → untick two toolsets, Create: `wait '[role=status]' " of "` reads "Created. Applying … n of m done…".
+- **Progress.** With `HV_DELAY_MS=1500`, Tools → Choose → untick two toolsets, Create: `wait '[role=dialog] [role=status]' " of "` reads "n of m done…", and the line around it "Created. Applying … then reading them back: n of m done…".
+- **Outcome after scrolling.** `wheel .profile-dialog -- 500` before Create, as reaching Tools needs: the outcome (and Escape's leave question) shows from its top, not a blank box.
 - **Settling.** With `HV_SETTLING='hermes profile delete <name>'`, reach the outcome as in Partial, then **Delete <name>**: the Bots view's note reads "Hermes hasn't finished cleaning up after it; run this on the server:" with the command and Copy.
 - **Set model.** With `HV_MODEL_ERROR=<text>`, open Settings → Profiles → **New profile**, pick a provider and model name, Tools → Choose → untick one, Create: the outcome shows "Profile created, but Hermes didn't set the model: <text>" and **Set model…**, which opens Edit. The Bots view's New bot has no Set model.
 - **Narrow.** `$S/hv x search --name Highwing`, then `$S/hv x windowsize <id> 760 820`; `wd.mjs wheel .profile-dialog -- 600` scrolls the form.
@@ -46,6 +48,8 @@ Preconditions:
 ## Gotchas
 
 - `fill … -- ""` fails with "Missing text parameter"; clear a field with Control+a and Backspace.
+- A toolset row below the fold answers `element not interactable`: `wheel .profile-dialog -- 500` (and `wheel "$F2 .bot-setup-list" -- 300` for the last rows) first.
+- While the form runs or shows its outcome, it covers the window: Close bots answers `element click intercepted` and Escape does nothing, so the view can't be closed under it from here. The notice after the view closes (a toast, with Copy command for a settling delete) and the note after a profile switch are covered by `src/ui/bots.test.tsx` and `src/ui/botCreation.test.tsx`.
 - Both areas have a radio named Choose; scope it with `$F1` or `$F2`.
 - The rewrite runs on the profile in use's Text generation model, so switching profile changes what the hint names.
 - A deterministic stand-in answer proves the app's path, not a provider's rewrite.

@@ -1,7 +1,7 @@
 // Settings → Profiles (ADR 0156): every profile Hermes lists, made, cloned, renamed, described, given a model and
 // deleted from one place. Switching stays in the chat list's header (ADR 0001): Open here goes through the same
 // question and guard. Every word comes from the catalogue (ADR 0100).
-import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { Brain, Copy, FolderOpen, Keyboard, MoreHorizontal, Pencil, Plus, Puzzle, RefreshCw, Sparkles, Trash2, TriangleAlert, Wand2 } from "lucide-react";
 import { BOT_LOOK_SAME, BOT_PICTURE_MAX_BYTES, type BotLook } from "../hermes/bots";
 import type { CapabilityStore } from "../hermes/capabilities";
@@ -866,6 +866,12 @@ export function ProfileForm({
   // New only: Edit has neither, so they read nothing there.
   const rephrase = usePersonaRephrase({ wiring: row ? undefined : wiring.rephrase, connected, profile: wiring.inUse, text: soul });
   const capabilities = useBotSetup(row ? undefined : wiring.setup, wiring.inUse);
+  // The dialog swaps the whole form for a shorter view (what a create came to, or the question before leaving). WebKit
+  // keeps the form's scroll offset past the shorter view's end, which draws it blank, so each view starts at its top.
+  const view = outcome ? "outcome" : madeNoModel ? "noModel" : asking ? "asking" : "form";
+  useLayoutEffect(() => {
+    if (box.current) box.current.scrollTop = 0;
+  }, [view]);
   const live = useRef(true);
   useEffect(() => {
     live.current = true;

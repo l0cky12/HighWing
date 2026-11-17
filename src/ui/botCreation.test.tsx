@@ -453,6 +453,18 @@ describe("Skills, Tools and MCP servers", () => {
     expect(done.mock.calls[0][0]).toEqual({ notice: { tone: "bad", text: "Created chef, but these aren't as you chose: Skill recipes.", open: "chef" }, select: "chef" });
   });
 
+  it("shows what a create came to from its top, however far the form was scrolled", async () => {
+    const { user } = await open({ seed: (s) => (s.skills.toggleRefusal = LOCKED) });
+    await named(user);
+    const skills = within(dialog()).getByRole("group", { name: "Skills" });
+    await user.click(within(skills).getByRole("radio", { name: "Choose" }));
+    await user.click(await within(skills).findByLabelText(/recipes/));
+    dialog().scrollTop = 500;
+    await user.click(create());
+    await within(dialog()).findByRole("list", { name: "Not applied" });
+    expect(dialog().scrollTop).toBe(0);
+  });
+
   it("Try again applies a failed skill and reads it back", async () => {
     const { server, user, done } = await open({ seed: (s) => (s.skills.toggleRefusal = LOCKED) });
     await named(user);

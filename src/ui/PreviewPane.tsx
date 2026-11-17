@@ -833,14 +833,16 @@ function FramedWebView({
   const host = hostOf(url);
   const refused = framing?.kind === "refused" && !showAnyway;
   // The frame says only that something loaded, not where (ADR 0094): any load after a still makes it stale.
+  const [pageWidth, pageHeight] = [fit?.size.width, fit?.size.height];
   useEffect(() => {
     if (!loaded || refused) return;
+    const page = pageWidth && pageHeight ? { page: { width: pageWidth, height: pageHeight } } : {};
     onAnnotatable(() => {
       const r = frame.current?.getBoundingClientRect();
-      return r && { kind: "frame", url: src, rect: { x: r.x, y: r.y, width: r.width, height: r.height }, viewport: { width: innerWidth, height: innerHeight } };
+      return r && { kind: "frame", url: src, rect: { x: r.x, y: r.y, width: r.width, height: r.height }, viewport: { width: innerWidth, height: innerHeight }, ...page };
     });
     return () => onAnnotatable(undefined);
-  }, [loaded, refused, src, onAnnotatable]);
+  }, [loaded, refused, src, onAnnotatable, pageWidth, pageHeight]);
   if (refused)
     return (
       <div className="preview-state preview-error" role="alert">

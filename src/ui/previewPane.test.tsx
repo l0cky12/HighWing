@@ -1985,11 +1985,11 @@ describe("The page's size: Responsive or a device's", () => {
     const { view, user } = await onLinux();
     await user.selectOptions(device(), "iPhone SE");
     await typeSide(user, "Width", "747");
-    expect(device().value).toBe("");
+    expect(device().selectedOptions[0].text).toBe("Responsive");
     await waitFor(() => expect(view.placed.get(1)?.page).toEqual({ width: 747, height: 667 }));
     await typeSide(user, "Height", "818");
     await waitFor(() => expect(view.placed.get(1)?.page).toEqual({ width: 747, height: 818 }));
-    expect([device().value, side("Width").value, side("Height").value]).toEqual(["", "747", "818"]);
+    expect([device().selectedOptions[0].text, side("Width").value, side("Height").value]).toEqual(["Responsive", "747", "818"]);
 
     // Leaving a field applies it, as Enter does.
     await user.clear(side("Width"));
@@ -1997,9 +1997,11 @@ describe("The page's size: Responsive or a device's", () => {
     await user.tab();
     await waitFor(() => expect(view.placed.get(1)?.page).toEqual({ width: 800, height: 818 }));
 
-    await user.selectOptions(device(), "Responsive");
+    // The typed size reads Responsive, and picking Responsive (the visible one, a change from it) still clears it.
+    expect(device().value).not.toBe("");
+    await user.selectOptions(device(), "");
     await waitFor(() => expect(view.placed.get(1)).toEqual({ rect: BOX, holes: [], viewport: VIEWPORT }));
-    expect([side("Width").value, side("Height").value, frameBox().style.width]).toEqual(["", "", ""]);
+    expect([device().value, side("Width").value, side("Height").value, frameBox().style.width]).toEqual(["", "", "", ""]);
 
     // From Responsive, one side typed keeps the box's other side.
     await typeSide(user, "Height", "500");
@@ -2023,6 +2025,12 @@ describe("The page's size: Responsive or a device's", () => {
       expect([side("Width").value, side("Width").getAttribute("aria-invalid")]).toEqual(["747", null]);
     }
     expect(paneOpen()).toBe(true);
+
+    // A draft left invalid goes when a device is picked: the fields show the size that applies.
+    await typeSide(user, "Width", "12.5");
+    await user.tab();
+    await user.selectOptions(device(), "Surface Duo");
+    expect([side("Width").value, side("Width").getAttribute("aria-invalid"), side("Height").value]).toEqual(["540", null, "720"]);
   });
 
   it("keeps the size through the page's own moves, Back and a new address, in the same view", async () => {
@@ -2072,8 +2080,23 @@ describe("The page's size: Responsive or a device's", () => {
     expect([scaled.getAttribute("src"), scaled.getAttribute("sandbox"), scaled.getAttribute("referrerpolicy")]).toEqual([SITE, "allow-scripts allow-forms", "no-referrer"]);
     expect([scaled.style.width, scaled.style.height, scaled.style.transform]).toEqual(["1280px", "800px", "scale(0.3625)"]);
     expect([frameBox().style.width, frameBox().style.height]).toEqual(["464px", "290px"]);
-    await s.user.selectOptions(device(), "Responsive");
+    await s.user.selectOptions(device(), "");
     expect([scaled.style.width, scaled.style.transform, frameBox().style.width]).toEqual(["", "", ""]);
     expect(pane().querySelector("iframe.preview-frame")).toBe(frame);
+  });
+
+  it("takes a framed page's still (Windows) in the page's own CSS pixels when it is drawn scaled", async () => {
+    stubBody();
+    vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+    URL.createObjectURL = () => "blob:still";
+    URL.revokeObjectURL = () => {};
+    const annotator = theAnnotator(SITE);
+    const s = await signedIn({ web: Object.assign(theWeb(), { annotate: annotator }) });
+    await openSite(s);
+    fireEvent.load(await waitFor(() => pane().querySelector<HTMLIFrameElement>("iframe.preview-frame")!));
+    await s.user.selectOptions(device(), "Nest Hub Max");
+    await s.user.click(button("Annotate"));
+    await waitFor(() => expect(annotator.sources).toHaveLength(1));
+    expect(annotator.sources[0]).toMatchObject({ kind: "frame", url: SITE, page: { width: 1280, height: 800 } });
   });
 });

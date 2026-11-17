@@ -40,11 +40,11 @@ export type WebPages = {
 
 /**
  * Where a still comes from: the Preview's own view (`key`, Linux), or the sandboxed frame (Windows): its box in the
- * window's CSS pixels, the window's CSS size, and the address it shows.
+ * window's CSS pixels, the window's CSS size, the address it shows, and the size it lays out at if the owner picked one.
  */
 export type StillSource =
   | { kind: "view"; key: string }
-  | { kind: "frame"; url: string; rect: Rect; viewport: { width: number; height: number } };
+  | { kind: "frame"; url: string; rect: Rect; viewport: { width: number; height: number }; page?: PageSize };
 
 /**
  * Rust's annotation commands (src-tauri/src/annotate.rs). Each rejects with an `AnnotateFailure` (`{ kind, message }`).

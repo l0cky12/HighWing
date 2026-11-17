@@ -47,15 +47,26 @@ export const STAGE_INSET = 8;
 
 /** How far a page of `size` is scaled down to fit `box`, inside its `STAGE_INSET`. Never up: a small page shows at its own size. */
 export const fitScale = (box: PageSize, size: PageSize): number =>
-  Math.min(1, (box.width - 2 * STAGE_INSET) / size.width, (box.height - 2 * STAGE_INSET) / size.height);
+  Math.min(
+    1,
+    (box.width - 2 * STAGE_INSET) / size.width,
+    (box.height - 2 * STAGE_INSET) / size.height,
+  );
 
 /** The size of `el`'s content box, kept current. */
-export function useBoxSize(el: RefObject<HTMLElement | null>): PageSize | undefined {
+export function useBoxSize(
+  el: RefObject<HTMLElement | null>,
+): PageSize | undefined {
   const [size, setSize] = useState<PageSize>();
   useEffect(() => {
     const box = el.current;
     if (!box || typeof ResizeObserver === "undefined") return;
-    const measure = () => setSize((s) => (s?.width === box.clientWidth && s.height === box.clientHeight ? s : { width: box.clientWidth, height: box.clientHeight }));
+    const measure = () =>
+      setSize((s) =>
+        s?.width === box.clientWidth && s.height === box.clientHeight
+          ? s
+          : { width: box.clientWidth, height: box.clientHeight },
+      );
     const watch = new ResizeObserver(measure);
     watch.observe(box);
     measure();
@@ -64,31 +75,66 @@ export function useBoxSize(el: RefObject<HTMLElement | null>): PageSize | undefi
   return size;
 }
 
-const SIZE_ONLY = "Sets only the size the page lays out at. The page still sees this computer's browser, pointer and screen density.";
+/** The select's value for a typed size, which no device has. */
+const TYPED = "typed";
+
+const SIZE_ONLY =
+  "Sets only the size the page lays out at. The page still sees this computer's browser, pointer and screen density.";
 
 /**
  * The row under the address: a device, or Responsive, and the width and height. Typing a size makes it Responsive at
  * that size; picking Responsive gives the page the box again. `box`: the Preview's box, shown while the page fills it.
  */
-export function ViewportBar({ value, box, scale, onChange }: { value: PageViewport; box: PageSize | undefined; scale: number; onChange: (v: PageViewport) => void }) {
+export function ViewportBar({
+  value,
+  box,
+  scale,
+  onChange,
+}: {
+  value: PageViewport;
+  box: PageSize | undefined;
+  scale: number;
+  onChange: (v: PageViewport) => void;
+}) {
   const shown = value ?? (box && { width: box.width, height: box.height });
+  const sizeKey = value ? `${value.width}x${value.height}` : "";
   const typed = (side: "width" | "height", n: number) => {
     const other = side === "width" ? "height" : "width";
     const keep = value?.[other] ?? parseSide(String(box?.[other] ?? ""));
     if (keep !== undefined) onChange({ [side]: n, [other]: keep } as PageSize);
   };
   return (
-    <div className="preview-viewport" role="group" aria-label="Page size" title={SIZE_ONLY}>
+    <div
+      className="preview-viewport"
+      role="group"
+      aria-label="Page size"
+      title={SIZE_ONLY}
+    >
       <select
         className="select"
         aria-label="Device"
-        value={value?.device ?? ""}
+        value={value ? (value.device ?? TYPED) : ""}
         onChange={(e) => {
           const device = DEVICES.find((d) => d.name === e.target.value);
-          onChange(device ? { width: device.width, height: device.height, device: device.name } : null);
+          onChange(
+            device
+              ? {
+                  width: device.width,
+                  height: device.height,
+                  device: device.name,
+                }
+              : null,
+          );
         }}
       >
         <option value="">Responsive</option>
+        {/* A typed size reads Responsive too, but is its own option, so picking Responsive then still clears it. Only
+            while there is one: the arrow keys would stop on it. */}
+        {value && !value.device && (
+          <option value={TYPED} hidden>
+            Responsive
+          </option>
+        )}
         <optgroup label="Standard">
           {DEVICES.map((d) => (
             <option key={d.name} value={d.name}>
@@ -97,11 +143,27 @@ export function ViewportBar({ value, box, scale, onChange }: { value: PageViewpo
           ))}
         </optgroup>
       </select>
-      <SideField label="Width" value={value?.width} placeholder={shown?.width} onCommit={(n) => typed("width", n)} />
+      {/* Keyed by the size, so a draft (an invalid one, say) goes once another size applies. */}
+      <SideField
+        key={`w${sizeKey}`}
+        label="Width"
+        value={value?.width}
+        placeholder={shown?.width}
+        onCommit={(n) => typed("width", n)}
+      />
       <span aria-hidden>×</span>
-      <SideField label="Height" value={value?.height} placeholder={shown?.height} onCommit={(n) => typed("height", n)} />
+      <SideField
+        key={`h${sizeKey}`}
+        label="Height"
+        value={value?.height}
+        placeholder={shown?.height}
+        onCommit={(n) => typed("height", n)}
+      />
       {value && scale < 1 && (
-        <span className="preview-viewport-scale" title={`Scaled to fit the Preview. The page still lays out at ${value.width} × ${value.height}.`}>
+        <span
+          className="preview-viewport-scale"
+          title={`Scaled to fit the Preview. The page still lays out at ${value.width} × ${value.height}.`}
+        >
           {Math.round(scale * 100)}%
         </span>
       )}
@@ -110,7 +172,17 @@ export function ViewportBar({ value, box, scale, onChange }: { value: PageViewpo
 }
 
 /** One side. It applies on Enter or on leaving the field, only as a whole number within `SIDE`; Escape puts it back. */
-function SideField({ label, value, placeholder, onCommit }: { label: string; value: number | undefined; placeholder: number | undefined; onCommit: (n: number) => void }) {
+function SideField({
+  label,
+  value,
+  placeholder,
+  onCommit,
+}: {
+  label: string;
+  value: number | undefined;
+  placeholder: number | undefined;
+  onCommit: (n: number) => void;
+}) {
   const [draft, setDraft] = useState<string>();
   const invalid = draft !== undefined && parseSide(draft) === undefined;
   const commit = () => {
@@ -124,10 +196,16 @@ function SideField({ label, value, placeholder, onCommit }: { label: string; val
     <input
       aria-label={label}
       aria-invalid={invalid || undefined}
-      title={invalid ? `A whole number of CSS pixels, from ${SIDE.min} to ${SIDE.max}` : undefined}
+      title={
+        invalid
+          ? `A whole number of CSS pixels, from ${SIDE.min} to ${SIDE.max}`
+          : undefined
+      }
       inputMode="numeric"
       spellCheck={false}
-      placeholder={placeholder === undefined ? label : String(Math.round(placeholder))}
+      placeholder={
+        placeholder === undefined ? label : String(Math.round(placeholder))
+      }
       value={draft ?? (value === undefined ? "" : String(value))}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}

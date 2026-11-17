@@ -33,7 +33,9 @@ pub struct PageSize {
     pub height: f64,
 }
 
-/// The largest side a page may be asked to lay out at, as the pane's size fields allow.
+/// The sides a page may be asked to lay out at, as the pane's size fields allow (`SIDE` in PageViewport.tsx): whole
+/// CSS pixels from 50 to 9999.
+const PAGE_SIDE_MIN: f64 = 50.0;
 const PAGE_SIDE_MAX: f64 = 9999.0;
 
 /// Where the page shows, and the parts of that the app's own layers cover (a menu, a dialog, a toast): the page
@@ -69,37 +71,38 @@ impl Placement {
     }
 
     /// Where the view goes, in whole GTK pixels over an app view `width` of them wide, and the zoom it gives its page.
-    /// Without a `page` (or with one out of bounds) the view fills the placement at zoom 1. The page's view is zoomed
-    /// by the font DPI as the app's is, so that zoom is taken out.
+    /// Without a `page` (or with one the size fields wouldn't take) the view fills the placement at zoom 1. The page's
+    /// view is zoomed by the font DPI as the app's is, so that zoom is taken out.
     ///
     /// With a `page`, WebKit lays it out at the view's whole pixels over the zoom, floored, and its float arithmetic
-    /// can land just under a whole number. So the zoom puts the page half a CSS pixel over `page.width`, and the view is
-    /// cut, within the placement and at most a tenth narrower, to the size whose height lands nearest half a pixel over
-    /// `page.height`. Both then floor to `page`, unless the page is scaled down so far that one of the view's pixels is
-    /// more than a CSS pixel: then the height can be off by up to half of one of those.
+    /// can land just under a whole number. So the zoom puts the page half a CSS pixel over `page.width`, and the view
+    /// is the widest within the placement whose height lands within half a pixel of `page.height` and a half over:
+    /// both then floor to `page`. Most sizes find one within a few pixels of the placement. A page so long or so wide
+    /// that one of the view's pixels is many CSS pixels may only find one in a much smaller view, or none: then the view
+    /// is the one whose height comes nearest.
     pub fn view_at(&self, width: f64) -> ((i32, i32, i32, i32), f64) {
         let at = pixels(&self.in_view(width).rect);
-        let sound = |v: f64| v.is_finite() && (1.0..=PAGE_SIDE_MAX).contains(&v);
-        let Some(page) = self.page.filter(|p| sound(p.width) && sound(p.height)) else { return (at, 1.0) };
+        let side = |v: f64| v.fract() == 0.0 && (PAGE_SIDE_MIN..=PAGE_SIDE_MAX).contains(&v);
+        let Some(page) = self.page.filter(|p| side(p.width) && side(p.height)) else { return (at, 1.0) };
         let (x, y, wide, tall) = at;
         let by = self.app_zoom(width);
         let (natural_w, natural_h) = (page.width * by, page.height * by);
         if natural_w.fract() == 0.0 && natural_h.fract() == 0.0 && natural_w <= f64::from(wide) && natural_h <= f64::from(tall) {
             return ((x, y, natural_w as i32, natural_h as i32), 1.0);
         }
-        let best = (wide - wide / 10..=wide)
-            .rev()
-            .filter(|&w| w > 0)
-            .map(|w| {
-                let per = f64::from(w) / (page.width + 0.5);
-                let h = ((page.height + 0.5) * per).round().clamp(1.0, f64::from(tall.max(1)));
-                ((h / per - page.height - 0.5).abs(), w, h as i32, per)
-            })
-            .fold(None, |best: Option<(f64, i32, i32, f64)>, c| match best {
-                Some(b) if b.0 < 0.48 || b.0 <= c.0 => Some(b),
-                _ => Some(c),
-            });
-        let Some((_, w, h, per)) = best else { return (at, 1.0) };
+        let mut nearest: Option<(f64, i32, i32, f64)> = None;
+        for w in (1..=wide).rev() {
+            let per = f64::from(w) / (page.width + 0.5);
+            let h = ((page.height + 0.5) * per).round().clamp(1.0, f64::from(tall.max(1)));
+            let off = (h / per - page.height - 0.5).abs();
+            if nearest.is_none_or(|n| off < n.0) {
+                nearest = Some((off, w, h as i32, per));
+            }
+            if off < 0.48 {
+                break;
+            }
+        }
+        let Some((_, w, h, per)) = nearest else { return (at, 1.0) };
         let zoom = per / by;
         if zoom.is_finite() && zoom > 0.0 {
             ((x, y, w, h), zoom)
@@ -710,10 +713,11 @@ mod imp {
         let Some((view, moves)) = shown(key) else { return done(Err(AnnotateError::NoPage)) };
         let Some(url) = view.uri().map(String::from).filter(|u| crate::web_page::web_url(u).is_ok()) else { return done(Err(AnnotateError::NoPage)) };
         let generation = moves.generation.get();
-        // In the page's own CSS pixels, which a zoom picked for its size makes fewer than the view's.
-        let zoom = view.zoom_level();
-        let (width, height, scale) =
-            (f64::from(view.allocated_width()) / zoom, f64::from(view.allocated_height()) / zoom, f64::from(view.scale_factor()) * zoom);
+        // In the page's own CSS pixels: the view's pixels over its zoom and the font DPI's (`Placement::view_at`).
+        let app_width = view.parent().and_downcast::<gtk::Overlay>().and_then(|o| o.child()).map(|a| f64::from(a.allocated_width()));
+        let by = PAGE.with(|p| p.borrow().as_ref().and_then(|p| p.placement.as_ref().zip(app_width).map(|(at, w)| at.app_zoom(w)))).unwrap_or(1.0);
+        let per = view.zoom_level() * by;
+        let (width, height, scale) = (f64::from(view.allocated_width()) / per, f64::from(view.allocated_height()) / per, f64::from(view.scale_factor()) * per);
         let key = key.to_owned();
         let keep = move |pixels: Result<Pixels, AnnotateError>| {
             let pixels = pixels?;
@@ -1175,6 +1179,31 @@ Object.defineProperty(document.getElementById('save'), 'innerText', {{ get() {{ 
         }
 
         #[test]
+        #[ignore = "needs a display, a session bus and GTK on one thread, so one test a process; run it as is and with GDK_DPI_SCALE=1.5: xvfb-run -a dbus-run-session -- cargo test --lib page_view::imp::tests::a_pick_on_a_sized -- --ignored"]
+        fn a_pick_on_a_sized_page_finds_what_is_there_at_any_font_dpi() {
+            // GDK_DPI_SCALE zooms WebKit's views as Xft.dpi does; the app's CSS viewport then shrinks by the same.
+            let by: f64 = std::env::var("GDK_DPI_SCALE").ok().and_then(|v| v.parse().ok()).unwrap_or(1.0);
+            let (_window, overlay, view) = plain_view();
+            let app_width = f64::from(overlay.child().unwrap().allocated_width());
+            let viewport = Viewport { width: app_width / by, height: 700.0 / by };
+            let page = Some(PageSize { width: 1280.0, height: 800.0 });
+            let rect = Rect { x: 100.0 / by, y: 50.0 / by, width: 400.0 / by, height: 250.0 / by };
+            let placement = Placement { rect, holes: vec![], viewport, page };
+            show_at(&overlay, &view, Some(&placement));
+            PAGE.with(|p| p.borrow_mut().as_mut().unwrap().placement = Some(placement));
+            run_for(500);
+            assert_eq!(in_page(&view, "innerWidth + 'x' + innerHeight"), "1280x800", "at font DPI {by}");
+            let taken = wait(|done| still_in(KEY, done)).expect("a still");
+            assert_eq!((taken.kept.width.floor(), taken.kept.height.floor()), (1280.0, 800.0), "the still is in the page's CSS pixels at {by}");
+            let at = |x, y| match query(taken.kept.id, x, y, 0).unwrap().map(|a| a.target) {
+                Some(Target::Element { tag, .. }) => tag.as_str().to_owned(),
+                other => format!("{other:?}"),
+            };
+            assert_eq!(at(50.0, 20.0), "button", "the Go button, 100×40 at the page's corner");
+            assert_eq!(at(600.0, 400.0), "body");
+        }
+
+        #[test]
         #[ignore = "needs a display, a session bus and GTK on one thread, so one test a process: xvfb-run -a dbus-run-session -- cargo test --lib page_view::imp::tests::a_still_is -- --ignored"]
         fn a_still_is_in_device_pixels() {
             let (_window, _overlay, view) = plain_view();
@@ -1343,6 +1372,25 @@ mod tests {
             }
         }
         assert_eq!(checked, 2 * 5 * 17);
+        // The sides the fields take at their limits, in the Preview's box: the width is exact, and so is the height
+        // wherever the view is more than a sliver.
+        for (pw, ph) in [(9999.0_f64, 50.0_f64), (50.0, 9999.0), (9999.0, 9999.0), (50.0, 50.0), (9999.0, 51.0), (51.0, 9998.0)] {
+            let scale = (464.0 / pw).min(667.0 / ph).min(1.0);
+            let placement = Placement {
+                rect: rect(808.4, 129.0, pw * scale, ph * scale),
+                holes: vec![],
+                viewport: Viewport { width: 1280.0, height: 820.0 },
+                page: Some(PageSize { width: pw, height: ph }),
+            };
+            let ((_, _, w, h), zoom) = placement.view_at(1280.0);
+            let (lw, lh) = laid_out(w, h, zoom, 1.0);
+            assert_eq!(lw, pw, "{pw}×{ph}: view {w}×{h}");
+            // A view only a few pixels across has no whole size that floors to the height: it comes within one of them.
+            assert!((lh - ph).abs() <= (pw + 0.5) / f64::from(w), "{pw}×{ph}: view {w}×{h} lays out {lw}×{lh}");
+            if w >= 40 {
+                assert_eq!(lh, ph, "{pw}×{ph}: view {w}×{h}");
+            }
+        }
         assert!(short <= 4, "in a box the size of the Preview, the view is at most 4 pixels short of it: {short}");
     }
 
@@ -1357,7 +1405,7 @@ mod tests {
         assert_eq!(at(None).view_at(1280.0), ((800, 137, 480, 683), 1.0));
         let fits = Placement { rect: rect(852.5, 137.0, 375.0, 667.0), ..at(Some(PageSize { width: 375.0, height: 667.0 })) };
         assert_eq!(fits.view_at(1280.0), ((853, 137, 375, 667), 1.0), "a size that fits shows as it is, unscaled");
-        for bad in [(0.0, 667.0), (f64::NAN, 667.0), (375.0, f64::INFINITY), (-375.0, 667.0), (1e9, 667.0)] {
+        for bad in [(0.0, 667.0), (f64::NAN, 667.0), (375.0, f64::INFINITY), (-375.0, 667.0), (1e9, 667.0), (375.5, 667.0), (49.0, 667.0), (375.0, 10000.0)] {
             assert_eq!(at(Some(PageSize { width: bad.0, height: bad.1 })).view_at(1280.0), ((800, 137, 480, 683), 1.0), "{bad:?} is no size");
         }
     }

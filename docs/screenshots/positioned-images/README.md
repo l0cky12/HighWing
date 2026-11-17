@@ -1,6 +1,6 @@
 # Images placed where they were added
 
-The first image stays above the words; each later one goes on the line where it was added (ADR 0198). Every image entered through a real Ctrl+V on the X clipboard: a red 320 × 200 PNG first, then two files both named `image.png`, a blue 160 × 90 and a green 240 × 160, pasted between "These two" and "show the error".
+The first image stays above the words; each later one goes on the line where it was added (ADR 0200). Every image entered through a real Ctrl+V on the X clipboard: a red 320 × 200 PNG first, then two files both named `image.png`, a blue 160 × 90 and a green 240 × 160, pasted between "These two" and "show the error".
 
 | File | Shows |
 | --- | --- |

@@ -131,7 +131,7 @@ describe("Pasting into the composer", () => {
     expect(chips()).toHaveLength(0);
   });
 
-  it("keeps the first pasted screenshot above the words and marks the next at the cursor (ADR 0198)", async () => {
+  it("keeps the first pasted screenshot above the words and marks the next at the cursor (ADR 0200)", async () => {
     const { staged, onDraft } = await setUp("Which cable is loose?");
     paste([new File([PNG], "image.png", { type: "image/png" })]);
     await waitFor(() => expect(staged).toHaveLength(1));

@@ -1,4 +1,4 @@
-// Where a message's images go in its words (ADR 0198). Hermes stores a message's words as they were sent and its images
+// Where a message's images go in its words (ADR 0200). Hermes stores a message's words as they were sent and its images
 // as `@image:` lines after them, in the order they were attached (`peelImages`), so a mark in the words, such as
 // `[image 2: shot.png]`, says where the second image goes. The model reads the same mark beside the images it is sent.
 // An image no mark names is shown above the words, as every image was before.

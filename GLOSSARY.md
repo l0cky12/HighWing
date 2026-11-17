@@ -228,7 +228,7 @@ A local file the owner sends with a message: an image Hermes looks at, or any ot
 _Avoid_: upload, file (when the attachment is meant)
 
 **Image mark**:
-Where an image goes in a message's words, written in them as `[image 2: shot.png]`: the second image attached to the message goes there. The first image the owner adds to a composer goes above the words. Each image added after it is marked at the cursor, and the composer shows the mark as a chip with the image's thumbnail, name and size. Hermes stores the mark with the words, so the sent message, and the chat read back later, show the image on that line. An image no mark places shows above the words (ADR 0198).
+Where an image goes in a message's words, written in them as `[image 2: shot.png]`: the second image attached to the message goes there. The first image the owner adds to a composer goes above the words. Each image added after it is marked at the cursor, and the composer shows the mark as a chip with the image's thumbnail, name and size. Hermes stores the mark with the words, so the sent message, and the chat read back later, show the image on that line. An image no mark places shows above the words (ADR 0200).
 _Avoid_: placeholder, inline attachment, reference (a Referenced chat is something else)
 
 **Referenced chat**:

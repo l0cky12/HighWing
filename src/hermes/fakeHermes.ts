@@ -314,6 +314,8 @@ export class FakeHermes {
   /** Every request the client sent, in order. */
   readonly requests: Request[] = [];
   readonly restRequests: RestRequest[] = [];
+  /** Runs on each dashboard REST call as it arrives, before any route; one that throws fails the call that way. */
+  restTap?: (req: RestRequest) => void;
   readyPayload: Record<string, unknown> = { skin: {}, change_events: true, heartbeat: true, replay_epoch: "e1" };
   /** How the pipe reaches this server, as the Rust side reports it. */
   route: Route = { kind: "ssh", target: "liam@hermes" };
@@ -2013,6 +2015,7 @@ export class FakeHermes {
     const url = new URL(pathAndQuery, "http://dashboard/");
     const req: RestRequest = { method, path: url.pathname, query: url.searchParams, body: body === undefined ? undefined : JSON.parse(body) };
     this.restRequests.push(req);
+    this.restTap?.(req);
     const patch = /^\/api\/sessions\/([^/]+)$/.exec(req.path);
     const snapshot = /^\/api\/sessions\/([^/]+)\/mutation-snapshot$/.exec(req.path);
     const messages = /^\/api\/sessions\/([^/]+)\/messages$/.exec(req.path);

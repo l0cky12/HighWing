@@ -493,7 +493,7 @@ export const en = {
         unchangeable: "Highwing can't send this toolset's name to Hermes, so it stays as Hermes sets it.",
         mcpNote:
           "Highwing can't add MCP servers while creating a profile: Hermes would have to copy them without their secrets, and it has no way to yet. After creating, add them in Settings → MCP servers.",
-        applying: "Created. Applying the skills and tools you chose, then reading them back…",
+        applying: (done: number, total: number) => `Created. Applying the skills and tools you chose, then reading them back: ${done} of ${total} done…`,
         createdWith: (name: string) => `Created ${name} with the skills and tools you chose.`,
         unanswered: (name: string) =>
           `Hermes's answer was lost, but it lists ${name} now. Its skills and tools weren't checked, and nothing more was changed. See them in Settings → Skills and Settings → Toolsets.`,
@@ -509,6 +509,7 @@ export const en = {
         readOn: "Hermes reads it back as on.",
         readOff: "Hermes reads it back as off.",
         changedElsewhere: "Changed elsewhere while this ran, so nothing was written.",
+        unsent: (why: string) => `Not tried, since Hermes didn't answer an earlier call (${why}). Nothing was sent for it.`,
         confirmFirst: "Hermes needs you to confirm this first:",
         applyAnyway: "Apply anyway",
         retry: "Try again",

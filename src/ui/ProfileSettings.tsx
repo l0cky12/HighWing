@@ -5,7 +5,7 @@ import { useEffect, useId, useRef, useState, useSyncExternalStore, type Keyboard
 import { Brain, Copy, FolderOpen, Keyboard, MoreHorizontal, Pencil, Plus, Puzzle, RefreshCw, Sparkles, Trash2, TriangleAlert, Wand2 } from "lucide-react";
 import { BOT_LOOK_SAME, BOT_PICTURE_MAX_BYTES, type BotLook } from "../hermes/bots";
 import type { CapabilityStore } from "../hermes/capabilities";
-import { allApplied, applySkills, applyToolsets, choosing, type SetupApis, type SetupItem } from "../hermes/botSetup";
+import { allApplied, applySetup, choosing, type SetupApis, type SetupItem } from "../hermes/botSetup";
 import { allSaved, editsOf, rebase, type EditResult, type Edits, type FieldOutcome } from "../hermes/fieldMerge";
 import type { CatalogProvider } from "../hermes/modelSettings";
 import type { ProfileCloneApi } from "../hermes/profileClone";
@@ -23,6 +23,7 @@ import {
   type ProfileFields,
   type ProfileRow,
   type ProfilesApi,
+  type Removed,
 } from "../hermes/profiles";
 import { useLocale, type Locale } from "../i18n/locale";
 import { Spinner, composing } from "./bits";
@@ -82,6 +83,8 @@ export type ProfilesWiring = {
   rephrase?: RephraseWiring;
   /** New's Skills and Tools (ADR 0195): read from the profile in use, applied to the new profile and read back. */
   setup?: SetupApis;
+  /** Tells the owner what a create came to once its form has closed, through the app's own notice. */
+  notify: (notice: Notice) => void;
 };
 
 /** How long a rename or delete runs before its button says the gateway is being stopped. */
@@ -856,7 +859,8 @@ export function ProfileForm({
   const [madeNoModel, setMadeNoModel] = useState<{ name: string; error: string }>();
   /** A profile made with chosen skills or tools that didn't all apply: what each came to (ADR 0195). */
   const [outcome, setOutcome] = useState<{ name: string; items: SetupItem[]; modelError?: string }>();
-  const [applying, setApplying] = useState(false);
+  /** The chosen skills and tools being applied: how many items of how many are judged. */
+  const [applying, setApplying] = useState<{ done: number; total: number }>();
   // Set by the Create that runs, and cleared only by it: a second activation before the screen catches up sends nothing.
   const creating = useRef(false);
   // New only: Edit has neither, so they read nothing there.
@@ -959,9 +963,15 @@ export function ProfileForm({
     }
   };
 
+  /** Ends the form with `result`; once the form has closed, its notice reaches the owner through the app instead. */
+  const finish = (result: FormResult) => {
+    if (live.current) onDone(result);
+    else if (result.notice) wiring.notify(result.notice);
+  };
+
   /**
    * Makes the profile, then applies any chosen skills and tools. Once Hermes answered, the profile exists: if the form
-   * has closed meanwhile, the result still reaches `onDone`, so the owner hears of it.
+   * has closed meanwhile, the owner still hears what the create came to.
    */
   const createOnce = async () => {
     setSaving(true);
@@ -974,7 +984,7 @@ export function ProfileForm({
         ...(provider && model.trim() && { provider, model: model.trim() }),
         ...(soul.trim() && { soul }),
       });
-      if (choosing(setup)) return await applySetup(made);
+      if (choosing(setup)) return await applyChosen(made);
       const modelError = !made.modelSet && provider && model.trim() && made.answered ? (made.modelError ?? f.modelNotSetWhy) : undefined;
       if (modelError && live.current) {
         setMadeNoModel({ name: made.name, error: modelError });
@@ -982,7 +992,7 @@ export function ProfileForm({
         return;
       }
       const text = modelError ? f.modelNotSet(modelError) : made.answered ? w.created(made.name) : w.createdUnanswered(made.name);
-      onDone({ notice: { tone: modelError ? "warn" : "muted", text, open: made.name }, select: made.name });
+      finish({ notice: { tone: modelError ? "warn" : "muted", text, open: made.name }, select: made.name });
     } catch (e) {
       if (!live.current) return;
       const failure = profileFailure(e, "create");
@@ -996,31 +1006,36 @@ export function ProfileForm({
    * success notice only when everything is as chosen, else shows what isn't. A lost answer changes nothing more (ADR
    * 0195). Closed meanwhile, the form says what it came to in the notice instead.
    */
-  const applySetup = async (made: Awaited<ReturnType<typeof api.create>>) => {
+  const applyChosen = async (made: Awaited<ReturnType<typeof api.create>>) => {
     const { setup, skills, toolsets } = capabilities;
-    if (!made.answered || !wiring.setup) return onDone({ notice: { tone: "warn", text: f.setup.unanswered(made.name), open: made.name }, select: made.name });
-    if (live.current) setApplying(true);
-    const items = [
-      ...(setup.skills.kind === "chosen" && skills.inventory.kind === "read" ? await applySkills(wiring.setup, made.name, skills.inventory.options, setup.skills.on) : []),
-      ...(setup.toolsets.kind === "chosen" && toolsets.inventory.kind === "read" ? await applyToolsets(wiring.setup, made.name, toolsets.inventory.options, setup.toolsets.on) : []),
-    ];
+    if (!made.answered || !wiring.setup) return finish({ notice: { tone: "warn", text: f.setup.unanswered(made.name), open: made.name }, select: made.name });
+    const items = await applySetup(
+      wiring.setup,
+      made.name,
+      {
+        ...(setup.skills.kind === "chosen" && skills.inventory.kind === "read" && { skills: { options: skills.inventory.options, on: setup.skills.on } }),
+        ...(setup.toolsets.kind === "chosen" && toolsets.inventory.kind === "read" && { toolsets: { options: toolsets.inventory.options, on: setup.toolsets.on } }),
+      },
+      (done, total) => live.current && setApplying({ done, total }),
+    );
     const modelError = !made.modelSet && provider && model.trim() ? (made.modelError ?? f.modelNotSetWhy) : undefined;
-    if ((allApplied(items) && !modelError) || !live.current) return onDone({ notice: outcomeNotice(l, made.name, items, modelError), select: made.name });
-    setApplying(false);
+    if ((allApplied(items) && !modelError) || !live.current) return finish({ notice: outcomeNotice(l, made.name, items, modelError), select: made.name });
+    setApplying(undefined);
     setSaving(false);
     setOutcome({ name: made.name, items, modelError });
   };
 
   /** Deletes a profile this form made, as Delete profile does, and this computer's data for it. */
   const removeMade = async (name: string): Promise<Removal> => {
+    let out: Removed;
     try {
-      await api.remove(name);
+      out = await api.remove(name);
     } catch (e) {
       return { kind: "failed", why: failureText(l, profileFailure(e, "remove"), name) };
     }
     return wiring.local.deleted(name).then(
-      () => ({ kind: "deleted" }),
-      () => ({ kind: "localKept" }),
+      (): Removal => (out.kind === "settling" ? out : { kind: "deleted" }),
+      (): Removal => ({ kind: "localKept" }),
     );
   };
 
@@ -1208,7 +1223,8 @@ export function ProfileForm({
             modelError={outcome.modelError}
             apis={wiring.setup}
             remove={() => removeMade(outcome.name)}
-            onFinish={(notice, select) => onDone({ notice, select })}
+            setModel={!noEdit}
+            onFinish={finish}
           />
         ) : madeNoModel ? (
           <>
@@ -1409,7 +1425,7 @@ export function ProfileForm({
             {stateNote("create")}
             {applying && (
               <div className="small muted" role="status">
-                <Spinner /> {f.setup.applying}
+                <Spinner /> {f.setup.applying(applying.done, applying.total)}
               </div>
             )}
             {!row && onClone && (

@@ -3,8 +3,8 @@
 // nothing for them, and once Hermes answers, each choice is applied to the new profile alone and read back: a skill the
 // owner turned off through Settings → Skills' switch, a toolset through Settings → Toolsets' change, one at a time. A
 // skill the owner wasn't shown is never touched. Every item ends applied, failed with why, or waiting for the owner to
-// confirm a caution.
-import { ESSENTIAL_SKILLS, safeSkillName, type SkillRow, type SkillsApi } from "./skills";
+// confirm a caution. Once a call goes unanswered, nothing more is sent: the rest fail with that reason.
+import { ESSENTIAL_SKILLS, SkillsError, safeSkillName, type SkillRow, type SkillsApi } from "./skills";
 import { changeableName, type Caution, type Toolset, type ToolsetList, type ToolsetsApi } from "./toolsets";
 import { errorText } from "./values";
 
@@ -34,8 +34,17 @@ export type ToolsetOption = { name: string; label: string; description: string; 
 export const toolsetOptions = (list: ToolsetList): ToolsetOption[] =>
   list.toolsets.map((t) => ({ name: t.name, label: t.label, description: t.description, on: t.enabled, changeable: changeableName(t.name) }));
 
-/** Why an item isn't as chosen. `said`: Hermes's or the call's own words. `changed`: another client changed it first. */
-export type Miss = { kind: "missing" } | { kind: "readOn" } | { kind: "readOff" } | { kind: "changed" } | { kind: "said"; text: string };
+/**
+ * Why an item isn't as chosen. `said`: Hermes's or the call's own words. `changed`: another client changed it first.
+ * `unsent`: nothing was sent for it, since a call before it got no answer from Hermes (`text`: that call's failure).
+ */
+export type Miss =
+  | { kind: "missing" }
+  | { kind: "readOn" }
+  | { kind: "readOff" }
+  | { kind: "changed" }
+  | { kind: "said"; text: string }
+  | { kind: "unsent"; text: string };
 
 /**
  * What Hermes did besides a toolset change it read back as chosen (`ToolsetChange` `saved`), for the owner to hear.
@@ -57,58 +66,52 @@ export const allApplied = (items: readonly SetupItem[]) => items.every((i) => i.
 /** The skills and toolsets APIs the stages call, each naming the new profile. */
 export type SetupApis = { skills: Pick<SkillsApi, "rows" | "setEnabled">; toolsets: Pick<ToolsetsApi, "list" | "set"> };
 
+/** One chosen area: the options the owner was shown, and those ticked on. */
+type Picked<T> = { options: readonly T[]; on: ReadonlySet<string> };
+
+/** What to apply to the new profile: each area the owner chose, left out for Hermes's defaults. */
+export type SetupPlan = { skills?: Picked<SkillOption>; toolsets?: Picked<ToolsetOption> };
+
 const APPLIED: ItemState = { kind: "applied" };
 const failed = (miss: Miss): ItemState => ({ kind: "failed", miss });
+const said = (e: unknown): ItemState => failed({ kind: "said", text: errorText(e) });
+
+/** One item judged. `unanswered`: why a call for it got no answer from Hermes, after which nothing more is sent. */
+type Judged = { item: SetupItem; unanswered?: string };
+
+/** A skills call that failed without Hermes answering it: lost on the way, or never sent. */
+const skillsUnanswered = (e: unknown) => !(e instanceof SkillsError) || e.kind === "disconnected" || e.status === undefined;
 
 const readBack = (want: boolean, enabled: boolean | undefined): ItemState =>
   enabled === undefined ? failed({ kind: "missing" }) : enabled === want ? APPLIED : failed({ kind: enabled ? "readOn" : "readOff" });
 
 /**
  * One skill as the new profile lists it (`row`, undefined when it isn't), against the choice. A skill chosen on must be
- * listed and on; one chosen off must be off, or not there at all. The first apply and Try again both judge by this.
+ * listed and on; one chosen off must be off, or not there at all.
  */
 const skillState = (want: boolean, row: SkillRow | undefined): ItemState => (!row && !want ? APPLIED : readBack(want, row?.enabled));
 
-/** Turns one listed skill on or off through Settings → Skills' switch, and judges what Hermes lists after it. */
-async function setSkill(apis: SetupApis, profile: string, item: SetupItem): Promise<SetupItem> {
+/**
+ * One skill against `rows`, what the new profile lists: left alone if as chosen, else switched through Settings →
+ * Skills' switch and judged by what Hermes lists after it. A skill Hermes keeps on is only read back, never switched.
+ */
+async function settleSkill(apis: SetupApis, profile: string, item: SetupItem, rows: Promise<SkillRow[]>): Promise<Judged> {
+  const fail = (e: unknown): Judged => ({ item: { ...item, state: said(e) }, ...(skillsUnanswered(e) && { unanswered: errorText(e) }) });
+  let row: SkillRow | undefined;
+  try {
+    row = (await rows).find((r) => r.name === item.name);
+  } catch (e) {
+    return fail(e);
+  }
+  const state = skillState(item.want, row);
+  if (state.kind === "applied" || !row || ESSENTIAL_SKILLS.has(item.name)) return { item: { ...item, state } };
   try {
     const r = await apis.skills.setEnabled(profile, item.name, item.want);
-    const state = skillState(item.want, r.view.skills.find((s) => s.name === item.name));
-    return { ...item, state: state.kind !== "applied" && r.lost ? failed({ kind: "said", text: r.lost.message }) : state };
+    const now = skillState(item.want, r.view.skills.find((s) => s.name === item.name));
+    return { item: { ...item, state: now.kind !== "applied" && r.lost ? failed({ kind: "said", text: r.lost.message }) : now } };
   } catch (e) {
-    return { ...item, state: failed({ kind: "said", text: errorText(e) }) };
+    return fail(e);
   }
-}
-
-/**
- * Stage (a): makes each skill of `options` on or off on the new profile as chosen. It reads the new profile's skills,
- * leaves alone those already as chosen, and switches the rest one at a time, each read back. Only skills the owner was
- * shown are ever switched; a locked one is only read back.
- */
-export async function applySkills(apis: SetupApis, profile: string, options: readonly SkillOption[], on: ReadonlySet<string>): Promise<SetupItem[]> {
-  const items: SetupItem[] = options
-    .filter((o) => o.locked !== "unsendable")
-    .map((o) => ({ area: "skill", name: o.name, label: o.name, want: o.locked === "essential" || on.has(o.name), state: failed({ kind: "missing" }) }));
-  let rows: SkillRow[];
-  try {
-    rows = await apis.skills.rows(profile);
-  } catch (e) {
-    const miss: Miss = { kind: "said", text: errorText(e) };
-    return items.map((i) => ({ ...i, state: failed(miss) }));
-  }
-  const out: SetupItem[] = [];
-  for (const item of items) {
-    const row = rows.find((r) => r.name === item.name);
-    const state = skillState(item.want, row);
-    out.push(state.kind === "applied" || !row ? { ...item, state } : await setSkill(apis, profile, item));
-  }
-  return out;
-}
-
-/** Tries one skill again, as the first apply did it: against a fresh read, switched only if it isn't as chosen. */
-export async function retrySkill(apis: SetupApis, profile: string, item: SetupItem): Promise<SetupItem> {
-  const [next] = await applySkills(apis, profile, [{ name: item.name, description: "" }], new Set(item.want ? [item.name] : []));
-  return { ...item, state: next.state };
 }
 
 /** What Hermes did besides the change, from its `saved` answer. */
@@ -119,62 +122,84 @@ const notesOf = (r: { installing?: string; warning?: string; mcpBack?: boolean; 
   ...(r.everywhereBack ? [{ kind: "everywhereBack" as const }] : []),
 ];
 
-/** Sets one toolset, as Hermes had it `current`, then reads it back (`ToolsetsApi.set`). */
-async function setToolset(apis: SetupApis, profile: string, item: SetupItem, current: boolean, accepted: Caution[]): Promise<SetupItem> {
+/**
+ * One toolset against `list`, what the new profile has: left alone if as chosen, else set as Settings → Toolsets sets
+ * it (`ToolsetsApi.set`) and read back. `accepted`: the cautions the owner confirmed with Apply anyway. A read that
+ * throws, and a change Hermes didn't confirm (`unknown`), went unanswered.
+ */
+async function settleToolset(apis: SetupApis, profile: string, item: SetupItem, list: Promise<ToolsetList>, accepted: Caution[]): Promise<Judged> {
+  const done = (state: ItemState): Judged => ({ item: { ...item, state } });
+  const lost = (text: string): Judged => ({ item: { ...item, state: failed({ kind: "said", text }) }, unanswered: text });
   try {
-    const r = await apis.toolsets.set(profile, item.name, item.want, current, accepted);
+    const row = (await list).toolsets.find((t) => t.name === item.name);
+    if (!row) return done(failed({ kind: "missing" }));
+    if (row.enabled === item.want) return done(APPLIED);
+    const r = await apis.toolsets.set(profile, item.name, item.want, row.enabled, accepted);
     switch (r.kind) {
       case "saved": {
         const notes = notesOf(r);
-        return { ...item, state: notes.length ? { kind: "applied", notes } : APPLIED };
+        return done(notes.length ? { kind: "applied", notes } : APPLIED);
       }
       case "confirm": {
         const toolset = r.list.toolsets.find((t) => t.name === item.name);
-        return { ...item, state: toolset ? { kind: "confirm", cautions: r.cautions, toolset } : failed({ kind: "missing" }) };
+        return done(toolset ? { kind: "confirm", cautions: r.cautions, toolset } : failed({ kind: "missing" }));
       }
       case "conflict":
-        return { ...item, state: failed({ kind: "changed" }) };
+        return done(failed({ kind: "changed" }));
       case "mismatch":
-        return { ...item, state: readBack(item.want, r.list.toolsets.find((t) => t.name === item.name)?.enabled) };
+        return done(readBack(item.want, r.list.toolsets.find((t) => t.name === item.name)?.enabled));
       case "rejected":
+        return done(failed({ kind: "said", text: r.reason }));
       case "unknown":
-        return { ...item, state: failed({ kind: "said", text: r.reason }) };
+        return lost(r.reason);
     }
   } catch (e) {
-    return { ...item, state: failed({ kind: "said", text: errorText(e) }) };
+    return lost(errorText(e));
   }
-}
-/** One toolset against `list`, what Hermes has now: left alone if as chosen, else set and read back. */
-async function settleToolset(apis: SetupApis, profile: string, item: SetupItem, list: ToolsetList, accepted: Caution[]): Promise<SetupItem> {
-  const row = list.toolsets.find((t) => t.name === item.name);
-  if (!row) return { ...item, state: failed({ kind: "missing" }) };
-  if (row.enabled === item.want) return { ...item, state: APPLIED };
-  return setToolset(apis, profile, item, row.enabled, accepted);
 }
 
 /**
- * Stage (b): makes each toolset of `options` on or off as chosen, on the new profile. Those it already has as chosen
- * are left alone; the rest are set one at a time. A caution is never accepted here: it waits for the owner.
+ * Applies `plan` to the new profile, skills first, then toolsets, one item at a time, each read back. Each area's list
+ * is read once; items already as chosen are left alone. A caution is never accepted here: it waits for the owner. Once
+ * a call goes unanswered, the rest fail with its reason and nothing more is sent. `progress` hears how many items of
+ * how many are judged, from none.
  */
-export async function applyToolsets(apis: SetupApis, profile: string, options: readonly ToolsetOption[], on: ReadonlySet<string>): Promise<SetupItem[]> {
-  const items: SetupItem[] = options.filter((o) => o.changeable).map((o) => ({ area: "toolset", name: o.name, label: o.label, want: on.has(o.name), state: failed({ kind: "missing" }) }));
-  let list: ToolsetList;
-  try {
-    list = await apis.toolsets.list(profile);
-  } catch (e) {
-    const miss: Miss = { kind: "said", text: errorText(e) };
-    return items.map((i) => ({ ...i, state: failed(miss) }));
-  }
+export async function applySetup(
+  apis: SetupApis,
+  profile: string,
+  plan: SetupPlan,
+  progress: (done: number, total: number) => void = () => {},
+): Promise<SetupItem[]> {
+  const items: SetupItem[] = [
+    ...(plan.skills?.options ?? [])
+      .filter((o) => o.locked !== "unsendable")
+      .map((o): SetupItem => ({ area: "skill", name: o.name, label: o.name, want: o.locked === "essential" || !!plan.skills?.on.has(o.name), state: APPLIED })),
+    ...(plan.toolsets?.options ?? [])
+      .filter((o) => o.changeable)
+      .map((o): SetupItem => ({ area: "toolset", name: o.name, label: o.label, want: !!plan.toolsets?.on.has(o.name), state: APPLIED })),
+  ];
+  let rows: Promise<SkillRow[]> | undefined;
+  let list: Promise<ToolsetList> | undefined;
+  let unanswered: string | undefined;
   const out: SetupItem[] = [];
-  for (const item of items) out.push(await settleToolset(apis, profile, item, list, []));
+  progress(0, items.length);
+  for (const item of items) {
+    const judged: Judged =
+      unanswered !== undefined
+        ? { item: { ...item, state: failed({ kind: "unsent", text: unanswered }) } }
+        : item.area === "skill"
+          ? await settleSkill(apis, profile, item, (rows ??= apis.skills.rows(profile)))
+          : await settleToolset(apis, profile, item, (list ??= apis.toolsets.list(profile)), []);
+    out.push(judged.item);
+    unanswered ??= judged.unanswered;
+    progress(out.length, items.length);
+  }
   return out;
 }
 
-/** Tries one toolset again, as the first apply did it, against a fresh read. `accepted`: the cautions the owner confirmed with Apply anyway. */
-export async function retryToolset(apis: SetupApis, profile: string, item: SetupItem, accepted: Caution[] = []): Promise<SetupItem> {
-  try {
-    return await settleToolset(apis, profile, item, await apis.toolsets.list(profile), accepted);
-  } catch (e) {
-    return { ...item, state: failed({ kind: "said", text: errorText(e) }) };
-  }
+/** Tries one item again, as the first apply did it, against a fresh read. `accepted`: the cautions confirmed with Apply anyway. */
+export async function retryItem(apis: SetupApis, profile: string, item: SetupItem, accepted: Caution[] = []): Promise<SetupItem> {
+  const judged =
+    item.area === "skill" ? await settleSkill(apis, profile, item, apis.skills.rows(profile)) : await settleToolset(apis, profile, item, apis.toolsets.list(profile), accepted);
+  return judged.item;
 }

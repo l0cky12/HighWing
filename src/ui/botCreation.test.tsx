@@ -14,7 +14,7 @@ import { connect, type Hermes } from "../hermes/transport";
 import { en } from "../i18n/en";
 import { LocaleContext } from "../i18n/locale";
 import { pseudoLocale, untranslated } from "../i18n/pseudo";
-import { ProfileForm, type FormResult, type ProfilesWiring } from "./ProfileSettings";
+import { ProfileForm, type FormResult, type Notice, type ProfilesWiring } from "./ProfileSettings";
 
 beforeAll(() => {
   globalThis.CSS ??= { escape: (s: string) => s } as typeof CSS;
@@ -36,13 +36,18 @@ type Options = {
   seed?: (s: FakeHermes) => void;
   locale?: ReturnType<typeof pseudoLocale>;
   forgetFails?: boolean;
+  /** Offers one provider and model to pick, as App's catalogue does. */
+  models?: boolean;
+  /** As the Bots view's New bot: no Set model after a create that didn't set it. */
+  noEdit?: boolean;
 };
 
 /**
- * The New form over a fake Hermes, wired as App wires it; `done` gets what the form finished with. `reconnect` draws it
- * again connected or not, with Generate with AI wired only while connected, as App does.
+ * The New form over a fake Hermes, wired as App wires it; `done` gets what the form finished with, and `notified` what
+ * the app is told once the form has closed. `reconnect` draws it again connected or not, with Generate with AI wired
+ * only while connected, as App does; `switchProfile` draws it again with another profile in use.
  */
-async function open({ connected = true, rephrase = true, setup = true, seed = () => {}, locale, forgetFails = false }: Options = {}) {
+async function open({ connected = true, rephrase = true, setup = true, seed = () => {}, locale, forgetFails = false, models = false, noEdit = true }: Options = {}) {
   const server = new FakeHermes();
   for (const name of BUILT_IN)
     server.skills.add("default", { dir: `/home/liam/.hermes/skills/${name}`, source: "bundled" }, `---\nname: ${name}\ndescription: The ${name} skill\n---\nDo ${name}.\n`);
@@ -52,16 +57,18 @@ async function open({ connected = true, rephrase = true, setup = true, seed = ()
   running.push(hermes);
   await hermes.sync();
   const done = vi.fn<(r: FormResult) => void>();
+  const notified = vi.fn<(n: Notice) => void>();
   const closed = vi.fn();
+  const at = { connected, inUse: "default" };
   const deleted = vi.fn(async () => {
     if (forgetFails) throw new Error("The drafts folder is read-only.");
   });
-  const wiring = (connected: boolean): Omit<ProfilesWiring, "showTab"> => ({
+  const wiring = (connected: boolean, inUse: string): Omit<ProfilesWiring, "showTab"> => ({
     api: hermes.manageProfiles,
-    inUse: "default",
+    inUse,
     connected,
     unread: () => undefined,
-    catalog: async () => [],
+    catalog: async () => (models ? [{ slug: "openai", name: "OpenAI", models: ["gpt-6.1"], caps: {} }] : []),
     busy: () => undefined,
     lostMessages: () => 0,
     jobCount: async () => 0,
@@ -76,25 +83,34 @@ async function open({ connected = true, rephrase = true, setup = true, seed = ()
         },
       }),
     ...(setup && { setup: { skills: hermes.skills, toolsets: hermes.toolsets } }),
+    notify: notified,
   });
-  const form = (connected: boolean) => {
+  const form = () => {
     const f = (
       <ProfileForm
-        wiring={wiring(connected)}
+        wiring={wiring(at.connected, at.inUse)}
         rows={[{ name: "default" }]}
         lacking={() => false}
         returnTo={createRef()}
         heading={(locale ?? en).bots.newBot}
         createLabel={(locale ?? en).bots.createBot}
-        noEdit
+        noEdit={noEdit}
         onDone={done}
         onClose={closed}
       />
     );
     return locale ? <LocaleContext value={locale}>{f}</LocaleContext> : f;
   };
-  const { rerender, unmount } = render(form(connected));
-  return { server, hermes, done, closed, deleted, unmount, reconnect: (c: boolean) => rerender(form(c)), user: userEvent.setup() };
+  const { rerender, unmount } = render(form());
+  const reconnect = (c: boolean) => {
+    at.connected = c;
+    rerender(form());
+  };
+  const switchProfile = (name: string) => {
+    at.inUse = name;
+    rerender(form());
+  };
+  return { server, hermes, done, notified, closed, deleted, unmount, reconnect, switchProfile, user: userEvent.setup() };
 }
 
 const dialog = () => screen.getByRole("dialog");
@@ -466,6 +482,107 @@ describe("Skills, Tools and MCP servers", () => {
     expect(done.mock.calls[0][0]).toEqual({ notice: { tone: "warn", text: "Deleted chef, since not everything you chose applied." } });
   });
 
+  it("says when Hermes is still settling a deleted profile, with the command it gives", async () => {
+    for (const [command, notice] of [
+      ["hermes profile finish-delete chef", { tone: "warn", text: en.profiles.del.settling("chef"), command: "hermes profile finish-delete chef" }],
+      ["", { tone: "warn", text: en.profiles.del.settlingNoCommand("chef") }],
+    ] as const) {
+      const { server, user, done } = await open({
+        seed: (s) => {
+          s.skills.toggleRefusal = LOCKED;
+          s.profileSettlementPending = command;
+        },
+      });
+      await named(user);
+      const skills = within(dialog()).getByRole("group", { name: "Skills" });
+      await user.click(within(skills).getByRole("radio", { name: "Choose" }));
+      await user.click(await within(skills).findByLabelText(/recipes/));
+      await user.click(create());
+      await user.click(await within(dialog()).findByRole("button", { name: "Delete chef" }));
+      await waitFor(() => expect(done).toHaveBeenCalled());
+      expect("chef" in server.otherProfiles).toBe(false);
+      expect(done.mock.calls).toEqual([[{ notice }]]);
+      cleanup();
+    }
+  });
+
+  it("offers Set model when Hermes didn't set the model picked, and goes on to Edit with what didn't apply", async () => {
+    const pick = async (noEdit: boolean) => {
+      const opened = await open({ models: true, noEdit, seed: (s) => (s.profileModelError = "Model not listed.") });
+      await named(opened.user);
+      const provider = within(dialog()).getByLabelText("Provider") as HTMLSelectElement;
+      await waitFor(() => expect(provider.options.length).toBeGreaterThan(1));
+      await opened.user.selectOptions(provider, "openai");
+      await opened.user.type(within(dialog()).getByLabelText("Model name"), "gpt-6.1");
+      const tools = within(dialog()).getByRole("group", { name: "Tools" });
+      await opened.user.click(within(tools).getByRole("radio", { name: "Choose" }));
+      await opened.user.click(await within(tools).findByLabelText(/Terminal & Processes/));
+      await opened.user.click(create());
+      await within(dialog()).findByText("Profile created, but Hermes didn't set the model: Model not listed.");
+      return opened;
+    };
+    const { user, done } = await pick(false);
+    await user.click(within(dialog()).getByRole("button", { name: "Set model…" }));
+    expect(done.mock.calls).toEqual([[{ notice: { tone: "bad", text: "Created chef, but these aren't as you chose: the model.", open: "chef" }, select: "chef", edit: "chef" }]]);
+    cleanup();
+    await pick(true);
+    expect(within(dialog()).queryByRole("button", { name: "Set model…" })).toBeNull();
+    expect(within(dialog()).getByRole("button", { name: "Keep it as is" })).toBeTruthy();
+  });
+
+  it("chooses from the newest list read: an older read ending meanwhile neither flips the choice nor lets Create run", async () => {
+    const { server, user } = await open();
+    await named(user);
+    const tools = within(dialog()).getByRole("group", { name: "Tools" });
+    const lists = () => server.restRequests.filter((r) => r.method === "GET" && r.path === "/api/tools/toolsets").length;
+    let first = () => {};
+    server.toolsetListGateOnce = new Promise<void>((r) => (first = r));
+    await user.click(within(tools).getByRole("radio", { name: "Choose" }));
+    await waitFor(() => expect(lists()).toBe(1));
+    await user.click(within(tools).getByRole("radio", { name: "Hermes's defaults" }));
+    let second = () => {};
+    server.toolsetListGateOnce = new Promise<void>((r) => (second = r));
+    await user.click(within(tools).getByRole("radio", { name: "Choose" }));
+    await waitFor(() => expect(lists()).toBe(2));
+    await act(async () => first());
+    expect(within(tools).getByRole("radio", { name: "Choose" })).toHaveProperty("checked", true);
+    expect(within(tools).queryAllByRole("checkbox")).toEqual([]);
+    expect(hintOf(create())).toBe("Wait for the list of skills or tools to be read.");
+    await act(async () => second());
+    await user.click(await within(tools).findByLabelText(/Terminal & Processes/));
+    expect(within(tools).getByLabelText(/Terminal & Processes/)).toHaveProperty("checked", false);
+    expect(within(tools).getByRole("radio", { name: "Choose" })).toHaveProperty("checked", true);
+  });
+
+  it("reads the lists and the rewrite's model again from a profile switched to, keeping the owner's ticks", async () => {
+    const { server, user, switchProfile } = await open({
+      seed: (s) => {
+        s.otherProfiles = { work: [] };
+        s.skills.add("work", { dir: "/home/liam/.hermes/profiles/work/skills/arxiv", source: "bundled" }, "---\nname: arxiv\ndescription: The arxiv skill\n---\nDo arxiv.\n");
+        s.toolsetsOn.work = new Set(["file"]);
+      },
+    });
+    await user.type(persona(), ROUGH);
+    await waitFor(() => expect(hintOf(generate())).toMatch(/the Text generation model of default\./));
+    const tools = within(dialog()).getByRole("group", { name: "Tools" });
+    await user.click(within(tools).getByRole("radio", { name: "Choose" }));
+    await user.click(await within(tools).findByLabelText(/Terminal & Processes/));
+    const read = (path: string, profile: string) => server.restRequests.filter((r) => r.method === "GET" && r.path === path && r.query.get("profile") === profile).length;
+    const auxReads = server.restRequests.filter((r) => r.path === "/api/model/auxiliary").length;
+    switchProfile("work");
+    await waitFor(() => expect(within(tools).getByText(/^Starts from what work has on\./)).toBeTruthy());
+    expect(read("/api/tools/toolsets", "work")).toBe(1);
+    await waitFor(() => expect(hintOf(generate())).toMatch(/the Text generation model of work\./));
+    expect(server.restRequests.filter((r) => r.path === "/api/model/auxiliary").length).toBe(auxReads + 1);
+    expect(within(tools).getByLabelText(/Terminal & Processes/)).toHaveProperty("checked", false);
+    expect(within(tools).getByLabelText(/Web Search/)).toHaveProperty("checked", true);
+    const skills = within(dialog()).getByRole("group", { name: "Skills" });
+    await user.click(within(skills).getByRole("radio", { name: "Choose" }));
+    await within(skills).findByLabelText(/arxiv/);
+    expect(read("/api/skills", "work")).toBe(1);
+    expect(within(skills).queryByLabelText(/recipes/)).toBeNull();
+  });
+
   it("says when Delete removed the profile but not this computer's data for it", async () => {
     const { server, user, done } = await open({ forgetFails: true, seed: (s) => (s.skills.toggleRefusal = LOCKED) });
     await named(user);
@@ -497,8 +614,8 @@ describe("Skills, Tools and MCP servers", () => {
     expect(done.mock.calls).toEqual([[{ notice: { tone: "muted", text: "Created chef with the skills and tools you chose.", open: "chef" }, select: "chef" }]]);
   });
 
-  it("still says what a create came to when the form closes while its choices are applied", async () => {
-    const { server, user, done, unmount } = await open();
+  it("still says what a create came to, through the app, when the whole view closes while its choices are applied", async () => {
+    const { server, user, done, notified, unmount } = await open();
     let go = () => {};
     server.toolsetGateBeforeWrite = new Promise<void>((r) => (go = r));
     await named(user);
@@ -511,12 +628,56 @@ describe("Skills, Tools and MCP servers", () => {
     await waitFor(() => expect(server.restRequests.some((r) => r.method === "PUT" && r.path === "/api/tools/toolsets/terminal")).toBe(true));
     unmount();
     go();
-    await waitFor(() => expect(done).toHaveBeenCalled());
-    expect(done.mock.calls[0][0]).toEqual({
-      notice: { tone: "bad", text: expect.stringMatching(/^Created chef, but these aren't as you chose: Tool Computer Use/), open: "chef" },
-      select: "chef",
-    });
+    await waitFor(() => expect(notified).toHaveBeenCalled());
+    expect(notified.mock.calls).toEqual([[{ tone: "bad", text: expect.stringMatching(/^Created chef, but these aren't as you chose: Tool Computer Use/), open: "chef" }]]);
+    expect(done).not.toHaveBeenCalled();
     expect(server.toolsetWrites).toEqual([{ profile: "chef", name: "terminal", enabled: false }]);
+  });
+
+  it("says how many of the chosen items it has applied so far", async () => {
+    const { server, user, done } = await open();
+    let go = () => {};
+    server.toolsetGateBeforeWrite = new Promise<void>((r) => (go = r));
+    await named(user);
+    const tools = within(dialog()).getByRole("group", { name: "Tools" });
+    await user.click(within(tools).getByRole("radio", { name: "Choose" }));
+    const terminal = await within(tools).findByLabelText(/Terminal & Processes/);
+    const boxes = within(tools).getAllByRole("checkbox");
+    await user.click(terminal);
+    await user.click(create());
+    // Every toolset before Terminal is already as chosen; Terminal's change waits.
+    await within(dialog()).findByText(`Created. Applying the skills and tools you chose, then reading them back: ${boxes.indexOf(terminal)} of ${boxes.length} done…`);
+    go();
+    await waitFor(() => expect(done).toHaveBeenCalled());
+  });
+
+  it("sends nothing more once Hermes stops answering mid-apply, says so for the rest, and Try again still works", async () => {
+    const { server, user, done } = await open();
+    await named(user);
+    const skills = within(dialog()).getByRole("group", { name: "Skills" });
+    await user.click(within(skills).getByRole("radio", { name: "Choose" }));
+    await user.click(await within(skills).findByLabelText(/git-helper/));
+    await user.click(within(skills).getByLabelText(/recipes/));
+    const tools = within(dialog()).getByRole("group", { name: "Tools" });
+    await user.click(within(tools).getByRole("radio", { name: "Choose" }));
+    await user.click(await within(tools).findByLabelText(/Terminal & Processes/));
+    let down = false;
+    server.restTap = (req) => {
+      if (req.path === "/api/skills/toggle") down = true;
+      if (down) throw new Error("Can't reach the Hermes dashboard: connection reset");
+    };
+    await user.click(create());
+    const outcome = await within(dialog()).findByRole("list", { name: "Not applied" });
+    const sent = server.restRequests.slice(server.restRequests.findIndex((r) => r.path === "/api/skills/toggle"));
+    expect(sent.map((r) => `${r.method} ${r.path}`)).toEqual(["PUT /api/skills/toggle", "GET /api/skills"]);
+    const recipes = within(outcome).getByText("Skill recipes").closest("li")!;
+    expect(recipes.textContent).toMatch(/Not tried, since Hermes didn't answer an earlier call \(Couldn't tell whether git-helper was turned off: .*\)\. Nothing was sent for it\./);
+    expect(within(outcome).getByText("Tool Terminal & Processes").closest("li")!.textContent).toMatch(/Not tried/);
+    expect(done).not.toHaveBeenCalled();
+    server.restTap = undefined;
+    await user.click(within(recipes).getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(within(outcome).queryByText("Skill recipes")).toBeNull());
+    expect(server.skills.disabled.chef?.has("recipes")).toBe(true);
   });
 
   it("writes nothing more after a lost create answer, and says skills and tools weren't checked", async () => {
@@ -568,6 +729,7 @@ describe("Elsewhere", () => {
           copyText: async () => {},
           rephrase: { ask: async () => "x", model: async () => ({ provider: "p", model: "m" }) },
           setup: { skills: hermes.skills, toolsets: hermes.toolsets },
+          notify: () => {},
         }}
         row={row}
         rows={[{ name: "default" }, { name: "work" }]}

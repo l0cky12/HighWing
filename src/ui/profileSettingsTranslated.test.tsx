@@ -43,6 +43,7 @@ it("drops an older list answer that arrives after a newer one", async () => {
     local: { pending: () => undefined, note: () => {}, clear: () => {}, renamed: async () => {}, deleted: async () => {} },
     showTab: () => {},
     copyText: async () => {},
+    notify: () => {},
   } satisfies ProfilesWiring;
   const user = userEvent.setup();
   render(
@@ -85,6 +86,7 @@ it("shows only catalogue words in the list, its menu, New, Edit and Delete", asy
     local: { pending: () => ({ from: "old", to: "work" }), note: () => {}, clear: () => {}, renamed: async () => {}, deleted: async () => {} },
     showTab: () => {},
     copyText: async () => {},
+    notify: () => {},
   };
   const user = userEvent.setup();
   render(

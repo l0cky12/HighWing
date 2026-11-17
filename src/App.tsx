@@ -3270,6 +3270,7 @@ export function Main({
           }
         : undefined,
     setup: { skills: hermes.skills, toolsets: hermes.toolsets },
+    notify: (n) => setToast({ text: n.command ? `${n.text} ${n.command}` : n.text, at: Date.now() }),
   };
   // Bot mode's row menu (ADR 0194): its dialogs are drawn outside the list panel, so a delete that leaves bot mode finishes.
   const panelBotMenu = usePanelBotMenu({

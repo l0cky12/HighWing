@@ -1,7 +1,7 @@
 // Generate with AI on the New profile form's Persona (ADR 0195). It rewrites only what the owner typed, on an explicit
 // click, through one stateless `llm.oneshot` as the profile in use on its Text generation model. The answer is a
 // suggestion the owner can edit, then Replace persona or Discard; nothing reaches the persona box or Hermes otherwise.
-// Hermes has no cancel: Stop, a newer ask and closing the dialog only drop the answer when it comes.
+// Hermes has no cancel: Stop, a newer ask, closing the dialog and a switch of profile only drop the answer when it comes.
 import { useEffect, useId, useRef, useState } from "react";
 import { Wand2 } from "lucide-react";
 import { ASK_DEADLINE_MS } from "../hermes/artifacts";
@@ -53,12 +53,13 @@ export function usePersonaRephrase({ wiring, connected, profile, text }: { wirin
       // eslint-disable-next-line react-hooks/exhaustive-deps -- a call counter, not a node: bumping it on close drops any answer still on its way
       latest.current++;
       out.current = undefined;
-      // Wiring goes with the connection: a rewrite dropped then is over, so it no longer holds Create back.
+      // Wiring goes with the connection, and the model with the profile in use: a rewrite dropped then is over, so it
+      // no longer holds Create back.
       setState((s) => (s.kind === "asking" ? { kind: "idle" } : s));
       setModel({ kind: "reading" });
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- read once per open form, and again only once it has wiring
-  }, [wired]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- read once per open form, and again once it has wiring or another profile is in use
+  }, [wired, profile]);
 
   const why = !connected
     ? w.notConnected

@@ -300,6 +300,7 @@ describe("New bot in the Bots view", () => {
           switchTo: async () => false,
           local: { pending: () => undefined, note: () => {}, clear: () => {}, renamed: async () => {}, deleted: async () => {} },
           copyText: async () => {},
+          notify: () => {},
         }}
       />
     );

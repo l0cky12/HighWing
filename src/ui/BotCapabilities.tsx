@@ -5,8 +5,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import {
   allApplied,
-  retrySkill,
-  retryToolset,
+  retryItem,
   skillOptions,
   toolsetOptions,
   type BotSetup,
@@ -23,7 +22,7 @@ import { UnsupportedServerError, type Caution, type Toolset } from "../hermes/to
 import { errorText } from "../hermes/values";
 import { useLocale, type Locale } from "../i18n/locale";
 import { Spinner } from "./bits";
-import type { Notice } from "./ProfileSettings";
+import type { FormResult, Notice } from "./ProfileSettings";
 import { SettingNote } from "./SettingRows";
 import { cautionText } from "./ToolsetSettings";
 
@@ -33,10 +32,13 @@ type Inventory<T> = { kind: "unread" } | { kind: "reading" } | { kind: "read"; o
 type Option = { name: string };
 
 /**
- * One area's choice. `read` lists the options; `start` is what Choose begins with; `locked` is the value an option keeps
- * whatever is picked, if any; `unsupported` tells a read the server can't answer from one that failed.
+ * One area's choice, from the lists of `profile` (the profile in use). `read` lists the options; `start` is what Choose
+ * begins with; `locked` is the value an option keeps whatever is picked, if any; `unsupported` tells a read the server
+ * can't answer from one that failed. When the profile in use changes, a chosen list is read again from it, keeping the
+ * owner's ticks for the names it still lists; any other list is read again on the next Choose.
  */
 function useArea<T extends Option>(
+  profile: string,
   read: (() => Promise<T[]>) | undefined,
   start: (options: T[]) => string[],
   locked: (option: T) => boolean | undefined,
@@ -44,30 +46,52 @@ function useArea<T extends Option>(
 ) {
   const [inventory, setInventory] = useState<Inventory<T>>(read ? { kind: "unread" } : { kind: "unsupported" });
   const [choice, setChoice] = useState<Choice<string>>({ kind: "defaults" });
-  // Each Choose's number: a read that ends after Hermes's defaults were picked again, or the form closed, chooses nothing.
+  // Each read's number: one that ends after a newer read, Hermes's defaults, another profile or the form closing does nothing.
   const wanted = useRef(0);
   useEffect(() => () => void wanted.current++, []);
 
-  const chosenFrom = (options: T[]) => (options.length ? setChoice({ kind: "chosen", on: new Set(start(options)) }) : setChoice({ kind: "defaults" }));
-  const choose = async () => {
-    if (!read || inventory.kind === "reading") return;
-    if (inventory.kind === "read") return chosenFrom(inventory.options);
+  /** Ticks for `options`: as `kept` had a name it listed, else as Choose starts. */
+  const chosenFrom = (options: T[], kept?: { names: ReadonlySet<string>; on: ReadonlySet<string> }) => {
+    if (!options.length) return setChoice({ kind: "defaults" });
+    const first = new Set(start(options));
+    setChoice({ kind: "chosen", on: new Set(options.map((o) => o.name).filter((n) => (kept?.names.has(n) ? kept.on.has(n) : first.has(n)))) });
+  };
+  const load = async (kept?: { names: ReadonlySet<string>; on: ReadonlySet<string> }) => {
+    if (!read) return;
     const n = ++wanted.current;
     setInventory({ kind: "reading" });
+    setChoice({ kind: "defaults" });
     try {
       const options = await read();
-      if (n !== wanted.current) return setInventory({ kind: "read", options });
+      if (n !== wanted.current) return;
       setInventory({ kind: "read", options });
-      chosenFrom(options);
+      chosenFrom(options, kept);
     } catch (e) {
       if (n === wanted.current) setInventory(unsupported(e) ? { kind: "unsupported", message: errorText(e) } : { kind: "failed", message: errorText(e) });
     }
+  };
+  const choose = () => {
+    if (!read || inventory.kind === "reading") return;
+    if (inventory.kind === "read") return chosenFrom(inventory.options);
+    void load();
   };
   const useDefaults = () => {
     wanted.current++;
     if (inventory.kind === "reading") setInventory({ kind: "unread" });
     setChoice({ kind: "defaults" });
   };
+  const readFor = useRef(profile);
+  useEffect(() => {
+    if (readFor.current === profile) return;
+    readFor.current = profile;
+    if (choice.kind === "chosen" && inventory.kind === "read") void load({ names: new Set(inventory.options.map((o) => o.name)), on: choice.on });
+    else if (inventory.kind === "reading") void load();
+    else if (read) {
+      wanted.current++;
+      setInventory({ kind: "unread" });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- read again only when the profile in use changes
+  }, [profile]);
   const set = (names: readonly string[], on: boolean) =>
     setChoice((c) => {
       if (c.kind !== "chosen" || inventory.kind !== "read") return c;
@@ -88,12 +112,14 @@ export type BotSetupState = ReturnType<typeof useBotSetup>;
 /** The New form's Skills and Tools choices, read from `profile` (the profile in use) through `apis` when the owner chooses. */
 export function useBotSetup(apis: SetupApis | undefined, profile: string) {
   const skills = useArea<SkillOption>(
+    profile,
     apis && (async () => skillOptions(await apis.skills.rows(profile))),
     (options) => options.map((o) => o.name),
     (o) => (o.locked ? true : undefined),
     (e) => e instanceof SkillsError && e.kind === "unsupported",
   );
   const toolsets = useArea<ToolsetOption>(
+    profile,
     apis && (async () => toolsetOptions(await apis.toolsets.list(profile))),
     (options) => options.filter((o) => o.on).map((o) => o.name),
     (o) => (o.changeable ? undefined : o.on),
@@ -178,7 +204,7 @@ function AreaPicker<T extends Option>({
           <input type="radio" name={group} checked={!choosing} onChange={area.useDefaults} /> {s.defaults}
         </label>
         <label>
-          <input type="radio" name={group} checked={choosing} disabled={cannot} aria-describedby={hintId} onChange={() => void area.choose()} /> {s.choose}
+          <input type="radio" name={group} checked={choosing} disabled={cannot} aria-describedby={hintId} onChange={area.choose} /> {s.choose}
         </label>
       </div>
       <div id={hintId} className="set-hint">
@@ -192,7 +218,7 @@ function AreaPicker<T extends Option>({
       {inventory.kind === "failed" && (
         <div className="small sign-in-error" role="alert">
           {s.readFailed(inventory.message)}{" "}
-          <button type="button" className="link-btn" onClick={() => void area.choose()}>
+          <button type="button" className="link-btn" onClick={area.choose}>
             {s.tryAgain}
           </button>
         </div>
@@ -308,6 +334,8 @@ function missText(l: Locale, m: Miss): string {
       return s.changedElsewhere;
     case "said":
       return m.text;
+    case "unsent":
+      return s.unsent(m.text);
   }
 }
 
@@ -343,14 +371,30 @@ export function outcomeNotice(l: Locale, name: string, items: readonly SetupItem
   return { tone: "bad", text: [s.keptPartly(name, missed.join(", ")), ...notes].join(" "), open: name };
 }
 
-/** How deleting the profile the form made ended: gone, gone with this computer's data for it left, or not deleted. */
-export type Removal = { kind: "deleted" } | { kind: "localKept" } | { kind: "failed"; why: string };
+/**
+ * How deleting the profile the form made ended: gone, gone with Hermes still settling it (`retryCommand`, Hermes's
+ * `settlement_pending`), gone with this computer's data for it left, or not deleted.
+ */
+export type Removal = { kind: "deleted" } | { kind: "settling"; retryCommand?: string } | { kind: "localKept" } | { kind: "failed"; why: string };
+
+/** The notice a delete that went through closes with; a settling one carries Hermes's command, as Delete profile's does. */
+function removedNotice(l: Locale, name: string, r: Exclude<Removal, { kind: "failed" }>): Notice {
+  switch (r.kind) {
+    case "deleted":
+      return { tone: "warn", text: l.profiles.form.setup.deleted(name) };
+    case "settling":
+      return r.retryCommand ? { tone: "warn", text: l.profiles.del.settling(name), command: r.retryCommand } : { tone: "warn", text: l.profiles.del.settlingNoCommand(name) };
+    case "localKept":
+      return { tone: "bad", text: l.profiles.form.setup.deletedLocalKept(name) };
+  }
+}
 
 /**
  * What applying the owner's choices came to, for a profile Hermes made. Shown only when something isn't as chosen:
  * each such item with why, Try again or Apply anyway, what else Hermes did for those applied, and the profile's fate,
  * Delete it or Keep it as is. Once every item is applied, Done closes with the notice a full success gets.
- * `modelError`: Hermes didn't set the model chosen. `remove` deletes the profile.
+ * `modelError`: Hermes didn't set the model chosen; `setModel` offers Set model for it, which goes on to Edit.
+ * `remove` deletes the profile. `onFinish` ends the form, even when it has closed meanwhile.
  */
 export function SetupOutcome({
   name,
@@ -358,6 +402,7 @@ export function SetupOutcome({
   modelError,
   apis,
   remove,
+  setModel,
   onFinish,
 }: {
   name: string;
@@ -365,7 +410,8 @@ export function SetupOutcome({
   modelError?: string;
   apis: SetupApis;
   remove: () => Promise<Removal>;
-  onFinish: (notice: Notice, select?: string) => void;
+  setModel: boolean;
+  onFinish: (result: FormResult) => void;
 }) {
   const l = useLocale();
   const s = l.profiles.form.setup;
@@ -386,8 +432,7 @@ export function SetupOutcome({
 
   const again = async (item: SetupItem, accept: boolean) => {
     setWorking(key(item));
-    const next =
-      item.area === "skill" ? await retrySkill(apis, name, item) : await retryToolset(apis, name, item, accept && item.state.kind === "confirm" ? item.state.cautions : []);
+    const next = await retryItem(apis, name, item, accept && item.state.kind === "confirm" ? item.state.cautions : []);
     if (!live.current) return;
     setItems((all) => all.map((i) => (key(i) === key(item) ? next : i)));
     setWorking(undefined);
@@ -396,13 +441,12 @@ export function SetupOutcome({
     setDeleting(true);
     setDeleteError(undefined);
     const r = await remove();
+    if (r.kind !== "failed") return onFinish({ notice: removedNotice(l, name, r) });
     if (!live.current) return;
-    if (r.kind === "deleted") return onFinish({ tone: "warn", text: s.deleted(name) });
-    if (r.kind === "localKept") return onFinish({ tone: "bad", text: s.deletedLocalKept(name) });
     setDeleteError(s.deleteFailed(r.why));
     setDeleting(false);
   };
-  const finish = () => onFinish(outcomeNotice(l, name, items, modelError), name);
+  const finish = (edit?: boolean) => onFinish({ notice: outcomeNotice(l, name, items, modelError), select: name, ...(edit && { edit: name }) });
 
   return (
     <>
@@ -453,7 +497,7 @@ export function SetupOutcome({
       )}
       <div className="confirm-actions">
         {done ? (
-          <button className="btn primary" autoFocus onClick={finish}>
+          <button className="btn primary" autoFocus onClick={() => finish()}>
             {s.done}
           </button>
         ) : (
@@ -461,10 +505,15 @@ export function SetupOutcome({
             <button className="btn danger" disabled={busy} onClick={() => void del()}>
               {deleting && <Spinner />} {deleting ? s.deleting : s.deleteIt(name)}
             </button>
-            <button className="btn primary" autoFocus disabled={busy} onClick={finish}>
+            <button className="btn primary" autoFocus disabled={busy} onClick={() => finish()}>
               {s.keep}
             </button>
           </>
+        )}
+        {modelError && setModel && (
+          <button className="btn" disabled={busy} onClick={() => finish(true)}>
+            {l.profiles.form.setModel}
+          </button>
         )}
       </div>
     </>

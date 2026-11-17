@@ -2,7 +2,7 @@
 // Each area keeps Hermes's defaults unless the owner picks Choose, which reads what there is to choose from then. MCP
 // servers can't be chosen: Hermes has no way to copy them to a new profile without their secrets, so a note says so.
 // The stages and their outcomes are botSetup.ts; this draws them.
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import {
   allApplied,
   retryItem,
@@ -349,8 +349,8 @@ function Cautions({ cautions, toolset }: { cautions: Caution[]; toolset: Toolset
   );
 }
 
-/** Why an item isn't as chosen, in the catalogue's words. */
-function missText(l: Locale, m: Miss): string {
+/** Why an item isn't as chosen, in the catalogue's words; Hermes's or a call's own words are data, not the catalogue's. */
+function missText(l: Locale, m: Miss): ReactNode {
   const s = l.profiles.form.setup;
   switch (m.kind) {
     case "missing":
@@ -362,9 +362,13 @@ function missText(l: Locale, m: Miss): string {
     case "changed":
       return s.changedElsewhere;
     case "said":
-      return m.text;
+      return <span translate="no">{m.text}</span>;
     case "unsent":
-      return s.unsent(m.text);
+      return (
+        <>
+          {s.unsent} <span translate="no">{m.text}</span>
+        </>
+      );
   }
 }
 
@@ -459,10 +463,12 @@ export function SetupOutcome({
   const done = allApplied(items) && !modelError;
   const busy = working !== undefined || deleting;
 
+  const finish = (edit?: boolean, now = items) => onFinish({ notice: outcomeNotice(l, name, now, modelError), select: name, ...(edit && { edit: name }) });
+  // Closed meanwhile, a Try again or a failed Delete still ends the form, with what the profile came to.
   const again = async (item: SetupItem, accept: boolean) => {
     setWorking(key(item));
     const next = await retryItem(apis, name, item, accept && item.state.kind === "confirm" ? item.state.cautions : []);
-    if (!live.current) return;
+    if (!live.current) return finish(false, items.map((i) => (key(i) === key(item) ? next : i)));
     setItems((all) => all.map((i) => (key(i) === key(item) ? next : i)));
     setWorking(undefined);
   };
@@ -471,11 +477,13 @@ export function SetupOutcome({
     setDeleteError(undefined);
     const r = await remove();
     if (r.kind !== "failed") return onFinish({ notice: removedNotice(l, name, r) });
-    if (!live.current) return;
+    if (!live.current) {
+      const kept = outcomeNotice(l, name, items, modelError);
+      return onFinish({ notice: { ...kept, tone: "bad", text: `${kept.text} ${s.deleteFailed(r.why)}` }, select: name });
+    }
     setDeleteError(s.deleteFailed(r.why));
     setDeleting(false);
   };
-  const finish = (edit?: boolean) => onFinish({ notice: outcomeNotice(l, name, items, modelError), select: name, ...(edit && { edit: name }) });
 
   return (
     <>
@@ -488,12 +496,7 @@ export function SetupOutcome({
             <li key={key(i)}>
               <span className="bot-setup-outcome-name">{itemName(l, i)}</span>{" "}
               <span className="muted small">{i.want ? s.wantOn : s.wantOff}</span>
-              {i.state.kind === "failed" && (
-                // Hermes's or the call's own words are data, not the catalogue's.
-                <div className="small" translate={i.state.miss.kind === "said" ? "no" : undefined}>
-                  {missText(l, i.state.miss)}
-                </div>
-              )}
+              {i.state.kind === "failed" && <div className="small">{missText(l, i.state.miss)}</div>}
               {i.state.kind === "confirm" && <Cautions cautions={i.state.cautions} toolset={i.state.toolset} />}
               <button className="btn" disabled={busy} onClick={() => void again(i, i.state.kind === "confirm")}>
                 {working === key(i) ? (

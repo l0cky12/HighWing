@@ -656,6 +656,57 @@ describe("Skills, Tools and MCP servers", () => {
     expect(server.toolsetWrites).toEqual([{ profile: "chef", name: "terminal", enabled: false }]);
   });
 
+  it("still says what a plain create or a failed one came to, through the app, when the view closes before Hermes answers", async () => {
+    const plain = await open();
+    await named(plain.user);
+    act(() => create().click());
+    plain.unmount();
+    await waitFor(() => expect(plain.notified).toHaveBeenCalled());
+    expect(plain.notified.mock.calls).toEqual([[{ tone: "muted", text: "Created chef.", open: "chef" }]]);
+    cleanup();
+    const refused = await open({ seed: (s) => (s.profileCreateError = "Disk full.") });
+    await named(refused.user);
+    act(() => create().click());
+    refused.unmount();
+    await waitFor(() => expect(refused.notified).toHaveBeenCalled());
+    expect(refused.notified.mock.calls).toEqual([[{ tone: "bad", text: expect.stringMatching(/^chef wasn't created\. .*Disk full\./) }]]);
+    expect(refused.done).not.toHaveBeenCalled();
+  });
+
+  it("still says what Try again and Delete came to, through the app, once the view has closed", async () => {
+    const outcome = async (seed: (s: FakeHermes) => void = () => {}) => {
+      const opened = await open({ seed: (s) => ((s.skills.toggleRefusal = LOCKED), seed(s)) });
+      await named(opened.user);
+      const skills = within(dialog()).getByRole("group", { name: "Skills" });
+      await opened.user.click(within(skills).getByRole("radio", { name: "Choose" }));
+      await opened.user.click(await within(skills).findByLabelText(/recipes/));
+      await opened.user.click(create());
+      await within(dialog()).findByRole("list", { name: "Not applied" });
+      return opened;
+    };
+    const retried = await outcome();
+    retried.server.skills.toggleRefusal = undefined;
+    act(() => within(dialog()).getByRole("button", { name: "Try again" }).click());
+    retried.unmount();
+    await waitFor(() => expect(retried.notified).toHaveBeenCalled());
+    expect(retried.notified.mock.calls).toEqual([[{ tone: "muted", text: "Created chef with the skills and tools you chose.", open: "chef" }]]);
+    cleanup();
+    const settling = await outcome((s) => (s.profileSettlementPending = "hermes profile finish-delete chef"));
+    act(() => within(dialog()).getByRole("button", { name: "Delete chef" }).click());
+    settling.unmount();
+    await waitFor(() => expect(settling.notified).toHaveBeenCalled());
+    expect(settling.notified.mock.calls).toEqual([[{ tone: "warn", text: en.profiles.del.settling("chef"), command: "hermes profile finish-delete chef" }]]);
+    cleanup();
+    const kept = await outcome((s) => s.profileRoutesMissing.add("remove"));
+    act(() => within(dialog()).getByRole("button", { name: "Delete chef" }).click());
+    kept.unmount();
+    await waitFor(() => expect(kept.notified).toHaveBeenCalled());
+    expect(kept.notified.mock.calls).toEqual([
+      [{ tone: "bad", text: expect.stringMatching(/^Created chef, but these aren't as you chose: Skill recipes\. It wasn't deleted: /), open: "chef" }],
+    ]);
+    expect(kept.done).not.toHaveBeenCalled();
+  });
+
   it("says how many of the chosen items it has applied so far", async () => {
     const { server, user, done } = await open();
     let go = () => {};
@@ -668,7 +719,9 @@ describe("Skills, Tools and MCP servers", () => {
     await user.click(terminal);
     await user.click(create());
     // Every toolset before Terminal is already as chosen; Terminal's change waits.
-    await within(dialog()).findByText(`Created. Applying the skills and tools you chose, then reading them back: ${boxes.indexOf(terminal)} of ${boxes.length} done…`);
+    const count = await within(dialog()).findByRole("status");
+    await waitFor(() => expect(count.textContent).toBe(`${boxes.indexOf(terminal)} of ${boxes.length} done…`));
+    expect(count.parentElement!.textContent).toBe(` Created. Applying the skills and tools you chose, then reading them back: ${count.textContent}`);
     go();
     await waitFor(() => expect(done).toHaveBeenCalled());
   });
@@ -693,7 +746,8 @@ describe("Skills, Tools and MCP servers", () => {
     const sent = server.restRequests.slice(server.restRequests.findIndex((r) => r.path === "/api/skills/toggle"));
     expect(sent.map((r) => `${r.method} ${r.path}`)).toEqual(["PUT /api/skills/toggle", "GET /api/skills"]);
     const recipes = within(outcome).getByText("Skill recipes").closest("li")!;
-    expect(recipes.textContent).toMatch(/Not tried, since Hermes didn't answer an earlier call \(Couldn't tell whether git-helper was turned off: .*\)\. Nothing was sent for it\./);
+    expect(recipes.textContent).toMatch(/Not tried\. Hermes didn't answer an earlier call, so nothing was sent for it: Couldn't tell whether git-helper was turned off: /);
+    expect(recipes.querySelector('[translate="no"]')?.textContent).toMatch(/^Couldn't tell whether git-helper was turned off: /);
     expect(within(outcome).getByText("Tool Terminal & Processes").closest("li")!.textContent).toMatch(/Not tried/);
     expect(done).not.toHaveBeenCalled();
     server.restTap = undefined;

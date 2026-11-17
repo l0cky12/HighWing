@@ -394,6 +394,7 @@ export const es: Catalogue = {
       failedDescription: "No se guardó la descripción",
       failedModel: "No se fijó el modelo",
       failedCreate: "No se creó el perfil",
+      notCreated: (name, why) => `No se creó ${name}. ${why}`,
       lost: (why) => `Hermes no lo confirmó, así que puede que haya ocurrido o no: ${why}`,
       gone: (name) => `Hermes ya no tiene ${name}. Puede que otro cliente lo haya renombrado o borrado.`,
       refused: (detail) => `Hermes lo rechazó: ${detail}`,
@@ -478,7 +479,8 @@ export const es: Catalogue = {
         unchangeable: "Highwing no puede enviar a Hermes el nombre de este conjunto, así que queda como lo deja Hermes.",
         mcpNote:
           "Highwing no puede añadir servidores MCP al crear un perfil: Hermes tendría que copiarlos sin sus secretos, y aún no tiene forma de hacerlo. Después de crearlo, añádelos en Ajustes → Servidores MCP.",
-        applying: (done, total) => `Creado. Aplicando las habilidades y herramientas que elegiste, y volviéndolas a leer: ${done} de ${total} listas…`,
+        applying: "Creado. Aplicando las habilidades y herramientas que elegiste, y volviéndolas a leer:",
+        progress: (done, total) => `${done} de ${total} listas…`,
         createdWith: (name) => `Se creó ${name} con las habilidades y herramientas que elegiste.`,
         unanswered: (name) =>
           `Se perdió la respuesta de Hermes, pero ahora lista ${name}. Sus habilidades y herramientas no se comprobaron, y no se cambió nada más. Revísalas en Ajustes → Habilidades y Ajustes → Conjuntos de herramientas.`,
@@ -494,7 +496,7 @@ export const es: Catalogue = {
         readOn: "Hermes la lee activada.",
         readOff: "Hermes la lee desactivada.",
         changedElsewhere: "Cambió en otro sitio mientras esto se hacía, así que no se escribió nada.",
-        unsent: (why) => `No se intentó, porque Hermes no respondió a una llamada anterior (${why}). No se envió nada para esto.`,
+        unsent: "No se intentó. Hermes no respondió a una llamada anterior, así que no se envió nada para esto:",
         confirmFirst: "Hermes necesita que confirmes esto primero:",
         applyAnyway: "Aplicar de todos modos",
         retry: "Reintentar",

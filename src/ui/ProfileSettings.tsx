@@ -994,8 +994,8 @@ export function ProfileForm({
       const text = modelError ? f.modelNotSet(modelError) : made.answered ? w.created(made.name) : w.createdUnanswered(made.name);
       finish({ notice: { tone: modelError ? "warn" : "muted", text, open: made.name }, select: made.name });
     } catch (e) {
-      if (!live.current) return;
       const failure = profileFailure(e, "create");
+      if (!live.current) return finish({ notice: { tone: "bad", text: f.notCreated(trimmed, failureText(l, failure, trimmed)) } });
       setStates({ create: { kind: "failed", text: failure.kind === "refused" ? failure.detail : failureText(l, failure, trimmed) } });
       setSaving(false);
     }
@@ -1424,8 +1424,9 @@ export function ProfileForm({
             {!row && <SettingNote>{f.keysNote}</SettingNote>}
             {stateNote("create")}
             {applying && (
-              <div className="small muted" role="status">
-                <Spinner /> {f.setup.applying(applying.done, applying.total)}
+              // Only the count is announced as it changes; the sentence around it doesn't repeat.
+              <div className="small muted">
+                <Spinner /> {f.setup.applying} <span role="status">{f.setup.progress(applying.done, applying.total)}</span>
               </div>
             )}
             {!row && onClone && (

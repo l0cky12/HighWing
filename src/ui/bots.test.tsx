@@ -244,6 +244,55 @@ describe("New bot in the Bots view", () => {
     expect(within(bots()).getByRole("status").textContent).toBe("Created ada with the skills and tools you chose. Open its row to start its Bot Chat.");
   });
 
+  it("still says a delete is settling once the view closes, with Copy on the command", async () => {
+    let go = () => {};
+    const { server, user } = await launch((s) => {
+      s.skills.add("default", { dir: "/home/liam/.hermes/skills/recipes", source: "bundled" }, "---\nname: recipes\ndescription: Recipes\n---\nCook.\n");
+      s.skills.toggleRefusal = { status: 400, detail: "Skill changes are locked on this server." };
+      s.profileSettlementPending = "hermes profile finish-delete ada";
+    });
+    const copied: string[] = [];
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (t: string) => void copied.push(t) } });
+    await openBots(user);
+    await user.click(screen.getByRole("button", { name: "New bot" }));
+    await user.type(within(form()).getByLabelText("Name"), "ada");
+    const skills = within(form()).getByRole("group", { name: "Skills" });
+    await user.click(within(skills).getByRole("radio", { name: "Choose" }));
+    await user.click(await within(skills).findByLabelText(/recipes/));
+    await user.click(within(form()).getByRole("button", { name: /Create bot/ }));
+    server.profileGatewayStop = new Promise<void>((r) => (go = r));
+    await user.click(await within(form()).findByRole("button", { name: "Delete ada" }));
+    await waitFor(() => expect(server.restRequests.some((r) => r.method === "DELETE" && r.path === "/api/profiles/ada")).toBe(true));
+    fireEvent.click(within(bots()).getByRole("button", { name: "Close bots" }));
+    expect(screen.queryByRole("dialog", { name: /Bots/ })).toBeNull();
+    await act(async () => go());
+    const toast = await waitFor(() => document.querySelector<HTMLElement>(".toast")!);
+    expect(toast.textContent).toMatch(/^Deleted ada\. Hermes hasn't finished cleaning up after it; run this on the server: hermes profile finish-delete ada/);
+    await user.click(within(toast).getByRole("button", { name: "Copy command" }));
+    expect(copied).toEqual(["hermes profile finish-delete ada"]);
+  });
+
+  it("keeps a notice of what didn't apply up longer once the view closes", { timeout: 20_000 }, async () => {
+    let go = () => {};
+    const { server, user } = await launch((s) => (s.toolsetGateBeforeWrite = new Promise<void>((r) => (go = r))));
+    await openBots(user);
+    await user.click(screen.getByRole("button", { name: "New bot" }));
+    await user.type(within(form()).getByLabelText("Name"), "ada");
+    const tools = within(form()).getByRole("group", { name: "Tools" });
+    await user.click(within(tools).getByRole("radio", { name: "Choose" }));
+    await user.click(await within(tools).findByLabelText(/Computer Use/));
+    await user.click(within(tools).getByLabelText(/Terminal & Processes/));
+    await user.click(within(form()).getByRole("button", { name: /Create bot/ }));
+    await waitFor(() => expect(server.restRequests.some((r) => r.method === "PUT" && r.path === "/api/tools/toolsets/terminal")).toBe(true));
+    fireEvent.click(within(bots()).getByRole("button", { name: "Close bots" }));
+    await act(async () => go());
+    const toast = await waitFor(() => document.querySelector<HTMLElement>(".toast")!);
+    expect(toast.textContent).toMatch(/^Created ada, but these aren't as you chose: Tool Computer Use/);
+    // A plain notice is gone after 5 seconds.
+    await act(() => new Promise((r) => setTimeout(r, 5_500)));
+    expect(document.querySelector(".toast")?.textContent).toBe(toast.textContent);
+  });
+
   it("clears a search that would hide the new bot, so its row is shown and focused", async () => {
     const { user } = await launch();
     await openBots(user);

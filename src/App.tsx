@@ -180,8 +180,11 @@ const ACTION_TOAST_MS = 15_000;
  */
 type LinkReveal = { itemId?: string; approval: boolean } | { hit: Hit };
 const hitOf = (reveal: LinkReveal | undefined): Hit | undefined => (reveal && "hit" in reveal ? reveal.hit : undefined);
-/** A short notice above the composer; `undo` puts back what it reports. `at` restarts the timer for a repeat. */
-type Toast = { text: string; undo?: () => void; action?: { label: string; run: () => void }; at: number };
+/**
+ * A short notice above the composer; `undo` puts back what it reports. `lasting`: it stays as long as one with an
+ * action, as a notice of something gone wrong does. `at` restarts the timer for a repeat.
+ */
+type Toast = { text: string; undo?: () => void; action?: { label: string; run: () => void }; lasting?: boolean; at: number };
 
 const withoutProfile = ({ profile: _profile, ...pick }: StickyModelPick): ModelPick => pick;
 
@@ -2603,7 +2606,7 @@ export function Main({
   useEffect(() => {
     if (!toast) return;
     // A toast that offers somewhere to go stays longer than one that only says something.
-    const timer = setTimeout(() => setToast(null), toast.action ? ACTION_TOAST_MS : TOAST_MS);
+    const timer = setTimeout(() => setToast(null), toast.action || toast.lasting ? ACTION_TOAST_MS : TOAST_MS);
     return () => clearTimeout(timer);
   }, [toast]);
 
@@ -3209,6 +3212,7 @@ export function Main({
   });
 
   // Settings → Profiles (ADR 0156), and the Bots view's New bot, which is its New profile form (ADR 0164).
+  const copyText = (text: string) => (navigator.clipboard?.writeText ? navigator.clipboard.writeText(text) : Promise.reject(new Error("No clipboard")));
   const profilesWiring: Omit<ProfilesWiring, "showTab"> = {
     api: hermes.manageProfiles,
     clone: hermes.profileClone,
@@ -3260,7 +3264,7 @@ export function Main({
         }
       },
     },
-    copyText: (text) => (navigator.clipboard?.writeText ? navigator.clipboard.writeText(text) : Promise.reject(new Error("No clipboard"))),
+    copyText,
     // New's Generate with AI (ADR 0195): as the profile in use, on its Text generation model, only while connected.
     rephrase:
       status === "connected"
@@ -3270,7 +3274,13 @@ export function Main({
           }
         : undefined,
     setup: { skills: hermes.skills, toolsets: hermes.toolsets },
-    notify: (n) => setToast({ text: n.command ? `${n.text} ${n.command}` : n.text, at: Date.now() }),
+    // A command to run (a settling delete's) gets the toast's Copy; a notice of something gone wrong stays longer.
+    notify: (n) => {
+      const text = n.command ? `${n.text} ${n.command}` : n.text;
+      const command = n.command;
+      const copy = command && { label: words.profiles.del.copy, run: () => void copyText(command).catch(() => setToast({ text, lasting: true, at: Date.now() })) };
+      setToast({ text, ...(copy && { action: copy }), lasting: n.tone === "bad", at: Date.now() });
+    },
   };
   // Bot mode's row menu (ADR 0194): its dialogs are drawn outside the list panel, so a delete that leaves bot mode finishes.
   const panelBotMenu = usePanelBotMenu({

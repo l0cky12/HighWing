@@ -52,7 +52,7 @@ import { type ChatLink, type ConnectionRefs, checkConnection, connectionKey, con
 import { desktopLinks, type LinkInbox } from "./hermes/tauriLinks";
 import { ChatLinkNotice, type LinkNoticeView } from "./ui/ChatLinkNotice";
 import { Inbox } from "./ui/Inbox";
-import { BotList, Bots, BOTS_REFRESH_MS, type BotEditWiring } from "./ui/Bots";
+import { BotList, Bots, BOTS_REFRESH_MS, usePanelBotMenu, type BotEditWiring } from "./ui/Bots";
 import { Office } from "./ui/Office";
 import { EMPTY_OFFICE_MEMORY } from "./ui/OfficeBuilding";
 import { officeRooms, type Desk, type Room } from "./hermes/office";
@@ -3261,6 +3261,14 @@ export function Main({
     },
     copyText: (text) => (navigator.clipboard?.writeText ? navigator.clipboard.writeText(text) : Promise.reject(new Error("No clipboard"))),
   };
+  // Bot mode's row menu (ADR 0194): its dialogs are drawn outside the list panel, so a delete that leaves bot mode finishes.
+  const panelBotMenu = usePanelBotMenu({
+    profiles: profilesWiring,
+    botEdit,
+    load: loadBots,
+    onNote: (text) => setToast({ text, at: Date.now() }),
+    onPersona: (name) => openProfileSettings(name, "persona"),
+  });
 
   return (
     <LinksProvider preview={openPreview} path={openPath} web={webPages} onToast={(text) => setToast({ text, at: Date.now() })}>
@@ -3399,6 +3407,8 @@ export function Main({
                 leaving={leavingNote(profile, chats, words.profiles.leaving)}
                 onOpen={(b) => openBot(b, "open")}
                 onNewChat={(b) => openBot(b, "new")}
+                onMenu={panelBotMenu.onMenu}
+                moreButton={false}
               />
             ) : (
               <div className="empty-hint">{words.bots.reading}</div>
@@ -3502,6 +3512,7 @@ export function Main({
         />
         </div>
       )}
+      {panelBotMenu.element}
       {botsOpen && (
         <Bots
           server={where ?? "the server"}

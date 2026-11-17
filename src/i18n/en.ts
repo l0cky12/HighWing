@@ -282,6 +282,7 @@ export const en = {
       settings: "Open in Settings → Profiles",
       delete: "Delete bot…",
     },
+    panelMenu: { chat: "Chat", settings: "Settings", delete: "Delete" },
     editTitle: (name: string) => `Edit bot: ${name}`,
     openFailed: (name: string, why: string) => `Couldn't open ${name}: ${why}`,
     notChanged: (name: string, why: string) => `${name} wasn't changed. ${why}`,

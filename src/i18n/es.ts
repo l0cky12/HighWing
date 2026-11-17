@@ -268,6 +268,7 @@ export const es: Catalogue = {
       settings: "Abrir en Ajustes → Perfiles",
       delete: "Borrar bot…",
     },
+    panelMenu: { chat: "Chat", settings: "Ajustes", delete: "Borrar" },
     editTitle: (name) => `Editar bot: ${name}`,
     openFailed: (name, why) => `No se pudo abrir ${name}: ${why}`,
     notChanged: (name, why) => `${name} no cambió. ${why}`,

@@ -4,9 +4,10 @@
 // a Bot Chat is open (bot mode). New bot makes a profile through Settings → Profiles' New profile form, and the new
 // bot's row is shown once the roster is read again (ADR 0164). In the Bots view each row has a menu (ADR 0189): Edit
 // bot, Clone, Pin, Hide and Delete, through Settings → Profiles' own dialogs and `Hermes.editBot`, which never writes
-// over a change made elsewhere. Every word comes from the catalogue (ADR 0100).
+// over a change made elsewhere. In the chat list panel a right-click on a row opens Chat, Settings and Delete (ADR
+// 0194), the same row's open, Edit bot and Delete bot. Every word comes from the catalogue (ADR 0100).
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
-import { ChevronDown, ChevronRight, Copy, EyeOff, Eye, Loader, MoreHorizontal, Pencil, Pin, PinOff, Plus, RefreshCw, Search, Settings2, ShieldAlert, SquarePen, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, EyeOff, Eye, Loader, MessageSquare, MoreHorizontal, Pencil, Pin, PinOff, Plus, RefreshCw, Search, Settings2, ShieldAlert, SquarePen, Trash2, X } from "lucide-react";
 import { BotModeUnsupportedError, type Bot, type BotActivity, type BotLook } from "../hermes/bots";
 import type { EditResult, Edits } from "../hermes/fieldMerge";
 import { PROFILE_ROUTES, profileFailure, type ProfileAction, type ProfileRow } from "../hermes/profiles";
@@ -40,6 +41,14 @@ type BotDialog =
   | { kind: "edit"; bot: Bot; row: ProfileRow; rows: ProfileRow[]; look: BotLook }
   | { kind: "delete"; row: ProfileRow }
   | { kind: "clone"; source: string };
+
+/** Opens a bot's Edit bot or Delete bot on its profile as Hermes lists it now; undefined once Hermes no longer has it. */
+async function dialogOn(profiles: Omit<ProfilesWiring, "showTab">, botEdit: BotEditWiring | undefined, bot: Bot, kind: "edit" | "delete"): Promise<BotDialog | undefined> {
+  const [rows, look] = await Promise.all([profiles.api.list(), kind === "edit" ? botEdit?.look(bot.profile) : undefined]);
+  const row = rows.find((r) => r.name === bot.profile);
+  if (!row || (kind === "edit" && !look)) return undefined;
+  return look ? { kind: "edit", bot, row, rows, look } : { kind: "delete", row };
+}
 
 /** What the view says above the list after something happened. `focus`: the profile whose row takes focus once listed. `command`: a command to copy. */
 type BotsNote = { text: string; warn: boolean; focus?: string; command?: string };
@@ -170,19 +179,23 @@ export function Bots({
     void read();
   };
 
+  /** Each open's number: only the last one picked opens its dialog or says why it couldn't. */
+  const opens = useRef(0);
   /** Opens `dialog` on the bot's profile as Hermes lists it now, which Edit and Delete show and check against. */
   const open = async (bot: Bot, kind: "edit" | "delete") => {
     if (!profiles) return;
+    const n = ++opens.current;
     setMade(undefined);
     try {
-      const [rows, look] = await Promise.all([profiles.api.list(), kind === "edit" ? botEdit?.look(bot.profile) : undefined]);
-      const row = rows.find((r) => r.name === bot.profile);
-      if (!row || (kind === "edit" && !look)) {
+      const opened = await dialogOn(profiles, botEdit, bot, kind);
+      if (n !== opens.current) return;
+      if (!opened) {
         setMade({ text: l.profiles.form.gone(bot.profile), warn: true });
         return void read();
       }
-      setDialog(look ? { kind: "edit", bot, row, rows, look } : { kind: "delete", row });
+      setDialog(opened);
     } catch (e) {
+      if (n !== opens.current) return;
       setMade({ text: w.openFailed(bot.name, failureText(l, profileFailure(e, "botLook"), bot.profile)), warn: true });
     }
   };
@@ -409,6 +422,7 @@ export function Bots({
       )}
       {dialog?.kind === "edit" && profiles && botEdit && (
         <ProfileForm
+          key={dialog.row.name}
           wiring={profiles}
           row={dialog.row}
           rows={dialog.rows}
@@ -424,6 +438,7 @@ export function Bots({
       )}
       {dialog?.kind === "delete" && profiles && (
         <DeleteProfile
+          key={dialog.row.name}
           wiring={profiles}
           row={dialog.row}
           returnTo={menuFrom}
@@ -455,10 +470,157 @@ export function Bots({
 }
 
 /**
+ * The menu of a bot's row in the chat list panel's bot mode (ADR 0194), which `BotList` opens through `onMenu` on a
+ * right-click, Shift+F10 or the Menu key, as the panel's chat rows do. Chat opens the bot as its row does. Settings is the
+ * Bots view's Edit bot and Delete its Delete bot, on the profile as `GET /api/profiles` lists it then; only the last entry
+ * picked opens. `element` is drawn outside bot mode, so a delete that switches away from the open bot's profile, which
+ * leaves bot mode, runs to its end. `load` reads the roster again after either, and then a row whose focus went with it
+ * (renamed or deleted) hands focus to the bot saved, else the open bot's row, the first bot's, or the profile switcher. `onNote`: what an action did, or why it couldn't. `onPersona`: shows
+ * Settings → Persona on a profile.
+ */
+export function usePanelBotMenu({
+  profiles,
+  botEdit,
+  load,
+  onNote,
+  onPersona,
+}: {
+  profiles: Omit<ProfilesWiring, "showTab">;
+  botEdit: BotEditWiring;
+  load: () => Promise<unknown>;
+  onNote: (text: string) => void;
+  onPersona?: (profile: string) => void;
+}) {
+  const l = useLocale();
+  const w = l.bots;
+  const [menu, setMenu] = useState<{ bot: Bot; x: number; y: number; open: () => void }>();
+  const [dialog, setDialog] = useState<BotDialog>();
+  /** What had focus when the menu opened, where its dialog puts focus back. */
+  const menuFrom = useRef<HTMLElement | null>(null);
+  const { switchTo, question } = useSwitchTo(profiles);
+  const store = profiles.capabilities;
+  useSyncExternalStore(store?.subscribe ?? NO_SUBSCRIBE, store?.getSnapshot ?? NO_SNAPSHOT);
+  const lacking = (a: ProfileAction) => !!store?.lacksAction("profiles", a);
+  const { connected } = profiles;
+  const reread = () => load().catch(() => {});
+  /** Each open's number: only the last one picked opens its dialog or says why it couldn't. */
+  const opens = useRef(0);
+  /** Set once the roster is read after a dialog finished: the profile whose row takes focus, if focus has gone. */
+  const [settled, setSettled] = useState<{ profile?: string }>();
+
+  const open = async (bot: Bot, kind: "edit" | "delete") => {
+    const n = ++opens.current;
+    try {
+      const opened = await dialogOn(profiles, botEdit, bot, kind);
+      if (n !== opens.current) return;
+      if (opened) return setDialog(opened);
+      onNote(l.profiles.form.gone(bot.profile));
+      void reread();
+    } catch (e) {
+      if (n !== opens.current) return;
+      onNote(w.openFailed(bot.name, failureText(l, profileFailure(e, "botLook"), bot.profile)));
+    }
+  };
+
+  /** `profile`: the bot whose row takes the focus once listed, when what had it is gone. */
+  const closeDialog = (note?: string, profile?: string) => {
+    setDialog(undefined);
+    if (note) onNote(note);
+    void reread().then(() => setSettled({ profile }));
+  };
+
+  useEffect(() => {
+    if (!settled) return;
+    setSettled(undefined);
+    const now = document.activeElement;
+    if (now && now !== document.body) return;
+    const rows = ".sb-bots .bots-row";
+    const at = (sel: string) => document.querySelector<HTMLElement>(sel);
+    (
+      (settled.profile && at(`${rows}[data-profile="${CSS.escape(settled.profile)}"] .bots-open`)) ||
+      at(`${rows}.is-current .bots-open`) ||
+      at(`${rows} .bots-open`) ||
+      at(".sidebar .profile-btn")
+    )?.focus();
+  }, [settled]);
+
+  const onMenu = (bot: Bot, x: number, y: number, openBot: () => void) => {
+    menuFrom.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setMenu({ bot, x, y, open: openBot });
+  };
+
+  const element = (
+    <>
+      {menu && (
+        <Menu label={w.moreFor(menu.bot.name)} x={menu.x} y={menu.y} onClose={() => setMenu(undefined)}>
+          <MenuEntry
+            icon={<MessageSquare size={15} />}
+            label={w.panelMenu.chat}
+            onPick={() => {
+              setMenu(undefined);
+              menu.open();
+            }}
+          />
+          <MenuEntry
+            icon={<Settings2 size={15} />}
+            label={w.panelMenu.settings}
+            why={!connected ? l.profiles.notConnected : undefined}
+            onPick={() => {
+              setMenu(undefined);
+              void open(menu.bot, "edit");
+            }}
+          />
+          <div className="menu-sep" role="separator" />
+          <MenuEntry
+            icon={<Trash2 size={15} />}
+            label={w.panelMenu.delete}
+            danger
+            why={menu.bot.isDefault ? l.profiles.builtInKept : blocked(l, connected, lacking, "remove")}
+            onPick={() => {
+              setMenu(undefined);
+              void open(menu.bot, "delete");
+            }}
+          />
+        </Menu>
+      )}
+      {dialog?.kind === "edit" && (
+        <ProfileForm
+          key={dialog.row.name}
+          wiring={profiles}
+          row={dialog.row}
+          rows={dialog.rows}
+          lacking={lacking}
+          returnTo={menuFrom}
+          heading={w.editTitle(dialog.bot.name)}
+          bot={{ look: dialog.look, edit: botEdit.edit }}
+          onPersona={onPersona}
+          onDone={(result) => closeDialog(result.notice?.text, result.select)}
+          // Closed without finishing: what saved meanwhile shows in the rows.
+          onClose={() => closeDialog()}
+        />
+      )}
+      {dialog?.kind === "delete" && (
+        <DeleteProfile
+          key={dialog.row.name}
+          wiring={profiles}
+          row={dialog.row}
+          returnTo={menuFrom}
+          switchAway={() => switchTo("default", true)}
+          onDone={(n) => closeDialog(n.command ? `${n.text} ${n.command}` : n.text)}
+          onClose={() => setDialog(undefined)}
+        />
+      )}
+      {question}
+    </>
+  );
+  return { onMenu, element };
+}
+
+/**
  * The bots' rows, in the Bots view and in the chat list panel's bot mode: pinned first, hidden ones behind a
  * disclosure, Up and Down between them. A row in another profile than `profile` asks first while `leaving` says what
  * switching leaves behind. `current`: the profile of the bot whose Bot Chat is open. `query`: show only the bots whose name
- * holds it, in any case.
+ * holds it, in any case. `moreButton`: false leaves out each row's ⋯, so the menu opens only by a right-click or a key.
  */
 export function BotList({
   bots,
@@ -472,6 +634,7 @@ export function BotList({
   onOpen,
   onNewChat,
   onMenu,
+  moreButton = true,
 }: {
   bots?: Bot[];
   query?: string;
@@ -483,8 +646,9 @@ export function BotList({
   leaving?: string;
   onOpen: (bot: Bot) => void;
   onNewChat: (bot: Bot) => void;
-  /** Opens a bot's menu at a point of the window; without it the rows have no menu. */
-  onMenu?: (bot: Bot, x: number, y: number) => void;
+  /** Opens a bot's menu at a point of the window; without it the rows have no menu. `open`: opens the bot as its row does. */
+  onMenu?: (bot: Bot, x: number, y: number, open: () => void) => void;
+  moreButton?: boolean;
 }) {
   const l = useLocale();
   const w = l.bots;
@@ -517,7 +681,7 @@ export function BotList({
       if (!li || !bot) return;
       e.preventDefault();
       const r = li.getBoundingClientRect();
-      return onMenu(bot, r.left + 24, r.bottom);
+      return onMenu(bot, r.left + 24, r.bottom, () => go(bot, "open"));
     }
     if (composing(e) || (e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
     const rows = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>(".bots-open"));
@@ -542,7 +706,8 @@ export function BotList({
       current={b.profile === current}
       onOpen={() => go(b, "open")}
       onNewChat={() => go(b, "new")}
-      onMenu={onMenu && ((x, y) => onMenu(b, x, y))}
+      onMenu={onMenu && ((x, y) => onMenu(b, x, y, () => go(b, "open")))}
+      moreButton={moreButton}
     />
   );
 
@@ -597,6 +762,7 @@ function Row({
   onOpen,
   onNewChat,
   onMenu,
+  moreButton,
 }: {
   bot: Bot;
   picture?: string;
@@ -606,6 +772,7 @@ function Row({
   onOpen: () => void;
   onNewChat: () => void;
   onMenu?: (x: number, y: number) => void;
+  moreButton: boolean;
 }) {
   const l = useLocale();
   const w = l.bots;
@@ -670,7 +837,7 @@ function Row({
       <button className="icon-btn bots-new" title={w.newChat(b.name)} aria-label={w.newChat(b.name)} onClick={onNewChat}>
         <SquarePen size={14} />
       </button>
-      {onMenu && (
+      {onMenu && moreButton && (
         <button
           ref={more}
           className="icon-btn bots-more"

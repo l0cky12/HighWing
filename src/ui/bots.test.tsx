@@ -3,7 +3,8 @@
 // shows, that a row opens the bot's Bot Chat in its profile and keeps it out of the chat list, that the pen starts an
 // ordinary chat there, that /new in a Bot Chat compacts it, that the chat list panel shows the bots while a Bot Chat is
 // open (bot mode), that a Hermes without Bot Mode shows no Bots button, and each row's menu (ADR 0189): Edit bot,
-// Clone, Pin, Hide, Delete and Open in Settings → Profiles.
+// Clone, Pin, Hide, Delete and Open in Settings → Profiles, and the menu of a bot in the chat list panel (ADR 0194): Chat,
+// Settings and Delete.
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -79,6 +80,24 @@ async function pickProfile(user: ReturnType<typeof userEvent.setup>, profile: st
 async function openBots(user: ReturnType<typeof userEvent.setup>) {
   await user.click(botsButton()!);
   await waitFor(() => expect(botRows().length).toBe(2));
+}
+
+/**
+ * Holds each `GET /api/profiles` the dialogs read as they open, until the test answers it: `answer(i)` sends Hermes's
+ * answer to the i-th held read, `refuse(i)` fails it. The roster is read another way, so it isn't held.
+ */
+function holdProfileReads(server: FakeHermes) {
+  const route = "GET /api/profiles";
+  const real = server.rest[route];
+  const held: { go: () => void; fail: () => void }[] = [];
+  server.rest[route] = (req) =>
+    new Promise((resolve, reject) => held.push({ go: () => resolve(real(req)), fail: () => reject(new Error("The connection was reset.")) }));
+  return {
+    held,
+    answer: (i: number) => act(async () => held[i].go()),
+    refuse: (i: number) => act(async () => held[i].fail()),
+    release: () => void (server.rest[route] = real),
+  };
 }
 
 describe("The Bots view", () => {
@@ -351,14 +370,6 @@ describe("A bot's menu in the Bots view", { timeout: 30_000 }, () => {
     }
   });
 
-  it("has no menu in the chat list panel's bots", async () => {
-    const { user } = await launch();
-    await openBots(user);
-    await user.click(botRows()[1]);
-    await waitFor(() => expect(document.querySelector(".sb-bots .bots-row")).toBeTruthy());
-    expect(document.querySelector(".sb-bots .bots-more")).toBeNull();
-  });
-
   it("pins and unpins a bot in Hermes, moving its row, and keeps what Hermes's desktop wrote beside it", async () => {
     const { server, user } = await launch(withDesktopKeys);
     await openBots(user);
@@ -585,6 +596,22 @@ describe("A bot's menu in the Bots view", { timeout: 30_000 }, () => {
     await waitFor(() => expect(server.otherProfiles.scribe).toBeUndefined());
     expect(hermes.profile).toBe("default");
     await waitFor(() => expect(names()).toEqual(["Hermes"]));
+  });
+
+  it("opens only the bot picked last when Hermes answers the first pick later", async () => {
+    const { server, user } = await launch();
+    await openBots(user);
+    const reads = holdProfileReads(server);
+    await pickFrom(user, "Scribe", "Edit bot…");
+    await pickFrom(user, "Hermes", "Edit bot…");
+    await waitFor(() => expect(reads.held).toHaveLength(2));
+    reads.release();
+    await reads.answer(1);
+    const dialog = await screen.findByRole("dialog", { name: "Edit bot: Hermes" });
+    await reads.answer(0);
+    expect(screen.getAllByRole("dialog", { name: /Edit bot/ })).toEqual([dialog]);
+    expect(dialog.isConnected).toBe(true);
+    expect(screen.queryByRole("dialog", { name: "Edit bot: Scribe" })).toBeNull();
   });
 
   it("Open in Settings → Profiles opens Settings on that bot's profile", async () => {
@@ -943,5 +970,270 @@ describe("Bot mode in the chat list panel", () => {
     render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: `liam@hermes-${launches}`, url: "", username: "liam" }} onSignOut={async () => {}} />);
     await waitFor(() => expect(listTitles()).toEqual(["Changelog wording"]));
     expect(panelBots()).toEqual([]);
+  });
+});
+
+describe("A bot's menu in the chat list panel", { timeout: 30_000 }, () => {
+  const panel = () => document.querySelector<HTMLElement>(".sidebar")!;
+  const panelBots = () => Array.from(panel().querySelectorAll<HTMLButtonElement>(".bots-open"));
+  const names = () => panelBots().map((r) => r.querySelector(".bots-name")?.textContent);
+  const current = () => panelBots().map((r) => r.getAttribute("aria-current"));
+  const panelRow = (name: string) => panelBots().find((r) => r.querySelector(".bots-name")?.textContent === name)!;
+  /** What was written to the server's profiles: opening a Bot Chat writes its own read mark, which isn't the menu's. */
+  const writes = (server: FakeHermes) => server.restRequests.filter((r) => r.method !== "GET" && r.path.startsWith("/api/profiles")).map((r) => `${r.method} ${r.path}`);
+  const entries = (menu: HTMLElement) => within(menu).getAllByRole("menuitem");
+  /** Scratch: a disposable bot with no Bot Chat, in a profile of its own. */
+  const withScratch = (s: FakeHermes) => {
+    s.otherProfiles.scratch = [];
+    s.profileMeta.scratch = { description: "Disposable test bot", ui_meta: { "hermes-bots": { title: "Scratch" } } };
+  };
+
+  /** Bot mode, with Scribe's Bot Chat open in `scribe`. */
+  async function openScribe(user: ReturnType<typeof userEvent.setup>, count = 3) {
+    await user.click(botsButton()!);
+    await waitFor(() => expect(botRows().length).toBe(count));
+    await user.click(botRows().find((r) => r.textContent?.includes("Scribe"))!);
+    await waitFor(() => expect(screen.getByText("Draft the release notes for 0.9")).toBeTruthy());
+    await waitFor(() => expect(panelBots().length).toBe(count));
+  }
+
+  async function rightClick(user: ReturnType<typeof userEvent.setup>, name: string) {
+    await user.pointer({ keys: "[MouseRight]", target: panelRow(name) });
+    return screen.getByRole("menu", { name: `More for ${name}` });
+  }
+
+  it("opens on a right-click on any row, selected or not, with Chat, Settings and Delete, and switches nothing", async () => {
+    const { server, hermes, user } = await launch(withScratch);
+    await openScribe(user);
+    expect(names()).toEqual(["Hermes", "Scribe", "Scratch"]);
+    const before = server.requests.length;
+    for (const name of ["Hermes", "Scribe", "Scratch"]) {
+      const menu = await rightClick(user, name);
+      expect(entries(menu).map((i) => i.textContent)).toEqual(["Chat", "Settings", "Delete"]);
+      expect(entries(menu)[2].classList.contains("danger")).toBe(true);
+      // Nothing is opened or switched until an entry is picked.
+      expect(hermes.profile).toBe("scribe");
+      expect(current()).toEqual([null, "true", null]);
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("menu")).toBeNull();
+    }
+    expect(server.requests.slice(before).filter((r) => r.method === "session.resume" || r.method === "session.create")).toEqual([]);
+    // As the chat rows in the panel, the bots open their menu only by a right-click or a key, with no ⋯ button.
+    expect(panel().querySelector(".bots-more")).toBeNull();
+  });
+
+  it("opens from Shift+F10 and the Menu key on a row, moves with the arrows, and puts focus back on Escape", async () => {
+    const { user } = await launch(withScratch);
+    await openScribe(user);
+    panelRow("Scratch").focus();
+    await user.keyboard("{Shift>}{F10}{/Shift}");
+    expect(screen.getByRole("menu", { name: "More for Scratch" })).toBeTruthy();
+    expect(document.activeElement?.textContent).toBe("Chat");
+    await user.keyboard("{ArrowDown}");
+    expect(document.activeElement?.textContent).toBe("Settings");
+    await user.keyboard("{ArrowDown}");
+    expect(document.activeElement?.textContent).toBe("Delete");
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(panelRow("Scratch"));
+    await user.keyboard("{ContextMenu}");
+    expect(screen.getByRole("menu", { name: "More for Scratch" })).toBeTruthy();
+    // A click outside closes it, and does nothing else.
+    await user.click(within(panel()).getByRole("heading", { name: "Bots" }));
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("Chat opens that bot's Bot Chat in its profile, as its row does", async () => {
+    const { hermes, user } = await launch((s) => {
+      withScratch(s);
+      s.liveSessions = [];
+    });
+    await openScribe(user);
+    await user.click(within(await rightClick(user, "Hermes")).getByRole("menuitem", { name: "Chat" }));
+    await waitFor(() => expect(hermes.profile).toBe("default"));
+    await waitFor(() => expect(current()).toEqual(["true", null, null]));
+    expect(within(document.querySelector<HTMLElement>(".chat-head")!).getByText("Bot")).toBeTruthy();
+  });
+
+  it("Settings opens Edit bot on that bot, saves through Hermes, and its row reads the change back", async () => {
+    const { server, hermes, user } = await launch(withScratch);
+    await openScribe(user);
+    await user.click(within(await rightClick(user, "Scratch")).getByRole("menuitem", { name: "Settings" }));
+    const dialog = await screen.findByRole("dialog", { name: "Edit bot: Scratch" });
+    expect(within(dialog).getByLabelText<HTMLInputElement>("Name in Bot Mode").value).toBe("Scratch");
+    await user.clear(within(dialog).getByLabelText("Description"));
+    await user.type(within(dialog).getByLabelText("Description"), "Edited from the panel");
+    await user.click(within(dialog).getByRole("button", { name: /Save changes/ }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: /Edit bot/ })).toBeNull());
+    expect(writes(server)).toEqual(["PUT /api/profiles/scratch/description"]);
+    expect(server.profileMeta.scratch.description).toBe("Edited from the panel");
+    expect(server.profileMeta.scribe.description).toBe("Writes release notes");
+    await waitFor(() => expect(within(panelRow("Scratch")).getByText("Edited from the panel")).toBeTruthy());
+    // Still the same bot, and the same one open.
+    expect(names()).toEqual(["Hermes", "Scribe", "Scratch"]);
+    expect(hermes.profile).toBe("scribe");
+    expect(current()).toEqual([null, "true", null]);
+    expect(screen.queryByRole("tab", { name: "Profiles" })).toBeNull();
+  });
+
+  it("Delete asks first, naming the bot; Cancel deletes nothing, and the bot built into Hermes can't be deleted", async () => {
+    const { server, hermes, user } = await launch(withScratch);
+    await openScribe(user);
+    const hermesMenu = await rightClick(user, "Hermes");
+    const del = within(hermesMenu).getByRole("menuitem", { name: "Delete" });
+    expect(del.getAttribute("aria-disabled")).toBe("true");
+    expect(within(hermesMenu).getByText("Hermes's built-in profile can't be deleted.")).toBeTruthy();
+    await user.click(del);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await user.keyboard("{Escape}");
+
+    await user.click(within(await rightClick(user, "Scratch")).getByRole("menuitem", { name: "Delete" }));
+    let question = await screen.findByRole("alertdialog", { name: /Delete profile “scratch”\?/ });
+    await user.click(within(question).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(writes(server)).toEqual([]);
+    expect(names()).toEqual(["Hermes", "Scribe", "Scratch"]);
+
+    await user.click(within(await rightClick(user, "Scratch")).getByRole("menuitem", { name: "Delete" }));
+    question = await screen.findByRole("alertdialog", { name: /Delete profile “scratch”\?/ });
+    const confirm = within(question).getByRole("button", { name: /Delete profile/ });
+    expect(confirm).toHaveProperty("disabled", true);
+    await user.type(within(question).getByLabelText("Type scratch to confirm"), "scratch");
+    await user.click(confirm);
+    await waitFor(() => expect(names()).toEqual(["Hermes", "Scribe"]));
+    expect(writes(server)).toEqual(["DELETE /api/profiles/scratch"]);
+    expect(server.otherProfiles.scratch).toBeUndefined();
+    expect(server.otherProfiles.scribe).toBeTruthy();
+    expect(screen.getByText("Deleted scratch.")).toBeTruthy();
+    expect(hermes.profile).toBe("scribe");
+    expect(current()).toEqual([null, "true"]);
+  });
+
+  it("keeps the bot's row while a delete runs and after it fails, and says why", async () => {
+    const { server, user } = await launch(withScratch);
+    let fail!: (e: Error) => void;
+    server.profileGatewayStop = new Promise((_, reject) => (fail = reject));
+    server.profileGatewayStop.catch(() => {});
+    await openScribe(user);
+    await user.click(within(await rightClick(user, "Scratch")).getByRole("menuitem", { name: "Delete" }));
+    const question = await screen.findByRole("alertdialog", { name: /Delete profile “scratch”\?/ });
+    await user.type(within(question).getByLabelText("Type scratch to confirm"), "scratch");
+    await user.click(within(question).getByRole("button", { name: /Delete profile/ }));
+    await waitFor(() => expect(within(question).getByRole("button", { name: /Deleting/ })).toHaveProperty("disabled", true));
+    expect(within(question).getByRole("button", { name: "Cancel" })).toHaveProperty("disabled", true);
+    expect(names()).toEqual(["Hermes", "Scribe", "Scratch"]);
+    await act(async () => fail(new Error("The connection was reset.")));
+    expect((await within(question).findByRole("alert")).textContent).toMatch(/^The profile wasn't deleted: /);
+    expect(server.otherProfiles.scratch).toBeTruthy();
+    await user.click(within(question).getByRole("button", { name: "Cancel" }));
+    expect(names()).toEqual(["Hermes", "Scribe", "Scratch"]);
+  });
+
+  it("turns Delete off once this Hermes turns out to have no route for it, and says which", async () => {
+    const { server, user } = await launch((s) => {
+      withScratch(s);
+      s.profileRoutesMissing.add("remove");
+    });
+    await openScribe(user);
+    await user.click(within(await rightClick(user, "Scratch")).getByRole("menuitem", { name: "Delete" }));
+    const question = await screen.findByRole("alertdialog", { name: /Delete profile “scratch”\?/ });
+    await user.type(within(question).getByLabelText("Type scratch to confirm"), "scratch");
+    await user.click(within(question).getByRole("button", { name: /Delete profile/ }));
+    await within(question).findByRole("alert");
+    await user.click(within(question).getByRole("button", { name: "Cancel" }));
+    expect(names()).toEqual(["Hermes", "Scribe", "Scratch"]);
+    const del = within(await rightClick(user, "Scratch")).getByRole("menuitem", { name: "Delete" });
+    expect(del.getAttribute("aria-disabled")).toBe("true");
+    expect(del.getAttribute("title")).toMatch(/DELETE \/api\/profiles/);
+    expect(server.otherProfiles.scratch).toBeTruthy();
+  });
+
+  it("Settings opens only the bot picked last, and saves to it, when Hermes answers the first pick later or fails it", async () => {
+    const { server, user } = await launch(withScratch);
+    await openScribe(user);
+    const reads = holdProfileReads(server);
+    await user.click(within(await rightClick(user, "Scribe")).getByRole("menuitem", { name: "Settings" }));
+    await user.click(within(await rightClick(user, "Scratch")).getByRole("menuitem", { name: "Settings" }));
+    await user.click(within(await rightClick(user, "Hermes")).getByRole("menuitem", { name: "Delete" }));
+    await waitFor(() => expect(reads.held).toHaveLength(2));
+    // Hermes's Delete is off, so the last pick is Scratch's Settings.
+    reads.release();
+    await reads.answer(1);
+    const dialog = await screen.findByRole("dialog", { name: "Edit bot: Scratch" });
+    const description = within(dialog).getByLabelText<HTMLTextAreaElement>("Description");
+    await user.clear(description);
+    await user.type(description, "Drafted before Scribe's answer");
+    await reads.answer(0);
+    expect(screen.getAllByRole("dialog", { name: /Edit bot/ })).toEqual([dialog]);
+    expect(within(dialog).getByLabelText<HTMLInputElement>("Profile name").value).toBe("scratch");
+    expect(within(dialog).getByLabelText<HTMLInputElement>("Name in Bot Mode").value).toBe("Scratch");
+    expect(description.value).toBe("Drafted before Scribe's answer");
+    await user.click(within(dialog).getByRole("button", { name: /Save changes/ }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: /Edit bot/ })).toBeNull());
+    expect(writes(server)).toEqual(["PUT /api/profiles/scratch/description"]);
+    expect(server.profileMeta.scratch.description).toBe("Drafted before Scribe's answer");
+    expect(server.profileMeta.scribe.description).toBe("Writes release notes");
+
+    // A pick Hermes fails after a later one opened says nothing and closes nothing.
+    const again = holdProfileReads(server);
+    await user.click(within(await rightClick(user, "Scribe")).getByRole("menuitem", { name: "Settings" }));
+    await user.click(within(await rightClick(user, "Scratch")).getByRole("menuitem", { name: "Delete" }));
+    await waitFor(() => expect(again.held).toHaveLength(2));
+    again.release();
+    await again.answer(1);
+    const question = await screen.findByRole("alertdialog", { name: /Delete profile “scratch”\?/ });
+    await again.refuse(0);
+    expect(screen.queryByText(/^Couldn't open Scribe/)).toBeNull();
+    expect(screen.queryByRole("dialog", { name: /Edit bot/ })).toBeNull();
+    expect(question.isConnected).toBe(true);
+    await user.click(within(question).getByRole("button", { name: "Cancel" }));
+    expect(server.otherProfiles.scratch).toBeTruthy();
+  });
+
+  it("puts focus on a renamed bot's row once listed, from the keyboard", async () => {
+    const { server, user } = await launch(withScratch);
+    await openScribe(user);
+    panelRow("Scratch").focus();
+    await user.keyboard("{Shift>}{F10}{/Shift}{ArrowDown}{Enter}");
+    const dialog = await screen.findByRole("dialog", { name: "Edit bot: Scratch" });
+    await user.clear(within(dialog).getByLabelText("Profile name"));
+    await user.type(within(dialog).getByLabelText("Profile name"), "spare");
+    within(dialog).getByRole("button", { name: /Save changes/ }).focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: /Edit bot/ })).toBeNull());
+    expect(writes(server)).toEqual(["PATCH /api/profiles/scratch"]);
+    await waitFor(() => expect(document.activeElement).toBe(panel().querySelector('.bots-row[data-profile="spare"] .bots-open')));
+    expect(names()).toEqual(["Hermes", "Scribe", "Scratch"]);
+    expect(screen.getByText("Renamed scratch to spare.")).toBeTruthy();
+  });
+
+  it("puts focus on the open bot's row after deleting another bot from the keyboard", async () => {
+    const { server, user } = await launch(withScratch);
+    await openScribe(user);
+    panelRow("Scratch").focus();
+    await user.keyboard("{Shift>}{F10}{/Shift}{ArrowDown}{ArrowDown}{Enter}");
+    const question = await screen.findByRole("alertdialog", { name: /Delete profile “scratch”\?/ });
+    expect(document.activeElement).toBe(within(question).getByLabelText("Type scratch to confirm"));
+    await user.keyboard("scratch{Enter}");
+    await waitFor(() => expect(names()).toEqual(["Hermes", "Scribe"]));
+    expect(writes(server)).toEqual(["DELETE /api/profiles/scratch"]);
+    await waitFor(() => expect(document.activeElement).toBe(panelRow("Scribe")));
+  });
+
+  it("Delete on the open bot switches to default first, then deletes it", async () => {
+    const { server, hermes, user } = await launch(withScratch);
+    await openScribe(user);
+    await user.click(within(await rightClick(user, "Scribe")).getByRole("menuitem", { name: "Delete" }));
+    const question = await screen.findByRole("alertdialog", { name: /Delete profile “scribe”\?/ });
+    expect(within(question).getByText("You're using this profile. Highwing will switch to default first.")).toBeTruthy();
+    await user.type(within(question).getByLabelText("Type scribe to confirm"), "scribe");
+    await user.click(within(question).getByRole("button", { name: /Delete profile/ }));
+    await waitFor(() => expect(server.otherProfiles.scribe).toBeUndefined());
+    expect(hermes.profile).toBe("default");
+    expect(server.otherProfiles.scratch).toBeTruthy();
+    // Bot mode ended with the switch, and the bot's row with it. The chat now shown took focus for its message box,
+    // which the menu leaves there.
+    await waitFor(() => expect(panelBots()).toEqual([]));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByPlaceholderText(/Message/)));
   });
 });

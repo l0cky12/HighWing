@@ -152,7 +152,7 @@ A bot's one chat that always continues: the profile's chat titled exactly "Bot C
 _Avoid_: forever chat, canonical chat, DM, main chat
 
 **Bot mode** (of the chat list):
-The chat list panel showing the bots in place of the chats, while the active pane shows a Bot Chat. The profile switcher, New chat and Search stay above them. New chat, or any ordinary chat opened, ends it, and a launch never starts in it (ADR 0066).
+The chat list panel showing the bots in place of the chats, while the active pane shows a Bot Chat. The profile switcher, New chat and Search stay above them. New chat, or any ordinary chat opened, ends it, and a launch never starts in it (ADR 0066) A right-click on a bot there opens Chat, Settings (Edit bot) and Delete (ADR 0194).
 _Avoid_: Bot Mode (that is Hermes's feature), bots sidebar
 
 **Connection**:

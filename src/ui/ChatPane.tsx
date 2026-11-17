@@ -1835,7 +1835,7 @@ function Composer({
   const keys = useBindings();
   // The chat's staged attachments, kept by the desk under its Draft key so they outlive this composer (ADR 0145).
   const attachments = useSyncExternalStore(screenshots.subscribe, () => screenshots.stagedIn(draftKey));
-  // Each staged image's number, which its mark in the words gives (inlineImages.ts, ADR 0197).
+  // Each staged image's number, which its mark in the words gives (inlineImages.ts, ADR 0198).
   const numbers = useSyncExternalStore(screenshots.subscribe, () => screenshots.numbersIn(draftKey));
   // A number a mark in the words has given stays taken after the mark goes, since Undo can bring it back.
   useEffect(() => screenshots.reserve(draftKey, highestMark(text)), [screenshots, draftKey, text]);

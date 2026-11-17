@@ -611,7 +611,7 @@ describe("Setting the screenshot shortcut", () => {
   });
 });
 
-describe("Images placed in the words (ADR 0197)", () => {
+describe("Images placed in the words (ADR 0198)", () => {
   const caretAt = (at: number) =>
     act(() => {
       composer().focus();

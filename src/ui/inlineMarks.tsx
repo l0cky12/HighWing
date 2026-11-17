@@ -1,4 +1,4 @@
-// The composer's image marks drawn as chips over its text (ADR 0197). The words stay one plain textarea, so typing,
+// The composer's image marks drawn as chips over its text (ADR 0198). The words stay one plain textarea, so typing,
 // IME, selection, undo and the slash menu work as they always did. A mirror laid out as the textarea is finds where each
 // mark is, and a chip with the image's thumbnail, name and size covers it there. While the cursor or a selection is in
 // a mark, or the mark wraps onto a second line, its words show instead.

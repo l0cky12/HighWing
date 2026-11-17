@@ -973,7 +973,9 @@ export class FakeHermes {
         this.store(created.profile)?.push(stored);
       }
       const stored = this.runtime.get(runtimeId);
-      if (stored) this.storeMessage(stored, { role: "user", text: String(r.params.text), row_id: this.userRowId });
+      const images = this.attachedImages.get(runtimeId) ?? [];
+      this.attachedImages.delete(runtimeId);
+      if (stored) this.storeMessage(stored, { role: "user", text: imageDisplayText(String(r.params.text), images), row_id: this.userRowId });
       if (drop === "stored") return this.drop();
       this.turns.add(runtimeId);
       if (stored) this.inflight.set(runtimeId, { stored, user: String(r.params.text ?? ""), assistant: "" });
@@ -993,8 +995,12 @@ export class FakeHermes {
     "image.attach_bytes": (r) => {
       const n = ++this.imagesStaged;
       const name = `upload_${n}.png`;
-      const bytes = atob(String(r.params.content_base64)).length;
-      this.respond(r.id, { attached: true, path: `/hermes/images/${name}`, name, count: n, remainder: "", text: `[User attached image: ${name}]`, bytes });
+      const path = `/hermes/images/${name}`;
+      const data = atob(String(r.params.content_base64));
+      this.serverFiles[path] = data;
+      const sid = String(r.params.session_id);
+      this.attachedImages.set(sid, [...(this.attachedImages.get(sid) ?? []), path]);
+      this.respond(r.id, { attached: true, path, name, count: n, remainder: "", text: `[User attached image: ${name}]`, bytes: data.length });
     },
     "file.attach": (r) => {
       const name = String(r.params.name);
@@ -1085,6 +1091,8 @@ export class FakeHermes {
     },
     "image.detach": (r) => {
       this.imagesStaged--;
+      const sid = String(r.params.session_id);
+      this.attachedImages.set(sid, (this.attachedImages.get(sid) ?? []).filter((p) => p !== r.params.path));
       this.respond(r.id, { detached: true, count: this.imagesStaged });
     },
     // `commands.catalog` (tui_gateway/methods_tools.py, `command_discovery.command_catalog`) at the deployed `bf0203a`:
@@ -1836,6 +1844,8 @@ export class FakeHermes {
 
   private onEvent?: (e: PipeEvent) => void;
   private imagesStaged = 0;
+  /** The images `image.attach_bytes` queued for each runtime session's next `prompt.submit` (`attached_images`). */
+  private readonly attachedImages = new Map<string, string[]>();
   private resumed = 0;
   /** False: a server without `session.undo`, which answers it "method not found". */
   undoMethod = true;
@@ -3476,6 +3486,16 @@ function signedOutText(provider: string): string {
 /** `SessionDB.session_unread`: activity postdates the read watermark, and `null` means read. */
 export function unread(s: SessionRow): boolean {
   return s.last_read_at !== null && (s.last_active ?? s.started_at) > s.last_read_at;
+}
+
+/**
+ * A user message with attached images as Hermes stores it: the prompt, then an `@image:` ref per image on lines of their
+ * own (`tui_gateway/session_history.py` `_build_persist_message_with_image_refs`, from `prompt_turn.py` at f0d94882).
+ */
+function imageDisplayText(text: string, images: string[]): string {
+  const refs = images.map((p) => `@image:${formatRefValue(p)}`).join("\n");
+  if (!refs) return text;
+  return text ? `${text}\n${refs}` : refs;
 }
 
 /** `tui_gateway/prompt_attachments.py::_format_ref_value`: quote a ref with whitespace, brackets or quotes. */

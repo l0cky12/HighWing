@@ -684,6 +684,137 @@ describe("Opening the Bots view", () => {
   });
 });
 
+describe("Chats mode", () => {
+  const panel = () => document.querySelector<HTMLElement>(".sidebar")!;
+  const line = () => panel().querySelector<HTMLElement>(".sb-needs-you");
+  const botChatRow = () => panel().querySelector<HTMLButtonElement>(".sb-botchat-row .row-open");
+  const shownMode = () => within(panel()).getAllByRole("tab").find((t) => t.getAttribute("aria-selected") === "true")?.textContent;
+  const waiting = (key: string, id = "rt-s") => ({ id, session_key: key, status: "waiting" as const, last_active: nowS() });
+
+  it("lays out the switch, the profile switcher, New chat and Search, the Bot Chat row, then the project switcher and the chats", async () => {
+    await launch();
+    const order = [".sb-mode", ".sb-profile", ".sb-actions", ".sb-botchat", ".sb-project", ".sb-scroll"].map((sel) => panel().querySelector(sel));
+    expect(order.every(Boolean)).toBe(true);
+    for (let i = 1; i < order.length; i++) expect(order[i - 1]!.compareDocumentPosition(order[i]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("shows no needs-you line while no bot in another profile needs the owner", async () => {
+    await launch();
+    expect(line()).toBeNull();
+    const slot = panel().querySelector<HTMLElement>(".sb-needs-you-slot")!;
+    expect(slot.getAttribute("aria-live")).toBe("polite");
+    expect(slot.getAttribute("role")).toBeNull();
+  });
+
+  it("names the one bot that needs the owner, with its last message, and opens its Bot Chat in its profile", async () => {
+    const { hermes, user } = await launch((s) => (s.liveSessions = [waiting("scribe-bot")]));
+    await waitFor(() => expect(line()).toBeTruthy());
+    expect(line()!.textContent).toBe("SScribe needs youRelease notes drafted: three fixes.");
+    expect(line()!.title).toBe("Open Scribe's Bot Chat");
+    await user.click(line()!);
+    await waitFor(() => expect(hermes.profile).toBe("scribe"));
+    await waitFor(() => expect(screen.getByText("Draft the release notes for 0.9")).toBeTruthy());
+    expect(shownMode()).toBe("Chats");
+  });
+
+  it("asks first, as the bot's row does, when switching would leave something behind", async () => {
+    const { server, hermes, user } = await launch((s) => (s.liveSessions = [waiting("scribe-bot")]));
+    await waitFor(() => expect(line()).toBeTruthy());
+    await user.click(screen.getByText("Disk usage"));
+    await waitFor(() => expect(hermes.getSnapshot().chats.find((c) => c.id === "disk")?.runtimeId).toBeTruthy());
+    await act(async () => void server.askApproval(server.runtimeIdOf("disk")!));
+    await user.click(line()!);
+    const ask = await screen.findByRole("alertdialog", { name: "Switch to scribe?" });
+    expect(ask.textContent).toMatch(/An approval is waiting in default/);
+    await user.keyboard("{Escape}");
+    expect(ask.isConnected).toBe(false);
+    expect(hermes.profile).toBe("default");
+    await user.click(line()!);
+    await user.click(screen.getByRole("button", { name: "Switch to scribe" }));
+    await waitFor(() => expect(hermes.profile).toBe("scribe"));
+    await waitFor(() => expect(screen.getByText("Draft the release notes for 0.9")).toBeTruthy());
+  });
+
+  it("names several bots that need the owner, and picks Bots on a click", async () => {
+    const { user } = await launch((s) => {
+      s.otherProfiles.ops = [row("ops-bot", 0.01, { title: BOT_CHAT_TITLE, hidden: true })];
+      s.profileMeta.ops = { ui_meta: { "hermes-bots": { title: "Ops" } } };
+      s.liveSessions = [waiting("scribe-bot"), waiting("ops-bot", "rt-o")];
+    });
+    await waitFor(() => expect(line()?.textContent).toMatch(/^.2 bots need you/));
+    expect(line()!.textContent).toMatch(/(Ops, Scribe|Scribe, Ops)$/);
+    expect(line()!.title).toBe("Show the bots");
+    await user.click(line()!);
+    expect(shownMode()).toBe("Bots");
+  });
+
+  it("leaves out a bot hidden in Hermes", async () => {
+    await launch((s) => {
+      s.profileMeta.scribe = { ui_meta: { "hermes-bots": { title: "Scribe", hidden: true } } };
+      s.liveSessions = [waiting("scribe-bot")];
+    });
+    expect(line()).toBeNull();
+    expect(within(panel()).getByRole("tab", { name: /^Bots/ }).getAttribute("aria-label")).toBe("Bots");
+  });
+
+  it("leads the profile switcher with the bot's face and name, then its id, quieter", async () => {
+    const { user } = await launch();
+    const button = () => panel().querySelector<HTMLElement>(".sb-profile .profile-btn")!;
+    expect(button().querySelector(".bots-face")?.textContent).toBe("H");
+    expect(button().querySelector(".profile-name")?.textContent).toBe("Hermes");
+    expect(button().querySelector(".profile-id")?.textContent).toBe("default");
+    await pickProfile(user, "scribe");
+    await waitFor(() => expect(button().querySelector(".profile-name")?.textContent).toBe("Scribe"));
+    // "Scribe" is only the id made readable, so the id isn't said twice.
+    expect(button().querySelector(".profile-id")).toBeNull();
+    expect((button().querySelector(".bots-face") as HTMLElement).style.background).toBe("rgb(68, 170, 119)");
+  });
+
+  it("names a profile without a bot name by its id made readable, once", async () => {
+    const { user } = await launch((s) => (s.otherProfiles["hermes-chat"] = [row("hc-side", 1, { pinned: true, title: "Side chat" })]));
+    await pickProfile(user, "hermes-chat");
+    const button = panel().querySelector<HTMLElement>(".sb-profile .profile-btn")!;
+    await waitFor(() => expect(button.querySelector(".profile-name")?.textContent).toBe("Hermes Chat"));
+    expect(button.querySelector(".profile-id")).toBeNull();
+  });
+
+  it("shows the Bot Chat row with how long ago its bot was active, out of the sections", async () => {
+    await launch();
+    expect(botChatRow()!.textContent).toMatch(/^HBot Chat\d+[mhd]$/);
+    expect(botChatRow()!.getAttribute("aria-label")).toBe("Hermes's Bot Chat");
+    expect(listTitles()).toEqual(["Disk usage"]);
+  });
+
+  it("shows Replying on the Bot Chat row while its bot replies, and its last message in its tip", async () => {
+    const { user } = await launch();
+    await pickProfile(user, "scribe");
+    await waitFor(() => expect(botChatRow()?.textContent).toBe("SBot ChatReplying"));
+    expect(botChatRow()!.title).toBe("Scribe's Bot Chat\nRelease notes drafted: three fixes.");
+  });
+
+  it("shows Needs you on the Bot Chat row while its bot waits on the owner", async () => {
+    const { user } = await launch((s) => (s.liveSessions = [waiting("scribe-bot")]));
+    await pickProfile(user, "scribe");
+    await waitFor(() => expect(botChatRow()?.textContent).toBe("SBot ChatNeeds you"));
+    // Its own bot isn't one that waits elsewhere.
+    expect(line()).toBeNull();
+  });
+
+  it("opens the shown profile's Bot Chat from its row, marked selected while it is in the active pane", async () => {
+    const { user } = await launch();
+    await pickProfile(user, "scribe");
+    await waitFor(() => expect(botChatRow()).toBeTruthy());
+    expect(botChatRow()!.getAttribute("aria-current")).toBeNull();
+    await user.click(botChatRow()!);
+    await waitFor(() => expect(screen.getByText("Draft the release notes for 0.9")).toBeTruthy());
+    await waitFor(() => expect(botChatRow()!.getAttribute("aria-current")).toBe("true"));
+    expect(botChatRow()!.closest(".row")!.classList.contains("sel")).toBe(true);
+    expect(shownMode()).toBe("Chats");
+    await user.click(screen.getByText("Changelog wording"));
+    await waitFor(() => expect(botChatRow()!.getAttribute("aria-current")).toBeNull());
+  });
+});
+
 describe("A Hermes without Bot Mode", () => {
   it("shows no Bots button once the check finds no profiles.list", async () => {
     const { hermes } = await launch((s) => (s.botMode = "none"));

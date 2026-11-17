@@ -283,6 +283,12 @@ export const es: Catalogue = {
     tabLabel: (mode, waits) => `${mode}, ${waits}`,
     tabTip: (mode, waits) => `${mode}: ${waits}`,
     withKeys: (text, keys) => `${text} (${keys})`,
+    needsYou: (name) => `${name} te necesita`,
+    manyNeedYou: (n) => `${n} bots te necesitan`,
+    openBotChat: (name) => `Abrir el Bot Chat de ${name}`,
+    showBots: "Mostrar los bots",
+    botChat: "Bot Chat",
+    botChatOf: (name) => `Bot Chat de ${name}`,
   },
   profiles: {
     title: "Perfiles en este servidor",

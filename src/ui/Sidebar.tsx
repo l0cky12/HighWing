@@ -12,7 +12,9 @@ import type { Route } from "../hermes/pipe";
 import { RenameConflict, TitleModelUnavailable, type Snapshot } from "../hermes/transport";
 import { SECTION_LABEL, chatSections, inboxSettle, settleByDrop, wakeFull, wakeLabel, type InboxSettle, type Pins, type SectionKey, type Snoozes } from "../hermes/snooze";
 import { CHAT_LIST_MODES, getUIPrefs, setUIPrefs, subscribe as subscribeUIPrefs, type ChatListMode } from "../hermes/uiPrefs";
-import type { Bot } from "../hermes/bots";
+import { namedByProfile, type Bot, type BotActivity } from "../hermes/bots";
+import { BotFace, lookShown, type BotLookShown } from "./BotFace";
+import { BotSwitchQuestion } from "./Bots";
 import { ChatMenu, type ChatPin, type ChatProjects, type ChatSnooze, type ChatTags } from "./ChatMenu";
 import { SnoozeDialog, useSnoozeClock } from "./Snooze";
 import { DeleteChatDialog } from "./DeleteChat";
@@ -24,7 +26,7 @@ import { en } from "../i18n/en";
 import { useLocale, type Locale } from "../i18n/locale";
 import { viaLabel } from "../hermes/routes";
 import { dragChat, dragChatEnd, rowDragged } from "./Tabs";
-import { ariaKeys, chordLabel, chordParts, pick, useBindings } from "./keybindings";
+import { ariaKeys, chordLabel, chordParts, pick, useBindings, type Chord } from "./keybindings";
 import { errorText } from "../hermes/values";
 import { BrandMark } from "./BrandMark";
 
@@ -679,6 +681,7 @@ export function leavingNote(profile: string, chats: Chat[], words: Locale["profi
 function ProfileSwitcher({
   profile,
   defaultName,
+  bot,
   others,
   checkTimes,
   leaving,
@@ -690,6 +693,8 @@ function ProfileSwitcher({
   profile: string;
   /** The display name Hermes keeps for `default`, shown before its id (ADR 0156). */
   defaultName?: string;
+  /** The profile as its bot shows, in Chats mode: its face and name lead, its id follows, quieter, unless the name only says it again. */
+  bot?: BotLookShown;
   others: OtherProfiles;
   checkTimes: CheckTimesStore;
   leaving?: string;
@@ -757,12 +762,27 @@ function ProfileSwitcher({
         ref={button}
         className="profile-btn"
         title={switcherTip(l, others, checkTimes.get())}
+        aria-label={bot && (namedByProfile(bot.name, profile) ? bot.name : l.profiles.named(bot.name, profile))}
         aria-expanded={open}
         onPointerEnter={freshTip}
         onFocus={freshTip}
         onClick={() => (open ? close() : setOpen(true))}
       >
-        <span className="profile-name">{profileLabel(l, profile, defaultName)}</span>
+        {bot ? (
+          <>
+            <BotFace bot={bot} size="sm" />
+            <span className="profile-name" translate="no">
+              {bot.name}
+            </span>
+            {!namedByProfile(bot.name, profile) && (
+              <span className="profile-id" translate="no">
+                {profile}
+              </span>
+            )}
+          </>
+        ) : (
+          <span className="profile-name">{profileLabel(l, profile, defaultName)}</span>
+        )}
         {elsewhere && <span className="dot" aria-label="Unread chats in other profiles" />}
         <ChevronDown size={14} className="profile-chev" />
       </button>
@@ -1028,7 +1048,25 @@ function SettledList({ chats, selectedId, row }: { chats: Chat[]; selectedId: st
  * The panel's mode on a Hermes with Bot Mode, the owner's pick (uiPrefs.ts `chatListMode`), and what waits in the bots of
  * the other profiles (bots.ts `botsWaiting`): `waiting`, the bots that need the owner; `replying`, how many are replying.
  */
-export type ListModes = { value: ChatListMode; onChange: (mode: ChatListMode) => void; waiting: readonly Bot[]; replying: number };
+export type ListModes = {
+  value: ChatListMode;
+  onChange: (mode: ChatListMode) => void;
+  waiting: readonly Bot[];
+  replying: number;
+  /** Each bot's picture, by profile. */
+  pictures: Readonly<Record<string, string>>;
+  /** What switching away from the shown profile leaves behind, asked about before a bot in another profile opens. */
+  leaving?: string;
+  /** Opens a bot's Bot Chat, in its profile, as its row does. */
+  onOpenBot: (bot: Bot) => void;
+};
+
+/**
+ * The shown profile as a bot, for Chats mode: its face and name lead the profile switcher, and its Bot Chat is one row
+ * above the chats. `activity`: what it is doing there. `selected`: its Bot Chat is in the active pane. `keys`: the chord
+ * that opens it.
+ */
+export type ShownBot = { bot: Bot; look: BotLookShown; activity: BotActivity; selected: boolean; keys?: Chord; onOpen: () => void };
 
 /**
  * The switch at the top of the chat list panel: Chats and Bots, as two tabs with one tab stop. A click picks one; Left,
@@ -1109,6 +1147,88 @@ function ModeSwitch({ value, onChange, inbox, waiting, replying }: Omit<ListMode
 }
 
 /**
+ * Under the switch in Chats mode, while a bot in another profile needs the owner: one bot by its face, name and last
+ * message, a click from its Bot Chat, asking first as its row does when switching would leave something behind; more
+ * than one by their names, a click from the bots. A polite live region, so a screen reader hears it arrive; the app's
+ * notice is its one status.
+ */
+function NeedsYouLine({ waiting, pictures, leaving, onOpenBot, onShowBots }: Pick<ListModes, "waiting" | "pictures" | "leaving" | "onOpenBot"> & { onShowBots: () => void }) {
+  const w = useLocale().chatList;
+  const [asking, setAsking] = useState<Bot>();
+  const [first, ...rest] = waiting;
+  const one = first && !rest.length ? first : undefined;
+  const open = (bot: Bot) => (leaving ? setAsking(bot) : onOpenBot(bot));
+  return (
+    <div className="sb-needs-you-slot" aria-live="polite">
+      {first && (
+        <button className="sb-needs-you" title={one ? w.openBotChat(one.name) : w.showBots} onClick={() => (one ? open(one) : onShowBots())}>
+          <BotFace bot={lookShown(first, pictures)} size="sm" />
+          <span className="sb-needs-you-text">
+            {one ? (
+              <>
+                <strong>{w.needsYou(one.name)}</strong>
+                {one.botChat?.preview && <span translate="no">{one.botChat.preview}</span>}
+              </>
+            ) : (
+              <>
+                <strong>{w.manyNeedYou(waiting.length)}</strong>
+                <span translate="no">{waiting.map((b) => b.name).join(", ")}</span>
+              </>
+            )}
+          </span>
+          <ShieldAlert size={14} aria-hidden />
+        </button>
+      )}
+      {asking && leaving && (
+        <BotSwitchQuestion
+          bot={asking}
+          leaving={leaving}
+          onStay={() => setAsking(undefined)}
+          onGo={() => {
+            setAsking(undefined);
+            onOpenBot(asking);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * In Chats mode, the shown profile's Bot Chat as one row above its chats: its bot's face, "Bot Chat", then Needs you,
+ * Replying or how long ago it was active. It stays out of the sections and out of Search.
+ */
+function BotChatRow({ bot, look, activity, selected, keys, onOpen }: ShownBot) {
+  const l = useLocale();
+  const w = l.chatList;
+  const whose = w.botChatOf(bot.name);
+  const tip = [keys ? w.withKeys(whose, chordLabel(keys)) : whose, bot.botChat?.preview].filter(Boolean).join("\n");
+  return (
+    <div className={`row sb-botchat-row${selected ? " sel" : ""}${activity ? ` is-${activity}` : ""}`}>
+      <button className="row-open" aria-label={whose} aria-current={selected || undefined} aria-keyshortcuts={keys ? ariaKeys([keys]) : undefined} title={tip} onClick={onOpen}>
+        <BotFace bot={look} size="xs" />
+        <span className="sb-botchat-title">{w.botChat}</span>
+        <span className="row-meta">
+          {activity === "needs-you" ? (
+            <span className="bots-activity is-needs-you">
+              <ShieldAlert size={12} aria-hidden />
+              {l.bots.needsYou}
+            </span>
+          ) : activity === "replying" ? (
+            <span className="bots-activity">
+              <Loader size={12} aria-hidden />
+              {l.bots.replying}
+            </span>
+          ) : (
+            bot.lastActive > 0 && <Age at={bot.lastActive} />
+          )}
+        </span>
+      </button>
+    </div>
+  );
+}
+
+/**
  * The chat list, in sections (snooze.ts `chatSections`, ADR 0063): Pinned, the chats the owner pinned (ADR 0085); the
  * Inbox, the chats that need the owner or are done; Snoozed; Archived; and Working, the chats Hermes is replying in, in
  * the list's scroll. Settled is a drawer at the list's foot, outside the scroll (ADR 0090): its header stays at the
@@ -1170,6 +1290,7 @@ export function ChatList({
   onSearch,
   onHide,
   mode,
+  shownBot,
 }: {
   profile: string;
   /** In Bots mode, the bots, which fill the panel under New chat and Search. */
@@ -1236,6 +1357,8 @@ export function ChatList({
   onHide?: () => void;
   /** The panel's two modes and the switch at its top (`ModeSwitch`); none for a Hermes without Bot Mode, whose panel is the chats alone. */
   mode?: ListModes;
+  /** The shown profile as a bot, once the roster names it, for Chats mode. */
+  shownBot?: ShownBot;
 }) {
   const { chatSectionsShown: shown, chatSectionsCollapsed: collapsed } = useSyncExternalStore(subscribeUIPrefs, getUIPrefs);
   const keys = useBindings();
@@ -1398,6 +1521,7 @@ export function ChatList({
     <ProfileSwitcher
       profile={profile}
       defaultName={defaultName}
+      bot={mode && shownBot?.look}
       others={others}
       checkTimes={checkTimes}
       leaving={leavingNote(profile, chats, l.profiles.leaving)}
@@ -1436,6 +1560,9 @@ export function ChatList({
           </button>
         )}
       </div>
+      {mode && !botsShown && (
+        <NeedsYouLine waiting={mode.waiting} pictures={mode.pictures} leaving={mode.leaving} onOpenBot={mode.onOpenBot} onShowBots={() => mode.onChange("bots")} />
+      )}
       {mode && !botsShown && <div className="sb-profile">{switcher}</div>}
       {(onNew || onSearch) && (
         <div className="sb-actions">
@@ -1463,6 +1590,11 @@ export function ChatList({
         </div>
       ) : (
         <>
+          {mode && shownBot && (
+            <div className="sb-botchat">
+              <BotChatRow {...shownBot} />
+            </div>
+          )}
           {projectSwitcher && <div className="sb-project">{projectSwitcher}</div>}
           <div className="sb-scroll" data-drop={dropOn === "inbox" ? "inbox" : undefined} {...dropHandlers("inbox", overInbox)}>
             {switchStatus}

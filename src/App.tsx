@@ -48,6 +48,7 @@ import { signInError, testSignIn, type SignInError, type TestOutcome } from "./h
 import { isOutgoing, isWaiting, type Attachment, type Chat, type ConnectionStatus, type Found, type Hit, type SentReference } from "./hermes/model";
 import { shortName, type ModelCatalog, type ModelPick } from "./hermes/models";
 import { ChatList, Rail, leavingNote } from "./ui/Sidebar";
+import { lookShown } from "./ui/BotFace";
 import { type ChatLink, type ConnectionRefs, checkConnection, connectionKey, connectionLabel, connectionRefs, formatChatLink, locateChat, parseChatLink } from "./hermes/chatLinks";
 import { desktopLinks, type LinkInbox } from "./hermes/tauriLinks";
 import { ChatLinkNotice, type LinkNoticeView } from "./ui/ChatLinkNotice";
@@ -2386,6 +2387,14 @@ export function Main({
   const shownChat = chats.find((c) => c.id === active.chatId);
   const roster = bots?.roster ?? [];
   const waitingInBots = botsWaiting(roster, (b) => activityOf(b, roster), profile);
+  // The shown profile as a bot: the chat list's profile switcher and Bot Chat row name it.
+  const shownBot = hasBotMode ? roster.find((b) => b.profile === profile) : undefined;
+  // A display name saved in Settings → Profiles is part of `default`'s bot name, so the roster is read again for it.
+  const rosterRead = !!bots;
+  useEffect(() => {
+    if (hasBotMode && rosterRead && status === "connected") void hermes.bots().catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the display name changes; a roster read or a reconnect needs no second read
+  }, [defaultProfileName]);
   const connected = status === "connected";
   useEffect(() => {
     if (!botsInList || !connected) return;
@@ -3405,7 +3414,27 @@ export function Main({
         <ChatList
           defaultName={defaultProfileName}
           profile={profile}
-          mode={hasBotMode ? { value: chatListMode, onChange: setChatListMode, ...waitingInBots } : undefined}
+          mode={
+            hasBotMode
+              ? {
+                  value: chatListMode,
+                  onChange: setChatListMode,
+                  ...waitingInBots,
+                  pictures: botPictures,
+                  leaving: leavingNote(profile, chats, words.profiles.leaving),
+                  onOpenBot: (b) => openBot(b, "open"),
+                }
+              : undefined
+          }
+          shownBot={
+            shownBot && {
+              bot: shownBot,
+              look: lookShown(shownBot, botPictures),
+              activity: activityOf(shownBot, roster),
+              selected: !covering && !!shownChat && isBotChat(shownChat),
+              onOpen: () => openBot(shownBot, "open"),
+            }
+          }
           bots={
             botsInList &&
             (bots ? (

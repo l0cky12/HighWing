@@ -121,7 +121,7 @@ describe("A rebound shortcut", () => {
     await waitFor(() => expect(screen.queryByRole("textbox", { name: "Chat title" })).toBeNull());
     expect(palette()).toBeNull();
     // Closing the profile menu on Ctrl+K doesn't open Search either.
-    button(/^default/).focus();
+    button(/\(default\)$/).focus();
     await s.user.keyboard("{Enter}");
     expect(screen.getByRole("listbox", { name: "Profiles" })).toBeTruthy();
     await s.user.keyboard("{Control>}k{/Control}");

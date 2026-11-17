@@ -3,7 +3,7 @@
 // (no stored pointer) and new-compact-guard. The transport's side (hidden from the list and search, the open) is in
 // botsTransport.test.ts.
 import { describe, expect, it } from "vitest";
-import { BOT_CHAT_TITLE, BotChats, BotModeUnsupportedError, botActivity, botName, botsWaiting, isBotChat, isBotChatOnScreen, isBotChatTitle, newInBotChatNote, rosterOf, type Bot, type BotActivity, type BotRpc } from "./bots";
+import { BOT_CHAT_TITLE, BotChats, BotModeUnsupportedError, botActivity, botName, botsWaiting, isBotChat, isBotChatOnScreen, isBotChatTitle, namedByProfile, newInBotChatNote, rosterOf, type Bot, type BotActivity, type BotRpc } from "./bots";
 
 type Call = { method: string; params: Record<string, unknown> };
 
@@ -278,5 +278,19 @@ describe("what waits in the other bots", () => {
 
   it("is nothing when every bot is idle", () => {
     expect(botsWaiting([bot("a"), bot("b")], () => undefined, "a")).toEqual({ waiting: [], replying: 0 });
+  });
+});
+
+describe("a bot named only by its profile", () => {
+  it("is its id made readable, in any case, with any separators", () => {
+    expect(namedByProfile("Hermes Chat", "hermes-chat")).toBe(true);
+    expect(namedByProfile("Scout", "scout")).toBe(true);
+    expect(namedByProfile("Night Shift", "night_shift")).toBe(true);
+  });
+
+  it("isn't when the name says something the id doesn't", () => {
+    expect(namedByProfile("Hermes", "default")).toBe(false);
+    expect(namedByProfile("Quill", "writer")).toBe(false);
+    expect(namedByProfile("Hermes Chat 2", "hermes-chat")).toBe(false);
   });
 });

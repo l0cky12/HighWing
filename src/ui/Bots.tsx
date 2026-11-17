@@ -661,18 +661,6 @@ export function BotList({
     (then === "open" ? onOpen : onNewChat)(bot);
   };
 
-  // Escape takes the question away wherever focus is, before it closes the Bots view or reaches anything else.
-  useEffect(() => {
-    if (!asking) return;
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key !== "Escape" || e.isComposing) return;
-      e.stopPropagation();
-      setAsking(undefined);
-    };
-    document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
-  }, [asking]);
-
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     // WebKitGTK sends no contextmenu event for Shift+F10, so the menu's keys are read here, from any button of a row.
     if (onMenu && pick(e, "chatRow") === "rowMenu") {
@@ -713,28 +701,16 @@ export function BotList({
 
   return (
     <>
-      {asking && (
-        <div
-          className="confirm inbox-leave"
-          role="alertdialog"
-          aria-label={w.switchTitle(asking.bot.profile)}
-        >
-          <span>{leaving}</span>
-          <div className="confirm-actions">
-            <button className="btn" autoFocus onClick={() => setAsking(undefined)}>
-              {w.stay}
-            </button>
-            <button
-              className="btn primary"
-              onClick={() => {
-                setAsking(undefined);
-                (asking.then === "open" ? onOpen : onNewChat)(asking.bot);
-              }}
-            >
-              {w.switchTo(asking.bot.profile)}
-            </button>
-          </div>
-        </div>
+      {asking && leaving && (
+        <BotSwitchQuestion
+          bot={asking.bot}
+          leaving={leaving}
+          onStay={() => setAsking(undefined)}
+          onGo={() => {
+            setAsking(undefined);
+            (asking.then === "open" ? onOpen : onNewChat)(asking.bot);
+          }}
+        />
       )}
       <ul className="inbox-list bots-list" aria-label={w.list} aria-busy={!bots && busy} onKeyDown={onKeyDown}>
         {shown.map(row)}
@@ -750,6 +726,38 @@ export function BotList({
       </ul>
       {bots && q && !matching.length && <div className="empty-hint inbox-empty">{w.noMatch(query.trim())}</div>}
     </>
+  );
+}
+
+/**
+ * Asks before a bot in another profile opens while switching away would leave `leaving` behind. Stay has focus, so a
+ * stray Enter stays, and Escape stays wherever focus is, before it closes the Bots view or reaches anything else.
+ */
+export function BotSwitchQuestion({ bot, leaving, onStay, onGo }: { bot: Bot; leaving: string; onStay: () => void; onGo: () => void }) {
+  const w = useLocale().bots;
+  const stay = useRef(onStay);
+  stay.current = onStay;
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape" || e.isComposing) return;
+      e.stopPropagation();
+      stay.current();
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, []);
+  return (
+    <div className="confirm inbox-leave" role="alertdialog" aria-label={w.switchTitle(bot.profile)}>
+      <span>{leaving}</span>
+      <div className="confirm-actions">
+        <button className="btn" autoFocus onClick={onStay}>
+          {w.stay}
+        </button>
+        <button className="btn primary" onClick={onGo}>
+          {w.switchTo(bot.profile)}
+        </button>
+      </div>
+    </div>
   );
 }
 

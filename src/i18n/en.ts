@@ -300,6 +300,14 @@ export const en = {
     tabLabel: (mode: string, waits: string) => `${mode}, ${waits}`,
     tabTip: (mode: string, waits: string) => `${mode}: ${waits}`,
     withKeys: (text: string, keys: string) => `${text} (${keys})`,
+    /** The line over the chats while a bot in another profile needs the owner. */
+    needsYou: (name: string) => `${name} needs you`,
+    manyNeedYou: (n: number) => `${n} bots need you`,
+    openBotChat: (name: string) => `Open ${name}'s Bot Chat`,
+    showBots: "Show the bots",
+    /** The shown profile's Bot Chat, one row above its chats. */
+    botChat: "Bot Chat",
+    botChatOf: (name: string) => `${name}'s Bot Chat`,
   },
   profiles: {
     title: "Profiles on this server",

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Attachment } from "../hermes/model";
-import { AttachmentChip, Previews } from "./previews";
+import { SentImageStore, sentImage } from "../hermes/sentImages";
+import { AttachmentChip, Previews, SentImageReader, SentImages } from "./previews";
 
 const img = (path: string): Attachment => ({ path, name: path.split("/").pop()!, size: 9, kind: "image" });
 const file = (path: string): Attachment => ({ ...img(path), kind: "file" });
@@ -173,5 +174,26 @@ describe("Attachment chips", () => {
       expect(out).toContain("lucide-paperclip");
       expect(out).toContain(`title="${f.path}"`);
     }
+  });
+});
+
+describe("A sent message's images", () => {
+  const shown = (offline: boolean) =>
+    renderToStaticMarkup(
+      <SentImageReader.Provider value={new SentImageStore(() => new Promise(() => {}))}>
+        <SentImages images={[sentImage("/h/images/upload_1.png")!]} offline={offline} />
+      </SentImageReader.Provider>,
+    );
+
+  it("names an image not read yet while Hermes can't be reached, and says what it waits for, instead of loading", () => {
+    const html = shown(true);
+    expect(html).toContain("upload_1.png");
+    expect(html).toContain("It shows once Hermes is reachable and the chat has loaded.");
+    expect(html).not.toContain("aria-busy");
+    expect(html).not.toContain("Try again");
+  });
+
+  it("shows it loading while Hermes can be reached", () => {
+    expect(shown(false)).toContain('aria-busy="true"');
   });
 });

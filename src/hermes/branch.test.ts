@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { BRANCH_KEY_TTL_MS, fileRefs, locate, spineOf } from "./branch";
+import { BRANCH_KEY_TTL_MS, fileRefs, locate, previewOf, spineOf } from "./branch";
 import { FakeHermes, row } from "./fakeHermes";
 import { memoryCache } from "./memoryCache";
 import type { Item } from "./model";
@@ -68,6 +68,23 @@ describe("Branch from here: the boundary", () => {
     // The second "again" was sent with a file, which Hermes stores before the words.
     expect(locate(items, "u2", spine)).toEqual({ index: 2 });
     expect(locate(items, "a2", spine)).toEqual({ index: 3 });
+  });
+
+  it("finds a message sent with images, which Hermes stores with their @image: lines after the words", () => {
+    const rows = [
+      { id: 1, role: "user", content: "What is on this screen?\n@image:/h/images/upload_1.png" },
+      { id: 2, role: "assistant", content: "A certificate error." },
+      { id: 3, role: "user", content: "What do you see in this image?\n@image:/h/images/upload_2.png\n@image:/h/images/upload_3.png" },
+    ];
+    const spine = spineOf(rows);
+    const items: Item[] = [
+      { kind: "user", id: "u1", text: "What is on this screen?" },
+      { kind: "assistant", id: "a1", text: "A certificate error." },
+      { kind: "user", id: "u2", text: "What do you see in this image?" },
+    ];
+    expect(locate(items, "u1", spine)).toEqual({ index: 0 });
+    expect(locate(items, "u2", spine)).toEqual({ index: 2 });
+    expect(previewOf({ id: "c1", title: "Screens" }, "u2", rows, spine, 2).images).toBe(3);
   });
 
   it("says why when the message isn't among the stored rows", () => {

@@ -9,16 +9,29 @@ const SENT_IMAGE_NAME = /\.(png|jpe?g|gif|webp|bmp)$/i;
 
 /**
  * The one way a `SentImage` is made, wherever one comes in: Hermes's answer to `image.attach_bytes`, a stored message's
- * text, and a kept Saved copy or outbox row. Only a full path on the server ending in an image name passes, so a web
- * address, `~/.ssh/id_rsa`, a relative path or a Windows path is never asked of Hermes.
+ * text, and a kept Saved copy or outbox row. Only a full path on the server to an image file in a folder named `images`
+ * passes, where Hermes keeps the images it is sent (`<profile home>/images/upload_*`, and `cache/images` for a
+ * browser's paste). A stored message's text can be typed by anyone who can message the profile, so a line naming any
+ * other file on the server, a web address, `~/.ssh/id_rsa`, or a path through `..`, is never asked of Hermes.
  */
 export function sentImage(path: unknown, name?: unknown): SentImage | undefined {
-  if (typeof path !== "string" || !/^\/(?!\/)/.test(path) || !isServerPath(path) || !SENT_IMAGE_NAME.test(path)) return undefined;
+  if (typeof path !== "string" || !path.startsWith("/") || !isServerPath(path) || !SENT_IMAGE_NAME.test(path)) return undefined;
+  const parts = path.slice(1).split("/");
+  if (parts.some((p) => p === "" || p === "." || p === "..") || parts.at(-2) !== "images") return undefined;
   return { path: path as SentImagePath, ...(typeof name === "string" && name && { name }) };
 }
 
 /** What a bubble calls an image: its file name here, or else the last part of its path on Hermes. */
 export const sentImageName = (image: SentImage) => image.name ?? image.path.slice(image.path.lastIndexOf("/") + 1);
+
+/**
+ * The names of the files sent with a message, for an export: those it went with here, and for each image read back
+ * from Hermes, which has no name here, the last part of its path.
+ */
+export const sentNames = (item: Pick<Extract<Item, { kind: "user" }>, "attachments" | "images">) => [
+  ...(item.attachments ?? []),
+  ...(item.images ?? []).filter((i) => i.name === undefined).map(sentImageName),
+];
 
 /**
  * What a message's bubble shows of what went with it: the images Hermes has, and a chip for each other name. An image

@@ -258,6 +258,24 @@ describe("Case 3: the connection drops mid-send", () => {
     expect(kept()).toEqual([]);
   });
 
+  it.each([
+    ["alone", "", "What do you see in this image?"],
+    ["with words", "Which cable is loose?", "Which cable is loose?"],
+  ])("on reconnect, an image sent %s that Hermes stored shows from its history, with its image, not as failed", async (_, words, shown) => {
+    const { server, hermes, chat, submits } = await ready();
+    server.files = { "/home/liam/Pictures/rack.png": "\x89PNG fake" };
+    const { attachments } = await hermes().checkAttachments(["/home/liam/Pictures/rack.png"]);
+    server.dropOnPrompt = "stored";
+    expect(await hermes().send("c1", words, attachments)).toMatchObject({ delivery: "unknown" });
+
+    await hermes().reconnect();
+    await hermes().idle();
+    expect(chat().items.some(isOutgoing)).toBe(false);
+    expect(chat().items.at(-1)).toMatchObject({ kind: "user", text: shown, images: [{ path: "/hermes/images/upload_1.png" }] });
+    expect(submits()).toHaveLength(1);
+    expect(kept()).toEqual([]);
+  });
+
   it("on reconnect, the optimistic message goes when the history says it never arrived, and only a failed one with Retry stays", async () => {
     const { server, hermes, chat, sent, submits } = await ready();
     server.dropOnPrompt = "lost";

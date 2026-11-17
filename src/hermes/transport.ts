@@ -6338,7 +6338,7 @@ function arrived(row: OutgoingItem, readBack: ReadBack[]): boolean {
     (m) =>
       m.role === "user" &&
       (sent.after === undefined || m.rowId === undefined || m.rowId > sent.after) &&
-      (typedText(m.text).trim() === sent.prompt.trim() || (!!attachments?.length && !!words && m.text.includes(words))),
+      (typedText(peelImages(m.text).rest).trim() === sent.prompt.trim() || (!!attachments?.length && !!words && m.text.includes(words))),
   );
 }
 

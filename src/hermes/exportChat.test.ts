@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import { FIRST_DRAFT, chatJson, chatMarkdown, exportFileName, exportPreview, saveExport, saveImage, type ExportDraft } from "./exportChat";
 import { planImport } from "./importTranscripts";
 import type { ApprovalChoice, Chat, Item } from "./model";
+import { sentImage } from "./sentImages";
 
 const AT = new Date("2026-11-02T14:05:00Z");
 /** What an Approval card offered; the export doesn't show it. */
@@ -48,6 +49,17 @@ describe("A chat as Markdown", () => {
   it("names attachments without their contents, and says they aren't included", () => {
     const md = chatMarkdown(chat([{ kind: "user", id: "u", text: "What's in these?", attachments: ["shot.png", "log_`1`.txt"] }]), AT);
     expect(md).toContain("_Attached, not included in this file:_ `shot.png`, ``log_`1`.txt``");
+  });
+
+  it("names an image a message read back from Hermes was sent with, in every format, without its bytes", () => {
+    const readBack = [{ kind: "user", id: "h-0", text: "What is on this screen?", images: [sentImage("/h/images/upload_1.png")!] }] as Item[];
+    expect(chatMarkdown(chat(readBack), AT)).toContain("_Attached, not included in this file:_ `upload_1.png`");
+    expect(JSON.parse(chatJson(chat(readBack), AT))[0].messages[0].attachments).toEqual(["upload_1.png"]);
+    const draft = { ...FIRST_DRAFT, attachments: true };
+    expect(exportPreview(chat(readBack), draft, AT, "image").text).toContain("Attached: upload_1.png");
+    expect(exportPreview(chat(readBack), draft, AT, "html").text).toContain("upload_1.png");
+    for (const format of ["markdown", "json", "image", "html"] as const) expect(exportPreview(chat(readBack), draft, AT, format).text).not.toContain("/h/images/");
+    expect(exportPreview(chat(readBack), FIRST_DRAFT, AT).text).toContain("> The names of attached files were left out.");
   });
 
   it("keeps the model's thinking, an interrupted reply and Approvals", () => {

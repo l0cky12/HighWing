@@ -98,10 +98,13 @@ export function spineOf(rows: StoredBranchRow[]): SpineRow[] {
 
 const norm = (t: string) => t.replace(/\s+/g, " ").trim();
 
-/** Whether a stored row's text is the message the app shows. A message sent with files is stored with their refs first. */
+/**
+ * Whether a stored row's text is the message the app shows. A message sent with files is stored with their refs first,
+ * and one sent with images with their lines last.
+ */
 function sameMessage(row: { role: string; text: string }, item: { kind: string; text: string }): boolean {
   if (row.role !== item.kind) return false;
-  const a = norm(row.text);
+  const a = norm(peelImages(row.text).rest);
   const b = norm(item.text);
   return a === b || (item.kind === "user" && !!b && a.endsWith(b));
 }
@@ -174,8 +177,14 @@ export function peelImages(stored: string): { rest: string; images: SentImage[] 
   return { rest: lines.slice(0, end).join("\n").trimEnd(), images };
 }
 
-/** How many images a stored message carries, as `inline_images=false` shows each: `[image]`, or an attach hint. */
-export const imageCount = (text: string) => (text.match(/\[image\]|\[screenshot\]|\[Image attached at: [^\]\n]+\]/g) ?? []).length;
+/**
+ * How many images a stored message carries: the `@image:` lines Hermes ends it with, and, as `inline_images=false`
+ * shows each, `[image]` or an attach hint in the words.
+ */
+export function imageCount(stored: string) {
+  const { rest, images } = peelImages(stored);
+  return images.length + (typedText(rest).match(/\[image\]|\[screenshot\]|\[Image attached at: [^\]\n]+\]/g) ?? []).length;
+}
 
 /** Each included message as the preview shows it. */
 export type IncludedMessage = { role: "user" | "assistant"; excerpt: string };

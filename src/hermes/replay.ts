@@ -61,7 +61,7 @@ export const resendText = (stored: string) => typedText(stored).trim();
  * the app can attach again from the history (Hermes's own `/retry` refuses "attached media" for the same reason).
  */
 export function cannotResend(stored: string, kind: ReplayKind): string | undefined {
-  const images = imageCount(typedText(stored));
+  const images = imageCount(stored);
   if (!images) return undefined;
   const what = images === 1 ? "an image" : `${images} images`;
   return `This message was sent with ${what}, and Hermes can't send an image again from a chat's history, so it can't be ${kind === "edit" ? "edited" : "regenerated"} here. To try again, use Branch from here on the message before it, then attach the image again.`;

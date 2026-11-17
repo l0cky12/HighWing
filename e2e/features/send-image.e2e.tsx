@@ -94,6 +94,20 @@ it("shows a pasted image in the sent message, after switching chats and after a 
   await expect.poll(imagesInLastSent, { message: "the image is still there after a relaunch" }).toEqual(theScreenshot);
   expect(lastSentBubble()!.textContent, "the message shows no raw image reference").not.toContain("@image:");
   await shot("after relaunch");
+
+  const stored = Object.keys(server.serverFiles).find((p) => p.startsWith("/hermes/images/"));
+  expect(stored, "Hermes stored the image").toBeDefined();
+  const picture = lastSentBubble()!.querySelector<HTMLButtonElement>("button.sent-image")!;
+  picture.focus();
+  expect(appDocument().activeElement, "the image takes keyboard focus").toBe(picture);
+  await userEvent.keyboard("{Enter}");
+  await expect.element(app.getByRole("textbox", { name: "Address" }), { message: "Enter opens the image in the Preview" }).toHaveValue(stored!);
+  await expect
+    .poll(() => [...appDocument().querySelectorAll<HTMLImageElement>(".preview-image img")].map((img) => [img.naturalWidth, img.naturalHeight]), {
+      message: "the Preview draws the image",
+    })
+    .toEqual([[40, 30]]);
+  await shot("opened in preview");
 });
 
 it("shows a pasted file that isn't an image as its name in the sent message", async () => {
@@ -118,7 +132,7 @@ it("shows a pasted file that isn't an image as its name in the sent message", as
 
 it("names an image Hermes no longer has instead of showing a broken picture", async () => {
   const gone = "/hermes/images/upload_gone.png";
-  const { app } = await boot({
+  const { app, server } = await boot({
     seed: (s) => {
       seed(s);
       // Stored with its image as Hermes stores one; the server no longer has the file.
@@ -131,5 +145,13 @@ it("names an image Hermes no longer has instead of showing a broken picture", as
   await expect.element(app.getByText("upload_gone.png", { exact: false }), { message: "the missing image is named" }).toBeVisible();
   await expect.poll(() => imagesInLastSent().filter((i) => i.width === 0), { message: "no broken picture" }).toEqual([]);
   expect(lastSentBubble()!.textContent, "the message shows no raw image reference").not.toContain("@image:");
+  await expect.element(app.getByText("There's no file at this path on the Hermes server."), { message: "the reason is shown" }).toBeVisible();
   await shot("missing image");
+
+  server.serverFiles[gone] = String.fromCharCode(...new Uint8Array(await (await screenshotPng()).arrayBuffer()));
+  await app.getByRole("button", { name: "Try again" }).click();
+  await expect
+    .poll(imagesInLastSent, { message: "Try again shows the image once Hermes has it" })
+    .toEqual([{ alt: "upload_gone.png", width: 40, height: 30, shown: true }]);
+  await shot("missing image found");
 });

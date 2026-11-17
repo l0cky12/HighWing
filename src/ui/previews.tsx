@@ -2,7 +2,7 @@
 // each becomes a blob: URL that lives only while its image is staged. Nothing is copied to disk. A sent message's
 // images: read from Hermes's stored copy as data: URLs (sentImages.ts), never from this computer.
 import { createContext, useContext, useEffect, useState } from "react";
-import { ImageOff, Paperclip, X } from "lucide-react";
+import { CloudOff, ImageOff, Paperclip, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { staleText, type AnnotationLabel } from "../hermes/annotations";
 import type { Attachment, SentImage } from "../hermes/model";
@@ -106,7 +106,8 @@ export const SentImageReader = createContext<SentImageStore | undefined>(undefin
 
 /**
  * The images Hermes stored for a message, above its words. A shown image is a button that opens it in the Preview. One
- * that can't be shown is named, with why and Try again. `offline`: nothing is read until Hermes is reachable.
+ * that can't be shown is named, with why and Try again. `offline`: nothing is read until Hermes is reachable, and an
+ * image not read yet is named, with what it waits for.
  */
 export function SentImages({ images, offline }: { images: readonly SentImage[]; offline: boolean }) {
   return (
@@ -143,20 +144,22 @@ function SentPicture({ image, offline }: { image: SentImage; offline: boolean })
     };
   }, [store, image.path, session, offline, attempt]);
   const name = sentImageName(image);
-  if (load.state === "loading") return <div className="sent-image-loading" role="img" aria-busy="true" aria-label={`Loading ${name}`} title={name} />;
-  if (load.state === "failed")
+  if (load.state === "loading" && !offline) return <div className="sent-image-loading" role="img" aria-busy="true" aria-label={`Loading ${name}`} title={name} />;
+  if (load.state !== "shown") {
+    const why = load.state === "failed" ? load.why : "It shows once Hermes is reachable and the chat has loaded.";
     return (
-      <span className="sent-image-failed" title={`${name}\n${load.why}`}>
-        <ImageOff size={12} aria-hidden />
+      <span className="sent-image-failed" title={`${name}\n${why}`}>
+        {load.state === "failed" ? <ImageOff size={12} aria-hidden /> : <CloudOff size={12} aria-hidden />}
         <span className="chip-name">{name}</span>
-        {store && (
+        {store && load.state === "failed" && (
           <button type="button" className="btn" onClick={() => setAttempt((n) => n + 1)}>
             Try again
           </button>
         )}
-        <span className="sent-image-why">{load.why}</span>
+        <span className="sent-image-why">{why}</span>
       </span>
     );
+  }
   return (
     <button
       type="button"

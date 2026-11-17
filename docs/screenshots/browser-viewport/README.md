@@ -1,6 +1,6 @@
 # The Preview lays a web page out at a picked size: evidence
 
-Evidence for ADR 0197: the row under the Preview's address picks Responsive, one of 17 devices, or a typed width and height, and the page lays out at that size.
+Evidence for ADR 0198: the row under the Preview's address picks Responsive, one of 17 devices, or a typed width and height, and the page lays out at that size.
 
 ## Where the screenshots come from
 

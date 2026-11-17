@@ -1,5 +1,5 @@
 // The Subagents a chat's reply started (ADR 0072), above the composer: a tree of who started whom, and one subagent's
-// own activity and output apart from the chat. It lists only the ones still running, and hides when none are (ADR 0195). Steer and Stop act on one subagent, named in full before they go.
+// own activity and output apart from the chat. It lists only the ones still running, and hides when none are (ADR 0196). Steer and Stop act on one subagent, named in full before they go.
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowLeft,

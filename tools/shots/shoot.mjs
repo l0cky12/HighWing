@@ -121,7 +121,7 @@ const capture = `(async () => {
 })()`;
 // Subagents (ADR 0072): a reply in "NAS disk usage" that started three, one of which started one of its own, with tool
 // calls heard; the running one's output and roster row are on the server. `endSubagents` then ends three of them (one
-// finished, one failed, one stopped), which leaves the panel's list (ADR 0195): a scene that shows one of them opens it
+// finished, one failed, one stopped), which leaves the panel's list (ADR 0196): a scene that shows one of them opens it
 // first. `endAllSubagents` ends the rest too, which hides the panel.
 const subagents = `(async () => {
   const { hermes: h, server: s } = window.shots;
@@ -263,7 +263,7 @@ const scenes = {
     steps: [click("button", "NAS disk usage"), capture, click(".tool-line", "computer_use"), `document.querySelectorAll(".tool.open pre")[1].scrollTop = 150`],
   },
   "subagents-list": { query: "", ...hd, steps: [click("button", "NAS disk usage"), subagents, openSubagents] },
-  // Three of them end: only the running ones stay listed (ADR 0195).
+  // Three of them end: only the running ones stay listed (ADR 0196).
   "subagents-list-ended": { query: "", ...hd, steps: [click("button", "NAS disk usage"), subagents, openSubagents, endSubagents] },
   // All of them end: the panel is gone.
   "subagents-none": { query: "", ...hd, steps: [click("button", "NAS disk usage"), subagents, openSubagents, endAllSubagents] },

@@ -1,6 +1,6 @@
 # The Subagents panel lists only running subagents: evidence
 
-Evidence for ADR 0195: a subagent leaves the Subagents panel when it ends, and the panel hides when none are running.
+Evidence for ADR 0196: a subagent leaves the Subagents panel when it ends, and the panel hides when none are running.
 
 ## Where the screenshots come from
 

@@ -368,7 +368,7 @@ export function descendantsOf(tree: SubagentTree, id: SubagentId): Subagent[] {
 }
 
 /**
- * The tree as the panel lists it (ADR 0195): the subagents still queued or running, and the ones above each, which it
+ * The tree as the panel lists it (ADR 0196): the subagents still queued or running, and the ones above each, which it
  * hangs from. One that ended leaves, unless it is `open`, the one the owner is looking at.
  */
 export function stillRunning(tree: SubagentTree, open?: SubagentId): SubagentTree {

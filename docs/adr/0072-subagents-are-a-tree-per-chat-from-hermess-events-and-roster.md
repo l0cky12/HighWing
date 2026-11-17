@@ -1,6 +1,6 @@
 # Subagents are a tree per chat, built from Hermes's events and roster, with Steer and Stop for one at a time
 
-> **Partly superseded by [ADR 0195](0195-the-subagents-panel-lists-only-running-subagents-and-hides-when-none-are.md).** The panel lists only the subagents still queued or running, and hides when none are. "Completed subagents are kept for the chat's whole time on this connection" still holds for the tree, but no longer for the panel's list. The rest of this ADR stands.
+> **Partly superseded by [ADR 0196](0196-the-subagents-panel-lists-only-running-subagents-and-hides-when-none-are.md).** The panel lists only the subagents still queued or running, and hides when none are. "Completed subagents are kept for the chat's whole time on this connection" still holds for the tree, but no longer for the panel's list. The rest of this ADR stands.
 
 Issue #95. A reply can hand parts of its work to subagents (Hermes's `delegate_task`), which can start subagents of their own. Until now the app showed none of that: the chat only showed the reply's own `delegate_task` tool call. Settings → Model only picks the model subagents run on. That is configuration, not what they are doing.
 

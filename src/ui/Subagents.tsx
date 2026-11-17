@@ -1,5 +1,5 @@
 // The Subagents a chat's reply started (ADR 0072), above the composer: a tree of who started whom, and one subagent's
-// own activity and output apart from the chat. Steer and Stop act on one subagent, named in full before they go.
+// own activity and output apart from the chat. It lists only the ones still running, and hides when none are (ADR 0195). Steer and Stop act on one subagent, named in full before they go.
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -35,6 +35,7 @@ import {
   hasEnded,
   isFailure,
   isSteerable,
+  stillRunning,
   tally,
   type Subagent,
   type SubagentId,
@@ -78,9 +79,8 @@ const isLive = (state: SubagentState) => state === "running" || state === "queue
 const live = (s: Subagent) => isLive(s.state);
 
 function summaryOf(tree: SubagentTree): string {
-  const { running, failed, total } = tally(tree);
-  const parts = [running && `${running} running`, failed && `${failed} failed`, `${total} in all`].filter(Boolean);
-  return parts.join(" · ");
+  const { running } = tally(tree);
+  return running ? `${running} running` : "None running";
 }
 
 function SyncNote({ tree }: { tree: SubagentTree }) {
@@ -114,7 +114,9 @@ export function SubagentsPanel({
   const [picked, setPicked] = useState<SubagentId>();
   const rootRef = useRef<HTMLElement>(null);
   const backTo = useRef<SubagentId | undefined>(undefined);
-  const shown = picked && tree?.subagents.find((s) => s.id === picked);
+  // One that ends while it's open stays until the owner goes back from it or closes the panel.
+  const listed = tree && stillRunning(tree, open ? picked : undefined);
+  const shown = picked && listed?.subagents.find((s) => s.id === picked);
 
   // Each request from the office focuses the subagent's name, even the one already open.
   const [asked, setAsked] = useState(0);
@@ -153,7 +155,7 @@ export function SubagentsPanel({
     return () => watch?.disconnect();
   }, [details]);
 
-  if (!tree?.subagents.length) return null;
+  if (!listed?.subagents.length) return null;
   const back = () => {
     backTo.current = picked;
     setPicked(undefined);
@@ -165,12 +167,12 @@ export function SubagentsPanel({
         {open ? <ChevronDown size={13} aria-hidden /> : <ChevronRight size={13} aria-hidden />}
         <Workflow size={13} aria-hidden />
         <span className="subagents-title">Subagents</span>
-        <span className="subagents-count">{summaryOf(tree)}</span>
+        <span className="subagents-count">{summaryOf(listed)}</span>
       </button>
-      {open && <SyncNote tree={tree} />}
+      {open && <SyncNote tree={listed} />}
       {open &&
         (shown ? (
-          <SubagentView key={shown.id} tree={tree} s={shown} api={api} asked={asked} onBack={back} onOpen={setPicked} />
+          <SubagentView key={shown.id} tree={listed} s={shown} api={api} asked={asked} onBack={back} onOpen={setPicked} />
         ) : (
           <div className="subagents-body">
             {approvalWaiting && (
@@ -181,7 +183,7 @@ export function SubagentsPanel({
                 </button>
               </div>
             )}
-            <Branch tree={tree} onOpen={setPicked} />
+            <Branch tree={listed} onOpen={setPicked} />
           </div>
         ))}
     </section>

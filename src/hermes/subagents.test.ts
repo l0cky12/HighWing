@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { FakeHermes, row } from "./fakeHermes";
 import { connect } from "./transport";
 import { CapabilityUnsupportedError } from "./capabilities";
-import { ACTIVITY_MAX, SUBAGENTS_MAX, childrenOf, descendantsOf, onLost, onRoster, onSubagentEvent, tally, type SubagentId, type SubagentTree } from "./subagents";
+import { ACTIVITY_MAX, SUBAGENTS_MAX, childrenOf, descendantsOf, onLost, onRoster, onSubagentEvent, stillRunning, tally, type SubagentId, type SubagentTree } from "./subagents";
 
 /** Holds back the server's answers to `method` until the returned function is called. */
 function hold(server: FakeHermes, method: string) {
@@ -183,6 +183,23 @@ describe("The subagent tree from Hermes's events", () => {
     t = onSubagentEvent(t, "subagent.start", who("a1x", "A1x", { parent_id: "a1", depth: 2 }), 1);
     expect(descendantsOf(t!, sid("a")).map((s) => s.id)).toEqual(["a1", "a1x"]);
     expect(descendantsOf(t!, sid("b"))).toEqual([]);
+  });
+
+  it("lists only the ones still running, with the ones above them, and the one open", () => {
+    let t: SubagentTree | undefined;
+    t = onSubagentEvent(t, "subagent.start", who("a", "A"), 1);
+    t = onSubagentEvent(t, "subagent.start", who("b", "B"), 1);
+    t = onSubagentEvent(t, "subagent.start", who("a1", "A1", { parent_id: "a", depth: 1 }), 1);
+    t = onSubagentEvent(t, "subagent.complete", who("a", "A", { status: "completed" }), 2);
+    t = onSubagentEvent(t, "subagent.complete", who("b", "B", { status: "failed" }), 2);
+    const ids = (tree: SubagentTree) => tree.subagents.map((s) => s.id);
+    expect(ids(stillRunning(t!))).toEqual(["a", "a1"]);
+    expect(ids(stillRunning(t!, sid("b")))).toEqual(["a", "b", "a1"]);
+    t = onSubagentEvent(t, "subagent.complete", who("a1", "A1", { parent_id: "a", depth: 1, status: "completed" }), 3);
+    expect(ids(stillRunning(t!))).toEqual([]);
+    expect(ids(stillRunning(t!, sid("a1")))).toEqual(["a", "a1"]);
+    t = onSubagentEvent(t, "subagent.spawn_requested", who("c", "C"), 4);
+    expect(ids(stillRunning(t!))).toEqual(["c"]);
   });
 
   it("tells subagents apart by their delegate_task call on a Hermes that sends no subagent id", () => {

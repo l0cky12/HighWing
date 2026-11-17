@@ -69,7 +69,7 @@ describe("Settings → Profiles", { timeout: 30_000 }, () => {
     const name = within(dialog).getByLabelText("Name");
     await user.type(name, "work");
     expect(within(dialog).getByText("There's already a profile named work. Pick another name.")).toBeTruthy();
-    expect(within(dialog).getByRole("button", { name: /Create profile/ })).toHaveProperty("disabled", true);
+    expect(within(dialog).getByRole("button", { name: /Create profile/ }).getAttribute("aria-disabled")).toBe("true");
     await user.clear(name);
     await user.type(name, "papers");
     await user.type(within(dialog).getByLabelText("Description (optional)"), "Reads papers");

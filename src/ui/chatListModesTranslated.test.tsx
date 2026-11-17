@@ -49,7 +49,6 @@ async function launch(live: Live[]) {
   await act(async () => void (await hermes.idle()));
   await act(async () => void (await hermes.checkOtherProfiles()));
   await waitFor(() => expect(panel().querySelector(".sb-needs-you")).toBeTruthy());
-  await waitFor(() => expect(panel().querySelector(".sb-botchat-row")).toBeTruthy());
   return userEvent.setup();
 }
 
@@ -59,7 +58,7 @@ const waiting = (key: string): Live => ({ id: `rt-${key}`, session_key: key, sta
 
 it("shows only catalogue words in Chats mode with one bot that needs the owner", async () => {
   await launch([waiting("scribe-bot")]);
-  expect(parts(".sb-mode", ".sb-needs-you-slot", ".sb-profile .profile-btn > *", ".sb-botchat")).toEqual([]);
+  expect(parts(".sb-mode", ".sb-needs-you-slot", ".sb-profile .profile-btn > *")).toEqual([]);
   expect(panel().querySelector(".sb-profile .profile-btn")!.getAttribute("aria-label")).toMatch(/^⟦.*⟧$/);
   expect(untranslated(document.querySelector("textarea[data-composer]")!)).toEqual([]);
 });

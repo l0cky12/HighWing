@@ -174,7 +174,8 @@ export function Bots({
     setMaking(false);
     const name = result.select;
     const said = result.notice?.text ?? (name ? l.profiles.created(name) : "");
-    setMade({ text: w.made(said).trim(), warn: result.notice?.tone === "warn", focus: name });
+    // No bot selected: the form deleted the one it made, so there is no row to open.
+    setMade({ text: name ? w.made(said).trim() : said, warn: !!result.notice && result.notice.tone !== "muted", focus: name, command: result.notice?.command });
     // A search could hide the new bot's row; it is shown once made.
     if (name) setQuery("");
     void read();

@@ -2914,10 +2914,6 @@ label.memory-pick { cursor: pointer; }
 .sb-needs-you-text strong { font-size: calc(13rem / 14); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sb-needs-you-text span { font-size: calc(12rem / 14); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sb-needs-you-slot .inbox-leave { margin: 6px 0 0; }
-.sb-botchat { padding: 0 10px 4px; }
-.sb-botchat-row .row-open { gap: 9px; padding-left: 9px; }
-.sb-botchat-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-weight: 500; }
-.sb-botchat-row:hover .row-meta, .sb-botchat-row:focus-within .row-meta { display: flex; }
 @media (max-width: 520px) {
   .inbox { width: calc(100vw - 60px); }
 }
@@ -4233,7 +4229,7 @@ div.export-preview.export-page { height: auto; padding: 10px 12px; background: v
 .profile-keys { margin: 0; padding: 8px 14px; border-top: 1px solid var(--line); }
 .leave-overlay .leave-dialog.profile-dialog { max-width: min(560px, calc(100% - 32px)); width: 100%; max-height: calc(100vh - 32px); overflow-y: auto; gap: 14px; }
 .profile-dialog .field input, .profile-dialog .field select { min-width: 0; }
-.profile-dialog .field-label { justify-content: space-between; }
+.profile-dialog .field-label { justify-content: space-between; flex-wrap: wrap; row-gap: 4px; }
 .profile-dialog .field-label .btn { padding: 2px 9px; }
 .profile-model { display: flex; flex-wrap: wrap; gap: 8px; }
 /* Edit bot's look: the color box with what it holds, and the picture as the row will show it. */
@@ -4253,6 +4249,30 @@ div.export-preview.export-page { height: auto; padding: 10px 12px; background: v
 .profile-delete-list { margin: 4px 0 8px; padding-left: 20px; }
 .profile-dialog p { margin: 0 0 6px; }
 .profile-save-why { text-align: right; }
+/* New's Generate with AI (ADR 0197): the call in flight, and the suggestion under the Persona box. */
+.persona-rephrase-asking { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; color: var(--muted); }
+.persona-rephrase-asking .btn { padding: 2px 9px; }
+.persona-rephrase-asking .set-hint { flex-basis: 100%; }
+.persona-suggestion { padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--raised); }
+/* New's Skills, Tools and MCP servers (ADR 0197): Hermes's defaults or Choose, then a filterable checklist. */
+.bot-setup { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.bot-setup > legend { padding: 0; margin-bottom: 6px; }
+.bot-setup-modes { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+.bot-setup-modes label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.bot-setup-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.bot-setup-tools input[type="search"] { flex: 1 1 180px; min-width: 0; background: var(--raised); border: 1px solid var(--line-2); border-radius: 9px; padding: 7px 10px; outline: none; color: var(--text); font-size: calc(13rem / 14); }
+.bot-setup-tools input[type="search"]:focus-visible { border-color: var(--line-3); }
+.bot-setup-list { max-height: 220px; overflow-y: auto; border: 1px solid var(--line); border-radius: 9px; padding: 4px 0; }
+.bot-setup-item { display: flex; align-items: flex-start; gap: 8px; padding: 5px 10px; min-width: 0; }
+.bot-setup-item input { flex: none; margin-top: 3px; }
+.bot-setup-item label { min-width: 0; overflow-wrap: anywhere; cursor: pointer; }
+.bot-setup-item:has(input:focus-visible) { background: var(--raised-2); }
+.bot-setup-detail { display: block; }
+.bot-setup-none { padding: 6px 10px; }
+.bot-setup-outcome { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; }
+.bot-setup-outcome li { overflow-wrap: anywhere; }
+.bot-setup-outcome .btn { margin-top: 4px; padding: 2px 9px; }
+.bot-setup-outcome-name { font-weight: 600; }
 
 /* Annotation mode (ADR 0094): the still covers the page's box, and the review card sits beside or under it. */
 .preview-body { position: relative; }

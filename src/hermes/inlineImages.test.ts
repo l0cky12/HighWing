@@ -77,6 +77,12 @@ describe("carried", () => {
     expect(carried(7, "hello world", "hello there")).toBe(11);
     expect(carried(7, "hello world", "help")).toBe(4);
   });
+
+  it("follows an edit in repeated words from where it began", () => {
+    expect(carried(2, "aaa!", "aaaa!", 0)).toBe(3);
+    expect(carried(2, "aaa!", "aaaa!", 3)).toBe(2);
+    expect(carried(2, "aaaa!", "aaa!", 0)).toBe(1);
+  });
 });
 
 describe("A message's marks on the way to Hermes and back", () => {

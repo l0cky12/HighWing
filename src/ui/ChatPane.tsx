@@ -1338,7 +1338,7 @@ const BlockView = memo(
           {block.text && (
             <div className="bubble-text">
               {pieces.map((p, i) =>
-                typeof p === "string" ? <Fragment key={i}>{highlight(p, query)}</Fragment> : <InlineSentImage key={i} image={p.image} name={p.name} offline={offline} />,
+                typeof p === "string" ? <Fragment key={i}>{highlight(p, query)}</Fragment> : <InlineSentImage key={`${i}:${p.image.path}`} image={p.image} name={p.name} offline={offline} />,
               )}
             </div>
           )}
@@ -1985,11 +1985,14 @@ function Composer({
     return () => void (alive.current = false);
   }, []);
   const seen = useRef({ key: draftKey, text });
+  // Where the owner's last edit in the textarea began, worked out from the cursor after it, for `carried`.
+  const editedAt = useRef<{ text: string; at: number }>(undefined);
   useLayoutEffect(() => {
     const was = seen.current;
     seen.current = { key: draftKey, text };
     if (was.key !== draftKey || was.text === text) return;
-    for (const a of anchors.current) if (a.key === draftKey) a.at = carried(a.at, was.text, text);
+    const near = editedAt.current?.text === text ? editedAt.current.at : undefined;
+    for (const a of anchors.current) if (a.key === draftKey) a.at = carried(a.at, was.text, text, near);
   }, [draftKey, text]);
   const anchorHere = () => {
     const ta = taRef.current;
@@ -2179,8 +2182,9 @@ function Composer({
   }, [text]);
 
   const sendable = attaching === 0 && (!!text.trim() || attachments.length > 0);
-  // The files no mark places, above the words: the first image, files that aren't images, and any whose mark went.
-  const above = attachments.filter((f) => !marks.some((m) => m.file.path === f.path));
+  // The files no mark places, above the words: the first image, files that aren't images, and any whose mark went. An
+  // annotation stays there marked too, since its chip says which page it came from and whether that page moved on.
+  const above = attachments.filter((f) => annotations.has(f.path) || !marks.some((m) => m.file.path === f.path));
   const slash = useSlashCommands(commands, text, onText, taRef);
   const step = (which: EditStep) => {
     const before = textRef.current;
@@ -2369,61 +2373,68 @@ function Composer({
             ))}
           </div>
         )}
-        <textarea
-          ref={taRef}
-          data-composer
-          rows={1}
-          autoFocus={autoFocus}
-          placeholder={placeholder}
-          spellCheck={spellCheck}
-          value={text}
-          {...slash.inputProps}
-          onChange={(e) => onText(e.target.value, inputKind(e.nativeEvent))}
-          onSelect={(e) => {
-            slash.inputProps.onSelect(e);
-            const [from, to] = [e.currentTarget.selectionStart, e.currentTarget.selectionEnd];
-            caret.current = [from, to];
-            setSelection((s) => (s[0] === from && s[1] === to ? s : [from, to]));
-          }}
-          onPaste={(e) => {
-            if (dragging) return;
-            const paste = pasteAttaches(e.clipboardData);
-            if (paste.kind === "copied files" || (paste.kind === "files" && !paste.keepText)) e.preventDefault();
-            if (paste.kind === "copied files") void attachCopied();
-            else if (paste.kind === "files") void stageFiles(paste.files);
-            else if (paste.kind === "clipboard images") void stageFiles(clipboardImages());
-          }}
-          onKeyDown={(e) => {
-            if (slash.onKeyDown(e)) return;
-            // Backspace after a mark, or Delete before one, takes the whole mark out, and its image goes above the words.
-            const ta = e.currentTarget;
-            const mark =
-              (e.key === "Backspace" || e.key === "Delete") && !composing(e) && ta.selectionStart === ta.selectionEnd
-                ? marks.find((m) => (e.key === "Backspace" ? m.end : m.start) === ta.selectionStart)
-                : undefined;
-            if (mark) {
-              e.preventDefault();
-              const next = text.slice(0, mark.start) + text.slice(mark.end);
-              caretTo.current = { text: next, from: mark.start, to: mark.start };
-              onText(next);
-              return;
-            }
-            const edit = editStep(e);
-            // Even with nothing to step, so the webview's own history never runs on this text.
-            if (edit && !composing(e)) {
-              e.preventDefault();
-              step(edit);
-              return;
-            }
-            const command = pickCommand(e, "composer");
-            if (command === "send" || command === "sendOther") {
-              e.preventDefault();
-              // Enter queues or steers only while the hint below says so; Dictation hides it.
-              if (!(queueing && dictation.active)) send(command === "sendOther");
-            } else if (command === "newLine") typeNewLine(e);
-          }}
-        />
-        {marks.length > 0 && <InlineMarks ta={taRef} text={text} marks={marks} selection={selection} previews={(path) => previews.current?.get(path)} />}
+        {/* The textarea and the chips over its marks share this box, so the chips stay put when anything above moves. */}
+        <div className="composer-text">
+          <textarea
+            ref={taRef}
+            data-composer
+            rows={1}
+            autoFocus={autoFocus}
+            placeholder={placeholder}
+            spellCheck={spellCheck}
+            value={text}
+            {...slash.inputProps}
+            onChange={(e) => {
+              const next = e.target.value;
+              editedAt.current = { text: next, at: e.target.selectionStart - Math.max(0, next.length - text.length) };
+              onText(next, inputKind(e.nativeEvent));
+            }}
+            onSelect={(e) => {
+              slash.inputProps.onSelect(e);
+              const [from, to] = [e.currentTarget.selectionStart, e.currentTarget.selectionEnd];
+              caret.current = [from, to];
+              setSelection((s) => (s[0] === from && s[1] === to ? s : [from, to]));
+            }}
+            onPaste={(e) => {
+              if (dragging) return;
+              const paste = pasteAttaches(e.clipboardData);
+              if (paste.kind === "copied files" || (paste.kind === "files" && !paste.keepText)) e.preventDefault();
+              if (paste.kind === "copied files") void attachCopied();
+              else if (paste.kind === "files") void stageFiles(paste.files);
+              else if (paste.kind === "clipboard images") void stageFiles(clipboardImages());
+            }}
+            onKeyDown={(e) => {
+              if (slash.onKeyDown(e)) return;
+              // Backspace after a mark, or Delete before one, takes the whole mark out, and its image goes above the words.
+              const ta = e.currentTarget;
+              const mark =
+                (e.key === "Backspace" || e.key === "Delete") && !composing(e) && ta.selectionStart === ta.selectionEnd
+                  ? marks.find((m) => (e.key === "Backspace" ? m.end : m.start) === ta.selectionStart)
+                  : undefined;
+              if (mark) {
+                e.preventDefault();
+                const next = text.slice(0, mark.start) + text.slice(mark.end);
+                caretTo.current = { text: next, from: mark.start, to: mark.start };
+                onText(next);
+                return;
+              }
+              const edit = editStep(e);
+              // Even with nothing to step, so the webview's own history never runs on this text.
+              if (edit && !composing(e)) {
+                e.preventDefault();
+                step(edit);
+                return;
+              }
+              const command = pickCommand(e, "composer");
+              if (command === "send" || command === "sendOther") {
+                e.preventDefault();
+                // Enter queues or steers only while the hint below says so; Dictation hides it.
+                if (!(queueing && dictation.active)) send(command === "sendOther");
+              } else if (command === "newLine") typeNewLine(e);
+            }}
+          />
+          {marks.length > 0 && <InlineMarks ta={taRef} text={text} marks={marks} selection={selection} previews={(path) => previews.current?.get(path)} />}
+        </div>
         <div className="composer-bar">
           <button className="icon-btn" title="Attach files" onClick={() => void pick()}>
             <Paperclip size={16} />

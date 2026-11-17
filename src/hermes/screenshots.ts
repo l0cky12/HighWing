@@ -5,6 +5,7 @@
 // is deleted once nothing needs it any more. Nothing here sends anything to Hermes.
 
 import type { AnnotationLabel } from "./annotations";
+import { highestMark } from "./inlineImages";
 import type { Attachment } from "./model";
 import { stagedFiles } from "./unsaved";
 import { errorText } from "./values";
@@ -111,6 +112,7 @@ export class ScreenshotDesk {
     private readonly api: ScreenshotApi,
     private readonly onAttached?: (remote: boolean) => void,
     private readonly reveal?: () => void,
+    private readonly words: (key: string) => string = () => "",
   ) {}
 
   subscribe = (fn: () => void) => {
@@ -254,6 +256,7 @@ export class ScreenshotDesk {
       case "gone":
         next = NONE;
         letGo = now.map((a) => a.path);
+        this.numbers.delete(e.key);
         break;
     }
     if (next.length === now.length) return this.release(letGo);
@@ -264,20 +267,20 @@ export class ScreenshotDesk {
 
   /**
    * Each staged image's number in the chat's composer, by path: the number its mark there gives (inlineImages.ts). They
-   * count up from 1 in the order the images were added, and start again only once nothing is staged in the chat, so
-   * a mark the owner deleted and brings back with Undo never names a later image.
+   * count up in the order the images were added, for as long as the desk lasts, and past every mark in the chat's
+   * Draft (`words`), so a mark that Undo, a restart or a message put back brings back never names another image.
    */
   numbersIn = (key: string): ReadonlyMap<string, number> => this.numbers.get(key)?.of ?? UNNUMBERED;
 
   private restage(key: string, files: readonly Attachment[]) {
+    const was = this.numbers.get(key) ?? { of: UNNUMBERED, next: 1 };
     if (!files.length) {
       this.staged.delete(key);
-      this.numbers.delete(key);
+      this.numbers.set(key, { of: UNNUMBERED, next: was.next });
       return;
     }
     this.staged.set(key, files);
-    const was = this.numbers.get(key) ?? { of: UNNUMBERED, next: 1 };
-    let next = was.next;
+    let next = Math.max(was.next, highestMark(this.words(key)) + 1);
     const of = new Map(files.flatMap((a) => (a.kind !== "image" ? [] : [[a.path, was.of.get(a.path) ?? next++] as const])));
     this.numbers.set(key, { of, next });
   }

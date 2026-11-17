@@ -73,15 +73,21 @@ export function placeImages(text: string, images: readonly SentImage[]): { above
   return { above: images.filter((_, i) => !placed.has(i)), pieces };
 }
 
+/** The highest image number a mark in `text` gives, or 0. */
+export const highestMark = (text: string) => Math.max(0, ...[...text.matchAll(MARK)].map((m) => Number(m[1])));
+
 /**
  * Where place `at` in `before` is in `after`, one edit later. Words put in at `at` go after it, and a place in words
- * the edit took out moves to the end of what replaced them.
+ * the edit took out moves to the end of what replaced them. In repeated words more than one edit gives `after`, as
+ * typing `a` into `aaa` anywhere does: `near`, where the edit began if known, picks the one nearest it.
  */
-export function carried(at: number, before: string, after: string): number {
+export function carried(at: number, before: string, after: string, near = Infinity): number {
   const shorter = Math.min(before.length, after.length);
   let same = 0;
   while (same < shorter && before[same] === after[same]) same++;
   let tail = 0;
-  while (tail < shorter - same && before[before.length - 1 - tail] === after[after.length - 1 - tail]) tail++;
-  return at <= same ? at : Math.max(after.length - tail, at + after.length - before.length);
+  while (tail < shorter && before[before.length - 1 - tail] === after[after.length - 1 - tail]) tail++;
+  const from = Math.min(same, Math.max(shorter - tail, near));
+  const kept = Math.min(tail, shorter - from);
+  return at <= from ? at : Math.max(after.length - kept, at + after.length - before.length);
 }

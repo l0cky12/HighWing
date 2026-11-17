@@ -259,20 +259,29 @@ describe("Each chat's staged attachments", () => {
     expect(rust.discarded).toEqual(["/c/1/0/a.png"]);
   });
 
-  it("numbers each chat's staged images from 1 as they are added, files not counted, and starts again once the chat has none", () => {
+  it("numbers each chat's staged images as they are added, files not counted, and never gives a number twice", () => {
     const desk = new ScreenshotDesk(fakeApi().api);
     const notes: Attachment = { path: "/home/lena/notes.txt", name: "notes.txt", size: 3, kind: "file" };
     desk.change({ kind: "added", key: "chat-a", attachments: [file("/c/a.png"), notes, file("/c/b.png")] });
     desk.change({ kind: "added", key: "chat-b", attachments: [file("/c/x.png")] });
     expect([...desk.numbersIn("chat-a")]).toEqual([["/c/a.png", 1], ["/c/b.png", 2]]);
     expect([...desk.numbersIn("chat-b")]).toEqual([["/c/x.png", 1]]);
-    // A number that went with its image isn't given to the next one while the chat still has others.
     desk.change({ kind: "removed", key: "chat-a", paths: ["/c/b.png"] });
     desk.change({ kind: "added", key: "chat-a", attachments: [file("/c/c.png")] });
     expect([...desk.numbersIn("chat-a")]).toEqual([["/c/a.png", 1], ["/c/c.png", 3]]);
+    // Undo can still bring back a mark for one that went with a message.
     desk.change({ kind: "sent", key: "chat-a", paths: ["/c/a.png", "/c/c.png", notes.path] });
     desk.change({ kind: "added", key: "chat-a", attachments: [file("/c/d.png")] });
-    expect([...desk.numbersIn("chat-a")]).toEqual([["/c/d.png", 1]]);
+    expect([...desk.numbersIn("chat-a")]).toEqual([["/c/d.png", 4]]);
+  });
+
+  it("numbers past every mark in the chat's Draft, so a mark kept from before a restart names no new image", () => {
+    const words: Record<string, string> = { "chat-a": "see [image 2: old.png] and [image 7: older.png]" };
+    const desk = new ScreenshotDesk(fakeApi().api, undefined, undefined, (key) => words[key] ?? "");
+    desk.change({ kind: "added", key: "chat-a", attachments: [file("/c/new.png")] });
+    desk.change({ kind: "added", key: "chat-b", attachments: [file("/c/other.png")] });
+    expect([...desk.numbersIn("chat-a")]).toEqual([["/c/new.png", 8]]);
+    expect([...desk.numbersIn("chat-b")]).toEqual([["/c/other.png", 1]]);
   });
 
   it("tells the composer that checked a capture once it is staged, so it can mark where it goes", async () => {

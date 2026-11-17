@@ -653,6 +653,7 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
 }
 .composer textarea::placeholder { color: var(--faint); }
 /* Image marks in the composer's words (inlineMarks.tsx): a mirror of the text, and a chip over each mark. */
+.composer-text { position: relative; }
 .inline-marks {
   position: absolute; overflow: hidden; pointer-events: none; color: transparent; margin: 0; z-index: 1;
 }

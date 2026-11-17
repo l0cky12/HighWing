@@ -132,7 +132,8 @@ describe("Settings → Profiles", { timeout: 30_000 }, () => {
     await user.click(within(dialog).getByRole("button", { name: /Save changes/ }));
     await waitFor(() => expect(server.profileMeta.default?.display_name).toBe("Main"));
     await waitFor(() => expect(option(screen.getByRole("listbox", { name: "Profiles" }), "default").textContent).toMatch(/Main \(default\)/));
-    expect(document.querySelector(".profile-name")?.textContent).toBe("Main (default)");
+    await waitFor(() => expect(document.querySelector(".profile-btn .profile-name")?.textContent).toBe("Main"));
+    expect(document.querySelector(".profile-btn .profile-id")?.textContent).toBe("default");
     // Persona's own picker names it the same way.
     await user.click(screen.getByRole("tab", { name: "Persona" }));
     await waitFor(() => expect([...document.querySelectorAll("option")].map((o) => o.textContent)).toContain("Main (default) (in use)"));

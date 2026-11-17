@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Chat, Item } from "./model";
 import { handoffs, type DispatchedTask } from "./dispatched";
-import { AttentionClock, CLEARED_KEY, ClearedStore, PINS_KEY, PinStore, SNOOZE_KEY, STOP_WAITING_KEY, SnoozeStore, StopWaitingStore, WOKEN_KEPT_MS, chatSections, customUntil, heldClears, isWorking, lastActive, nextWake, snoozePresets, wakeLabel } from "./snooze";
+import { type SectionKey, AttentionClock, CLEARED_KEY, ClearedStore, PINS_KEY, PinStore, SNOOZE_KEY, STOP_WAITING_KEY, SnoozeStore, StopWaitingStore, WOKEN_KEPT_MS, chatSections, chatsUnderBot, customUntil, heldClears, isWorking, lastActive, nextWake, snoozePresets, wakeLabel } from "./snooze";
 
 /** A Storage stand-in, its document under `key` readable as `raw`. */
 function memory(start?: string, key = SNOOZE_KEY) {
@@ -265,6 +265,33 @@ describe("chatSections", () => {
     expect(nextWake(snoozes, WED)).toBe(WED + HOUR);
     expect(nextWake(snoozes, WED + 2 * HOUR)).toBe(WED + 5 * HOUR);
     expect(nextWake(snoozes, WED + 6 * HOUR)).toBeUndefined();
+  });
+});
+
+describe("chatsUnderBot", () => {
+  const sections = (over: Partial<Record<SectionKey, Chat[]>>) => ({ pinned: [], inbox: [], snoozed: [], archived: [], working: [], settled: [], ...over });
+  const ids = (cs: Chat[]) => cs.map((c) => c.id);
+  const many = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => chat(`${prefix}${i}`, WED - i));
+
+  it("puts Pinned, Inbox and Working first, up to five", () => {
+    const s = sections({ pinned: many("p", 2), inbox: many("i", 3), working: many("w", 2), settled: many("s", 4) });
+    expect(ids(chatsUnderBot(s, []))).toEqual(["p0", "p1", "i0", "i1", "i2"]);
+  });
+
+  it("fills up to three with the newest Settled chats", () => {
+    expect(ids(chatsUnderBot(sections({ inbox: many("i", 1), settled: many("s", 4) }), []))).toEqual(["i0", "s0", "s1"]);
+    expect(ids(chatsUnderBot(sections({ settled: many("s", 4) }), []))).toEqual(["s0", "s1", "s2"]);
+    expect(ids(chatsUnderBot(sections({ inbox: many("i", 4), settled: many("s", 4) }), []))).toEqual(["i0", "i1", "i2", "i3"]);
+  });
+
+  it("adds the chat each pane shows, from any section, once", () => {
+    const s = sections({ inbox: many("i", 1), settled: many("s", 5), snoozed: many("z", 1), archived: many("a", 1) });
+    expect(ids(chatsUnderBot(s, ["s4", "z0"]))).toEqual(["i0", "s0", "s1", "s4", "z0"]);
+    expect(ids(chatsUnderBot(s, ["i0", null, "a0", "gone"]))).toEqual(["i0", "s0", "s1", "a0"]);
+  });
+
+  it("is nothing for a profile without chats", () => {
+    expect(chatsUnderBot(sections({}), [null])).toEqual([]);
   });
 });
 

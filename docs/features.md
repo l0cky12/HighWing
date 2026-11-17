@@ -135,6 +135,8 @@ These are the defaults. Settings → **Keyboard Shortcuts** lists every command 
 | Ctrl+N | New chat |
 | Ctrl+F | Find in the open chat |
 | Ctrl+B | Hide or show the chat list |
+| Ctrl+Shift+B | Switch the chat list between Chats and Bots (on a Hermes with Bot Mode) |
+| Alt+B | Open the profile's Bot Chat, or go back to the chat before it |
 | Ctrl+\\ | Open a second pane, or close the inactive one |
 | Ctrl+1, Ctrl+2 | Focus the left or right composer |
 | Ctrl+Shift+S | Take a screenshot (configurable in Settings → General) |

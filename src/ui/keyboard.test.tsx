@@ -364,14 +364,17 @@ describe("Chat list by keyboard", () => {
 
   it("reaches each chat with Tab, and Enter opens it", async () => {
     const s = await signedIn();
-    button(/default/).focus();
-    // Hide chats ends the profile's row; New chat and Search, labeled, come next.
+    screen.getByRole("tab", { name: "Chats" }).focus();
     await s.user.tab();
     expect(focused()).toBe(button("Hide chats (Ctrl+B)"));
+    await s.user.tab();
+    expect(focused()).toBe(button(/default/));
     await s.user.tab();
     expect(focused()).toBe(button("New chat"));
     await s.user.tab();
     expect(focused()).toBe(button("Search chats"));
+    await s.user.tab();
+    expect(focused()).toBe(button("Hermes's Bot Chat"));
     // The project switcher sits under the profile's name, before the chats.
     await s.user.tab();
     expect(focused()).toBe(button(/All chats/));
@@ -623,10 +626,10 @@ describe("Existing shortcuts", () => {
     expect(screen.getByRole("button", { name: /Nightly backup/ })).toBeTruthy();
   });
 
-  it("hides the list from the button beside the profile switcher, and Ctrl+B brings it back", async () => {
+  it("hides the list from the button beside the switch at its top, and Ctrl+B brings it back", async () => {
     const s = await signedIn();
     const hide = screen.getByRole("button", { name: "Hide chats (Ctrl+B)" });
-    expect(hide.closest(".sb-head")?.querySelector(".profile-switch")).toBeTruthy();
+    expect(hide.closest(".sb-head")?.querySelector("[role=tablist]")).toBeTruthy();
     expect(hide.getAttribute("title")).toBe("Hide chats (Ctrl+B)");
     expect(hide.getAttribute("aria-keyshortcuts")).toBe("Control+B");
     await s.user.click(hide);

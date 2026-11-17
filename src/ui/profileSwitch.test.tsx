@@ -38,7 +38,7 @@ async function launch() {
   return { server, hermes, user: userEvent.setup() };
 }
 
-const composer = () => screen.getByPlaceholderText<HTMLTextAreaElement>("Message Hermes");
+const composer = () => screen.getByPlaceholderText<HTMLTextAreaElement>(/^Message /);
 
 async function pickProfile(user: ReturnType<typeof userEvent.setup>, profile: string) {
   await user.click(document.querySelector<HTMLElement>(".profile-btn")!);

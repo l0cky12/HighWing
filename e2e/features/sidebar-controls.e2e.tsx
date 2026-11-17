@@ -4,7 +4,7 @@ import { row, type FakeHermes } from "../../src/hermes/fakeHermes";
 import { UI_PREFS_KEY } from "../../src/hermes/uiPrefs";
 import { boot, shot } from "../harness";
 
-// A long Inbox, and Settled and Archived both full enough to want all of the foot (ADR 0197).
+// A long Inbox, and Settled and Archived both full enough to want all of the foot (ADR 0198).
 const seed = (s: FakeHermes) => {
   const read = Date.now() / 1000;
   s.sessions = [

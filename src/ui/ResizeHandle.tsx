@@ -1,5 +1,5 @@
 // The edge of a panel the owner drags, or focuses and moves with the arrow keys, to make the panel wider or narrower:
-// the side panel's left edge (ADR 0039) and the chat list's right edge (ADR 0197). A drag never closes the panel; it
+// the side panel's left edge (ADR 0039) and the chat list's right edge (ADR 0198). A drag never closes the panel; it
 // stops at `min`.
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
 

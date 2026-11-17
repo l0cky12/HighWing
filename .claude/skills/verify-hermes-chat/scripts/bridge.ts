@@ -52,6 +52,10 @@
 //   `POST /__return?chat=<chat id>` with a JSON body `{text, display_kind, display_metadata?, reply}` runs the turn Hermes
 //   starts when handed-off work comes back (`FakeHermes.returnWork`): the notice is stored as a user row with that
 //   display kind and metadata, and `reply` streams as the turn's reply, in that chat's live session (a test's control).
+//   `POST /__oneshot` with a JSON body `{answer?, failure?, signedOut?, hold?}` sets what `llm.oneshot` (Write with
+//   AI, Regenerate title) answers: `answer` its text, `failure` Hermes's failure reason (null clears it), `signedOut`
+//   the providers with no sign-in on the server, and `hold: true` keeps each answer until `POST /__oneshot?release=1`
+//   (a test's control). `/__state` lists each profile's SOUL.md under `souls` and every call's params under `oneshots`.
 // HV_INBOX=1 gives the `work` profile two Unread chats for the Rail inbox: one last active 3 days ago, one an hour ago.
 // HV_EVERYWHERE=1 gives `work` a chat about the backup and adds a third profile, `ops`, with another, so an Everywhere
 //   search for "backup" finds a chat in three profiles. A second stand-in without it finds one in `default`.
@@ -248,6 +252,8 @@ const dump = () =>
     2,
   );
 const save = () => stateFile && writeFileSync(stateFile, dump());
+/** Lets held `llm.oneshot` answers go (`/__oneshot?release=1`). */
+let releaseOneshot: (() => void) | undefined;
 save();
 
 const longParagraphs = Number(process.env.HV_LONG_REPLY ?? 0);
@@ -433,6 +439,20 @@ const http = createServer(async (req, res) => {
     res.end(typeof v === "string" ? v : JSON.stringify(v));
   };
   if (url.pathname === "/__state") return json(200, dump());
+  if (url.pathname === "/__oneshot" && req.method === "POST") {
+    if (url.searchParams.has("release")) {
+      releaseOneshot?.();
+      releaseOneshot = undefined;
+      server.oneshotGate = undefined;
+      return json(200, { ok: true });
+    }
+    const o = JSON.parse(body ?? "{}") as { answer?: unknown; failure?: unknown; signedOut?: unknown; hold?: unknown };
+    if (typeof o.answer === "string") server.oneshotAnswer = o.answer;
+    if ("failure" in o) server.oneshotFailure = typeof o.failure === "string" ? o.failure : undefined;
+    if (Array.isArray(o.signedOut)) server.signedOut = new Set(o.signedOut.filter((p): p is string => typeof p === "string"));
+    if (o.hold === true && !releaseOneshot) server.oneshotGate = new Promise<void>((r) => (releaseOneshot = r));
+    return json(200, { ok: true });
+  }
   if (url.pathname === "/__subagent" && req.method === "POST") {
     const id = url.searchParams.get("id") ?? "";
     return endSubagent(id, url.searchParams.get("status") ?? "completed") ? json(200, { ok: true }) : json(404, { detail: `No running stand-in subagent ${id}` });

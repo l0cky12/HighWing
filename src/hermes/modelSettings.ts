@@ -347,8 +347,8 @@ export class ModelSettingsApi {
     private readonly profile: () => string,
   ) {}
 
-  private q(extra: Record<string, string> = {}) {
-    return new URLSearchParams({ ...extra, profile: this.profile() }).toString();
+  private q(extra: Record<string, string> = {}, profile = this.profile()) {
+    return new URLSearchParams({ ...extra, profile }).toString();
   }
 
   /** The providers and models Hermes offers, as Settings → Model lists them (`GET /api/model/options`). */
@@ -358,10 +358,10 @@ export class ModelSettingsApi {
 
   /**
    * The model a session-less `llm.oneshot` runs on: the Text generation task's, or the main model's when that task is
-   * left on `auto` (`followsMain`). Only `GET /api/model/auxiliary` is read.
+   * left on `auto` (`followsMain`). Only `GET /api/model/auxiliary` is read, for `profile` (the profile shown if unnamed).
    */
-  async textModel(): Promise<{ provider: string; model: string; followsMain: boolean }> {
-    const aux = await this.rest("GET", `api/model/auxiliary?${this.q()}`);
+  async textModel(profile?: string): Promise<{ provider: string; model: string; followsMain: boolean }> {
+    const aux = await this.rest("GET", `api/model/auxiliary?${this.q({}, profile)}`);
     const task = auxFrom(aux).find((t) => t.task === TEXT_TASK);
     if (task && task.provider !== AUX_AUTO) return { provider: task.provider, model: task.model, followsMain: false };
     const main = obj(obj(aux).main);

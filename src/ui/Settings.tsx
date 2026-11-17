@@ -50,6 +50,7 @@ import { SkillSettings } from "./SkillSettings";
 import { PersonaPage, type PersonaDirty, type PersonaWhere } from "./PersonaSettings";
 import type { PersonaApi } from "../hermes/persona";
 import type { PersonaStore } from "../hermes/personaStore";
+import type { PersonaWriter } from "./PersonaAI";
 import { StartupSettings } from "./StartupSettings";
 import { SummonSettings } from "./SummonSettings";
 import { ChatSectionSettings } from "./ChatSectionSettings";
@@ -203,7 +204,14 @@ export const signInText = (route?: Route) =>
  * starts: `where.profile` is the profile in use. Persona lists and picks profiles itself (ADR 0117), and copies the shown
  * SOUL.md to another profile (ADR 0118).
  */
-export type PersonaWiring = { api: PersonaApi; store: PersonaStore; keyOf: (profile: string) => string; where: PersonaWhere };
+export type PersonaWiring = {
+  api: PersonaApi;
+  store: PersonaStore;
+  keyOf: (profile: string) => string;
+  where: PersonaWhere;
+  /** Write with AI for a profile's SOUL.md (PersonaAI.tsx), on that profile's own model. */
+  writerFor?: (profile: string) => PersonaWriter;
+};
 
 const allow = (go: () => void) => go();
 
@@ -917,6 +925,7 @@ export function SettingsScreen({
               store={persona.store}
               keyOf={persona.keyOf}
               where={persona.where}
+              writerFor={persona.writerFor}
               connected={status === "connected"}
               onDirty={onPersonaDirty}
             />,

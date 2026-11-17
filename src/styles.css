@@ -4642,3 +4642,14 @@ div.export-preview.export-page { height: auto; padding: 10px 12px; background: v
 button.budget-chat:hover { text-decoration: underline; }
 .budget-chat-amount { grid-column: 2; grid-row: 1; font-variant-numeric: tabular-nums; color: var(--text-2); text-align: right; }
 .budget-notes ul { padding-left: 18px; display: grid; gap: 4px; }
+
+/* Write with AI for a SOUL.md (PersonaAI.tsx), under Settings → Persona's editor and in the New bot form. */
+.persona-ai { margin-top: 10px; }
+.persona-ai-panel { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: var(--radius); background: var(--raised); }
+.persona-ai-open { display: inline-flex; align-items: center; gap: 6px; }
+.persona-ai .persona-text.persona-ai-notes { min-height: 70px; }
+.persona-ai .persona-text.persona-ai-text { min-height: 140px; max-height: 50vh; }
+.persona-ai .persona-actions { margin-top: 4px; }
+.persona-ai-working { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 0; color: var(--muted); }
+.persona-ai-working .btn { margin-left: auto; }
+.persona-ai-suggestion { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }

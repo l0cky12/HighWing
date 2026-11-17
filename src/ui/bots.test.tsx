@@ -214,6 +214,37 @@ describe("New bot in the Bots view", () => {
     expect(server.requests.filter((r) => r.method === "session.create" || r.method === "prompt.submit")).toEqual([]);
   });
 
+  it("rewrites a rough persona with AI and applies chosen skills, as the app wires them (ADR 0195)", async () => {
+    const { server, user } = await launch((s) => {
+      s.oneshotAnswer = "You are Ada. You summarise papers briefly.";
+      for (const name of ["arxiv", "recipes"])
+        s.skills.add("default", { dir: `/home/liam/.hermes/skills/${name}`, source: "bundled" }, `---\nname: ${name}\ndescription: The ${name} skill\n---\nDo ${name}.\n`);
+    });
+    await openBots(user);
+    await user.click(screen.getByRole("button", { name: "New bot" }));
+    await user.type(within(form()).getByLabelText("Name"), "ada");
+    await user.type(within(form()).getByLabelText("Persona (optional)"), "summarise papers, keep it brief");
+    const generate = within(form()).getByRole("button", { name: /Generate with AI/ });
+    await waitFor(() => expect(generate.getAttribute("aria-disabled")).toBeNull());
+    await user.click(generate);
+    await within(form()).findByLabelText("Suggested persona");
+    await user.click(within(form()).getByRole("button", { name: "Replace persona" }));
+    const skills = within(form()).getByRole("group", { name: "Skills" });
+    await user.click(within(skills).getByRole("radio", { name: "Choose" }));
+    await user.click(await within(skills).findByLabelText(/recipes/));
+    await user.click(within(form()).getByRole("button", { name: /Create bot/ }));
+    await waitFor(() => expect(botRows()).toHaveLength(3));
+    expect(server.requests.filter((r) => r.method === "llm.oneshot").map((r) => [r.params.profile, r.params.task])).toEqual([["default", "title_generation"]]);
+    expect(server.restRequests.find((r) => r.method === "POST" && r.path === "/api/profiles")?.body).toEqual({
+      name: "ada",
+      soul: "You are Ada. You summarise papers briefly.",
+      keep_skills: ["arxiv"],
+    });
+    expect(server.souls.ada).toBe("You are Ada. You summarise papers briefly.");
+    expect([...(server.skills.disabled.ada ?? [])]).toEqual(["recipes"]);
+    expect(within(bots()).getByRole("status").textContent).toBe("Created ada with the skills and tools you chose. Open its row to start its Bot Chat.");
+  });
+
   it("clears a search that would hide the new bot, so its row is shown and focused", async () => {
     const { user } = await launch();
     await openBots(user);

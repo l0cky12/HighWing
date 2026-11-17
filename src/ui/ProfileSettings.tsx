@@ -5,6 +5,7 @@ import { useEffect, useId, useRef, useState, useSyncExternalStore, type Keyboard
 import { Brain, Copy, FolderOpen, Keyboard, MoreHorizontal, Pencil, Plus, Puzzle, RefreshCw, Sparkles, Trash2, TriangleAlert, Wand2 } from "lucide-react";
 import { BOT_LOOK_SAME, BOT_PICTURE_MAX_BYTES, type BotLook } from "../hermes/bots";
 import type { CapabilityStore } from "../hermes/capabilities";
+import { allApplied, applyToolsets, checkSkills, choosing, createFields, type SetupApis, type SetupItem } from "../hermes/botSetup";
 import { allSaved, editsOf, rebase, type EditResult, type Edits, type FieldOutcome } from "../hermes/fieldMerge";
 import type { CatalogProvider } from "../hermes/modelSettings";
 import type { ProfileCloneApi } from "../hermes/profileClone";
@@ -25,9 +26,11 @@ import {
 } from "../hermes/profiles";
 import { useLocale, type Locale } from "../i18n/locale";
 import { Spinner, composing } from "./bits";
+import { BotCapabilities, SetupOutcome, useBotSetup } from "./BotCapabilities";
 import { Menu } from "./ChatMenu";
 import { CloneProfileDialog } from "./CloneProfile";
 import { useModal } from "./modal";
+import { RephraseButton, RephrasePanel, usePersonaRephrase, type RephraseWiring } from "./PersonaRephrase";
 import { SettingNote, SettingsSection } from "./SettingRows";
 import { HeadPart, useInPage } from "./SettingsPage";
 
@@ -75,6 +78,10 @@ export type ProfilesWiring = {
   /** Shows Settings → Persona, Memory or Skills on `name`. */
   showTab: (tab: "persona" | "memory" | "skills", name: string) => void;
   copyText: (text: string) => Promise<void>;
+  /** Generate with AI under New's Persona (ADR 0195), run as the profile in use; given only while connected. */
+  rephrase?: RephraseWiring;
+  /** New's Skills and Tools (ADR 0195): read from the profile in use, applied to the new profile and read back. */
+  setup?: SetupApis;
 };
 
 /** How long a rename or delete runs before its button says the gateway is being stopped. */
@@ -813,6 +820,8 @@ export function ProfileForm({
   const descId = useId();
   const modelId = useId();
   const soulId = useId();
+  const rephraseHint = useId();
+  const soulBox = useRef<HTMLTextAreaElement>(null);
   const titleFieldId = useId();
   const colorId = useId();
   const pictureId = useId();
@@ -844,6 +853,12 @@ export function ProfileForm({
   /** Asked before leaving with unsaved changes: `then` is where leaving goes (the persona link), else the dialog closes. */
   const [asking, setAsking] = useState<{ then?: () => void }>();
   const [madeNoModel, setMadeNoModel] = useState<{ name: string; error: string }>();
+  /** A profile made with chosen skills or tools that didn't all apply: what each came to (ADR 0195). */
+  const [outcome, setOutcome] = useState<{ name: string; items: SetupItem[]; modelError?: string }>();
+  const [applying, setApplying] = useState(false);
+  // New only: Edit has neither, so they read nothing there.
+  const rephrase = usePersonaRephrase({ wiring: row ? undefined : wiring.rephrase, connected, profile: wiring.inUse, text: soul });
+  const capabilities = useBotSetup(row ? undefined : wiring.setup, wiring.inUse);
   const live = useRef(true);
   useEffect(() => {
     live.current = true;
@@ -867,7 +882,7 @@ export function ProfileForm({
   const formLook = base.look && { ...base.look, title, color, picture };
   const lookEdits = base.look && formLook ? editsOf(base.look, formLook, BOT_LOOK_SAME) : {};
   const lookChanged = Object.keys(lookEdits).length > 0;
-  const dirty = (row ? nameChanged : !!trimmed) || descChanged || modelTouched || lookChanged || !!soul.trim();
+  const dirty = (row ? nameChanged : !!trimmed) || descChanged || modelTouched || lookChanged || !!soul.trim() || rephrase.state.kind === "suggestion" || choosing(capabilities.setup);
 
   const issue = isDefault
     ? !trimmed
@@ -892,12 +907,17 @@ export function ProfileForm({
   const createWhy = row ? undefined : why("create");
   // `rows` undefined: the profiles there are aren't read yet, so New waits rather than send a name it can't check.
   const unreadWhy = !row && !rows ? f.namesUnread : undefined;
-  const saveWhy = createWhy ?? (!connected ? w.notConnected : undefined) ?? (issue && (row ? nameChanged : true) ? issue : undefined) ?? unreadWhy ?? busyText ?? renameWhy ?? descWhy ?? modelWhy;
+  // A rewrite in flight or not yet applied isn't the persona: Create waits for the owner to settle it.
+  const rephraseWhy = row ? undefined : rephrase.state.kind === "asking" ? f.rephrase.blockedAsking : rephrase.state.kind === "suggestion" ? f.rephrase.blockedOpen : undefined;
+  const listWhy = !row && (capabilities.skills.inventory.kind === "reading" || capabilities.toolsets.inventory.kind === "reading") ? f.setup.waitList : undefined;
+  const saveWhy =
+    createWhy ?? (!connected ? w.notConnected : undefined) ?? (issue && (row ? nameChanged : true) ? issue : undefined) ?? unreadWhy ?? busyText ?? renameWhy ?? descWhy ?? modelWhy ?? rephraseWhy ?? listWhy;
   const nothing = row && !nameChanged && !descChanged && !modelChanged && !lookChanged;
 
   /** Leaves the dialog, asking first when it holds changes; never while a save or Write for me runs. */
   const leave = (then?: () => void) => {
-    if (saving || writing) return;
+    // A profile made whose choices didn't all apply is closed only by Delete it or Keep it as is.
+    if (saving || writing || outcome) return;
     if (dirty) setAsking({ then });
     else (then ?? onClose)();
   };
@@ -926,14 +946,17 @@ export function ProfileForm({
   const create = async () => {
     setSaving(true);
     setStates({});
+    const { setup } = capabilities;
     try {
       const made = await api.create({
         name: trimmed,
         description,
         ...(provider && model.trim() && { provider, model: model.trim() }),
         ...(soul.trim() && { soul }),
+        ...createFields(setup),
       });
       if (!live.current) return;
+      if (choosing(setup)) return await applySetup(made);
       if (!made.modelSet && provider && model.trim() && made.answered) {
         setMadeNoModel({ name: made.name, error: made.modelError ?? f.modelNotSetWhy });
         setSaving(false);
@@ -946,6 +969,39 @@ export function ProfileForm({
       setStates({ create: { kind: "failed", text: failure.kind === "refused" ? failure.detail : failureText(l, failure, trimmed) } });
       setSaving(false);
     }
+  };
+
+  /**
+   * After a create that carried chosen skills or tools: reads each back from the new profile and sets its toolsets, then
+   * closes with a success notice only when everything is as chosen. A lost answer changes nothing more (ADR 0195).
+   */
+  const applySetup = async (made: Awaited<ReturnType<typeof api.create>>) => {
+    const { setup, skills, toolsets } = capabilities;
+    if (!made.answered || !wiring.setup) return onDone({ notice: { tone: "warn", text: f.setup.unanswered(made.name), open: made.name }, select: made.name });
+    setApplying(true);
+    const items = [
+      ...(setup.skills.kind === "chosen" && skills.inventory.kind === "read"
+        ? await checkSkills(wiring.setup, made.name, skills.inventory.options.map((o) => o.name), setup.skills.on)
+        : []),
+      ...(setup.toolsets.kind === "chosen" && toolsets.inventory.kind === "read" ? await applyToolsets(wiring.setup, made.name, toolsets.inventory.options, setup.toolsets.on) : []),
+    ];
+    if (!live.current) return;
+    const modelError = !made.modelSet && provider && model.trim() ? (made.modelError ?? f.modelNotSetWhy) : undefined;
+    if (allApplied(items) && !modelError) return onDone({ notice: { tone: "muted", text: f.setup.createdWith(made.name), open: made.name }, select: made.name });
+    setApplying(false);
+    setSaving(false);
+    setOutcome({ name: made.name, items, modelError });
+  };
+
+  /** Deletes a profile this form made, as Delete profile does; resolves why it couldn't, if it couldn't. */
+  const removeMade = async (name: string): Promise<string | undefined> => {
+    try {
+      await api.remove(name);
+    } catch (e) {
+      return failureText(l, profileFailure(e, "remove"), name);
+    }
+    await wiring.local.deleted(name).catch(() => {});
+    return undefined;
   };
 
   const pickPicture = (file: File | undefined) => {
@@ -1125,7 +1181,16 @@ export function ProfileForm({
         <h2 id={titleId} className="leave-title">
           {heading ?? (row ? f.editTitle(rowName(l, row)) : f.newTitle)}
         </h2>
-        {madeNoModel ? (
+        {outcome && wiring.setup ? (
+          <SetupOutcome
+            name={outcome.name}
+            first={outcome.items}
+            modelError={outcome.modelError}
+            apis={wiring.setup}
+            remove={() => removeMade(outcome.name)}
+            onFinish={(notice, select) => onDone({ notice, select })}
+          />
+        ) : madeNoModel ? (
           <>
             <p role="alert">{f.modelNotSet(madeNoModel.error)}</p>
             <div className="confirm-actions">
@@ -1297,17 +1362,36 @@ export function ProfileForm({
               </div>
               )
             ) : (
-              <div className="field">
-                <label className="field-label" htmlFor={soulId}>
-                  {f.persona}
-                </label>
-                <textarea id={soulId} className="persona-text profile-soul" rows={4} readOnly={saving} placeholder={f.personaDefault} value={soul} onChange={(e) => setSoul(e.target.value)} />
-                <div className="set-hint">{f.personaHint}</div>
-              </div>
+              <>
+                <div className="field">
+                  <div className="field-label">
+                    <label htmlFor={soulId}>{f.persona}</label>
+                    <RephraseButton r={rephrase} disabled={saving} hintId={rephraseHint} />
+                  </div>
+                  <textarea
+                    ref={soulBox}
+                    id={soulId}
+                    className="persona-text profile-soul"
+                    rows={4}
+                    readOnly={saving}
+                    placeholder={f.personaDefault}
+                    value={soul}
+                    onChange={(e) => setSoul(e.target.value)}
+                  />
+                  <div className="set-hint">{f.personaHint}</div>
+                  <RephrasePanel r={rephrase} text={soul} hintId={rephraseHint} onReplace={setSoul} focusBox={() => soulBox.current?.focus()} />
+                </div>
+                <BotCapabilities state={capabilities} profile={wiring.inUse} disabled={saving} />
+              </>
             )}
             {bot && nameField}
             {!row && <SettingNote>{f.keysNote}</SettingNote>}
             {stateNote("create")}
+            {applying && (
+              <div className="small muted" role="status">
+                <Spinner /> {f.setup.applying}
+              </div>
+            )}
             {!row && onClone && (
               <button className="link-btn profile-clone-link" disabled={saving} onClick={() => leave(onClone)}>
                 {f.cloneInstead}

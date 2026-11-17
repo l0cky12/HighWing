@@ -2,6 +2,7 @@ import { type ReactNode, type RefObject, Suspense, lazy, useCallback, useLayoutE
 import { createPortal, flushSync } from "react-dom";
 import { ArrowLeft, ArrowRight, Columns2, FolderCog, GitBranch, PanelBottom, PanelLeft, PanelRight, PanelTop, Target, X } from "lucide-react";
 import { CONNECT_STOPPED, LIVE_MIN_GAP_MS, RenameConflict, TitleModelUnavailable, connect, openSaved, readSaved, toSource, type Delivery, type Hermes, type NoticeCard, type Notify } from "./hermes/transport";
+import { TEXT_TASK } from "./hermes/modelSettings";
 import { invoke } from "@tauri-apps/api/core";
 import type { CommandHost } from "./ui/SlashCommands";
 import { STEER, type ServerCommandList } from "./hermes/commands";
@@ -3260,6 +3261,15 @@ export function Main({
       },
     },
     copyText: (text) => (navigator.clipboard?.writeText ? navigator.clipboard.writeText(text) : Promise.reject(new Error("No clipboard"))),
+    // New's Generate with AI (ADR 0195): as the profile in use, on its Text generation model, only while connected.
+    rephrase:
+      status === "connected"
+        ? {
+            ask: (c) => hermes.askForEdit({ profile, instructions: c.instructions, input: c.input, maxTokens: c.maxTokens, task: TEXT_TASK }).then((r) => r.text),
+            model: () => hermes.modelSettings.textModel(),
+          }
+        : undefined,
+    setup: { skills: hermes.skills, toolsets: hermes.toolsets },
   };
   // Bot mode's row menu (ADR 0194): its dialogs are drawn outside the list panel, so a delete that leaves bot mode finishes.
   const panelBotMenu = usePanelBotMenu({

@@ -7,7 +7,7 @@ The Bots view's New bot (the New profile form) makes a profile from a name, a de
 - `new-bot-empty-persona`: Generate with AI is off on an empty persona, with the reason under the field.
 - `new-bot-rewrite`: a rough persona, Generate with AI, the suggestion edited, Replace persona, and focus back in the box.
 - `new-bot-rewrite-error`: a rewrite that fails says why and leaves the persona as typed.
-- `new-bot-skills`: Choose, filter, untick built-in skills; the create carries `keep_skills` and the new profile has them off.
+- `new-bot-skills`: Choose, filter, untick built-in skills; the create body is plain, and only the unticked skills are off in the new profile.
 - `new-bot-tools`: Choose, untick and tick toolsets; the new profile has them set, and the profile in use doesn't change.
 - `new-bot-mcp-note`: the MCP servers note.
 - `new-bot-partial`: a toolset with a caution leaves the dialog open on what isn't applied, with Apply anyway, Delete and Keep it as is.
@@ -33,7 +33,8 @@ Preconditions:
 - **Create.** `$S/wd.mjs click button "Create bot"`, `$S/wd.mjs gone .profile-dialog`, `$S/wd.mjs wait '[role=status]' "with the skills and tools you chose"`. `$S/hv state` shows the create body under `profileCreates`, the SOUL.md under `souls`, `skillsOff` and `toolsetsOn` for the new profile, and `oneshots` with `profile: default`, `task: title_generation`.
 - **Persistence.** The row's More → **Edit bot…** → **Edit in Settings → Persona** shows the SOUL.md; Settings → Skills with `select "Profile whose skills are shown" -- <name>` shows the skills off.
 - **Error.** Empty the `HV_PERSONA_REPLY` file, then Generate with AI: `wait '[role=alert]' "couldn't rewrite"`, and the persona keeps what was typed.
-- **Partial.** Tools → Choose → tick **Computer Use**, Create: `wait .bot-setup-outcome`. **Delete <name>** removes it (`hv state` `profiles`), **Keep it as is** closes with a notice naming what isn't applied.
+- **Double Create.** Click Create bot twice quickly: `hv state` `profileCreates` holds one body.
+- **Partial.** Tools → Choose → tick **Computer Use**, Create: `wait .bot-setup-outcome`. **Apply anyway** sets it and lists "Hermes started installing…" under Hermes also; **Done** repeats it in the notice. **Delete <name>** removes it (`hv state` `profiles`), **Keep it as is** closes with a notice naming what isn't applied.
 - **Narrow.** `$S/hv x search --name Highwing`, then `$S/hv x windowsize <id> 760 820`; `wd.mjs wheel .profile-dialog -- 600` scrolls the form.
 
 ## Gotchas

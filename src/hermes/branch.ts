@@ -7,7 +7,8 @@
 // The spine (`_visible_branch_history`): the parent's user and assistant rows that have text, in order, hidden ones
 // included. Tool rows aren't in it, and an assistant row keeps its text and reasoning but not its tool calls. Probed
 // live on 2026-11-03 against a throwaway HERMES_HOME (docs/research/hermes-gateway-api.md, "Branching").
-import { isWaiting, type Chat, type Item, type SentReference } from "./model";
+import { isWaiting, type Chat, type Item, type SentImage, type SentReference } from "./model";
+import { sentImage } from "./sentImages";
 import type { ModelPick } from "./models";
 
 /** A stored row of dashboard REST `GET /api/sessions/{id}/messages`, as far as branching reads it. */
@@ -143,6 +144,34 @@ export function fileRefs(text: string): string[] {
   const refs: string[] = [];
   for (const m of typedText(text).matchAll(/@file:(`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|\S+)/g)) refs.push(m[1].replace(/^([`"'])(.*)\1$/, "$2"));
   return refs;
+}
+
+const IMAGE_REF = /^@image:(`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|\S+)$/;
+const IMAGE_HINT = /^\[Image attached at: ([^\]\n]+)\]$/;
+const IMAGE_PLACEHOLDER = /^\[(?:image|screenshot(?: detail=\w+)?)\]$/;
+
+/**
+ * A stored message without the lines Hermes ends it with for its images, and those images. Hermes appends one
+ * `@image:<ref>` line per image after everything else, the `--- Attached Context ---` footer included
+ * (`_build_persist_message_with_image_refs`), so this runs on the text as stored, before `typedText`. The older
+ * `[Image attached at: <path>]` hint and the `[image]` and `[screenshot]` placeholders go too. All or nothing: unless
+ * every image line names a path `sentImage` takes, and one does, the text comes back as it was.
+ */
+export function peelImages(stored: string): { rest: string; images: SentImage[] } {
+  const lines = stored.split("\n");
+  const images: SentImage[] = [];
+  let end = lines.length;
+  for (; end > 0; end--) {
+    const line = lines[end - 1].trim();
+    if (!line || IMAGE_PLACEHOLDER.test(line)) continue;
+    const ref = IMAGE_REF.exec(line)?.[1].replace(/^([`"'])(.*)\1$/, "$2") ?? IMAGE_HINT.exec(line)?.[1];
+    if (ref === undefined) break;
+    const image = sentImage(ref);
+    if (!image) return { rest: stored, images: [] };
+    images.unshift(image);
+  }
+  if (!images.length) return { rest: stored, images: [] };
+  return { rest: lines.slice(0, end).join("\n").trimEnd(), images };
 }
 
 /** How many images a stored message carries, as `inline_images=false` shows each: `[image]`, or an attach hint. */

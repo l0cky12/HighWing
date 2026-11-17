@@ -33,7 +33,8 @@ import { caretAfter, editStep, inputKind, type EditStep } from "./editKeys";
 import { ariaKeys, chordLabel, chordParts, pick as pickCommand, pickApp, typeNewLine, useBindings, type Chord } from "./keybindings";
 import type { EditKind } from "../hermes/editHistory";
 import { wakeFull } from "../hermes/snooze";
-import { AttachmentChip, Previews, readPreview } from "./previews";
+import { AttachmentChip, Previews, SentImages, readPreview } from "./previews";
+import { sentWith } from "../hermes/sentImages";
 import { Speaker } from "./speaker";
 import { DictationNoteView, DictationStrip, ListenButton, MicButton, type VoiceApi, listenBlocked, micBlocked, useDictation, useVoiceSetup } from "./Voice";
 import { withTranscript } from "../hermes/voice";
@@ -1235,7 +1236,8 @@ const usageShown = (usage: ReplyUsage | undefined, level: MessageDetails): Reply
 
 /**
  * One block of the transcript. Memoized, so a streamed delta re-renders only the block it changes. `live`: the reply
- * or thinking is still streaming. `offline` and `movedAt` are for a Question card; other blocks get `movedAt` 0, so
+ * or thinking is still streaming. `offline` is for a Question card and a message's images. `movedAt` is for a Question
+ * card; other blocks get `movedAt` 0, so
  * the transcript changing doesn't re-render them. `canRetry` and `onOutgoing` are for a message Hermes didn't take, or
  * may not have; other blocks get `canRetry` false.
  */
@@ -1293,7 +1295,8 @@ const BlockView = memo(
     const nav = versions && current >= 0 && turn !== undefined && (
       <VariantNav versions={versions} current={current} onPick={(id) => onPickVariant(id, turn)} />
     );
-    if (block.kind === "user")
+    if (block.kind === "user") {
+      const { images, chips } = sentWith(block);
       return (
         <div className={`msg user${block.outgoing ? ` outgoing ${block.outgoing.state}` : ""}${block.steer ? " steer" : ""}`} data-item={block.id} data-at={block.at}>
           {block.steer && (
@@ -1301,9 +1304,10 @@ const BlockView = memo(
               <CornerDownRight size={12} aria-hidden /> Steered into the reply
             </div>
           )}
-          {block.attachments && (
+          {images.length > 0 && <SentImages images={images} offline={offline} />}
+          {chips.length > 0 && (
             <div className="msg-files">
-              {block.attachments.map((name, i) => (
+              {chips.map((name, i) => (
                 <span key={i} className="chip">
                   <Paperclip size={12} />
                   <span className="chip-name">{name}</span>
@@ -1336,6 +1340,7 @@ const BlockView = memo(
           {nav}
         </div>
       );
+    }
     if (block.kind === "assistant") {
       const usage = usageShown(block.usage, details);
       return (

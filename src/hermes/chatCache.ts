@@ -18,6 +18,7 @@ import { NO_BRANCHES, type BranchAttempt, type BranchLink, type BranchPoint, typ
 import { pickOf } from "./models";
 import { optionalText } from "./values";
 import { isServerPath } from "./preview";
+import { sentImage } from "./sentImages";
 
 /** Every key prefix this module keeps a connection's data under, each followed by its scope (connections.ts). */
 export const CACHE_PREFIXES = () => [LIST_PREFIX, TRANSCRIPT_PREFIX, PROFILE_PREFIX, PULLED_PREFIX, OUTBOX_PREFIX, QUEUE_PREFIX, HELD_PREFIX, BRANCH_PREFIX, REPLY_TIMES_PREFIX];
@@ -166,6 +167,7 @@ function toItem(v: unknown): Item | undefined {
   switch (i.kind) {
     case "user": {
       const attachments = Array.isArray(i.attachments) ? i.attachments.filter((a): a is string => typeof a === "string") : undefined;
+      const images = Array.isArray(i.images) ? i.images.flatMap((m: { path?: unknown; name?: unknown } | null) => sentImage(m?.path, m?.name) ?? []) : undefined;
       const references = Array.isArray(i.references) ? i.references.filter((a): a is string => typeof a === "string") : undefined;
       const rowId = Number.isSafeInteger(i.rowId) ? (i.rowId as number) : undefined;
       return text === undefined
@@ -175,6 +177,7 @@ function toItem(v: unknown): Item | undefined {
             id,
             text,
             ...(attachments?.length && { attachments }),
+            ...(images?.length && { images }),
             ...(references?.length && { references }),
             ...(at !== undefined && { at }),
             ...(rowId !== undefined && { rowId }),

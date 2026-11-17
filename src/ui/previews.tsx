@@ -1,10 +1,13 @@
-// Thumbnails for the images staged in the composer. Rust reads the bytes (image files only, up to 25 MB), and each
-// becomes a blob: URL that lives only while its image is staged. Nothing is copied to disk.
-import { useState } from "react";
-import { Paperclip, X } from "lucide-react";
+// Pictures of attached images. The composer's thumbnails: Rust reads the bytes (image files only, up to 25 MB), and
+// each becomes a blob: URL that lives only while its image is staged. Nothing is copied to disk. A sent message's
+// images: read from Hermes's stored copy as data: URLs (sentImages.ts), never from this computer.
+import { createContext, useContext, useEffect, useState } from "react";
+import { ImageOff, Paperclip, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { staleText, type AnnotationLabel } from "../hermes/annotations";
-import type { Attachment } from "../hermes/model";
+import type { Attachment, SentImage } from "../hermes/model";
+import { sentImageName, type SentImageLoad, type SentImageStore } from "../hermes/sentImages";
+import { useOpenPreview, usePathsIn } from "./previewContext";
 import { asError } from "../hermes/tauriPipe";
 import { errorText, formatBytes } from "../hermes/values";
 
@@ -95,5 +98,81 @@ export function AttachmentChip({ file, preview, annotation, onRemove }: { file: 
         <X size={12} />
       </button>
     </span>
+  );
+}
+
+/** The store a sent message's images are read through, one for each connection and profile, given by Main. */
+export const SentImageReader = createContext<SentImageStore | undefined>(undefined);
+
+/**
+ * The images Hermes stored for a message, above its words. A shown image is a button that opens it in the Preview. One
+ * that can't be shown is named, with why and Try again. `offline`: nothing is read until Hermes is reachable.
+ */
+export function SentImages({ images, offline }: { images: readonly SentImage[]; offline: boolean }) {
+  return (
+    <div className="msg-images">
+      {images.map((image, i) => (
+        <SentPicture key={`${i}:${image.path}`} image={image} offline={offline} />
+      ))}
+    </div>
+  );
+}
+
+function SentPicture({ image, offline }: { image: SentImage; offline: boolean }) {
+  const store = useContext(SentImageReader);
+  const open = useOpenPreview();
+  // The chat whose sandbox Hermes reads the path in.
+  const session = usePathsIn()?.session;
+  const [load, setLoad] = useState<SentImageLoad>(() => {
+    const src = store?.peek(image.path, session);
+    return src === undefined ? { state: "loading" } : { state: "shown", src };
+  });
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (!store) return setLoad({ state: "failed", why: "Images from Hermes can't be read here." });
+    const src = store.peek(image.path, session);
+    if (src !== undefined) return setLoad({ state: "shown", src });
+    setLoad({ state: "loading" });
+    if (offline) return;
+    let live = true;
+    void store.load(image.path, session).then((l) => {
+      if (live) setLoad(l);
+    });
+    return () => {
+      live = false;
+    };
+  }, [store, image.path, session, offline, attempt]);
+  const name = sentImageName(image);
+  if (load.state === "loading") return <div className="sent-image-loading" role="img" aria-busy="true" aria-label={`Loading ${name}`} title={name} />;
+  if (load.state === "failed")
+    return (
+      <span className="sent-image-failed" title={`${name}\n${load.why}`}>
+        <ImageOff size={12} aria-hidden />
+        <span className="chip-name">{name}</span>
+        {store && (
+          <button type="button" className="btn" onClick={() => setAttempt((n) => n + 1)}>
+            Try again
+          </button>
+        )}
+        <span className="sent-image-why">{load.why}</span>
+      </span>
+    );
+  return (
+    <button
+      type="button"
+      className="sent-image"
+      title={`${name}\nOpens in the preview`}
+      disabled={!open}
+      onClick={() => open?.({ kind: "server", path: image.path, ...(session && { session }) })}
+    >
+      <img
+        src={load.src}
+        alt={name}
+        onError={() => {
+          store?.drop(image.path, session);
+          setLoad({ state: "failed", why: "The image couldn't be shown." });
+        }}
+      />
+    </button>
   );
 }

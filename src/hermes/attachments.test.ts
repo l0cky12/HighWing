@@ -65,7 +65,9 @@ describe("Sending attachments", () => {
       ["image.attach_bytes", { session_id: runtime, filename: "rack.png", content_base64: b64("\x89PNG fake") }],
       ["prompt.submit", { session_id: runtime, profile: "default", text: "Which cable is loose?" }],
     ]);
-    expect(chat().items).toEqual([{ kind: "user", id: "u-0", text: "Which cable is loose?", attachments: ["rack.png"] }]);
+    expect(chat().items).toEqual([
+      { kind: "user", id: "u-0", text: "Which cable is loose?", attachments: ["rack.png"], images: [{ path: "/hermes/images/upload_1.png", name: "rack.png" }] },
+    ]);
     expect(chat().running).toBe(true);
   });
 

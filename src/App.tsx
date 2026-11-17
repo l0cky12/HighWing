@@ -1636,7 +1636,7 @@ export function Main({
   useEffect(() => hermes.subscribe(() => troubleshoots.observe(hermes.getSnapshot())), [hermes, troubleshoots]);
   // Sent images read in this run (sentImages.ts). A new store for each profile, so a path is never shown from another's.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on `profile` too, which the factory does not read
-  const sentImages = useMemo(() => new SentImageStore((path, session) => hermes.readServerFile(path, session)), [hermes, profile]);
+  const sentImages = useMemo(() => new SentImageStore((path) => hermes.readHostFile(path), (chat, path) => hermes.sentHere(chat, path)), [hermes, profile]);
   // Idle compaction (idleCompact.ts, ADR 0119): a chat open on Hermes here that has sat idle with its context window
   // past the owner's mark is compacted, one at a time. It sees every change in the chats, to time how long each has
   // been idle, and looks for one that is due every IDLE_COMPACT_CHECK_MS. Off unless turned on in Settings → Model.

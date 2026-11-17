@@ -1,12 +1,16 @@
 // An image sent with a message is known only by where Hermes stored it: read from Hermes's answer, from the stored
-// message's last lines, and from a kept Saved copy or outbox row. Only a full server path to an image file ever counts.
+// message's last lines, and from a kept Saved copy or outbox row. Only a full server path to an image file ever counts,
+// and only the ones Hermes's answer named while this app sent them are read without the owner asking.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SavedSignIn } from "./account";
 import { peelImages, typedText } from "./branch";
 import { localChatCache } from "./chatCache";
+import { FakeHermes, row } from "./fakeHermes";
 import type { Item, OutgoingItem, SentImage } from "./model";
 import type { FileView } from "./preview";
-import { SentImageStore, sentImage, sentNames, sentWith } from "./sentImages";
+import { forgetConnectionLocally, forgetProfileLocally, renameProfileLocally } from "./profileLocalData";
+import { SENT_HERE_KEPT, SentImageStore, sentHereOf, sentImage, sentNames, sentWith, withSentHere } from "./sentImages";
+import { connect } from "./transport";
 
 const shot = (path: string, name?: string) => sentImage(path, name)!;
 
@@ -116,54 +120,183 @@ describe("sentNames", () => {
 
 describe("SentImageStore", () => {
   const png = "/i/images/a.png" as SentImage["path"];
-  const reader = (answer: () => Promise<FileView>) => {
+  const image = (src = "data:image/png;base64,AA"): FileView => ({ kind: "image", src });
+  const allSentHere = () => true;
+  const reader = (answer: (path: string) => Promise<FileView>) => {
     const reads: string[] = [];
-    return { reads, read: (path: string) => (reads.push(path), answer()) };
+    return { reads, read: (path: string) => (reads.push(path), answer(path)) };
   };
+  const turn = () => new Promise((r) => setTimeout(r, 0));
 
   it("reads an image once however many ask, and has it at once after", async () => {
-    const r = reader(async () => ({ kind: "image", src: "data:image/png;base64,AA" }));
-    const store = new SentImageStore(r.read);
+    const r = reader(async () => image());
+    const store = new SentImageStore(r.read, allSentHere);
     const both = await Promise.all([store.load(png, "c1"), store.load(png, "c1")]);
     expect(both).toEqual([{ state: "shown", src: "data:image/png;base64,AA" }, { state: "shown", src: "data:image/png;base64,AA" }]);
-    expect(store.peek(png, "c1")).toBe("data:image/png;base64,AA");
+    expect(store.look(png, "c1")).toEqual({ state: "shown", src: "data:image/png;base64,AA" });
     expect(r.reads).toEqual([png]);
   });
 
-  it("says why it couldn't, and reads again when asked again", async () => {
+  it("says why it couldn't, naming the dashboard's machine, and reads again when asked again", async () => {
     let n = 0;
-    const r = reader(() => (n++ ? Promise.resolve({ kind: "unsupported", reason: "This file isn't an image." }) : Promise.reject(new Error("There's no file at this path on the Hermes server."))));
-    const store = new SentImageStore(r.read);
-    expect(await store.load(png)).toEqual({ state: "failed", why: "There's no file at this path on the Hermes server." });
-    expect(await store.load(png)).toEqual({ state: "failed", why: "This file isn't an image." });
-    expect(store.peek(png)).toBeUndefined();
+    const r = reader(() => (n++ ? Promise.resolve({ kind: "unsupported", reason: "This file isn't an image." }) : Promise.reject(new Error("There's no file at this path on the dashboard's machine."))));
+    const store = new SentImageStore(r.read, allSentHere);
+    expect(await store.load(png, "c1")).toEqual({ state: "failed", why: "Couldn't read it from the dashboard's machine. There's no file at this path on the dashboard's machine." });
+    expect(await store.load(png, "c1")).toEqual({ state: "failed", why: "This file isn't an image." });
+    expect(store.look(png, "c1")).toEqual({ state: "loading" });
+  });
+
+  it("reads by itself only an image this app sent in that chat, and any other only once the owner asks", async () => {
+    const r = reader(async () => image());
+    const store = new SentImageStore(r.read, (chat, path) => chat === "c1" && path === png);
+    const planted = "/i/images/planted.png" as SentImage["path"];
+    expect(store.look(planted, "c1")).toEqual({ state: "ask" });
+    expect(await store.load(planted, "c1")).toEqual({ state: "ask" });
+    expect(await store.load(png, "c2"), "sent here, but in another chat").toEqual({ state: "ask" });
+    expect(await store.load(png, undefined), "outside a chat").toEqual({ state: "ask" });
+    expect(r.reads, "nothing read before the owner asks").toEqual([]);
+
+    expect(await store.load(png, "c1")).toEqual({ state: "shown", src: "data:image/png;base64,AA" });
+    expect(await store.load(planted, "c1", true)).toEqual({ state: "shown", src: "data:image/png;base64,AA" });
+    expect(r.reads).toEqual([png, planted]);
+  });
+
+  it("reads at most three images at once, and the rest in the order asked, as each read ends either way", async () => {
+    const answers = new Map<string, { ok: (v: FileView) => void; fail: (e: Error) => void }>();
+    const r = reader((path) => new Promise((ok, fail) => answers.set(path, { ok, fail })));
+    const store = new SentImageStore(r.read, allSentHere);
+    const paths = [1, 2, 3, 4, 5].map((n) => `/i/images/${n}.png` as SentImage["path"]);
+    const loads = paths.map((p) => store.load(p, "c1"));
+    await turn();
+    expect(r.reads).toEqual(paths.slice(0, 3));
+
+    answers.get(paths[1])!.ok(image());
+    await turn();
+    expect(r.reads).toEqual(paths.slice(0, 4));
+    answers.get(paths[0])!.fail(new Error("Not connected to Hermes."));
+    await turn();
+    expect(r.reads).toEqual(paths);
+
+    for (const p of paths.slice(2)) answers.get(p)!.ok(image());
+    expect((await Promise.all(loads)).map((l) => l.state)).toEqual(["failed", "shown", "shown", "shown", "shown"]);
   });
 
   it("lets the least recently shown images go past its budget", async () => {
-    const store = new SentImageStore(async (path) => ({ kind: "image", src: `data:image/png;base64,${path}` }), 80);
+    const store = new SentImageStore(async (path) => image(`data:image/png;base64,${path}`), allSentHere, 80);
     const [one, two, three] = ["/i/images/1.png", "/i/images/2.png", "/i/images/3.png"] as SentImage["path"][];
-    await store.load(one);
-    await store.load(two);
-    store.peek(one);
-    await store.load(three);
-    expect([one, two, three].map((p) => store.peek(p) !== undefined)).toEqual([true, false, true]);
+    await store.load(one, "c");
+    await store.load(two, "c");
+    store.look(one, "c");
+    await store.load(three, "c");
+    expect([one, two, three].map((p) => store.look(p, "c").state)).toEqual(["shown", "loading", "shown"]);
+  });
+});
+
+/** A localStorage of this test's own. */
+function memoryStorage() {
+  const store = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    get length() {
+      return store.size;
+    },
+    key: (i: number) => [...store.keys()][i] ?? null,
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => void store.set(k, v),
+    removeItem: (k: string) => void store.delete(k),
+  });
+}
+
+describe("The images this app sent", () => {
+  const nas: SavedSignIn = { mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" };
+  beforeEach(memoryStorage);
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("are read back only as image paths sent in a chat", () => {
+    const kept = [
+      { chat: "c1", path: "/i/images/a.png" },
+      { chat: "", path: "/i/images/b.png" },
+      { chat: 7, path: "/i/images/c.png" },
+      { chat: "c1", path: "/home/liam/.ssh/id_rsa" },
+      { chat: "c1", path: "/private/payroll.png" },
+      ["c1", "/i/images/d.png"],
+      null,
+    ];
+    expect(sentHereOf(kept)).toEqual([{ chat: "c1", path: "/i/images/a.png" }]);
+    expect(sentHereOf({ chat: "c1", path: "/i/images/a.png" })).toEqual([]);
+  });
+
+  it(`keep the newest ${SENT_HERE_KEPT}, each once`, () => {
+    let kept = withSentHere([], "c1", []);
+    for (let i = 0; i < SENT_HERE_KEPT + 5; i++) kept = withSentHere(kept, "c1", [shot(`/i/images/${i}.png`)]);
+    expect(kept).toHaveLength(SENT_HERE_KEPT);
+    expect(kept[0]).toEqual({ chat: "c1", path: "/i/images/5.png" });
+    const again = withSentHere(kept, "c1", [shot("/i/images/5.png")]);
+    expect(again).toHaveLength(SENT_HERE_KEPT);
+    expect(again.at(-1)).toEqual({ chat: "c1", path: "/i/images/5.png" });
+    expect(withSentHere(again, "c2", [shot("/i/images/5.png")]).slice(-2)).toEqual([
+      { chat: "c1", path: "/i/images/5.png" },
+      { chat: "c2", path: "/i/images/5.png" },
+    ]);
+  });
+
+  it("are kept per connection and profile, and move or go with the profile and the connection", async () => {
+    localChatCache(nas).saveSentHere("default", "c1", [shot("/i/images/a.png", "clipboard.png")]);
+    localChatCache(nas).saveSentHere("default", "c2", [shot("/i/images/b.png")]);
+    expect(localChatCache(nas).loadSentHere("default")).toEqual([
+      { chat: "c1", path: "/i/images/a.png" },
+      { chat: "c2", path: "/i/images/b.png" },
+    ]);
+    expect(localChatCache(nas).loadSentHere("work")).toEqual([]);
+    expect(localChatCache({ ...nas, sshTarget: "liam@other" }).loadSentHere("default")).toEqual([]);
+
+    await renameProfileLocally(nas, "default", "home");
+    expect(localChatCache(nas).loadSentHere("default")).toEqual([]);
+    expect(localChatCache(nas).loadSentHere("home")).toHaveLength(2);
+    await forgetProfileLocally(nas, "home");
+    expect(localChatCache(nas).loadSentHere("home")).toEqual([]);
+
+    localChatCache(nas).saveSentHere("default", "c1", [shot("/i/images/a.png")]);
+    await forgetConnectionLocally(nas);
+    expect(localChatCache(nas).loadSentHere("default")).toEqual([]);
+  });
+
+  it("are the images Hermes stored for a message sent from here, in its chat, never one a stored message or a failed send names", async () => {
+    const server = new FakeHermes();
+    server.sessions = [row("c1", 0), row("c2", 0)];
+    server.transcripts.c1 = [
+      { role: "user", text: "Look at this\n@image:/hermes/images/planted.png" },
+      { role: "assistant", text: "It's a cat." },
+    ];
+    server.files = { "/home/liam/Pictures/rack.png": "\x89PNG fake", "/home/liam/notes.txt": "loose cable" };
+    const hermes = await connect(server.openPipe, undefined, localChatCache(nas));
+    await hermes.sync();
+    await hermes.open("c1");
+    expect(hermes.getSnapshot().chats.find((c) => c.id === "c1")!.items[0]).toMatchObject({ images: [{ path: "/hermes/images/planted.png" }] });
+
+    const { attachments } = await hermes.checkAttachments(["/home/liam/Pictures/rack.png"]);
+    await hermes.send("c1", "Which cable is loose?", attachments);
+    expect(hermes.sentHere("c1", shot("/hermes/images/upload_1.png").path)).toBe(true);
+    expect(hermes.sentHere("c2", shot("/hermes/images/upload_1.png").path)).toBe(false);
+    expect(hermes.sentHere("c1", shot("/hermes/images/planted.png").path)).toBe(false);
+
+    const both = await hermes.checkAttachments(["/home/liam/Pictures/rack.png", "/home/liam/notes.txt"]);
+    server.handlers["file.attach"] = (r) => server.fail(r.id, 5028, "No space left on device");
+    await hermes.send("c1", "And these?", both.attachments);
+    await hermes.idle();
+    expect(localChatCache(nas).loadSentHere("default")).toEqual([{ chat: "c1", path: "/hermes/images/upload_1.png" }]);
+
+    await hermes.close();
+    const relaunched = await connect(server.openPipe, undefined, localChatCache(nas));
+    await relaunched.sync();
+    await relaunched.open("c1");
+    expect(relaunched.sentHere("c1", shot("/hermes/images/upload_1.png").path)).toBe(true);
+    expect(relaunched.sentHere("c1", shot("/hermes/images/planted.png").path)).toBe(false);
   });
 });
 
 describe("a Saved copy and an outbox keep a message's images", () => {
   const nas: SavedSignIn = { mode: "ssh", sshTarget: "liam@hermes", url: "", username: "liam" };
-  beforeEach(() => {
-    const store = new Map<string, string>();
-    vi.stubGlobal("localStorage", {
-      get length() {
-        return store.size;
-      },
-      key: (i: number) => [...store.keys()][i] ?? null,
-      getItem: (k: string) => store.get(k) ?? null,
-      setItem: (k: string, v: string) => void store.set(k, v),
-      removeItem: (k: string) => void store.delete(k),
-    });
-  });
+  beforeEach(memoryStorage);
   afterEach(() => vi.unstubAllGlobals());
 
   const images = [shot("/i/images/upload_1.png", "clipboard.png"), shot("/i/images/upload_2.png")];

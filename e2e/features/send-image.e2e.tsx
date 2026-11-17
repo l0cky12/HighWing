@@ -52,6 +52,12 @@ function paste(...files: File[]) {
 const REPORTED = "clipboard-2026-11-17T092255.png";
 
 const base64 = async (b: Blob) => btoa(Array.from(new Uint8Array(await b.arrayBuffer()), (c) => String.fromCharCode(c)).join(""));
+/** A blob's bytes, one char per byte, as FakeHermes keeps a file. */
+const bytesOf = async (b: Blob) => String.fromCharCode(...new Uint8Array(await b.arrayBuffer()));
+
+/** The dashboard routes the app asked about `path` or its folder, in order. */
+const routesAbout = (server: FakeHermes, path: string) =>
+  server.restRequests.filter((r) => [...r.query.values()].some((v) => v === path || v === path.slice(0, path.lastIndexOf("/")))).map((r) => r.path);
 
 it("shows a pasted image in the sent message, after switching chats and after a relaunch", async () => {
   const { app, server, relaunch } = await boot({ seed });
@@ -80,6 +86,12 @@ it("shows a pasted image in the sent message, after switching chats and after a 
   const theScreenshot = [{ alt: expect.stringMatching(/\S/), width: 40, height: 30, shown: true }];
   await expect.poll(imagesInLastSent, { message: "the sent message shows the pasted image" }).toEqual(theScreenshot);
   expect(imagesInLastSent()[0].alt, "the image is named for the file that was pasted").toContain(REPORTED);
+  const stored = Object.keys(server.managedFiles.nodes).find((p) => p.startsWith("/hermes/images/"));
+  expect(stored, "Hermes stored the image on the dashboard's machine").toBeDefined();
+  expect(routesAbout(server, stored!), "read through the managed files routes, on the dashboard's own machine, not where the profile's tools run").toEqual([
+    "/api/files",
+    "/api/files/read",
+  ]);
   await shot("sent");
 
   await app.getByRole("button", { name: /NAS disk usage/ }).click();
@@ -95,8 +107,6 @@ it("shows a pasted image in the sent message, after switching chats and after a 
   expect(lastSentBubble()!.textContent, "the message shows no raw image reference").not.toContain("@image:");
   await shot("after relaunch");
 
-  const stored = Object.keys(server.serverFiles).find((p) => p.startsWith("/hermes/images/"));
-  expect(stored, "Hermes stored the image").toBeDefined();
   const picture = lastSentBubble()!.querySelector<HTMLButtonElement>("button.sent-image")!;
   picture.focus();
   expect(appDocument().activeElement, "the image takes keyboard focus").toBe(picture);
@@ -130,28 +140,68 @@ it("shows a pasted file that isn't an image as its name in the sent message", as
   await shot("sent");
 });
 
-it("names an image Hermes no longer has instead of showing a broken picture", async () => {
+it("asks before reading an image this app didn't send, and names one the dashboard's machine doesn't have", async () => {
   const gone = "/hermes/images/upload_gone.png";
   const { app, server } = await boot({
     seed: (s) => {
       seed(s);
-      // Stored with its image as Hermes stores one; the server no longer has the file.
+      // Stored with its image as Hermes stores one, by another client; the server doesn't have the file.
       s.transcripts.router.push({ role: "user", text: `Here is the error page\n@image:${gone}` });
     },
   });
 
   await app.getByRole("button", { name: /Router admin page/ }).click();
   await expect.element(app.getByText(/^Here is the error page/)).toBeVisible();
-  await expect.element(app.getByText("upload_gone.png", { exact: false }), { message: "the missing image is named" }).toBeVisible();
-  await expect.poll(() => imagesInLastSent().filter((i) => i.width === 0), { message: "no broken picture" }).toEqual([]);
+  await expect.element(app.getByText("upload_gone.png", { exact: false }), { message: "the image is named" }).toBeVisible();
+  await expect.element(app.getByText("Not sent from this app, so it loads when you ask."), { message: "why it waits" }).toBeVisible();
   expect(lastSentBubble()!.textContent, "the message shows no raw image reference").not.toContain("@image:");
-  await expect.element(app.getByText("There's no file at this path on the Hermes server."), { message: "the reason is shown" }).toBeVisible();
+  await shot("asks first");
+  expect(routesAbout(server, gone), "nothing reads the image before the owner asks").toEqual([]);
+
+  await app.getByRole("button", { name: /^Show image/ }).click();
+  await expect.element(app.getByText(/^Couldn't read it from the dashboard's machine\./), { message: "the reason names the dashboard's machine" }).toBeVisible();
+  await expect.poll(() => imagesInLastSent().filter((i) => i.width === 0), { message: "no broken picture" }).toEqual([]);
   await shot("missing image");
 
-  server.serverFiles[gone] = String.fromCharCode(...new Uint8Array(await (await screenshotPng()).arrayBuffer()));
+  server.managedFiles.nodes[gone] = { bytes: await bytesOf(await screenshotPng()) };
   await app.getByRole("button", { name: "Try again" }).click();
   await expect
-    .poll(imagesInLastSent, { message: "Try again shows the image once Hermes has it" })
+    .poll(imagesInLastSent, { message: "Try again shows the image once the dashboard's machine has it" })
     .toEqual([{ alt: "upload_gone.png", width: 40, height: 30, shown: true }]);
   await shot("missing image found");
+});
+
+it("doesn't read an image a stored message names that this app didn't send until the owner asks, and asks again after a relaunch", async () => {
+  // An image Hermes has, named by a message someone else could have sent to the profile.
+  const planted = "/hermes/images/upload_7.png";
+  const bytes = await bytesOf(await screenshotPng());
+  const { app, server, relaunch } = await boot({
+    seed: (s) => {
+      seed(s);
+      s.transcripts.router.push({ role: "user", text: `Is this your router page?\n@image:${planted}` });
+      s.managedFiles.nodes[planted] = { bytes };
+      s.serverFiles[planted] = bytes;
+    },
+  });
+
+  await app.getByRole("button", { name: /Router admin page/ }).click();
+  await expect.element(app.getByText(/^Is this your router page\?/)).toBeVisible();
+  await expect.element(app.getByRole("button", { name: /^Show image/ }), { message: "the image waits for the owner" }).toBeVisible();
+  await shot("asks first");
+  expect(imagesInLastSent(), "nothing drawn").toEqual([]);
+  expect(routesAbout(server, planted), "nothing reads the image before the owner asks").toEqual([]);
+
+  const show = lastSentBubble()!.querySelector<HTMLButtonElement>(".sent-image-tile button")!;
+  show.focus();
+  expect(appDocument().activeElement, "Show image takes keyboard focus").toBe(show);
+  await userEvent.keyboard("{Enter}");
+  await expect.poll(imagesInLastSent, { message: "the owner's click shows it" }).toEqual([{ alt: "upload_7.png", width: 40, height: 30, shown: true }]);
+  expect(routesAbout(server, planted), "read from the dashboard's own machine").toEqual(["/api/files", "/api/files/read"]);
+  await shot("shown when asked");
+
+  await relaunch();
+  await app.getByRole("button", { name: /Router admin page/ }).click();
+  await expect.element(app.getByText(/^Is this your router page\?/)).toBeVisible();
+  await expect.element(app.getByRole("button", { name: /^Show image/ }), { message: "showing it once doesn't make it this app's" }).toBeVisible();
+  expect(routesAbout(server, planted), "nothing more read after the relaunch").toEqual(["/api/files", "/api/files/read"]);
 });

@@ -31,7 +31,7 @@ import { PersonaApi } from "./persona";
 import { ProfileCloneApi } from "./profileClone";
 import { ProfilesApi, profileFailure, toProfileRows, type ProfileFailure } from "./profiles";
 import { FILTER_SEARCH_LIMIT } from "./chatFilter";
-import { APPROVAL_CHOICES, endedNote, isBroadGrant, isOutgoing, isQuestion, isStoredPrompt, isWaiting, offeredChoices, sameFields, sendNowRoute, turnStart, type ApprovalChoice, type ApprovalItem, type AttachCheck, type ClarifyQuestion, type QuestionAnswer, type QuestionItem, type QuestionKind, type Attachment, type Chat, type ChatQueue, type ConnectionStatus, type ContextUse, type Found, type Hit, type Item, type ListedChat, type LiveSession, type LiveSessions, type OtherProfiles, type Outgoing, type OutgoingItem, type Queued, type SavedSend, type SeenFailure, type SentImage, type SentReference, type SessionLive, type SideQuestion, type Source, QUEUE_LIMIT } from "./model";
+import { APPROVAL_CHOICES, endedNote, isBroadGrant, isOutgoing, isQuestion, isStoredPrompt, isWaiting, offeredChoices, sameFields, sendNowRoute, turnStart, type ApprovalChoice, type ApprovalItem, type AttachCheck, type ClarifyQuestion, type QuestionAnswer, type QuestionItem, type QuestionKind, type Attachment, type Chat, type ChatQueue, type ConnectionStatus, type ContextUse, type Found, type Hit, type Item, type ListedChat, type LiveSession, type LiveSessions, type OtherProfiles, type Outgoing, type OutgoingItem, type Queued, type SavedSend, type SeenFailure, type SentImage, type SentImagePath, type SentReference, type SessionLive, type SideQuestion, type Source, QUEUE_LIMIT } from "./model";
 import { catalogFromServer, fallbackCatalog, isEffort, modelKey, pickFromInfo, type ModelCatalog, type ModelPick } from "./models";
 import { approvalsOf, isApprovalMode, writesFor, type ApprovalPick } from "./approvals";
 import { CheckTimesStore, noOthers, OtherProfilesCheck } from "./otherProfiles";
@@ -84,7 +84,7 @@ import { conflictOf, sessionNotFound, statusOf, type OpenPipe, type Pipe, type P
 import { projectContextFiles, type ChatContext, type ProjectContextFiles } from "./projectContextFiles";
 import { withContext } from "./projectContext";
 import { peelImages, typedText } from "./branch";
-import { sentImage } from "./sentImages";
+import { sentImage, type SentHere } from "./sentImages";
 import { SUMMARY_INSTRUCTIONS, SUMMARY_MAX_TOKENS, cleanSummary, referenceBlock, storedReferences, summaryInput } from "./chatReferences";
 import { previewSupport, remoteFiles, type EditIo, type RemoteFiles } from "./remoteFiles";
 import { isUnsecure } from "./unsecure";
@@ -262,6 +262,10 @@ export type ChatCache = {
   loadReplyTimes(profile: string): ReplyTime[];
   /** Keeps one more, dropping the oldest past `REPLY_TIMES_KEPT`. */
   saveReplyTime(profile: string, t: ReplyTime): void;
+  /** The images this app sent in the profile's chats, oldest first (sentImages.ts). */
+  loadSentHere(profile: string): SentHere[];
+  /** Adds the images Hermes stored for a message sent in `chat`, dropping the oldest past `SENT_HERE_KEPT`. */
+  saveSentHere(profile: string, chat: string, images: readonly SentImage[]): void;
 };
 /**
  * What clicking a notification about a waiting card does: `open` shows the card in its chat. `deny`, for an Approval
@@ -300,6 +304,8 @@ const noCache: ChatCache = {
   saveBranches: () => true,
   loadReplyTimes: () => [],
   saveReplyTime: () => {},
+  loadSentHere: () => [],
+  saveSentHere: () => {},
 };
 
 /** A row of dashboard REST `GET /api/sessions`; times are Unix seconds. */
@@ -3757,11 +3763,14 @@ export class Hermes {
       // From here Hermes may have it: what went out, and the newest row the chat had, find it in the history later.
       // A message that runs skills is found in the history by what Hermes shows for it, not the skill text that went.
       let shown: string | undefined;
-      const goingOut = (prompt: string, images: SentImage[]) =>
+      const goingOut = (prompt: string, images: SentImage[]) => {
+        // Kept before Hermes stores the message, so its bubble already finds them among the images sent from here.
+        if (images.length) this.cache.saveSentHere(profile, chatId, images);
         this.setOutgoing(profile, chatId, user.id, (r) => ({
           ...withOutgoing(r, { sent: { prompt: shown ?? prompt, ...(this.knownRow.has(profile, chatId) && { after: this.knownRow.get(profile, chatId) }) } }),
           ...(images.length && { images }),
         }));
+      };
       let told: ChatContext | undefined;
       // A compaction Hermes hasn't answered yet goes first: the message mustn't land while it rewrites the context.
       const submitting = this.resume(chatId).then((runtimeId) => {
@@ -5770,6 +5779,11 @@ export class Hermes {
    */
   readServerFile(path: string, session?: string): Promise<FileView> {
     return readServerFile((q) => this.rest("GET", q), path, this.snapshot.profile, session);
+  }
+
+  /** Whether this app sent the image at `path` in chat `chat` of the profile shown (sentImages.ts `SentHere`). */
+  sentHere(chat: string, path: SentImagePath): boolean {
+    return this.cache.loadSentHere(this.profile).some((e) => e.chat === chat && e.path === path);
   }
 
   /** A folder's entries where `profile`'s tools run (`GET /api/fs/list`), or none and why: `ENOENT`, `ENOTDIR`, `EACCES`. */

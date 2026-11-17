@@ -998,6 +998,8 @@ export class FakeHermes {
       const path = `/hermes/images/${name}`;
       const data = atob(String(r.params.content_base64));
       this.serverFiles[path] = data;
+      // Hermes writes it in `<profile home>/images` on the dashboard's own machine, which the managed files routes read.
+      this.managedFiles.nodes[path] = { bytes: data };
       const sid = String(r.params.session_id);
       this.attachedImages.set(sid, [...(this.attachedImages.get(sid) ?? []), path]);
       this.respond(r.id, { attached: true, path, name, count: n, remainder: "", text: `[User attached image: ${name}]`, bytes: data.length });

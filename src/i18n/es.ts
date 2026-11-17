@@ -273,6 +273,17 @@ export const es: Catalogue = {
     openFailed: (name, why) => `No se pudo abrir ${name}: ${why}`,
     notChanged: (name, why) => `${name} no cambió. ${why}`,
   },
+  chatList: {
+    modes: "Lista de chats",
+    chats: "Chats",
+    bots: "Bots",
+    inbox: (n) => `${n} en la Bandeja de entrada`,
+    needYou: (n) => (n === 1 ? "1 bot te necesita" : `${n} bots te necesitan`),
+    replying: (n) => (n === 1 ? "1 bot está respondiendo" : `${n} bots están respondiendo`),
+    tabLabel: (mode, waits) => `${mode}, ${waits}`,
+    tabTip: (mode, waits) => `${mode}: ${waits}`,
+    withKeys: (text, keys) => `${text} (${keys})`,
+  },
   profiles: {
     title: "Perfiles en este servidor",
     intro: "Cada perfil es una configuración aparte del agente Hermes, con sus propios chats, persona, memoria, habilidades y claves.",

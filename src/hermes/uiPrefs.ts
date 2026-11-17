@@ -26,6 +26,10 @@ export const THEMES: readonly Theme[] = ["light", "dark", "system"];
  */
 export type StickyModelPick = ModelPick & { profile?: string };
 
+/** The chat list panel's two modes: the shown profile's chats, or the bots (Sidebar.tsx `ModeSwitch`). */
+export type ChatListMode = "chats" | "bots";
+export const CHAT_LIST_MODES: readonly ChatListMode[] = ["chats", "bots"];
+
 export type UIPrefs = {
   theme: Theme;
   /** Open the chat that was on screen when the app last closed. Off by default: launch starts on a new chat (ADR 0162). */
@@ -63,6 +67,8 @@ export type UIPrefs = {
   chatSectionsShown: SectionKey[];
   /** The chat list's sections the owner collapsed, kept across restarts (ADR 0063). */
   chatSectionsCollapsed: SectionKey[];
+  /** What the chat list panel shows on a Hermes with Bot Mode, the profile's chats or the bots: the owner's pick, kept across restarts. */
+  chatListMode: ChatListMode;
   /** The agent office's design (ADR 0161): a floor plan, a board, a list, the 3D building (ADR 0122), or off, with no rail button (ADR 0077). */
   agentOffice: OfficeView;
   /** How much the office's building may cost to draw (ADR 0122). */
@@ -133,6 +139,7 @@ export const DEFAULT_UI_PREFS: Readonly<UIPrefs> = Object.freeze({
   idleCompact: Object.freeze({ enabled: false, percent: 70, idleMinutes: 15 }),
   chatSectionsShown: SECTION_KEYS.filter((k) => k !== "archived"),
   chatSectionsCollapsed: ["snoozed", "archived", "settled"] as SectionKey[],
+  chatListMode: "chats",
   agentOffice: "plan",
   officeQuality: "normal",
   inboxAutoDismissDays: null,
@@ -295,6 +302,7 @@ export function readUIPrefs(doc: UIPrefsDoc, d: Readonly<UIPrefs> = DEFAULT_UI_P
     idleCompact: toIdleCompact(doc.idleCompact, d.idleCompact) ?? { ...d.idleCompact },
     chatSectionsShown: toShown(doc.chatSectionsShown) ?? [...d.chatSectionsShown],
     chatSectionsCollapsed: toSections(doc.chatSectionsCollapsed) ?? [...d.chatSectionsCollapsed],
+    chatListMode: CHAT_LIST_MODES.includes(doc.chatListMode as ChatListMode) ? (doc.chatListMode as ChatListMode) : d.chatListMode,
     agentOffice: OFFICE_VIEWS.includes(doc.agentOffice as OfficeView) ? (doc.agentOffice as OfficeView) : d.agentOffice,
     officeQuality: OFFICE_QUALITIES.includes(doc.officeQuality as OfficeQuality) ? (doc.officeQuality as OfficeQuality) : d.officeQuality,
     inboxAutoDismissDays:

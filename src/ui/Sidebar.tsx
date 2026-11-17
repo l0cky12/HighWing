@@ -3,7 +3,7 @@
 // rail's foot. Right-clicking a chat opens its menu (ChatMenu.tsx).
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore, type DragEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { BarChart3, Bot as BotIcon, Building2, CalendarClock, Check, ChevronDown, ChevronRight, CircleAlert, Copy, Hourglass, LockOpen, PanelLeftClose, Pin, Search, Settings, SquareKanban, SquarePen, Trash2, Webhook, FolderGit2 } from "lucide-react";
+import { BarChart3, Bot as BotIcon, Building2, CalendarClock, Loader, MessagesSquare, ShieldAlert, Check, ChevronDown, ChevronRight, CircleAlert, Copy, Hourglass, LockOpen, PanelLeftClose, Pin, Search, Settings, SquareKanban, SquarePen, Trash2, Webhook, FolderGit2 } from "lucide-react";
 import { waitingLabel, type Handoff } from "../hermes/dispatched";
 import type { Chat, CheckTimes, ConnectionStatus, OtherProfile, OtherProfiles } from "../hermes/model";
 import { SOURCE_LABEL, isWaiting } from "../hermes/model";
@@ -11,7 +11,8 @@ import { CHECK_EVERY_MS, totalUnread, type CheckTimesStore } from "../hermes/oth
 import type { Route } from "../hermes/pipe";
 import { RenameConflict, TitleModelUnavailable, type Snapshot } from "../hermes/transport";
 import { SECTION_LABEL, chatSections, inboxSettle, settleByDrop, wakeFull, wakeLabel, type InboxSettle, type Pins, type SectionKey, type Snoozes } from "../hermes/snooze";
-import { getUIPrefs, setUIPrefs, subscribe as subscribeUIPrefs } from "../hermes/uiPrefs";
+import { CHAT_LIST_MODES, getUIPrefs, setUIPrefs, subscribe as subscribeUIPrefs, type ChatListMode } from "../hermes/uiPrefs";
+import type { Bot } from "../hermes/bots";
 import { ChatMenu, type ChatPin, type ChatProjects, type ChatSnooze, type ChatTags } from "./ChatMenu";
 import { SnoozeDialog, useSnoozeClock } from "./Snooze";
 import { DeleteChatDialog } from "./DeleteChat";
@@ -1024,6 +1025,90 @@ function SettledList({ chats, selectedId, row }: { chats: Chat[]; selectedId: st
 }
 
 /**
+ * The panel's mode on a Hermes with Bot Mode, the owner's pick (uiPrefs.ts `chatListMode`), and what waits in the bots of
+ * the other profiles (bots.ts `botsWaiting`): `waiting`, the bots that need the owner; `replying`, how many are replying.
+ */
+export type ListModes = { value: ChatListMode; onChange: (mode: ChatListMode) => void; waiting: readonly Bot[]; replying: number };
+
+/**
+ * The switch at the top of the chat list panel: Chats and Bots, as two tabs with one tab stop. A click picks one; Left,
+ * Right, Home and End on the focused tab pick and move focus. The tab not shown carries what waits there: Chats the
+ * shown profile's Inbox count, Bots how many bots need the owner, or else a mark while one is replying.
+ */
+function ModeSwitch({ value, onChange, inbox, waiting, replying }: Omit<ListModes, "waiting"> & { inbox: number; waiting: number }) {
+  const l = useLocale();
+  const w = l.chatList;
+  const flip = useBindings().chatListMode[0];
+  const tabs = useRef<HTMLDivElement>(null);
+  const go = (to: ChatListMode) => {
+    onChange(to);
+    tabs.current?.querySelector<HTMLElement>(`[data-mode="${to}"]`)?.focus();
+  };
+  const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
+    if (composing(e)) return;
+    const at = CHAT_LIST_MODES.indexOf(value);
+    const n = CHAT_LIST_MODES.length;
+    const to = { ArrowLeft: (at + n - 1) % n, ArrowRight: (at + 1) % n, Home: 0, End: n - 1 }[e.key];
+    if (to === undefined) return;
+    e.preventDefault();
+    go(CHAT_LIST_MODES[to]);
+  };
+  const waits: Record<ChatListMode, { text?: string; badge?: ReactNode }> = {
+    chats: inbox > 0 ? { text: w.inbox(inbox), badge: <span className="sb-mode-count">{inbox}</span> } : {},
+    bots:
+      waiting > 0
+        ? {
+            text: w.needYou(waiting),
+            badge: (
+              <span className="sb-mode-count is-needs-you">
+                <ShieldAlert size={12} aria-hidden />
+                {waiting}
+              </span>
+            ),
+          }
+        : replying > 0
+          ? {
+              text: w.replying(replying),
+              badge: (
+                <span className="sb-mode-count is-replying">
+                  <Loader size={12} aria-hidden />
+                </span>
+              ),
+            }
+          : {},
+  };
+  const tab = (mode: ChatListMode, icon: ReactNode) => {
+    const name = w[mode];
+    // The shown mode's rows say what waits in it.
+    const { text, badge } = mode === value ? {} : waits[mode];
+    const tip = text ? w.tabTip(name, text) : name;
+    return (
+      <button
+        role="tab"
+        data-mode={mode}
+        className="sb-mode-tab"
+        aria-selected={mode === value}
+        tabIndex={mode === value ? 0 : -1}
+        aria-label={text ? w.tabLabel(name, text) : name}
+        aria-keyshortcuts={flip ? ariaKeys([flip]) : undefined}
+        title={flip ? w.withKeys(tip, chordLabel(flip)) : tip}
+        onClick={() => go(mode)}
+      >
+        {icon}
+        <span>{name}</span>
+        {badge}
+      </button>
+    );
+  };
+  return (
+    <div ref={tabs} className="segmented sb-mode" role="tablist" aria-label={w.modes} onKeyDown={onKeyDown}>
+      {tab("chats", <MessagesSquare size={14} aria-hidden />)}
+      {tab("bots", <BotIcon size={14} aria-hidden />)}
+    </div>
+  );
+}
+
+/**
  * The chat list, in sections (snooze.ts `chatSections`, ADR 0063): Pinned, the chats the owner pinned (ADR 0085); the
  * Inbox, the chats that need the owner or are done; Snoozed; Archived; and Working, the chats Hermes is replying in, in
  * the list's scroll. Settled is a drawer at the list's foot, outside the scroll (ADR 0090): its header stays at the
@@ -1084,8 +1169,10 @@ export function ChatList({
   onNew,
   onSearch,
   onHide,
+  mode,
 }: {
   profile: string;
+  /** In Bots mode, the bots, which fill the panel under New chat and Search. */
   bots?: ReactNode;
   projectSwitcher?: ReactNode;
   /** The profile's Saved filters (Tags.tsx), under the project switcher. */
@@ -1147,6 +1234,8 @@ export function ChatList({
   onSearch?: () => void;
   /** Hides this panel, as Ctrl+B does. */
   onHide?: () => void;
+  /** The panel's two modes and the switch at its top (`ModeSwitch`); none for a Hermes without Bot Mode, whose panel is the chats alone. */
+  mode?: ListModes;
 }) {
   const { chatSectionsShown: shown, chatSectionsCollapsed: collapsed } = useSyncExternalStore(subscribeUIPrefs, getUIPrefs);
   const keys = useBindings();
@@ -1304,20 +1393,32 @@ export function ChatList({
     );
   };
   const settledOpen = !collapsed.includes("settled");
+  const botsShown = mode?.value === "bots";
+  const switcher = (
+    <ProfileSwitcher
+      profile={profile}
+      defaultName={defaultName}
+      others={others}
+      checkTimes={checkTimes}
+      leaving={leavingNote(profile, chats, l.profiles.leaving)}
+      onListProfiles={onListProfiles}
+      onCheckOthers={onCheckOthers}
+      onSwitch={onSwitchProfile}
+      clone={profileClone}
+    />
+  );
+  const switchStatus = switching && (
+    <SwitchStatus profile={profile} switching={switching} status={status} onRetry={onRetrySwitch} onBack={() => onSwitchProfile(switching.from)} />
+  );
+  const syncNote = syncError && !switching?.error && (
+    <div className="sync-error" role="status">
+      {syncError}
+    </div>
+  );
   return (
-    <aside className="sidebar" onKeyDown={moveBetweenChats} onContextMenu={menuForFocusedRow}>
-      <div className="sb-head">
-        <ProfileSwitcher
-          profile={profile}
-          defaultName={defaultName}
-          others={others}
-          checkTimes={checkTimes}
-          leaving={leavingNote(profile, chats, l.profiles.leaving)}
-          onListProfiles={onListProfiles}
-          onCheckOthers={onCheckOthers}
-          onSwitch={onSwitchProfile}
-          clone={profileClone}
-        />
+    <aside className={`sidebar${mode ? ` is-${mode.value}` : ""}`} onKeyDown={moveBetweenChats} onContextMenu={menuForFocusedRow}>
+      <div className={`sb-head${mode ? " sb-head-modes" : ""}`}>
+        {mode ? <ModeSwitch {...mode} inbox={sections.inbox.length} waiting={mode.waiting.length} /> : switcher}
         {onHide && (
           <button
             className="icon-btn sb-hide"
@@ -1335,6 +1436,7 @@ export function ChatList({
           </button>
         )}
       </div>
+      {mode && !botsShown && <div className="sb-profile">{switcher}</div>}
       {(onNew || onSearch) && (
         <div className="sb-actions">
           {onNew && (
@@ -1353,47 +1455,46 @@ export function ChatList({
           )}
         </div>
       )}
-      {!bots && projectSwitcher && <div className="sb-project">{projectSwitcher}</div>}
-      <div className={`sb-scroll${bots ? " sb-bots" : ""}`} data-drop={dropOn === "inbox" ? "inbox" : undefined} {...(bots ? {} : dropHandlers("inbox", overInbox))}>
-        {switching && (
-          <SwitchStatus profile={profile} switching={switching} status={status} onRetry={onRetrySwitch} onBack={() => onSwitchProfile(switching.from)} />
-        )}
-        {!bots && savedFilters}
-        {syncError && !switching?.error && (
-          <div className="sync-error" role="status">
-            {syncError}
-          </div>
-        )}
-        {bots ? (
-          <>
-            <h2 className="section-label sb-bots-head">Bots</h2>
-            {bots}
-          </>
-        ) : (
-          // One keyed array, so React keeps a row that moves from one section to another.
-          shown.flatMap((k) => {
-            if (k === "settled") return [];
-            const list = sections[k];
-            if (!list.length && !drawnEmpty(k)) return [];
-            const open = !collapsed.includes(k);
-            return [
-              header(k, list, open),
-              ...(open || keepsHidden(k) ? list.map((c) => row(c, k, !open)) : []),
-              open && !list.length && (
-                <div key={`empty-${k}`} className="empty-hint" data-section={k === "inbox" ? "inbox" : undefined}>
-                  {k === "inbox" ? (busy ? "Nothing needs you right now." : "Nothing needs you. Start a new chat.") : `No ${SECTION_LABEL[k].toLowerCase()} chats.`}
-                </div>
-              ),
-            ];
-          })
-        )}
-      </div>
-      {!bots && shown.includes("settled") && (
-        // The drawer at the list's foot (ADR 0090): its header stays at the bottom however long the scroll above is.
-        <div className={`settled-drawer ${settledOpen ? "open" : ""} ${dropOn === "settled" ? "drop" : ""}`} {...dropHandlers("settled")}>
-          {header("settled", sections.settled, settledOpen)}
-          {settledOpen && <SettledList chats={sections.settled} selectedId={selectedId} row={(c) => row(c, "settled")} />}
+      {botsShown ? (
+        <div className="sb-scroll sb-bots">
+          {switchStatus}
+          {syncNote}
+          {bots}
         </div>
+      ) : (
+        <>
+          {projectSwitcher && <div className="sb-project">{projectSwitcher}</div>}
+          <div className="sb-scroll" data-drop={dropOn === "inbox" ? "inbox" : undefined} {...dropHandlers("inbox", overInbox)}>
+            {switchStatus}
+            {savedFilters}
+            {syncNote}
+            {
+              // One keyed array, so React keeps a row that moves from one section to another.
+              shown.flatMap((k) => {
+                if (k === "settled") return [];
+                const list = sections[k];
+                if (!list.length && !drawnEmpty(k)) return [];
+                const open = !collapsed.includes(k);
+                return [
+                  header(k, list, open),
+                  ...(open || keepsHidden(k) ? list.map((c) => row(c, k, !open)) : []),
+                  open && !list.length && (
+                    <div key={`empty-${k}`} className="empty-hint" data-section={k === "inbox" ? "inbox" : undefined}>
+                      {k === "inbox" ? (busy ? "Nothing needs you right now." : "Nothing needs you. Start a new chat.") : `No ${SECTION_LABEL[k].toLowerCase()} chats.`}
+                    </div>
+                  ),
+                ];
+              })
+            }
+          </div>
+          {shown.includes("settled") && (
+            // The drawer at the list's foot (ADR 0090): its header stays at the bottom however long the scroll above is.
+            <div className={`settled-drawer ${settledOpen ? "open" : ""} ${dropOn === "settled" ? "drop" : ""}`} {...dropHandlers("settled")}>
+              {header("settled", sections.settled, settledOpen)}
+              {settledOpen && <SettledList chats={sections.settled} selectedId={selectedId} row={(c) => row(c, "settled")} />}
+            </div>
+          )}
+        </>
       )}
       {customFor && !customGone && (
         <SnoozeDialog

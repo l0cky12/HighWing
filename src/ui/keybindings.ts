@@ -47,6 +47,7 @@ export const COMMANDS = {
   find: { title: "Find in the chat, or in Settings", group: "navigation", scope: "app", when: "chatOpen || settingsOpen", defaults: ["Ctrl+F"] },
   settings: { title: "Open Settings", group: "navigation", scope: "app", when: "Always", defaults: ["Ctrl+,"] },
   toggleList: { title: "Hide or show the chat list", group: "panels", scope: "app", when: "Always", defaults: ["Ctrl+B"] },
+  chatListMode: { title: "Switch the chat list between Chats and Bots", group: "panels", scope: "app", when: "botMode", defaults: ["Ctrl+Shift+B"] },
   toggleSplit: { title: "Split the chat, or close the split", group: "panels", scope: "app", when: "Always", defaults: ["Ctrl+\\"] },
   focusLeft: { title: "Focus the left (or top) pane", group: "panels", scope: "app", when: "split", defaults: ["Ctrl+1"] },
   focusRight: { title: "Focus the right (or bottom) pane", group: "panels", scope: "app", when: "split", defaults: ["Ctrl+2"] },

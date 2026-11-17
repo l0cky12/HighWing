@@ -4,8 +4,8 @@ import { BOT_CHAT_TITLE } from "../../src/hermes/bots";
 import { row, type FakeHermes } from "../../src/hermes/fakeHermes";
 import { boot, shot } from "../harness";
 
-// Bot mode's chat list panel (ADR 0066): a right-click on a bot's row opens Chat, Settings and Delete (ADR 0194). Every
-// bot here is FakeHermes data: Scribe has a Bot Chat, Scratch is a disposable bot made for deleting.
+// The chat list panel's Bots mode: a right-click on a bot's row opens Chat, Settings and Delete (ADR 0194). Every bot
+// here is FakeHermes data: Scribe has a Bot Chat, Scratch is a disposable bot made for deleting.
 const seed = (s: FakeHermes) => {
   s.sessions = [row("disk", 0.5, { title: "Disk usage" })];
   s.otherProfiles = {
@@ -24,14 +24,15 @@ const seed = (s: FakeHermes) => {
   };
 };
 
-/** Opens Scribe's Bot Chat from the Bots view, which puts the chat list panel in bot mode. */
+/** Opens Scribe's Bot Chat from the Bots view, then picks the chat list panel's Bots tab. */
 async function botMode() {
   const { app, server } = await boot({ seed });
   await app.getByRole("button", { name: "Bots", exact: true }).click();
   await app.getByRole("dialog", { name: "Bots" }).getByRole("button", { name: /^Scribe\./ }).click();
   await expect.element(app.getByText("Draft the release notes for 0.9")).toBeVisible();
   const panel = app.getByRole("complementary");
-  await expect.element(panel.getByRole("heading", { name: "Bots" })).toBeVisible();
+  await panel.getByRole("tab", { name: /^Bots/ }).click();
+  await expect.element(panel.getByRole("tab", { name: /^Bots/ })).toHaveAttribute("aria-selected", "true");
   const rowOf = (name: string) => panel.getByRole("button", { name: new RegExp(`^${name}\\.`) });
   await expect.element(rowOf("Scratch")).toBeVisible();
   return { app, server, panel, rowOf };

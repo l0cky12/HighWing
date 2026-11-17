@@ -287,6 +287,20 @@ export const en = {
     openFailed: (name: string, why: string) => `Couldn't open ${name}: ${why}`,
     notChanged: (name: string, why: string) => `${name} wasn't changed. ${why}`,
   },
+  /** The chat list panel's two modes on a Hermes with Bot Mode, and the switch at its top. */
+  chatList: {
+    modes: "Chat list",
+    chats: "Chats",
+    bots: "Bots",
+    /** What waits in the mode not shown, on its tab. */
+    inbox: (n: number) => `${n} in the Inbox`,
+    needYou: (n: number) => (n === 1 ? "1 bot needs you" : `${n} bots need you`),
+    replying: (n: number) => (n === 1 ? "1 bot is replying" : `${n} bots are replying`),
+    /** A tab as a screen reader says it, and its tip: "Bots, 2 bots need you", "Bots: 2 bots need you (Ctrl+Shift+B)". */
+    tabLabel: (mode: string, waits: string) => `${mode}, ${waits}`,
+    tabTip: (mode: string, waits: string) => `${mode}: ${waits}`,
+    withKeys: (text: string, keys: string) => `${text} (${keys})`,
+  },
   profiles: {
     title: "Profiles on this server",
     intro: "Each profile is a separate Hermes agent setup with its own chats, persona, memory, skills and keys.",

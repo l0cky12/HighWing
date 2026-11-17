@@ -356,6 +356,16 @@ export function botActivity(
 }
 
 /**
+ * What waits in the bots of the profiles not shown, for the chat list's Bots tab and the line over its chats: the bots
+ * that need the owner, in roster order, and how many are replying. A bot hidden in Hermes is left out, and so is the
+ * shown profile's own, whose Bot Chat row says what it is doing.
+ */
+export function botsWaiting(roster: readonly Bot[], activity: (bot: Bot) => BotActivity, shown: string): { waiting: Bot[]; replying: number } {
+  const others = roster.filter((b) => b.profile !== shown && !b.hidden).map((b) => ({ b, now: activity(b) }));
+  return { waiting: others.filter((o) => o.now === "needs-you").map((o) => o.b), replying: others.filter((o) => o.now === "replying").length };
+}
+
+/**
  * What `/new` typed in a Bot Chat says. A Bot Chat is one continuous conversation, so, as in Hermes's desktop, it is
  * compacted instead of a new chat being started: the model reads a fresh, shorter context, and the chat stays the same.
  */

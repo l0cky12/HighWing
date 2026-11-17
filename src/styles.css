@@ -2841,12 +2841,33 @@ label.memory-pick { cursor: pointer; }
 .bots-hidden-toggle { display: inline-flex; align-items: center; gap: 4px; color: var(--faint); font-size: calc(12rem / 14); }
 .bots-hidden-toggle:hover { color: var(--text); }
 /* Bot mode: the Bots view's rows on the list panel's background, the open bot marked as .row.sel marks the open chat. */
-.sb-bots-head { margin: 0; padding-top: 6px; }
 .sb-bots .inbox-list { padding: 0; overflow: visible; }
 .sb-bots .inbox-leave { margin: 0 0 8px; }
 .sb-bots .inbox-row:hover { background: var(--hover); }
 .sb-bots .bots-row.is-current { background: var(--hover-2); box-shadow: inset 0 0 0 1px var(--line); }
 .sb-bots .bots-hidden { padding: 4px 6px; }
+
+/* The chat list panel's two modes (Sidebar.tsx ModeSwitch): Chats and Bots, as tabs at its top. */
+.sb-head-modes { padding: 14px 12px 6px; gap: 8px; }
+.segmented.sb-mode { flex: 1; min-width: 0; display: flex; gap: 2px; padding: 3px; border-radius: 10px; }
+.segmented.sb-mode .sb-mode-tab {
+  flex: 1; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; padding: 0 8px;
+  border-radius: 7px; font-size: calc(13rem / 14); font-weight: 500; color: var(--muted);
+}
+.segmented.sb-mode .sb-mode-tab:hover { color: var(--text); background: var(--hover); }
+.segmented.sb-mode .sb-mode-tab[aria-selected="true"] { background: var(--raised-3); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18); }
+.sb-mode-tab[aria-selected="true"] > svg { color: var(--accent); }
+.sb-mode-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* What waits in the mode not shown, on its tab: the Inbox's count, or the bots that need the owner. */
+.sb-mode-count {
+  display: inline-flex; align-items: center; justify-content: center; gap: 3px; min-width: 18px; padding: 0 6px; border-radius: 999px;
+  line-height: 17px; font-size: calc(12rem / 14); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-2); background: var(--hover-2);
+}
+.sb-mode-count.is-needs-you { color: var(--warn); background: color-mix(in srgb, var(--warn) 18%, transparent); }
+.sb-mode-count.is-replying { min-width: 0; padding: 0; color: var(--accent); background: none; }
+/* Chats mode: the profile switcher heads the profile's chats, under the switch. */
+.sb-profile { display: flex; padding: 6px 12px 6px 18px; }
+.sb-profile .profile-switch { min-width: 0; }
 @media (max-width: 520px) {
   .inbox { width: calc(100vw - 60px); }
 }

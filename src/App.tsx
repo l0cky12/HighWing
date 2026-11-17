@@ -59,7 +59,7 @@ import { officeRooms, type Desk, type Room } from "./hermes/office";
 import type { SubagentId } from "./hermes/subagents";
 import { policyOf } from "./hermes/chatKind";
 import { jobRunTitle } from "./hermes/cronJobs";
-import { botActivity, isBotChat, isBotChatTitle, newInBotChatNote, type Bot } from "./hermes/bots";
+import { botActivity, botsWaiting, isBotChat, isBotChatTitle, newInBotChatNote, type Bot } from "./hermes/bots";
 import { blocksRestore, inboxAcks, inboxEntries, inboxScope, needsOwner, type InboxAcks, type InboxEntry } from "./hermes/inbox";
 import { searchEverywhere, type EverywhereFilter, type EverywhereOutcome, type EverywhereRow } from "./hermes/everywhere";
 import { LiveConnections, attention as attentionOf, withoutServer, type ChatRef, type LiveSummary } from "./hermes/liveConnections";
@@ -142,7 +142,7 @@ import { pathOpener } from "./hermes/paths";
 import type { Route } from "./hermes/pipe";
 import { tauriTray, type TrayWiring } from "./hermes/tauriTray";
 import { usePageHidden, useWindowHidden } from "./ui/windowState";
-import { getUIPrefs, setUIPrefs, subscribe as subscribeUIPrefs, toggleModelFavorite, type StickyModelPick } from "./hermes/uiPrefs";
+import { getUIPrefs, setUIPrefs, subscribe as subscribeUIPrefs, toggleModelFavorite, type ChatListMode, type StickyModelPick } from "./hermes/uiPrefs";
 import { errorText } from "./hermes/values";
 import { BrandMark } from "./ui/BrandMark";
 
@@ -1557,12 +1557,9 @@ export function Main({
   // computer for the connection, and change nothing else. `goTo`: an entry's chat to open once its profile's list
   // has it. `focusItem`: the card or message in a pane to show once it is on screen.
   const [inboxOpen, setInboxOpen] = useState(false);
-  /**
-   * The Bots view (Bots.tsx, ADR 0066), and a bot's chat to open once its profile is shown: `stay`, asked for in bot
-   * mode, which holds it until the Bot Chat opens; `opening`, looked up and on its way.
-   */
+  /** The Bots view (Bots.tsx, ADR 0066), and a bot's chat to open once its profile is shown: `opening`, looked up and on its way. */
   const [botsOpen, setBotsOpen] = useState(false);
-  const [botGo, setBotGo] = useState<{ bot: Bot; then: "open" | "new"; nav: number; stay: boolean; opening?: boolean }>();
+  const [botGo, setBotGo] = useState<{ bot: Bot; then: "open" | "new"; nav: number; opening?: boolean }>();
   /** The agent office (Office.tsx, ADR 0077), unless Settings turns it off. */
   const [officeOpen, setOfficeOpen] = useState(false);
   const ackScope = inboxScope(connection);
@@ -1575,7 +1572,7 @@ export function Main({
   // The model pick is sticky: new chats start on it, in this profile, until the owner picks another. It is kept on this
   // computer only and never becomes the profile's default. Picked in another profile, it gives way to this profile's
   // own model. A chat on screen shows the model it runs on, and a pick there switches that chat alone.
-  const { modelPicker, modelPicks, modelFavorites, previewWidth, screenshotShortcut, agentOffice, inboxAutoDismissDays, summonSelection } = useSyncExternalStore(subscribeUIPrefs, getUIPrefs);
+  const { modelPicker, modelPicks, modelFavorites, previewWidth, screenshotShortcut, agentOffice, inboxAutoDismissDays, summonSelection, chatListMode } = useSyncExternalStore(subscribeUIPrefs, getUIPrefs);
   const keys = useBindings();
   const officeShown = officeOpen && agentOffice !== "off";
   // Who sits where in the building. It outlives the building's view, so hidden to the tray, minimized, behind Settings
@@ -2381,13 +2378,14 @@ export function Main({
   const botsNeedYou =
     chats.some((c) => isBotChat(c) && c.items.some(isWaiting)) ||
     (live?.sessions ?? []).some((s) => s.status === "waiting" && (isBotChatTitle(s.title) || hermes.isKnownBotChat(s.chatId, s.profile)));
-  // Bot mode (ADR 0066): while the active pane shows a Bot Chat, the list panel shows the bots in its place. It follows
-  // the open chat, so New chat or any other chat opened leaves it, and a launch, which never reopens a Bot Chat, starts
-  // without it. A bot opened from bot mode holds it until its Bot Chat opens, so the next profile's chats don't flash.
+  // The chat list panel shows the chats or the bots, as the owner last picked (Sidebar.tsx `ModeSwitch`). Only the pick
+  // moves it: opening a chat, New chat, a profile switch and a restart leave it as it is.
+  const hasBotMode = caps.caps.botMode.state !== "unsupported";
+  const botsInList = hasBotMode && chatListMode === "bots";
+  const setChatListMode = (mode: ChatListMode) => setUIPrefs({ chatListMode: mode });
   const shownChat = chats.find((c) => c.id === active.chatId);
-  const botsInList =
-    caps.caps.botMode.state !== "unsupported" &&
-    ((!!shownChat && isBotChat(shownChat)) || (botGo?.stay === true && botGo.then === "open" && botGo.nav === navGen.current));
+  const roster = bots?.roster ?? [];
+  const waitingInBots = botsWaiting(roster, (b) => activityOf(b, roster), profile);
   const connected = status === "connected";
   useEffect(() => {
     if (!botsInList || !connected) return;
@@ -2402,7 +2400,7 @@ export function Main({
     guard(() => {
       if (b.profile !== profile) void switchProfileNow(b.profile);
       // Anything the owner opens or switches to after this, before the Bot Chat opens, wins over it (`navGen`).
-      setBotGo({ bot: b, then, nav: navGen.current, stay: botsInList });
+      setBotGo({ bot: b, then, nav: navGen.current });
     }, b.profile !== profile ? "profile" : "leave");
   };
   useEffect(() => {
@@ -2970,6 +2968,12 @@ export function Main({
           e.preventDefault();
           setListOpen((o) => !o);
           return;
+        case "chatListMode":
+          if (!hasBotMode) return;
+          e.preventDefault();
+          setListOpen(true);
+          setChatListMode(chatListMode === "bots" ? "chats" : "bots");
+          return;
         case "settings":
           e.preventDefault();
           openSettings();
@@ -3401,6 +3405,7 @@ export function Main({
         <ChatList
           defaultName={defaultProfileName}
           profile={profile}
+          mode={hasBotMode ? { value: chatListMode, onChange: setChatListMode, ...waitingInBots } : undefined}
           bots={
             botsInList &&
             (bots ? (
@@ -3409,7 +3414,7 @@ export function Main({
                 pictures={botPictures}
                 activity={activityOf}
                 profile={profile}
-                current={profile}
+                current={!covering && shownChat && isBotChat(shownChat) ? profile : undefined}
                 leaving={leavingNote(profile, chats, words.profiles.leaving)}
                 onOpen={(b) => openBot(b, "open")}
                 onNewChat={(b) => openBot(b, "new")}

@@ -810,7 +810,6 @@ export function PersonaSettings({
                     writer={ai.writer}
                     text={text}
                     locked={saving || reloading || !!recover}
-                    persist="save"
                     onApply={(t) => {
                       setText(t);
                       setNotice(undefined);

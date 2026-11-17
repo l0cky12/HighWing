@@ -214,6 +214,85 @@ describe("New bot in the Bots view", () => {
     expect(server.requests.filter((r) => r.method === "session.create" || r.method === "prompt.submit")).toEqual([]);
   });
 
+  it("rewrites a rough persona with AI and applies chosen skills, as the app wires them (ADR 0197)", async () => {
+    const { server, user } = await launch((s) => {
+      s.oneshotAnswer = "You are Ada. You summarise papers briefly.";
+      for (const name of ["arxiv", "recipes"])
+        s.skills.add("default", { dir: `/home/liam/.hermes/skills/${name}`, source: "bundled" }, `---\nname: ${name}\ndescription: The ${name} skill\n---\nDo ${name}.\n`);
+    });
+    await openBots(user);
+    await user.click(screen.getByRole("button", { name: "New bot" }));
+    await user.type(within(form()).getByLabelText("Name"), "ada");
+    await user.type(within(form()).getByLabelText("Persona (optional)"), "summarise papers, keep it brief");
+    const generate = within(form()).getByRole("button", { name: /Generate with AI/ });
+    await waitFor(() => expect(generate.getAttribute("aria-disabled")).toBeNull());
+    await user.click(generate);
+    await within(form()).findByLabelText("Suggested persona");
+    await user.click(within(form()).getByRole("button", { name: "Replace persona" }));
+    const skills = within(form()).getByRole("group", { name: "Skills" });
+    await user.click(within(skills).getByRole("radio", { name: "Choose" }));
+    await user.click(await within(skills).findByLabelText(/recipes/));
+    await user.click(within(form()).getByRole("button", { name: /Create bot/ }));
+    await waitFor(() => expect(botRows()).toHaveLength(3));
+    expect(server.requests.filter((r) => r.method === "llm.oneshot").map((r) => [r.params.profile, r.params.task])).toEqual([["default", "title_generation"]]);
+    expect(server.restRequests.find((r) => r.method === "POST" && r.path === "/api/profiles")?.body).toEqual({
+      name: "ada",
+      soul: "You are Ada. You summarise papers briefly.",
+    });
+    expect(server.souls.ada).toBe("You are Ada. You summarise papers briefly.");
+    expect([...(server.skills.disabled.ada ?? [])]).toEqual(["recipes"]);
+    expect(within(bots()).getByRole("status").textContent).toBe("Created ada with the skills and tools you chose. Open its row to start its Bot Chat.");
+  });
+
+  it("still says a delete is settling once the view closes, with Copy on the command", async () => {
+    let go = () => {};
+    const { server, user } = await launch((s) => {
+      s.skills.add("default", { dir: "/home/liam/.hermes/skills/recipes", source: "bundled" }, "---\nname: recipes\ndescription: Recipes\n---\nCook.\n");
+      s.skills.toggleRefusal = { status: 400, detail: "Skill changes are locked on this server." };
+      s.profileSettlementPending = "hermes profile finish-delete ada";
+    });
+    const copied: string[] = [];
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (t: string) => void copied.push(t) } });
+    await openBots(user);
+    await user.click(screen.getByRole("button", { name: "New bot" }));
+    await user.type(within(form()).getByLabelText("Name"), "ada");
+    const skills = within(form()).getByRole("group", { name: "Skills" });
+    await user.click(within(skills).getByRole("radio", { name: "Choose" }));
+    await user.click(await within(skills).findByLabelText(/recipes/));
+    await user.click(within(form()).getByRole("button", { name: /Create bot/ }));
+    server.profileGatewayStop = new Promise<void>((r) => (go = r));
+    await user.click(await within(form()).findByRole("button", { name: "Delete ada" }));
+    await waitFor(() => expect(server.restRequests.some((r) => r.method === "DELETE" && r.path === "/api/profiles/ada")).toBe(true));
+    fireEvent.click(within(bots()).getByRole("button", { name: "Close bots" }));
+    expect(screen.queryByRole("dialog", { name: /Bots/ })).toBeNull();
+    await act(async () => go());
+    const toast = await waitFor(() => document.querySelector<HTMLElement>(".toast")!);
+    expect(toast.textContent).toMatch(/^Deleted ada\. Hermes hasn't finished cleaning up after it; run this on the server: hermes profile finish-delete ada/);
+    await user.click(within(toast).getByRole("button", { name: "Copy command" }));
+    expect(copied).toEqual(["hermes profile finish-delete ada"]);
+  });
+
+  it("keeps a notice of what didn't apply up longer once the view closes", { timeout: 20_000 }, async () => {
+    let go = () => {};
+    const { server, user } = await launch((s) => (s.toolsetGateBeforeWrite = new Promise<void>((r) => (go = r))));
+    await openBots(user);
+    await user.click(screen.getByRole("button", { name: "New bot" }));
+    await user.type(within(form()).getByLabelText("Name"), "ada");
+    const tools = within(form()).getByRole("group", { name: "Tools" });
+    await user.click(within(tools).getByRole("radio", { name: "Choose" }));
+    await user.click(await within(tools).findByLabelText(/Computer Use/));
+    await user.click(within(tools).getByLabelText(/Terminal & Processes/));
+    await user.click(within(form()).getByRole("button", { name: /Create bot/ }));
+    await waitFor(() => expect(server.restRequests.some((r) => r.method === "PUT" && r.path === "/api/tools/toolsets/terminal")).toBe(true));
+    fireEvent.click(within(bots()).getByRole("button", { name: "Close bots" }));
+    await act(async () => go());
+    const toast = await waitFor(() => document.querySelector<HTMLElement>(".toast")!);
+    expect(toast.textContent).toMatch(/^Created ada, but these aren't as you chose: Tool Computer Use/);
+    // A plain notice is gone after 5 seconds.
+    await act(() => new Promise((r) => setTimeout(r, 5_500)));
+    expect(document.querySelector(".toast")?.textContent).toBe(toast.textContent);
+  });
+
   it("clears a search that would hide the new bot, so its row is shown and focused", async () => {
     const { user } = await launch();
     await openBots(user);
@@ -233,7 +312,7 @@ describe("New bot in the Bots view", () => {
     await user.click(screen.getByRole("button", { name: "New bot" }));
     await user.type(within(form()).getByLabelText("Name"), "scribe");
     expect(within(form()).getByText("There's already a profile named scribe. Pick another name.")).toBeTruthy();
-    expect(within(form()).getByRole("button", { name: /Create bot/ })).toHaveProperty("disabled", true);
+    expect(within(form()).getByRole("button", { name: /Create bot/ }).getAttribute("aria-disabled")).toBe("true");
     expect(server.restRequests.filter((r) => r.method !== "GET")).toEqual([]);
   });
 
@@ -270,6 +349,7 @@ describe("New bot in the Bots view", () => {
           switchTo: async () => false,
           local: { pending: () => undefined, note: () => {}, clear: () => {}, renamed: async () => {}, deleted: async () => {} },
           copyText: async () => {},
+          notify: () => {},
         }}
       />
     );
@@ -301,14 +381,14 @@ describe("New bot in the Bots view", () => {
     await user.click(screen.getByRole("button", { name: "New bot" }));
     await user.type(within(form()).getByLabelText("Name"), "scribe");
     const create = within(form()).getByRole("button", { name: /Create bot/ });
-    expect(create).toHaveProperty("disabled", true);
+    expect(create.getAttribute("aria-disabled")).toBe("true");
     expect(within(form()).getByRole("status").textContent).toBe("Wait for the list of profiles, so the name can be checked against it.");
     await user.click(create);
     await user.keyboard("{Enter}");
     expect(server.restRequests.filter((r) => r.method !== "GET")).toEqual([]);
     await arrive(rosterOf({ profiles: [{ name: "default", canonical_session: null }, { name: "scribe", canonical_session: null }] }));
     expect(within(form()).getByText("There's already a profile named scribe. Pick another name.")).toBeTruthy();
-    expect(create).toHaveProperty("disabled", true);
+    expect(create.getAttribute("aria-disabled")).toBe("true");
     expect(server.restRequests.filter((r) => r.method !== "GET")).toEqual([]);
   });
 
@@ -774,15 +854,17 @@ describe("Bots mode", () => {
 describe("Chats mode", () => {
   const panel = () => document.querySelector<HTMLElement>(".sidebar")!;
   const line = () => panel().querySelector<HTMLElement>(".sb-needs-you");
-  const botChatRow = () => panel().querySelector<HTMLButtonElement>(".sb-botchat-row .row-open");
+  const botChatButtons = () => within(panel()).queryAllByRole("button", { name: /Bot Chat/ });
   const shownMode = () => within(panel()).getAllByRole("tab").find((t) => t.getAttribute("aria-selected") === "true")?.textContent;
   const waiting = (key: string, id = "rt-s") => ({ id, session_key: key, status: "waiting" as const, last_active: nowS() });
 
-  it("lays out the switch, the profile switcher, New chat and Search, the Bot Chat row, then the project switcher and the chats", async () => {
+  it("lays out the switch, the profile switcher, New chat and Search, then the project switcher and the chats, with no Bot Chat row between", async () => {
     await launch();
-    const order = [".sb-mode", ".sb-profile", ".sb-actions", ".sb-botchat", ".sb-project", ".sb-scroll"].map((sel) => panel().querySelector(sel));
+    const order = [".sb-mode", ".sb-profile", ".sb-actions", ".sb-project", ".sb-scroll"].map((sel) => panel().querySelector(sel));
     expect(order.every(Boolean)).toBe(true);
     for (let i = 1; i < order.length; i++) expect(order[i - 1]!.compareDocumentPosition(order[i]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(panel().querySelector(".sb-actions")!.nextElementSibling).toBe(panel().querySelector(".sb-project"));
+    expect(botChatButtons()).toEqual([]);
   });
 
   it("shows no needs-you line while no bot in another profile needs the owner", async () => {
@@ -864,40 +946,31 @@ describe("Chats mode", () => {
     expect(button.querySelector(".profile-id")).toBeNull();
   });
 
-  it("shows the Bot Chat row with how long ago its bot was active, out of the sections", async () => {
+  it("keeps the Bot Chat out of the panel: no row for it, and none in the sections", async () => {
     await launch();
-    expect(botChatRow()!.textContent).toMatch(/^HBot Chat\d+[mhd]$/);
-    expect(botChatRow()!.getAttribute("aria-label")).toBe("Hermes's Bot Chat");
-    expect(listTitles()).toEqual(["Disk usage"]);
+    await waitFor(() => expect(listTitles()).toEqual(["Disk usage"]));
+    expect(botChatButtons()).toEqual([]);
   });
 
-  it("shows Replying on the Bot Chat row while its bot replies, and its last message in its tip", async () => {
-    const { user } = await launch();
-    await pickProfile(user, "scribe");
-    await waitFor(() => expect(botChatRow()?.textContent).toBe("SBot ChatReplying"));
-    expect(botChatRow()!.title).toBe("Scribe's Bot Chat (Alt+B)\nRelease notes drafted: three fixes.");
-    expect(botChatRow()!.getAttribute("aria-keyshortcuts")).toBe("Alt+B");
-  });
-
-  it("shows Needs you on the Bot Chat row while its bot waits on the owner", async () => {
+  it("shows the shown profile's bot waiting on the owner on its row in Bots mode, not on the needs-you line", async () => {
     const { user } = await launch((s) => (s.liveSessions = [waiting("scribe-bot")]));
     await pickProfile(user, "scribe");
-    await waitFor(() => expect(botChatRow()?.textContent).toBe("SBot ChatNeeds you"));
+    await user.click(within(panel()).getByRole("tab", { name: /^Bots/ }));
+    await waitFor(() => expect(panel().querySelector('.bots-row[data-profile="scribe"]')?.textContent).toMatch(/Needs you/));
+    await user.click(within(panel()).getByRole("tab", { name: /^Chats/ }));
+    expect(within(panel()).getByRole("tab", { name: /^Bots/ }).getAttribute("aria-label")).toBe("Bots");
     expect(line()).toBeNull();
   });
 
-  it("opens the shown profile's Bot Chat from its row, marked selected while it is in the active pane", async () => {
+  it("opens the shown profile's Bot Chat by Alt+B and stays in Chats, with no row for it in the panel", async () => {
     const { user } = await launch();
     await pickProfile(user, "scribe");
-    await waitFor(() => expect(botChatRow()).toBeTruthy());
-    expect(botChatRow()!.getAttribute("aria-current")).toBeNull();
-    await user.click(botChatRow()!);
+    await user.click(await screen.findByText("Changelog wording"));
+    await user.keyboard("{Alt>}b{/Alt}");
     await waitFor(() => expect(screen.getByText("Draft the release notes for 0.9")).toBeTruthy());
-    await waitFor(() => expect(botChatRow()!.getAttribute("aria-current")).toBe("true"));
-    expect(botChatRow()!.closest(".row")!.classList.contains("sel")).toBe(true);
     expect(shownMode()).toBe("Chats");
-    await user.click(screen.getByText("Changelog wording"));
-    await waitFor(() => expect(botChatRow()!.getAttribute("aria-current")).toBeNull());
+    expect(botChatButtons()).toEqual([]);
+    expect(panel().querySelector(".row.sel")).toBeNull();
   });
 });
 
@@ -988,12 +1061,12 @@ describe("Alt+B", () => {
     await waitFor(() => expect(screen.getByText("What should Scribe work on?")).toBeTruthy());
   });
 
-  it("goes back to the chat left from the Bot Chat row's click too", async () => {
+  it("opens the Bot Chat of the profile picked in the switcher, and goes back to the chat left in it", async () => {
     const { user } = await launch((s) => (s.liveSessions = []));
     await pickProfile(user, "scribe");
     await user.click(await screen.findByText("Changelog wording"));
     await waitFor(() => expect(head().textContent).toMatch(/^Changelog wording/));
-    await user.click(document.querySelector<HTMLElement>(".sb-botchat-row .row-open")!);
+    await altB(user);
     await waitFor(() => expect(head().textContent).toBe("SScribeBot Chat"));
     await altB(user);
     await waitFor(() => expect(head().textContent).toMatch(/^Changelog wording/));
@@ -1721,65 +1794,5 @@ describe("A bot's menu in the chat list panel", { timeout: 30_000 }, () => {
     expect(server.otherProfiles.scratch).toBeTruthy();
     await waitFor(() => expect(names()).toEqual(["Hermes", "Scratch"]));
     await waitFor(() => expect(document.activeElement).toBe(screen.getByPlaceholderText(/Message/)));
-  });
-});
-
-describe("Write with AI for a new bot's persona", () => {
-  const form = () => screen.getByRole("dialog", { name: "New bot" });
-  const oneshots = (server: FakeHermes) => server.requests.filter((r) => r.method === "llm.oneshot").map((r) => r.params);
-  const writesSent = (server: FakeHermes) => server.restRequests.filter((r) => r.method !== "GET").map((r) => [`${r.method} ${r.path}`, r.body]);
-
-  it("writes from notes on the profile in use's model, and Create alone sends the applied persona", async () => {
-    const { server, hermes, user } = await launch();
-    server.oneshotAnswer = "# Ada\n\nReads papers closely.";
-    await openBots(user);
-    await user.click(screen.getByRole("button", { name: "New bot" }));
-    await user.type(within(form()).getByLabelText("Name"), "ada");
-    await user.click(within(form()).getByRole("button", { name: "Write with AI…" }));
-    await user.type(within(form()).getByLabelText("Notes for Hermes"), "Reads papers, cites pages.");
-    expect(oneshots(server)).toEqual([]);
-    expect(within(form()).getByText(/with the default profile's Text generation model/)).toBeTruthy();
-
-    await user.click(within(form()).getByRole("button", { name: "Write with AI" }));
-    const s = await within(form()).findByRole<HTMLTextAreaElement>("textbox", { name: "Suggested SOUL.md" });
-    expect(oneshots(server)).toHaveLength(1);
-    expect(oneshots(server)[0]).toMatchObject({ profile: "default" });
-    expect(oneshots(server)[0].session_id).toBeUndefined();
-    expect(writesSent(server)).toEqual([]);
-    const soul = within(form()).getByLabelText<HTMLTextAreaElement>("Persona (optional)");
-    expect(soul.value).toBe("");
-
-    await user.type(s, " Never invents a citation.");
-    await user.click(within(form()).getByRole("button", { name: "Apply" }));
-    expect(soul.value).toBe("# Ada\n\nReads papers closely. Never invents a citation.");
-    expect(document.activeElement).toBe(soul);
-    await user.type(soul, "\n");
-    expect(writesSent(server)).toEqual([]);
-
-    await user.click(within(form()).getByRole("button", { name: /Create bot/ }));
-    await waitFor(() => expect(botRows()).toHaveLength(3));
-    expect(writesSent(server)).toEqual([["POST /api/profiles", { name: "ada", soul: "# Ada\n\nReads papers closely. Never invents a citation.\n" }]]);
-    expect(server.souls.ada).toBe("# Ada\n\nReads papers closely. Never invents a citation.\n");
-    expect(server.requests.filter((r) => r.method === "session.create" || r.method === "prompt.submit")).toEqual([]);
-    expect(hermes.profile).toBe("default");
-  });
-
-  it("never sends a suggestion that wasn't applied, and asks before closing over notes", async () => {
-    const { server, user } = await launch();
-    server.oneshotAnswer = "# Not applied\n";
-    await openBots(user);
-    await user.click(screen.getByRole("button", { name: "New bot" }));
-    await user.click(within(form()).getByRole("button", { name: "Write with AI…" }));
-    await user.type(within(form()).getByLabelText("Notes for Hermes"), "Terse.");
-    await user.click(within(form()).getByRole("button", { name: "Cancel" }));
-    // Notes alone are worth asking about; keeping on editing finds them where they were.
-    await user.click(within(form()).getByRole("button", { name: "Keep editing" }));
-    expect(within(form()).getByLabelText<HTMLTextAreaElement>("Notes for Hermes").value).toBe("Terse.");
-    await user.type(within(form()).getByLabelText("Name"), "terse");
-    await user.click(within(form()).getByRole("button", { name: "Write with AI" }));
-    await within(form()).findByRole("textbox", { name: "Suggested SOUL.md" });
-    await user.click(within(form()).getByRole("button", { name: /Create bot/ }));
-    await waitFor(() => expect(botRows()).toHaveLength(3));
-    expect(writesSent(server)).toEqual([["POST /api/profiles", { name: "terse" }]]);
   });
 });

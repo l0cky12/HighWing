@@ -68,10 +68,17 @@
 // HV_DELAY_MS=<ms> holds each /api/ answer that long, as a distant server's round trip would.
 // HV_FAIL_PATCH=<id>,<id> answers 503 to every edit (PATCH) of those sessions, as a server that fails a write does.
 // HV_MEMORY_URL=<url> is the address `default`'s Honcho gives for its documentation and its API key's "Get one" link.
+// HV_BUNDLED=1 gives `default` five built-in skills (`provenance: bundled`), which a fresh profile is seeded with, for
+// New bot's Skills (ADR 0197).
+// HV_PERSONA_REPLY=<path>: an `llm.oneshot` whose input holds `<persona>` (New bot's Generate with AI) answers with that
+// file's text, read at each call; an empty file answers no text. Every other one-off call answers as FakeHermes does.
+// HV_SETTLING=<command>: a profile delete answers `settlement_pending` with that `retry_command` (empty: none).
+// HV_MODEL_ERROR=<text>: a profile create makes the profile but not its model, and answers `model_error` with the text.
 // HV_TURNS=<n> adds the bench's two long chats to `default`'s Inbox, `long1` and `long2`, n turns each (bench/fixture.ts
 // makeChat(n, 1) and (n, 2)), so the app can be timed on the chats `bench/run.mjs` renders (bench/app-split).
 // Read-only check of what the server holds (the side-effect proof): `GET /__state` returns sessions, transcripts, and
-// the app's answers to what the stand-in asked it.
+// the app's answers to what the stand-in asked it, and each profile's SOUL.md, skills turned off and toolsets on, with
+// the profile creates and one-off calls it received.
 // The same JSON is rewritten to <state-file> after every change, so it survives the bridge being stopped.
 import { createHash } from "node:crypto";
 import { isUtf8 } from "node:buffer";
@@ -203,6 +210,18 @@ server.souls.default = "You are Hermes, the house's ops assistant. Answer briefl
 for (const name of ["restic-unlock", "nginx-rotate", "vpn-mtu", "trip-planner", "disk-usage", "cert-renew"])
   server.skills.add("default", { dir: `/home/lena/.hermes/skills/ops/${name}`, source: "agent", category: "ops" }, `---\nname: ${name}\ndescription: Synthetic ${name} skill.\n---\n\n## When to Use\n\nWhen asked about ${name}.\n`);
 
+if (process.env.HV_BUNDLED === "1")
+  for (const name of ["arxiv", "git-helper", "hermes-agent", "recipes", "weather"])
+    server.skills.add("default", { dir: `/home/liam/.hermes/skills/${name}`, source: "bundled" }, `---\nname: ${name}\ndescription: Synthetic built-in ${name} skill.\n---\n\nWhen asked about ${name}.\n`);
+const personaReply = process.env.HV_PERSONA_REPLY;
+if (personaReply) {
+  const plain = server.oneshotAnswer;
+  server.oneshotAnswer = (call) => (call.input.includes("<persona>") ? readFileSync(personaReply, "utf8") : typeof plain === "string" ? plain : plain(call));
+}
+
+if (process.env.HV_SETTLING !== undefined) server.profileSettlementPending = process.env.HV_SETTLING;
+if (process.env.HV_MODEL_ERROR) server.profileModelError = process.env.HV_MODEL_ERROR;
+
 const memoryUrl = process.env.HV_MEMORY_URL;
 const honcho = memoryUrl ? { ...HONCHO, docsUrl: memoryUrl, fields: HONCHO.fields.map((f) => (f.kind === "secret" ? { ...f, url: memoryUrl } : f)) } : HONCHO;
 server.memoryProviders.add(honcho, { ...RETAINDB });
@@ -220,7 +239,13 @@ const dump = () =>
       answers: server.responses,
       files: Object.fromEntries(Object.keys(server.checkpoints.byFolder).map((f) => [f, server.checkpoints.files(f)])),
       restores: server.requests.filter((r) => r.method === "rollback.restore").map((r) => r.params),
+      profiles: ["default", ...Object.keys(server.otherProfiles)],
       souls: server.souls,
+      skillsOff: Object.fromEntries(Object.entries(server.skills.disabled).map(([p, names]) => [p, [...names].sort()])),
+      skillFolders: Object.fromEntries(Object.entries(server.skills.folders).map(([p, f]) => [p, f.map((x) => x.dir.slice(x.dir.lastIndexOf("/") + 1))])),
+      toolsetsOn: Object.fromEntries(Object.entries(server.toolsetsOn).map(([p, on]) => [p, [...on].sort()])),
+      toolsetWrites: server.toolsetWrites,
+      profileCreates: server.restRequests.filter((r) => r.method === "POST" && r.path === "/api/profiles").map((r) => r.body),
       oneshots: server.requests.filter((r) => r.method === "llm.oneshot").map((r) => r.params),
     },
     null,

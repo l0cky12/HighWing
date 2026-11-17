@@ -87,6 +87,7 @@ it("shows only catalogue words in the list, a row's menu, Edit bot with a field 
     switchTo: async () => true,
     local: { pending: () => undefined, note: () => {}, clear: () => {}, renamed: async () => {}, deleted: async () => {} },
     copyText: async () => {},
+    notify: () => {},
   };
   const user = userEvent.setup();
   render(<View hermes={hermes} wiring={wiring} />);

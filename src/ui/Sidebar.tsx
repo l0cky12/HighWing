@@ -12,7 +12,7 @@ import type { Route } from "../hermes/pipe";
 import { RenameConflict, TitleModelUnavailable, type Snapshot } from "../hermes/transport";
 import { SECTION_LABEL, chatSections, chatsUnderBot, inboxSettle, settleByDrop, wakeFull, wakeLabel, type InboxSettle, type Pins, type SectionKey, type Snoozes } from "../hermes/snooze";
 import { CHAT_LIST_MODES, getUIPrefs, setUIPrefs, subscribe as subscribeUIPrefs, type ChatListMode } from "../hermes/uiPrefs";
-import { namedByProfile, type Bot, type BotActivity } from "../hermes/bots";
+import { namedByProfile, type Bot } from "../hermes/bots";
 import { BotFace, lookShown, type BotLookShown } from "./BotFace";
 import { BotChatsUnder, BotSwitchQuestion } from "./Bots";
 import { ChatMenu, type ChatPin, type ChatProjects, type ChatSnooze, type ChatTags } from "./ChatMenu";
@@ -26,7 +26,7 @@ import { en } from "../i18n/en";
 import { useLocale, type Locale } from "../i18n/locale";
 import { viaLabel } from "../hermes/routes";
 import { dragChat, dragChatEnd, rowDragged } from "./Tabs";
-import { ariaKeys, chordLabel, chordParts, pick, useBindings, type Chord } from "./keybindings";
+import { ariaKeys, chordLabel, chordParts, pick, useBindings } from "./keybindings";
 import { errorText } from "../hermes/values";
 import { BrandMark } from "./BrandMark";
 
@@ -1054,7 +1054,7 @@ export type ListModes = {
   onOpenBot: (bot: Bot) => void;
 };
 
-export type ShownBot = { bot: Bot; look: BotLookShown; activity: BotActivity; selected: boolean; keys?: Chord; onOpen: () => void };
+export type ShownBot = { bot: Bot; look: BotLookShown };
 
 function ModeSwitch({ value, onChange, inbox, waiting, replying }: Omit<ListModes, "waiting"> & { inbox: number; waiting: number }) {
   const l = useLocale();
@@ -1166,37 +1166,6 @@ function NeedsYouLine({ waiting, pictures, leaving, onOpenBot, onShowBots }: Pic
           }}
         />
       )}
-    </div>
-  );
-}
-
-function BotChatRow({ bot, look, activity, selected, keys, onOpen }: ShownBot) {
-  const l = useLocale();
-  const w = l.chatList;
-  const whose = w.botChatOf(bot.name);
-  const named = keys ? w.withKeys(whose, chordLabel(keys)) : whose;
-  const tip = bot.botChat?.preview ? w.lastMessage(named, bot.botChat.preview) : named;
-  return (
-    <div className={`row sb-botchat-row${selected ? " sel" : ""}${activity ? ` is-${activity}` : ""}`}>
-      <button className="row-open" aria-label={whose} aria-current={selected || undefined} aria-keyshortcuts={keys ? ariaKeys([keys]) : undefined} title={tip} onClick={onOpen}>
-        <BotFace bot={look} size="xs" />
-        <span className="sb-botchat-title">{w.botChat}</span>
-        <span className="row-meta">
-          {activity === "needs-you" ? (
-            <span className="bots-activity is-needs-you">
-              <ShieldAlert size={12} aria-hidden />
-              {l.bots.needsYou}
-            </span>
-          ) : activity === "replying" ? (
-            <span className="bots-activity">
-              <Loader size={12} aria-hidden />
-              {l.bots.replying}
-            </span>
-          ) : (
-            bot.lastActive > 0 && <Age at={bot.lastActive} />
-          )}
-        </span>
-      </button>
     </div>
   );
 }
@@ -1573,11 +1542,6 @@ export function ChatList({
         </div>
       ) : (
         <>
-          {mode && shownBot && (
-            <div className="sb-botchat">
-              <BotChatRow {...shownBot} />
-            </div>
-          )}
           {projectSwitcher && <div className="sb-project">{projectSwitcher}</div>}
           <div className="sb-scroll" data-drop={dropOn === "inbox" ? "inbox" : undefined} {...dropHandlers("inbox", overInbox)}>
             {switchStatus}

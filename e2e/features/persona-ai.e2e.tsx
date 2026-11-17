@@ -41,24 +41,3 @@ it("writes a SOUL.md for a profile not in use from notes, and only Save writes i
   await shot("saved");
   expect(server.souls).toEqual({ default: "# Default persona\n", scout: "# Scout\n\nCalm and exact. Never guesses. Short answers." });
 });
-
-it("writes a new bot's persona on the profile in use's model, and Create sends what was applied", async () => {
-  const { app, server } = await boot({ seed });
-  await app.getByRole("button", { name: "Bots", exact: true }).click();
-  await app.getByRole("button", { name: "New bot" }).click();
-  const form = app.getByRole("dialog", { name: "New bot" });
-  await form.getByLabelText("Name").fill("ada");
-  await form.getByRole("button", { name: "Write with AI…" }).click();
-  await form.getByLabelText("Notes for Hermes").fill("Reads papers and cites pages.");
-  await form.getByRole("button", { name: "Write with AI", exact: true }).click();
-  await expect.element(form.getByRole("textbox", { name: "Suggested SOUL.md" })).toBeVisible();
-  expect(oneshots(server)[0]).toMatchObject({ profile: "default" });
-  await shot("new-bot-suggested");
-  await form.getByRole("button", { name: "Apply" }).click();
-  await expect.element(form.getByLabelText("Persona (optional)")).toHaveValue("# Scout\n\nCalm and exact. Never guesses.");
-  expect(writes(server)).toEqual([]);
-  await form.getByRole("button", { name: /Create bot/ }).click();
-  await expect.element(app.getByRole("dialog", { name: "New bot" })).not.toBeInTheDocument();
-  expect(writes(server)).toEqual([["POST /api/profiles", { name: "ada", soul: "# Scout\n\nCalm and exact. Never guesses." }]]);
-  expect(server.souls.ada).toBe("# Scout\n\nCalm and exact. Never guesses.");
-});

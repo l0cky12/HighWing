@@ -55,7 +55,7 @@ async function start() {
   const panel = app.getByRole("complementary");
   const tab = (name: "Chats" | "Bots") => panel.getByRole("tab", { name: new RegExp(`^${name}`) });
   await expect.element(tab("Chats")).toHaveAttribute("aria-selected", "true");
-  await expect.element(panel.getByRole("button", { name: "Hermes's Bot Chat" })).toBeVisible();
+  await expect.element(panel.getByRole("button", { name: /Nightly backup failing/ })).toBeVisible();
   return { app, server, panel, tab };
 }
 
@@ -65,6 +65,10 @@ it("switches between Chats and Bots by the tabs and Ctrl+Shift+B, which also sho
   const { app, panel, tab } = await start();
   await expect.element(tab("Bots")).toHaveAccessibleName("Bots, 1 bot needs you");
   await expect.element(panel.getByRole("button", { name: /Scout needs you/ })).toBeVisible();
+  await expect.element(panel.getByRole("button", { name: "New chat" })).toBeVisible();
+  await expect.element(panel.getByRole("button", { name: "Search chats" })).toBeVisible();
+  await expect.element(panel.getByRole("button", { name: /Inbox/ })).toBeVisible();
+  expect(panel.getByRole("button", { name: /Bot Chat/ }).elements()).toEqual([]);
   await shot("chats");
 
   await tab("Bots").click();
@@ -93,25 +97,22 @@ it("opens Scout's Bot Chat from the needs-you line, with its Approval showing", 
   await expect.poll(titleOf(app)).toBe("SScoutBot Chat");
   await expect.element(app.getByPlaceholder("Message Scout")).toBeVisible();
   await expect.element(tab("Chats")).toHaveAttribute("aria-selected", "true");
-  await expect.element(panel.getByRole("button", { name: "Scout's Bot Chat" })).toHaveAttribute("aria-current", "true");
   await shot("needs-you-opened");
 });
 
-it("opens the profile's Bot Chat from its row and with Alt+B, and Alt+B goes back to the chat before", async () => {
+it("opens the profile's Bot Chat with Alt+B, and Alt+B goes back to the chat before", async () => {
   const { app, server, panel } = await start();
   await panel.getByRole("button", { name: /Nightly backup failing/ }).click();
   await expect.element(app.getByText("Why did last night's backup fail?")).toBeVisible();
   await userEvent.keyboard("{Alt>}b{/Alt}");
   await expect.element(app.getByText("Nothing urgent. The nightly backup ran clean and the UPS test passed.")).toBeVisible();
   await expect.poll(titleOf(app)).toBe("HHermesBot Chat");
-  await expect.element(panel.getByRole("button", { name: "Hermes's Bot Chat" })).toHaveAttribute("aria-current", "true");
   await shot("bot-chat-by-alt-b");
   await userEvent.keyboard("{Alt>}b{/Alt}");
   await expect.element(app.getByText("Why did last night's backup fail?")).toBeVisible();
-  await expect.element(panel.getByRole("button", { name: "Hermes's Bot Chat" })).not.toHaveAttribute("aria-current");
   await shot("back-by-alt-b");
-  await panel.getByRole("button", { name: "Hermes's Bot Chat" }).click();
-  await expect.element(panel.getByRole("button", { name: "Hermes's Bot Chat" })).toHaveAttribute("aria-current", "true");
+  await userEvent.keyboard("{Alt>}b{/Alt}");
+  await expect.poll(titleOf(app)).toBe("HHermesBot Chat");
   expect(server.sessions.filter((s) => s.title === BOT_CHAT_TITLE)).toHaveLength(1);
 });
 

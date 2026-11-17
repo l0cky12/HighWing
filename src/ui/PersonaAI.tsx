@@ -1,10 +1,8 @@
-// Write with AI for a SOUL.md (personaAI.ts), under the persona editor on Settings → Persona and in the New bot form.
+// Write with AI for a SOUL.md (personaAI.ts), under the persona editor on Settings → Persona. The New bot form has its
+// own Generate with AI (PersonaRephrase.tsx, ADR 0197).
 // Opening it reads nothing. Only Write or Improve sends one stateless `llm.oneshot` (no chat, no tools), on the
 // writing profile's Text generation model, read just before the call. The answer is an editable suggestion that only
-// Apply puts in the editor, so the editor's own Save or Create stays the one thing that writes to the server.
-//
-// The state lives in `usePersonaAI`, held by the form, so the panel can unmount (New bot's leave question replaces
-// the form) without losing notes, a call or a suggestion.
+// Apply puts in the editor, so the editor's own Save stays the one thing that writes to the server.
 import { useEffect, useId, useRef, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { safeReason, soulCall, soulFrom, sourceOf, UnusableAnswer, NOTES_MAX, SOUL_MAX, type Call, type Source } from "../hermes/personaAI";
@@ -105,7 +103,7 @@ export function usePersonaAI(writer: PersonaWriter | undefined, connected: boole
     }
   }
 
-  return { writer, connected, open, setOpen, notes, setNotes, phase, setPhase, note, setNote, write, drop, held: !!notes.trim() || phase.kind !== "idle" };
+  return { writer, connected, open, setOpen, notes, setNotes, phase, setPhase, note, setNote, write, drop };
 }
 
 export function PersonaAI({
@@ -113,7 +111,6 @@ export function PersonaAI({
   writer,
   text,
   locked,
-  persist,
   onApply,
 }: {
   ai: PersonaAIState;
@@ -123,8 +120,6 @@ export function PersonaAI({
   text: string;
   /** The editor can't take text now (a save or reload is under way). */
   locked: boolean;
-  /** What writes the editor's text to the server: the persona's Save, or the New bot form's Create. */
-  persist: "save" | "create";
   onApply: (text: string) => void;
 }) {
   const l = useLocale();
@@ -165,7 +160,7 @@ export function PersonaAI({
     if (!force && text !== phase.from) return setPhase({ ...phase, confirm: true });
     onApply(phase.text);
     setPhase({ kind: "idle" });
-    setNote({ tone: "muted", text: persist === "save" ? w.appliedSave : w.appliedCreate });
+    setNote({ tone: "muted", text: w.applied });
   }
 
   if (!open)

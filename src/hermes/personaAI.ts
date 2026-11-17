@@ -1,4 +1,4 @@
-// Writing a profile's SOUL.md with Hermes (Write with AI on Settings → Persona and New bot): what the one stateless
+// Writing a profile's SOUL.md with Hermes (Write with AI on Settings → Persona): what the one stateless
 // `llm.oneshot` call is told and given, and how its answer is read. No I/O here. The call starts no chat and has no
 // tools, and nothing is saved: a suggestion only fills the editor once the owner applies it, and Save or Create decides.
 import { SOUL_INCLUDED_CHARS } from "./persona";

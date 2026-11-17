@@ -15,7 +15,7 @@ const p = pseudoLocale();
 
 function Panel({ writer }: { writer: PersonaWriter }) {
   const ai = usePersonaAI(writer, true);
-  return <PersonaAI ai={ai} writer={writer} text="" locked={false} persist="save" onApply={() => {}} />;
+  return <PersonaAI ai={ai} writer={writer} text="" locked={false} onApply={() => {}} />;
 }
 
 it("words a suggestion and a missing sign-in only from the catalogue", async () => {

@@ -268,7 +268,7 @@ export function skillsError(e: unknown, doing: "list" | "read" | "save" | "toggl
   }[doing];
   if (/^Not connected to Hermes|^The chat connection is closed/.test(message)) return new SkillsError("disconnected", "Not connected to Hermes.", undefined, true);
   if (/^Can't reach the Hermes dashboard/.test(message)) return new SkillsError("disconnected", message);
-  if (e instanceof RestError && e.status === 401) return new SkillsError("signed-out", message);
+  if (e instanceof RestError && e.status === 401) return new SkillsError("signed-out", message, 401);
   if (/^Highwing doesn't relay/.test(message)) return new SkillsError("unsupported", message, undefined, true);
   const a = answered(e);
   if (!a) return new SkillsError("error", `Couldn't ${what}: ${message}`);
@@ -512,7 +512,8 @@ export class SkillsApi {
     try {
       view = await this.list(profile);
     } catch (e) {
-      if (!lost) throw new SkillsError("error", `Hermes took the change, but reading the list back failed: ${skillsError(e, "list").message}`);
+      const read = skillsError(e, "list");
+      if (!lost) throw new SkillsError("error", `Hermes took the change, but reading the list back failed: ${read.message}`, read.status);
       throw new SkillsError("error", `Couldn't tell whether ${name} was turned ${enabled ? "on" : "off"}: ${lost.message} Reading the list back also failed. Reload once connected to see.`, lost.status);
     }
     const row = view.skills.find((s) => s.name === name);

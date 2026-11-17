@@ -38,6 +38,7 @@ Each feature file starts with an H1 and one paragraph describing the behaviour t
 - [Sign in](sign-in.md): first-run setup for a web address connection, a wrong password, and signing in again after a relaunch.
 - [Send a message](send-message.md): open a chat, send, watch the streamed reply, and confirm both messages on the server.
 - [New chat](new-chat.md): start a chat from the rail, the list panel or Ctrl+N, and see it created on the server and in the list.
+- [New bot](new-bot.md): rewrite a rough persona with AI, choose skills and tools, create, and read each back; the partial and narrow cases.
 - [MCP servers](mcp-servers.md): Settings → MCP servers: list, test, add, edit with write-only secrets, remove, switch, OAuth sign-in, catalog, another profile.
 - [Gateways](gateways.md): Settings → Gateways: Telegram and Discord state, token replace and remove with read-back, the switch, a turned-down token, a missing library, a change on the server meanwhile, Check status.
 - [Search chats](search.md): Ctrl+K or the rail opens search, a body-text match opens its chat, and a miss shows No matches.

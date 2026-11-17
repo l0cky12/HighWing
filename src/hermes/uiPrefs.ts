@@ -26,7 +26,6 @@ export const THEMES: readonly Theme[] = ["light", "dark", "system"];
  */
 export type StickyModelPick = ModelPick & { profile?: string };
 
-/** The chat list panel's two modes: the shown profile's chats, or the bots (Sidebar.tsx `ModeSwitch`). */
 export type ChatListMode = "chats" | "bots";
 export const CHAT_LIST_MODES: readonly ChatListMode[] = ["chats", "bots"];
 
@@ -67,7 +66,6 @@ export type UIPrefs = {
   chatSectionsShown: SectionKey[];
   /** The chat list's sections the owner collapsed, kept across restarts (ADR 0063). */
   chatSectionsCollapsed: SectionKey[];
-  /** What the chat list panel shows on a Hermes with Bot Mode, the profile's chats or the bots: the owner's pick, kept across restarts. */
   chatListMode: ChatListMode;
   /** The agent office's design (ADR 0161): a floor plan, a board, a list, the 3D building (ADR 0122), or off, with no rail button (ADR 0077). */
   agentOffice: OfficeView;

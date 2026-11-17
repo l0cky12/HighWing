@@ -365,7 +365,6 @@ describe("Chat list by keyboard", () => {
   it("reaches each chat with Tab, and Enter opens it", async () => {
     const s = await signedIn();
     screen.getByRole("tab", { name: "Chats" }).focus();
-    // Hide chats ends the switch's row; the profile switcher heads the chats, then New chat and Search, labeled.
     await s.user.tab();
     expect(focused()).toBe(button("Hide chats (Ctrl+B)"));
     await s.user.tab();
@@ -374,7 +373,6 @@ describe("Chat list by keyboard", () => {
     expect(focused()).toBe(button("New chat"));
     await s.user.tab();
     expect(focused()).toBe(button("Search chats"));
-    // The profile's Bot Chat, one row above its chats.
     await s.user.tab();
     expect(focused()).toBe(button("Hermes's Bot Chat"));
     // The project switcher sits under the profile's name, before the chats.

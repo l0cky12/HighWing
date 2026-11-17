@@ -1308,7 +1308,7 @@ export class Hermes {
     const res = await this.rest(method, pathAndQuery, body);
     if (method === "GET" && pathAndQuery === "api/profiles") this.keepDefaultName(res);
     if (method === "PATCH" && pathAndQuery === "api/profiles/default" && typeof (res as { display_name?: unknown })?.display_name === "string")
-      this.update({ defaultName: (res as { display_name: string }).display_name.trim() || undefined });
+      this.defaultNamed((res as { display_name: string }).display_name.trim() || undefined);
     return res;
   });
 
@@ -1581,7 +1581,14 @@ export class Hermes {
   /** Keeps the display name a `GET /api/profiles` answer gives `default`, for the switcher and the profile pickers. */
   private keepDefaultName(res: unknown) {
     const row = toProfileRows(res).find((p) => p.name === "default");
-    if (row && row.displayName !== this.snapshot.defaultName) this.update({ defaultName: row.displayName });
+    if (row) this.defaultNamed(row.displayName);
+  }
+
+  /** `default`'s display name is part of its bot's name (bots.ts `botName`), so a roster already read is read again when it changes. */
+  private defaultNamed(name: string | undefined) {
+    if (name === this.snapshot.defaultName) return;
+    this.update({ defaultName: name });
+    if (this.snapshot.bots) void this.bots().catch(() => {});
   }
 
   /**

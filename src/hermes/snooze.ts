@@ -411,13 +411,12 @@ export function chatSections(
   return s;
 }
 
-/**
- * The chats under the shown profile's bot in the chat list's Bots mode: the Pinned, Inbox and Working ones first, up to
- * five; then the newest Settled until there are three; then whatever chat each pane shows (`shown`), wherever it is.
- */
+const UNDER_BOT_ACTIVE_MAX = 5;
+const UNDER_BOT_MIN = 3;
+
 export function chatsUnderBot(s: ChatSections, shown: readonly (string | null)[]): Chat[] {
-  const near = [...s.pinned, ...s.inbox, ...s.working].slice(0, 5);
-  near.push(...s.settled.slice(0, Math.max(0, 3 - near.length)));
+  const near = [...s.pinned, ...s.inbox, ...s.working].slice(0, UNDER_BOT_ACTIVE_MAX);
+  near.push(...s.settled.slice(0, Math.max(0, UNDER_BOT_MIN - near.length)));
   const every = Object.values(s).flat();
   for (const id of shown) {
     const c = every.find((x) => x.id === id);

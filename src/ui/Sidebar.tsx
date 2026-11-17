@@ -693,7 +693,6 @@ function ProfileSwitcher({
   profile: string;
   /** The display name Hermes keeps for `default`, shown before its id (ADR 0156). */
   defaultName?: string;
-  /** The profile as its bot shows, in Chats mode: its face and name lead, its id follows, quieter, unless the name only says it again. */
   bot?: BotLookShown;
   others: OtherProfiles;
   checkTimes: CheckTimesStore;
@@ -1045,35 +1044,18 @@ function SettledList({ chats, selectedId, row }: { chats: Chat[]; selectedId: st
   );
 }
 
-/**
- * The panel's mode on a Hermes with Bot Mode, the owner's pick (uiPrefs.ts `chatListMode`), and what waits in the bots of
- * the other profiles (bots.ts `botsWaiting`): `waiting`, the bots that need the owner; `replying`, how many are replying.
- */
 export type ListModes = {
   value: ChatListMode;
   onChange: (mode: ChatListMode) => void;
   waiting: readonly Bot[];
   replying: number;
-  /** Each bot's picture, by profile. */
   pictures: Readonly<Record<string, string>>;
-  /** What switching away from the shown profile leaves behind, asked about before a bot in another profile opens. */
   leaving?: string;
-  /** Opens a bot's Bot Chat, in its profile, as its row does. */
   onOpenBot: (bot: Bot) => void;
 };
 
-/**
- * The shown profile as a bot, for Chats mode: its face and name lead the profile switcher, and its Bot Chat is one row
- * above the chats. `activity`: what it is doing there. `selected`: its Bot Chat is in the active pane. `keys`: the chord
- * that opens it.
- */
 export type ShownBot = { bot: Bot; look: BotLookShown; activity: BotActivity; selected: boolean; keys?: Chord; onOpen: () => void };
 
-/**
- * The switch at the top of the chat list panel: Chats and Bots, as two tabs with one tab stop. A click picks one; Left,
- * Right, Home and End on the focused tab pick and move focus. The tab not shown carries what waits there: Chats the
- * shown profile's Inbox count, Bots how many bots need the owner, or else a mark while one is replying.
- */
 function ModeSwitch({ value, onChange, inbox, waiting, replying }: Omit<ListModes, "waiting"> & { inbox: number; waiting: number }) {
   const l = useLocale();
   const w = l.chatList;
@@ -1118,7 +1100,6 @@ function ModeSwitch({ value, onChange, inbox, waiting, replying }: Omit<ListMode
   };
   const tab = (mode: ChatListMode, icon: ReactNode) => {
     const name = w[mode];
-    // The shown mode's rows say what waits in it.
     const { text, badge } = mode === value ? {} : waits[mode];
     const tip = text ? w.tabTip(name, text) : name;
     return (
@@ -1147,12 +1128,6 @@ function ModeSwitch({ value, onChange, inbox, waiting, replying }: Omit<ListMode
   );
 }
 
-/**
- * Under the switch in Chats mode, while a bot in another profile needs the owner: one bot by its face, name and last
- * message, a click from its Bot Chat, asking first as its row does when switching would leave something behind; more
- * than one by their names, a click from the bots. A polite live region, so a screen reader hears it arrive; the app's
- * notice is its one status.
- */
 function NeedsYouLine({ waiting, pictures, leaving, onOpenBot, onShowBots }: Pick<ListModes, "waiting" | "pictures" | "leaving" | "onOpenBot"> & { onShowBots: () => void }) {
   const w = useLocale().chatList;
   const [asking, setAsking] = useState<Bot>();
@@ -1195,10 +1170,6 @@ function NeedsYouLine({ waiting, pictures, leaving, onOpenBot, onShowBots }: Pic
   );
 }
 
-/**
- * In Chats mode, the shown profile's Bot Chat as one row above its chats: its bot's face, "Bot Chat", then Needs you,
- * Replying or how long ago it was active. It stays out of the sections and out of Search.
- */
 function BotChatRow({ bot, look, activity, selected, keys, onOpen }: ShownBot) {
   const l = useLocale();
   const w = l.chatList;
@@ -1295,7 +1266,6 @@ export function ChatList({
   shownBot,
 }: {
   profile: string;
-  /** In Bots mode, the bots, which fill the panel under New chat and Search, given the shown profile's chats to draw under its bot. */
   bots?: (under: ReactNode) => ReactNode;
   projectSwitcher?: ReactNode;
   /** The profile's Saved filters (Tags.tsx), under the project switcher. */
@@ -1357,9 +1327,7 @@ export function ChatList({
   onSearch?: () => void;
   /** Hides this panel, as Ctrl+B does. */
   onHide?: () => void;
-  /** The panel's two modes and the switch at its top (`ModeSwitch`); none for a Hermes without Bot Mode, whose panel is the chats alone. */
   mode?: ListModes;
-  /** The shown profile as a bot, once the roster names it: in Chats mode its Bot Chat row, in Bots mode its chats' label. */
   shownBot?: ShownBot;
 }) {
   const { chatSectionsShown: shown, chatSectionsCollapsed: collapsed } = useSyncExternalStore(subscribeUIPrefs, getUIPrefs);

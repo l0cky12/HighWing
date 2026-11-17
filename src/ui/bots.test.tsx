@@ -691,7 +691,6 @@ describe("Bots mode", () => {
   const shownMode = () => within(panel()).getAllByRole("tab").find((t) => t.getAttribute("aria-selected") === "true")?.textContent;
   const ago = (days: number) => nowS() - days * 86_400;
 
-  /** Default with eight chats: two Active, one of them pinned here, and six Settled. */
   async function launchMany() {
     const env = await launch((s) => {
       s.sessions = [
@@ -720,7 +719,6 @@ describe("Bots mode", () => {
     expect(under()!.closest(".bots-under")!.previousElementSibling?.getAttribute("data-profile")).toBe("default");
     expect(under()!.getAttribute("aria-label")).toBe("Hermes's chats");
     expect(underTitles()).toEqual(["Backup failing", "Disk usage", "Settled 1"]);
-    // The Inbox's chats carry the mark.
     const marked = [...under()!.querySelectorAll(".row")].map((r) => !!r.querySelector('.bots-chat-mark[aria-label="In the Inbox"]'));
     expect(marked).toEqual([true, true, false]);
     expect(within(under()!).getByRole("button", { name: "All 8 chats" })).toBeTruthy();
@@ -854,7 +852,6 @@ describe("Chats mode", () => {
     expect(button().querySelector(".profile-id")?.textContent).toBe("default");
     await pickProfile(user, "scribe");
     await waitFor(() => expect(button().querySelector(".profile-name")?.textContent).toBe("Scribe"));
-    // "Scribe" is only the id made readable, so the id isn't said twice.
     expect(button().querySelector(".profile-id")).toBeNull();
     expect((button().querySelector(".bots-face") as HTMLElement).style.background).toBe("rgb(68, 170, 119)");
   });
@@ -886,7 +883,6 @@ describe("Chats mode", () => {
     const { user } = await launch((s) => (s.liveSessions = [waiting("scribe-bot")]));
     await pickProfile(user, "scribe");
     await waitFor(() => expect(botChatRow()?.textContent).toBe("SBot ChatNeeds you"));
-    // Its own bot isn't one that waits elsewhere.
     expect(line()).toBeNull();
   });
 
@@ -950,7 +946,6 @@ describe("The pane names the bot", () => {
     await waitFor(() => expect(screen.getByPlaceholderText("Message Scribe")).toBeTruthy());
     await user.keyboard("{Control>}n{/Control}");
     await waitFor(() => expect(screen.getByText("What should Scribe work on?")).toBeTruthy());
-    // An ordinary chat keeps its own title in its header.
     await user.click(screen.getByText("Changelog wording"));
     await waitFor(() => expect(head().textContent).toMatch(/^Changelog wording/));
     expect(head().querySelector(".bots-face")).toBeNull();
@@ -979,7 +974,6 @@ describe("Alt+B", () => {
     expect(server.sessions.filter((s) => s.title === BOT_CHAT_TITLE)).toHaveLength(1);
     await altB(user);
     await waitFor(() => expect(head().textContent).toMatch(/^Disk usage/));
-    // And there again: the same Bot Chat, found by its title.
     await altB(user);
     await waitFor(() => expect(head().textContent).toBe("HHermesBot Chat"));
     expect(server.sessions.filter((s) => s.title === BOT_CHAT_TITLE)).toHaveLength(1);
@@ -1005,6 +999,17 @@ describe("Alt+B", () => {
     await waitFor(() => expect(head().textContent).toMatch(/^Changelog wording/));
   });
 
+  it("goes back to the chat left from the bot's own row in Bots mode too", async () => {
+    const { user } = await launch((s) => (s.liveSessions = []));
+    await user.click(screen.getByText("Disk usage"));
+    await waitFor(() => expect(head().textContent).toMatch(/^Disk usage/));
+    await user.click(within(document.querySelector<HTMLElement>(".sidebar")!).getByRole("tab", { name: /^Bots/ }));
+    await user.click(await waitFor(() => document.querySelector<HTMLElement>('.sidebar .bots-row[data-profile="default"] .bots-open')!));
+    await waitFor(() => expect(head().textContent).toBe("HHermesBot Chat"));
+    await altB(user);
+    await waitFor(() => expect(head().textContent).toMatch(/^Disk usage/));
+  });
+
   it("forgets the chat before on a profile switch", async () => {
     const { user } = await launch((s) => (s.liveSessions = []));
     await user.click(screen.getByText("Disk usage"));
@@ -1014,7 +1019,6 @@ describe("Alt+B", () => {
     await waitFor(() => expect(listTitles()).toEqual(["Changelog wording"]));
     await pickProfile(user, "default");
     await waitFor(() => expect(listTitles()).toEqual(["Disk usage"]));
-    // Back in default, its Bot Chat opened from the Bots view, which records nothing: Alt+B has nowhere to go back to.
     await openBots(user);
     await user.click(botRows()[0]);
     await waitFor(() => expect(head().textContent).toBe("HHermesBot Chat"));
@@ -1161,7 +1165,6 @@ describe("The chat list panel's two modes", () => {
     await waitFor(() => expect(names()).toEqual(["Hermes", "Scribe"]));
   }
 
-  /** Scribe's Bot Chat open from the Bots view, then the panel's Bots tab picked. */
   async function openScribe(user: ReturnType<typeof userEvent.setup>) {
     await openBots(user);
     await user.click(botRows()[1]);
@@ -1195,7 +1198,6 @@ describe("The chat list panel's two modes", () => {
     expect(shownMode()).toBe("Bots");
     expect(current()).toEqual([null, "true"]);
     expect(within(panelBots()[1]).getByText("Release notes drafted: three fixes.")).toBeTruthy();
-    // The shown profile's chats sit under its bot.
     expect(listTitles()).toEqual(["Changelog wording"]);
     expect(within(panel()).queryByRole("heading", { name: "Bots" })).toBeNull();
     expect(within(panel()).getByRole("button", { name: "New chat" })).toBeTruthy();
@@ -1474,7 +1476,6 @@ describe("A bot's menu in the chat list panel", { timeout: 30_000 }, () => {
     s.profileMeta.scratch = { description: "Disposable test bot", ui_meta: { "hermes-bots": { title: "Scratch" } } };
   };
 
-  /** Bots mode, with Scribe's Bot Chat open in `scribe`. */
   async function openScribe(user: ReturnType<typeof userEvent.setup>, count = 3) {
     await user.click(botsButton()!);
     await waitFor(() => expect(botRows().length).toBe(count));
@@ -1718,7 +1719,6 @@ describe("A bot's menu in the chat list panel", { timeout: 30_000 }, () => {
     await waitFor(() => expect(server.otherProfiles.scribe).toBeUndefined());
     expect(hermes.profile).toBe("default");
     expect(server.otherProfiles.scratch).toBeTruthy();
-    // The bot's row went with it. The chat now shown took focus for its message box, which the menu leaves there.
     await waitFor(() => expect(names()).toEqual(["Hermes", "Scratch"]));
     await waitFor(() => expect(document.activeElement).toBe(screen.getByPlaceholderText(/Message/)));
   });

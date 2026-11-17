@@ -355,17 +355,11 @@ export function botActivity(
   return undefined;
 }
 
-/**
- * What waits in the bots of the profiles not shown, for the chat list's Bots tab and the line over its chats: the bots
- * that need the owner, in roster order, and how many are replying. A bot hidden in Hermes is left out, and so is the
- * shown profile's own, whose Bot Chat row says what it is doing.
- */
 export function botsWaiting(roster: readonly Bot[], activity: (bot: Bot) => BotActivity, shown: string): { waiting: Bot[]; replying: number } {
   const others = roster.filter((b) => b.profile !== shown && !b.hidden).map((b) => ({ b, now: activity(b) }));
   return { waiting: others.filter((o) => o.now === "needs-you").map((o) => o.b), replying: others.filter((o) => o.now === "replying").length };
 }
 
-/** Whether a bot's name is only its profile id made readable ("Hermes Chat" for `hermes-chat`), so the id beside it would say it twice. */
 export function namedByProfile(name: string, profile: string): boolean {
   const plain = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
   return plain(name) === plain(profile);

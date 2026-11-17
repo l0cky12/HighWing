@@ -4,8 +4,6 @@ import { BOT_CHAT_TITLE } from "../../src/hermes/bots";
 import { row, type FakeHermes } from "../../src/hermes/fakeHermes";
 import { boot, shot } from "../harness";
 
-// The chat list panel's Bots mode: a right-click on a bot's row opens Chat, Settings and Delete (ADR 0194). Every bot
-// here is FakeHermes data: Scribe has a Bot Chat, Scratch is a disposable bot made for deleting.
 const seed = (s: FakeHermes) => {
   s.sessions = [row("disk", 0.5, { title: "Disk usage" })];
   s.otherProfiles = {
@@ -24,7 +22,6 @@ const seed = (s: FakeHermes) => {
   };
 };
 
-/** Opens Scribe's Bot Chat from the Bots view, then picks the chat list panel's Bots tab. */
 async function botMode() {
   const { app, server } = await boot({ seed });
   await app.getByRole("button", { name: "Bots", exact: true }).click();
@@ -67,7 +64,6 @@ it("Settings edits that bot and its row reads the change back", async () => {
   await shot("settings-editor");
   await dialog.getByRole("button", { name: /Save changes/ }).click();
   await expect.element(dialog).not.toBeInTheDocument();
-  // The panel doesn't draw a bot's description (the Bots view does), but its row's name says it once read back.
   await expect.element(panel.getByRole("button", { name: /^Scratch\. Disposable test bot, edited from the panel\./ })).toBeInTheDocument();
   await shot("settings-saved");
   expect(writes(server)).toEqual(["PUT /api/profiles/scratch/description"]);

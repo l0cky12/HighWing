@@ -1,9 +1,4 @@
 // @vitest-environment jsdom
-// The chat list panel's two modes and the pane's bot names come from the catalogue (ADR 0100): the switch, the line for
-// bots that need the owner, the Bot Chat row, the chats under a bot, a Bot Chat's header and the message box. Rendered
-// under the pseudo-locale, which marks each catalogue string, so a literal left in stands out. The rest of the chat list
-// isn't converted yet, so only these parts are read. Bot names, profile ids, chat titles and last messages are data,
-// marked translate="no". All data is synthetic.
 import { act, cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
@@ -64,7 +59,6 @@ const waiting = (key: string): Live => ({ id: `rt-${key}`, session_key: key, sta
 
 it("shows only catalogue words in Chats mode with one bot that needs the owner", async () => {
   await launch([waiting("scribe-bot")]);
-  // The switcher's own tip isn't converted yet; what the bot adds to it is.
   expect(parts(".sb-mode", ".sb-needs-you-slot", ".sb-profile .profile-btn > *", ".sb-botchat")).toEqual([]);
   expect(panel().querySelector(".sb-profile .profile-btn")!.getAttribute("aria-label")).toMatch(/^⟦.*⟧$/);
   expect(untranslated(document.querySelector("textarea[data-composer]")!)).toEqual([]);

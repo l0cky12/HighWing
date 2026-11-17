@@ -38,7 +38,6 @@ async function launch() {
   return { server, hermes, user: userEvent.setup() };
 }
 
-// The message box names the shown profile's bot: "Message Hermes" in default, "Message Work" in work.
 const composer = () => screen.getByPlaceholderText<HTMLTextAreaElement>(/^Message /);
 
 async function pickProfile(user: ReturnType<typeof userEvent.setup>, profile: string) {

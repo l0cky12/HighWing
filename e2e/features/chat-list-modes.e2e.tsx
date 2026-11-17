@@ -5,9 +5,6 @@ import { row, type FakeHermes } from "../../src/hermes/fakeHermes";
 import { APPEARANCE_KEY } from "../../src/ui/appearance";
 import { boot, shot } from "../harness";
 
-// The chat list panel's two modes, Chats and Bots, the switch at its top, and the pane named by its bot. Every bot and
-// chat here is FakeHermes data: five bots, one per profile. Ops is replying in its Bot Chat, Scout's waits on the owner,
-// and "hermes-chat" has no bot name, so it is named by its id.
 const nowS = () => Date.now() / 1000;
 const ago = (hours: number) => nowS() - hours * 3600;
 const bot = (id: string, hours: number) => row(id, hours / 24, { title: BOT_CHAT_TITLE, hidden: true });
@@ -62,12 +59,10 @@ async function start() {
   return { app, server, panel, tab };
 }
 
-/** The active chat's header, as its title line reads: a Bot Chat's is its bot's face, name and "Bot Chat" badge. */
 const titleOf = (app: Awaited<ReturnType<typeof boot>>["app"]) => () => app.getByTitle("Its bot's one continuous chat").query()?.closest(".chat-title")?.textContent;
 
 it("switches between Chats and Bots by the tabs and Ctrl+Shift+B, which also shows a hidden panel", async () => {
   const { app, panel, tab } = await start();
-  // What waits in Bots shows on its tab, and the bot that needs the owner over the chats.
   await expect.element(tab("Bots")).toHaveAccessibleName("Bots, 1 bot needs you");
   await expect.element(panel.getByRole("button", { name: /Scout needs you/ })).toBeVisible();
   await shot("chats");
@@ -92,13 +87,11 @@ it("opens Scout's Bot Chat from the needs-you line, with its Approval showing", 
   const { app, server, panel, tab } = await start();
   await panel.getByRole("button", { name: /Scout needs you/ }).click();
   await expect.element(app.getByText("I'd like to run the benchmark script. It needs your OK first.")).toBeVisible();
-  // Hermes asks again on the session the app resumed.
   await expect.poll(() => server.runtimeIdOf("scout-bot"), { message: "Scout's Bot Chat resumed" }).toBeTruthy();
   server.askApproval(server.runtimeIdOf("scout-bot")!, { command: "./bench.sh --against baseline", description: "run the benchmark" });
   await expect.element(app.getByText("./bench.sh --against baseline")).toBeVisible();
   await expect.poll(titleOf(app)).toBe("SScoutBot Chat");
   await expect.element(app.getByPlaceholder("Message Scout")).toBeVisible();
-  // The profile switched, the mode didn't.
   await expect.element(tab("Chats")).toHaveAttribute("aria-selected", "true");
   await expect.element(panel.getByRole("button", { name: "Scout's Bot Chat" })).toHaveAttribute("aria-current", "true");
   await shot("needs-you-opened");
@@ -156,7 +149,6 @@ it("switches profile from a bot's row in Bots mode, its chats moving under it", 
 it("names a bot without a name by its profile id, once", async () => {
   const { app, panel, tab } = await start();
   await tab("Bots").click();
-  // The pen shows while its row is hovered.
   await panel.getByRole("button", { name: /^Hermes Chat \(profile hermes-chat\)\./ }).hover();
   await panel.getByRole("button", { name: "New chat with Hermes Chat" }).click();
   await tab("Chats").click();

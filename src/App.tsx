@@ -1558,7 +1558,6 @@ export function Main({
   // computer for the connection, and change nothing else. `goTo`: an entry's chat to open once its profile's list
   // has it. `focusItem`: the card or message in a pane to show once it is on screen.
   const [inboxOpen, setInboxOpen] = useState(false);
-  /** The Bots view (Bots.tsx, ADR 0066), and a bot's chat to open once its profile is shown: `opening`, looked up and on its way. */
   const [botsOpen, setBotsOpen] = useState(false);
   const [botGo, setBotGo] = useState<{ bot: Bot; then: "open" | "new"; nav: number; opening?: boolean }>();
   /** The agent office (Office.tsx, ADR 0077), unless Settings turns it off. */
@@ -2379,15 +2378,12 @@ export function Main({
   const botsNeedYou =
     chats.some((c) => isBotChat(c) && c.items.some(isWaiting)) ||
     (live?.sessions ?? []).some((s) => s.status === "waiting" && (isBotChatTitle(s.title) || hermes.isKnownBotChat(s.chatId, s.profile)));
-  // The chat list panel shows the chats or the bots, as the owner last picked (Sidebar.tsx `ModeSwitch`). Only the pick
-  // moves it: opening a chat, New chat, a profile switch and a restart leave it as it is.
   const hasBotMode = caps.caps.botMode.state !== "unsupported";
   const botsInList = hasBotMode && chatListMode === "bots";
   const setChatListMode = (mode: ChatListMode) => setUIPrefs({ chatListMode: mode });
   const shownChat = chats.find((c) => c.id === active.chatId);
   const roster = bots?.roster ?? [];
   const waitingInBots = botsWaiting(roster, (b) => activityOf(b, roster), profile);
-  // The shown profile as a bot: the chat list's profile switcher and Bot Chat row name it, and so does each pane.
   const shownBot = hasBotMode ? roster.find((b) => b.profile === profile) : undefined;
   const shownName = shownBot?.name;
   const shownColor = shownBot?.color;
@@ -2396,22 +2392,11 @@ export function Main({
     () => (shownName === undefined ? undefined : { name: shownName, color: shownColor, picture: shownPicture }),
     [shownName, shownColor, shownPicture],
   );
-  // Where Alt+B goes back to from the Bot Chat: the chat the owner left for it. Kept for this run, in this profile only.
   const beforeBotChat = useRef<string | null>(null);
   useEffect(() => {
     beforeBotChat.current = null;
   }, [profile]);
   const onBotChat = !!shownChat && isBotChat(shownChat);
-  const goToBotChat = (b: Bot) => {
-    if (!onBotChat) beforeBotChat.current = active.chatId;
-    openBot(b, "open");
-  };
-  // A display name saved in Settings → Profiles is part of `default`'s bot name, so the roster is read again for it.
-  const rosterRead = !!bots;
-  useEffect(() => {
-    if (hasBotMode && rosterRead && status === "connected") void hermes.bots().catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the display name changes; a roster read or a reconnect needs no second read
-  }, [defaultProfileName]);
   const connected = status === "connected";
   useEffect(() => {
     if (!botsInList || !connected) return;
@@ -2424,6 +2409,7 @@ export function Main({
   const openBot = (b: Bot, then: "open" | "new") => {
     setBotsOpen(false);
     guard(() => {
+      if (then === "open" && b.profile === profile && !onBotChat) beforeBotChat.current = active.chatId;
       if (b.profile !== profile) void switchProfileNow(b.profile);
       // Anything the owner opens or switches to after this, before the Bot Chat opens, wins over it (`navGen`).
       setBotGo({ bot: b, then, nav: navGen.current });
@@ -2997,7 +2983,7 @@ export function Main({
         case "botChat":
           if (!onChat || !shownBot) return;
           e.preventDefault();
-          if (!onBotChat) goToBotChat(shownBot);
+          if (!onBotChat) openBot(shownBot, "open");
           else {
             const back = beforeBotChat.current;
             beforeBotChat.current = null;
@@ -3087,7 +3073,6 @@ export function Main({
         pane={p.key}
         tabs={p.tabs.map((id) => {
           const c = id === null ? undefined : chats.find((c) => c.id === id);
-          // A Bot Chat's tab names its bot, as its header does.
           const title = c && isBotChat(c) && shownName !== undefined ? shownName : (c?.title ?? "New chat");
           return { id, title, running: c?.running, unread: c?.unread };
         })}
@@ -3464,7 +3449,7 @@ export function Main({
               activity: activityOf(shownBot, roster),
               selected: !covering && onBotChat,
               keys: keys.botChat[0],
-              onOpen: () => goToBotChat(shownBot),
+              onOpen: () => openBot(shownBot, "open"),
             }
           }
           bots={(under) =>
@@ -4264,7 +4249,6 @@ function ChatView({
   hermes: Hermes;
   connection: SavedConnection;
   profile: string;
-  /** The profile's bot, when Hermes has Bot Mode (ChatPane's `bot`). */
   bot?: BotLookShown;
   status: ConnectionStatus;
   paneKey: string;

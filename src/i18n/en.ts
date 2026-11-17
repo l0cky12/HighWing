@@ -16,10 +16,8 @@ export const en = {
     now: "now",
   },
   chat: {
-    /** The message box and an empty chat, naming the profile's bot, or Hermes on a server without Bot Mode. */
     messageTo: (name: string) => `Message ${name}`,
     workOn: (name: string) => `What should ${name} work on?`,
-    /** A Bot Chat's header: its bot's face and name, and this badge. */
     botChat: "Bot Chat",
     botChatTip: "Its bot's one continuous chat",
     /** A Returned result's card (ADR 0175): its title when Hermes sent none, and its header's tooltip. */
@@ -293,30 +291,23 @@ export const en = {
     openFailed: (name: string, why: string) => `Couldn't open ${name}: ${why}`,
     notChanged: (name: string, why: string) => `${name} wasn't changed. ${why}`,
   },
-  /** The chat list panel's two modes on a Hermes with Bot Mode, and the switch at its top. */
   chatList: {
     modes: "Chat list",
     chats: "Chats",
     bots: "Bots",
-    /** What waits in the mode not shown, on its tab. */
     inbox: (n: number) => `${n} in the Inbox`,
     needYou: (n: number) => (n === 1 ? "1 bot needs you" : `${n} bots need you`),
     replying: (n: number) => (n === 1 ? "1 bot is replying" : `${n} bots are replying`),
-    /** A tab as a screen reader says it, and its tip: "Bots, 2 bots need you", "Bots: 2 bots need you (Ctrl+Shift+B)". */
     tabLabel: (mode: string, waits: string) => `${mode}, ${waits}`,
     tabTip: (mode: string, waits: string) => `${mode}: ${waits}`,
     withKeys: (text: string, keys: string) => `${text} (${keys})`,
-    /** The line over the chats while a bot in another profile needs the owner. */
     needsYou: (name: string) => `${name} needs you`,
     manyNeedYou: (n: number) => `${n} bots need you`,
     openBotChat: (name: string) => `Open ${name}'s Bot Chat`,
     showBots: "Show the bots",
-    /** The shown profile's Bot Chat, one row above its chats. */
     botChat: "Bot Chat",
     botChatOf: (name: string) => `${name}'s Bot Chat`,
-    /** The Bot Chat row's tip: whose it is and its chord, then its last message. */
     lastMessage: (tip: string, last: string) => `${tip}\n${last}`,
-    /** In Bots mode, the shown profile's chats under its bot's row. */
     chatsOf: (name: string) => `${name}'s chats`,
     inInbox: "In the Inbox",
     allChats: (n: number) => (n === 1 ? "All 1 chat" : `All ${n} chats`),

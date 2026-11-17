@@ -622,7 +622,6 @@ export function usePanelBotMenu({
  * disclosure, Up and Down between them. A row in another profile than `profile` asks first while `leaving` says what
  * switching leaves behind. `current`: the profile of the bot whose Bot Chat is open. `query`: show only the bots whose name
  * holds it, in any case. `moreButton`: false leaves out each row's ⋯, so the menu opens only by a right-click or a key.
- * `under`: drawn under `profile`'s row, the shown profile's chats in the chat list's Bots mode, on the way of Up and Down.
  */
 export function BotList({
   bots,
@@ -738,11 +737,6 @@ export function BotList({
   );
 }
 
-/**
- * The shown profile's chats under its bot's row in the chat list's Bots mode (snooze.ts `chatsUnderBot`), on a thread
- * from its face, then All N chats, which shows them all in Chats mode. An Inbox chat carries the accent mark. `selectedId`:
- * the chat in the active pane; `alsoShownId`: the one in the other pane.
- */
 export function BotChatsUnder({
   name,
   chats,
@@ -790,14 +784,11 @@ export function BotChatsUnder({
   );
 }
 
-/**
- * Asks before a bot in another profile opens while switching away would leave `leaving` behind. Stay has focus, so a
- * stray Enter stays, and Escape stays wherever focus is, before it closes the Bots view or reaches anything else.
- */
 export function BotSwitchQuestion({ bot, leaving, onStay, onGo }: { bot: Bot; leaving: string; onStay: () => void; onGo: () => void }) {
   const w = useLocale().bots;
   const stay = useRef(onStay);
   stay.current = onStay;
+  // Escape takes the question away wherever focus is, before it closes the Bots view or reaches anything else.
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key !== "Escape" || e.isComposing) return;

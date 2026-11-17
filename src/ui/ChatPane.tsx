@@ -521,7 +521,6 @@ export function ChatPane({
   projects?: string[];
   /** The server and profile the chat is on, shown while more than one connection is live (ADR 0125). */
   server?: string;
-  /** The profile's bot, when Hermes has Bot Mode: the message box and an empty chat name it, and a Bot Chat's header shows it. */
   bot?: BotLookShown;
   /** When the chat wakes, if the owner snoozed it and it hasn't woken yet (snooze.ts). */
   snoozedUntil?: number;
@@ -561,7 +560,6 @@ export function ChatPane({
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const words = useLocale().chat;
-  // Every Bot Chat has the same title, so its header names its bot.
   const botOfChat = isBotChat(chat) ? bot : undefined;
   const keys = useBindings();
   const labels = (chords: readonly Chord[]) => chords.map(chordLabel).join(" or ");

@@ -132,7 +132,6 @@ describe("Settings → Profiles", { timeout: 30_000 }, () => {
     await user.click(within(dialog).getByRole("button", { name: /Save changes/ }));
     await waitFor(() => expect(server.profileMeta.default?.display_name).toBe("Main"));
     await waitFor(() => expect(option(screen.getByRole("listbox", { name: "Profiles" }), "default").textContent).toMatch(/Main \(default\)/));
-    // The switcher names the profile by its bot, whose name the display name is, then its id.
     await waitFor(() => expect(document.querySelector(".profile-btn .profile-name")?.textContent).toBe("Main"));
     expect(document.querySelector(".profile-btn .profile-id")?.textContent).toBe("default");
     // Persona's own picker names it the same way.

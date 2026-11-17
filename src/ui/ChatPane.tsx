@@ -1,6 +1,6 @@
 // Transcript, thinking, tool-call groups, Approval cards, find bar, composer and the Settle button, ported from the prototype.
 // Dictation and Read aloud come from Voice.tsx.
-import { createContext, memo, type ReactNode, type RefObject, useCallback, startTransition, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
+import { createContext, Fragment, memo, type ReactNode, type RefObject, useCallback, startTransition, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { Archive, ArchiveRestore, ArrowUp, AtSign, Brain, CalendarClock, PackageCheck, SquareTerminal, Camera, ChevronDown, ChevronRight, ChevronUp, CircleAlert, CloudOff, Columns2, CornerDownRight, EyeOff, FileDown, FileInput, Globe, HardDrive, Link2, ListPlus, Ellipsis, Paperclip, RotateCcw, Search, Server, Share2, Square, Trash2, Wrench, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -34,8 +34,10 @@ import { caretAfter, editStep, inputKind, type EditStep } from "./editKeys";
 import { ariaKeys, chordLabel, chordParts, pick as pickCommand, pickApp, typeNewLine, useBindings, type Chord } from "./keybindings";
 import type { EditKind } from "../hermes/editHistory";
 import { wakeFull } from "../hermes/snooze";
-import { AttachmentChip, Previews, SentImages, readPreview } from "./previews";
+import { AttachmentChip, InlineSentImage, Previews, SentImages, readPreview } from "./previews";
+import { InlineMarks, type ComposerMark } from "./inlineMarks";
 import { sentWith } from "../hermes/sentImages";
+import { carried, marksIn, markText, placeImages, sentText, withMarks } from "../hermes/inlineImages";
 import { Speaker } from "./speaker";
 import { DictationNoteView, DictationStrip, ListenButton, MicButton, type VoiceApi, listenBlocked, micBlocked, useDictation, useVoiceSetup } from "./Voice";
 import { withTranscript } from "../hermes/voice";
@@ -1304,6 +1306,7 @@ const BlockView = memo(
     );
     if (block.kind === "user") {
       const { images, chips } = sentWith(block);
+      const { above, pieces } = placeImages(block.text, images);
       return (
         <div className={`msg user${block.outgoing ? ` outgoing ${block.outgoing.state}` : ""}${block.steer ? " steer" : ""}`} data-item={block.id} data-at={block.at}>
           {block.steer && (
@@ -1311,7 +1314,7 @@ const BlockView = memo(
               <CornerDownRight size={12} aria-hidden /> Steered into the reply
             </div>
           )}
-          {images.length > 0 && <SentImages images={images} offline={offline} />}
+          {above.length > 0 && <SentImages images={above} offline={offline} />}
           {chips.length > 0 && (
             <div className="msg-files">
               {chips.map((name, i) => (
@@ -1332,7 +1335,13 @@ const BlockView = memo(
               ))}
             </div>
           )}
-          {block.text && <div className="bubble-text">{highlight(block.text, query)}</div>}
+          {block.text && (
+            <div className="bubble-text">
+              {pieces.map((p, i) =>
+                typeof p === "string" ? <Fragment key={i}>{highlight(p, query)}</Fragment> : <InlineSentImage key={i} image={p.image} name={p.name} offline={offline} />,
+              )}
+            </div>
+          )}
           {date && <StoredTime at={block.at} />}
           {isOutgoing(block) && block.outgoing.state !== "sending" && (
             <SendFailed item={block} canRetry={canRetry} act={(action) => onOutgoing(block.id, action)} />
@@ -1826,6 +1835,12 @@ function Composer({
   const keys = useBindings();
   // The chat's staged attachments, kept by the desk under its Draft key so they outlive this composer (ADR 0145).
   const attachments = useSyncExternalStore(screenshots.subscribe, () => screenshots.stagedIn(draftKey));
+  // Each staged image's number, which its mark in the words gives (inlineImages.ts, ADR 0197).
+  const numbers = useSyncExternalStore(screenshots.subscribe, () => screenshots.numbersIn(draftKey));
+  const marks: ComposerMark[] = useMemo(() => {
+    const by = new Map(attachments.flatMap((a) => (numbers.has(a.path) ? [[numbers.get(a.path)!, a] as const] : [])));
+    return marksIn(text, (n) => by.has(n)).map((m) => ({ ...m, file: by.get(m.n)! }));
+  }, [text, attachments, numbers]);
   const spellCheck = useSpellCheck();
   const annotations = useSyncExternalStore(screenshots.subscribe, screenshots.annotationLabels);
   const refs = useSyncExternalStore(references?.desk.subscribe ?? noDesk, () => references?.desk.in(draftKey) ?? NO_REFERENCES);
@@ -1858,6 +1873,15 @@ function Composer({
   }, [unready]);
   const [dragging, setDragging] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  // Where the selection goes once the text it was worked out for is in the textarea.
+  const caretTo = useRef<{ text: string; from: number; to: number }>(undefined);
+  useLayoutEffect(() => {
+    const to = caretTo.current;
+    if (!to || to.text !== text) return;
+    caretTo.current = undefined;
+    taRef.current?.setSelectionRange(to.from, to.to);
+  }, [text]);
+  const [selection, setSelection] = useState<readonly [number, number]>([0, 0]);
   const talk = useSyncExternalStore(conversation?.subscribe ?? noDesk, conversation?.getSnapshot ?? (() => NOT_TALKING));
   const talking = talk.phase !== "off";
   const startTalkRef = useRef<HTMLButtonElement>(null);
@@ -1911,9 +1935,10 @@ function Composer({
     }
   };
   // Staged in this composer's chat even if it has closed meanwhile: the chat keeps what was added to it.
-  const add = (paths: string[]) => busy(async () => {
+  const add = (paths: string[], at = anchorHere()) => busy(async () => {
     const got = await check(paths);
     screenshots.change({ kind: "added", key: draftKey, attachments: got });
+    place(at, got);
     return got.map((a) => a.path);
   });
   const addRef = useRef(add);
@@ -1946,6 +1971,61 @@ function Composer({
   const insertRef = useRef(insertWords);
   insertRef.current = insertWords;
 
+  // Where each file being added goes in the words: the cursor as it was when the owner added it, carried along by edits
+  // made while it is read and checked. One that lands once this composer is on another chat, or gone, marks nothing:
+  // it waits above the words of the chat it was added to.
+  const anchors = useRef(new Set<{ key: string; at: number }>());
+  const draftKeyRef = useRef(draftKey);
+  draftKeyRef.current = draftKey;
+  const onTextRef = useRef(onText);
+  onTextRef.current = onText;
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => void (alive.current = false);
+  }, []);
+  const seen = useRef({ key: draftKey, text });
+  useLayoutEffect(() => {
+    const was = seen.current;
+    seen.current = { key: draftKey, text };
+    if (was.key !== draftKey || was.text === text) return;
+    for (const a of anchors.current) if (a.key === draftKey) a.at = carried(a.at, was.text, text);
+  }, [draftKey, text]);
+  const anchorHere = () => {
+    const ta = taRef.current;
+    const now = textRef.current;
+    const at = ta && document.activeElement === ta ? ta.selectionEnd : Math.min(caret.current?.[1] ?? now.length, now.length);
+    const a = { key: draftKeyRef.current, at };
+    anchors.current.add(a);
+    return a;
+  };
+  const anchorRef = useRef(anchorHere);
+  anchorRef.current = anchorHere;
+  // The first image in a composer with none waits above the words, as every image did before; each one after it is
+  // marked where it was added. A mark is words, so Undo takes it out and the image goes back above the words.
+  const place = (a: { key: string; at: number }, staged: readonly Attachment[]) => {
+    anchors.current.delete(a);
+    if (!alive.current || a.key !== draftKeyRef.current || !staged.length) return;
+    const numbered = screenshots.numbersIn(a.key);
+    const images = staged.filter((f) => f.kind === "image" && numbered.has(f.path));
+    const before = screenshots.stagedIn(a.key).some((f) => f.kind === "image" && !images.some((i) => i.path === f.path));
+    const marked = before ? images : images.slice(1);
+    if (!marked.length) return;
+    const now = textRef.current;
+    const at = Math.min(a.at, now.length);
+    const next = withMarks(now, at, marked.map((f) => markText(numbered.get(f.path)!, f.name))).text;
+    const moved = (p: number) => (p >= at ? p + next.length - now.length : p);
+    for (const o of anchors.current) if (o.key === a.key) o.at = moved(o.at);
+    const ta = taRef.current;
+    if (ta && document.activeElement === ta) caretTo.current = { text: next, from: moved(ta.selectionStart), to: moved(ta.selectionEnd) };
+    if (caret.current) caret.current = [moved(caret.current[0]), moved(caret.current[1])];
+    seen.current = { key: a.key, text: next };
+    textRef.current = next;
+    onTextRef.current(next);
+  };
+  const placeRef = useRef(place);
+  placeRef.current = place;
+
   // Screenshots attach here while this composer is on screen.
   const shot = useSyncExternalStore(screenshots.subscribe, screenshots.getSnapshot);
   // A new screenshot replaces the notes about the last thing attached.
@@ -1955,15 +2035,30 @@ function Composer({
   useEffect(() => {
     if (!autoFocus) return;
     let current = true;
+    const pending = anchors.current;
+    const placing = new Map<string, { key: string; at: number }>();
     const stop = screenshots.attachTo({
       key: draftKey,
       chat: chatTitle,
-      check: (paths) => busy(() => checkRef.current(paths, () => current)),
+      check: (paths) =>
+        busy(async () => {
+          const at = anchorRef.current();
+          const kept = await checkRef.current(paths, () => current);
+          if (kept.length) placing.set(kept[0].path, at);
+          else anchors.current.delete(at);
+          return kept;
+        }),
+      place: (staged) => {
+        const at = placing.get(staged[0].path);
+        placing.delete(staged[0].path);
+        if (at) placeRef.current(at, staged);
+      },
       note: (text) => setRefused((cur) => [...cur, text]),
       insert: (words) => insertRef.current(words),
     });
     return () => {
       current = false;
+      for (const at of placing.values()) pending.delete(at);
       stop();
     };
   }, [screenshots, autoFocus, draftKey, chatTitle]);
@@ -1988,6 +2083,7 @@ function Composer({
   // A pasted file, or one dropped on Windows, has no path of its own: Rust stages its bytes with the screenshots. One
   // too big for Hermes is refused before its bytes are read into the webview.
   const stageFiles = (incoming: File[] | Promise<File[]>, nameOf = pastedName) => busy(async () => {
+    const at = anchorHere();
     try {
       const files = await incoming;
       const tooBig = files.filter((f) => f.size > LIMITS.file.bytes);
@@ -2005,22 +2101,27 @@ function Composer({
         screenshots.release(paths);
         throw failed.reason;
       }
-      const kept = await add(paths);
+      const kept = await add(paths, at);
       screenshots.release(paths.filter((p) => !kept.includes(p)));
       const notes = tooBig.map((f) => overLimitNote(nameOf(f), f.size, LIMITS.file));
       if (notes.length) setRefused((cur) => (paths.length ? [...cur, ...notes] : notes));
     } catch (e) {
       setRefused([`Couldn't attach the files: ${errorText(e)}`]);
+    } finally {
+      anchors.current.delete(at);
     }
   });
   // Files copied in a file manager attach by path, as a drop does. Rust reads them, since WebKitGTK hides them.
   const attachCopied = () => busy(async () => {
+    const at = anchorHere();
     try {
       const paths = await invoke<string[]>("attach_copied_files");
-      if (paths.length) await add(paths);
+      if (paths.length) await add(paths, at);
       else setRefused(["Only files on this computer can be attached."]);
     } catch (e) {
       setRefused([`Couldn't attach the files: ${errorText(e)}`]);
+    } finally {
+      anchors.current.delete(at);
     }
   });
   const stageRef = useRef(stageFiles);
@@ -2060,10 +2161,13 @@ function Composer({
   }, [dropZone]);
 
   const pick = async () => {
+    const at = anchorHere();
     try {
-      await add(await invoke<string[]>("attach_picked_files"));
+      await add(await invoke<string[]>("attach_picked_files"), at);
     } catch (e) {
       setRefused([`Couldn't open the file picker: ${errorText(e)}`]);
+    } finally {
+      anchors.current.delete(at);
     }
   };
 
@@ -2075,18 +2179,13 @@ function Composer({
   }, [text]);
 
   const sendable = attaching === 0 && (!!text.trim() || attachments.length > 0);
+  // The files no mark places, above the words: the first image, files that aren't images, and any whose mark went.
+  const above = attachments.filter((f) => !marks.some((m) => m.file.path === f.path));
   const slash = useSlashCommands(commands, text, onText, taRef);
-  const caretTo = useRef<{ text: string; at: number }>(undefined);
-  useLayoutEffect(() => {
-    const to = caretTo.current;
-    if (!to || to.text !== text) return;
-    caretTo.current = undefined;
-    taRef.current?.setSelectionRange(to.at, to.at);
-  }, [text]);
   const step = (which: EditStep) => {
     const before = textRef.current;
     const after = onStep(which);
-    if (after !== undefined) caretTo.current = { text: after, at: caretAfter(before, after) };
+    if (after !== undefined) caretTo.current = { text: after, from: caretAfter(before, after), to: caretAfter(before, after) };
   };
   // Undo and Redo from WebView2's context menu (Windows) would step the webview's history: ours runs instead.
   const stepRef = useRef(step);
@@ -2126,6 +2225,9 @@ function Composer({
     if (refs.length && typedCommand(text.trim())?.def === STEER) return setRefused([REFERENCES_CANT_STEER]);
     if (slash.run()) return;
     if (!sendable || steering) return;
+    // Each mark numbered by its image's place among those sent, as Hermes stores them after the words.
+    const words = sentText(text.trim(), attachments, numbers).trim();
+    if (!words && !attachments.length) return;
     if (compare?.refuse) return setRefused([compare.refuse]);
     // A summary goes with the message it was written with, so the message waits for every summary to be ready.
     if (unready) {
@@ -2134,9 +2236,9 @@ function Composer({
     }
     // A message without references goes as it always did, with no arguments for them.
     const go = (files: Attachment[], skill?: SkillCall) => {
-      if (references && refs.length) onSend(text.trim(), files, skill, references.desk.take(draftKey));
-      else if (skill) onSend(text.trim(), files, skill);
-      else onSend(text.trim(), files);
+      if (references && refs.length) onSend(words, files, skill, references.desk.take(draftKey));
+      else if (skill) onSend(words, files, skill);
+      else onSend(words, files);
     };
     const skill = slash.skill;
     if (skill) {
@@ -2154,7 +2256,7 @@ function Composer({
     let fellBack: string | undefined;
     if (canFollow && (followUp.mode === "steer") !== other) {
       if (refs.length) return setRefused([REFERENCES_CANT_STEER]);
-      if (!steerWhy) return void steer(text.trim());
+      if (!steerWhy) return void steer(words);
       if (steerWhy === FILES_CANT_STEER) fellBack = `Your message is queued, not steered. ${steerWhy}`;
       else if (!toldWhy.has(steerWhy)) {
         toldWhy.add(steerWhy);
@@ -2163,7 +2265,7 @@ function Composer({
     }
     if (queueing && onQueue) {
       if (refs.length) return setRefused(["A message that references a chat can't be queued. Send it while connected, with no reply running and nothing queued."]);
-      const why = onQueue(text.trim(), [...attachments]);
+      const why = onQueue(words, [...attachments]);
       if (why) return setRefused([why]);
     } else {
       if (offline || running) return;
@@ -2254,9 +2356,9 @@ function Composer({
             onTextModelSettings={references?.onTextModelSettings}
           />
         )}
-        {attachments.length > 0 && (
+        {above.length > 0 && (
           <div className="chips">
-            {attachments.map((f) => (
+            {above.map((f) => (
               <AttachmentChip
                 key={f.path}
                 file={f}
@@ -2279,7 +2381,9 @@ function Composer({
           onChange={(e) => onText(e.target.value, inputKind(e.nativeEvent))}
           onSelect={(e) => {
             slash.inputProps.onSelect(e);
-            caret.current = [e.currentTarget.selectionStart, e.currentTarget.selectionEnd];
+            const [from, to] = [e.currentTarget.selectionStart, e.currentTarget.selectionEnd];
+            caret.current = [from, to];
+            setSelection((s) => (s[0] === from && s[1] === to ? s : [from, to]));
           }}
           onPaste={(e) => {
             if (dragging) return;
@@ -2291,6 +2395,19 @@ function Composer({
           }}
           onKeyDown={(e) => {
             if (slash.onKeyDown(e)) return;
+            // Backspace after a mark, or Delete before one, takes the whole mark out, and its image goes above the words.
+            const ta = e.currentTarget;
+            const mark =
+              (e.key === "Backspace" || e.key === "Delete") && !composing(e) && ta.selectionStart === ta.selectionEnd
+                ? marks.find((m) => (e.key === "Backspace" ? m.end : m.start) === ta.selectionStart)
+                : undefined;
+            if (mark) {
+              e.preventDefault();
+              const next = text.slice(0, mark.start) + text.slice(mark.end);
+              caretTo.current = { text: next, from: mark.start, to: mark.start };
+              onText(next);
+              return;
+            }
             const edit = editStep(e);
             // Even with nothing to step, so the webview's own history never runs on this text.
             if (edit && !composing(e)) {
@@ -2306,6 +2423,7 @@ function Composer({
             } else if (command === "newLine") typeNewLine(e);
           }}
         />
+        {marks.length > 0 && <InlineMarks ta={taRef} text={text} marks={marks} selection={selection} previews={(path) => previews.current?.get(path)} />}
         <div className="composer-bar">
           <button className="icon-btn" title="Attach files" onClick={() => void pick()}>
             <Paperclip size={16} />

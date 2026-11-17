@@ -22,13 +22,15 @@ export type ScreenshotApi = {
 
 /**
  * The composer on screen. `key` is its chat's Draft key (drafts.ts `draftKey`), where its captures are staged. `check`
- * resolves to the files Hermes can take, and shows why it refused any (one too large, say). `note` shows a line above
- * the composer. `insert` puts text at the composer's cursor. `chat`: the chat's title, for the annotation review card.
+ * resolves to the files Hermes can take, and shows why it refused any (one too large, say). `place` hears the files
+ * `check` took once they are staged, to mark where they go in the words. `note` shows a line above the composer.
+ * `insert` puts text at the composer's cursor. `chat`: the chat's title, for the annotation review card.
  */
 export type ScreenshotSink = {
   key: string;
   chat?: string;
   check: (paths: string[]) => Promise<Attachment[]>;
+  place?: (staged: readonly Attachment[]) => void;
   note: (text: string) => void;
   insert?: (text: string) => void;
 };
@@ -46,6 +48,7 @@ export type Staging =
   | { kind: "gone"; key: string };
 
 const NONE: readonly Attachment[] = [];
+const UNNUMBERED: ReadonlyMap<string, number> = new Map();
 
 export type DeskState = { capturing: boolean };
 
@@ -89,6 +92,7 @@ export class ScreenshotDesk {
   private waiting: Waiting[] = [];
   private readonly sending = new Set<string>();
   private readonly staged = new Map<string, readonly Attachment[]>();
+  private readonly numbers = new Map<string, { of: ReadonlyMap<string, number>; next: number }>();
   private sink?: ScreenshotSink;
   /** The chat whose composer was last on screen: an annotation goes there while a covering Preview hides it. */
   private last?: { chat?: string; key: string };
@@ -213,6 +217,7 @@ export class ScreenshotDesk {
       // unless signing out already deleted them. An annotation goes only to its own chat's, and waits for it.
       if (this.sink !== sink) return this.deliver({ ...w, paths: w.paths.filter((p) => this.mine.has(p)) });
       this.change({ kind: "added", key: sink.key, attachments: kept });
+      if (kept.length) sink.place?.(kept);
       this.release(w.paths.filter((p) => !kept.some((a) => a.path === p)));
       if (kept.length) this.onAttached?.(w.remote);
       if (kept.length && w.words) sink.insert?.(w.words);
@@ -236,8 +241,7 @@ export class ScreenshotDesk {
         for (const [key, files] of this.staged) {
           const left = files.filter((a) => !(this.mine.has(a.path) && e.attachments.some((x) => x.path === a.path)));
           if (key === e.key || left.length === files.length) continue;
-          if (left.length) this.staged.set(key, left);
-          else this.staged.delete(key);
+          this.restage(key, left);
         }
         break;
       case "sent":
@@ -253,10 +257,29 @@ export class ScreenshotDesk {
         break;
     }
     if (next.length === now.length) return this.release(letGo);
-    if (next.length) this.staged.set(e.key, next);
-    else this.staged.delete(e.key);
+    this.restage(e.key, next);
     this.stagedChanged();
     this.release(letGo);
+  }
+
+  /**
+   * Each staged image's number in the chat's composer, by path: the number its mark there gives (inlineImages.ts). They
+   * count up from 1 in the order the images were added, and start again only once nothing is staged in the chat, so
+   * a mark the owner deleted and brings back with Undo never names a later image.
+   */
+  numbersIn = (key: string): ReadonlyMap<string, number> => this.numbers.get(key)?.of ?? UNNUMBERED;
+
+  private restage(key: string, files: readonly Attachment[]) {
+    if (!files.length) {
+      this.staged.delete(key);
+      this.numbers.delete(key);
+      return;
+    }
+    this.staged.set(key, files);
+    const was = this.numbers.get(key) ?? { of: UNNUMBERED, next: 1 };
+    let next = was.next;
+    const of = new Map(files.flatMap((a) => (a.kind !== "image" ? [] : [[a.path, was.of.get(a.path) ?? next++] as const])));
+    this.numbers.set(key, { of, next });
   }
 
   private stagedChanged() {
@@ -308,6 +331,7 @@ export class ScreenshotDesk {
     this.disposed = true;
     this.waiting = [];
     this.staged.clear();
+    this.numbers.clear();
     this.stagedChanged();
     this.release([...this.mine]);
   }

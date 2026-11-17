@@ -131,6 +131,17 @@ describe("Pasting into the composer", () => {
     expect(chips()).toHaveLength(0);
   });
 
+  it("keeps the first pasted screenshot above the words and marks the next at the cursor (ADR 0197)", async () => {
+    const { staged, onDraft } = await setUp("Which cable is loose?");
+    paste([new File([PNG], "image.png", { type: "image/png" })]);
+    await waitFor(() => expect(staged).toHaveLength(1));
+    await waitFor(() => expect(chips()).toHaveLength(1));
+    expect(onDraft).not.toHaveBeenCalled();
+    composer().setSelectionRange(5, 5);
+    paste([new File([PNG], "image.png", { type: "image/png" })]);
+    await waitFor(() => expect(onDraft).toHaveBeenCalledWith(`Which [image 2: ${staged[1].name}] cable is loose?`));
+  });
+
   it("tells an update's restart which files are attached, until they're sent or the window signs out, composer on screen or not", async () => {
     const { desk } = await setUp("Which cable is loose?");
     paste([new File([PNG], "image.png", { type: "image/png" })]);

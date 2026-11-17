@@ -2,7 +2,7 @@
 // Screenshots in the signed-in app, driven the way the owner would, against a fake Hermes. Only the Rust side of a
 // capture is faked: the attach check, the chip, sending and the upload are the real code. Each test checks what reached
 // Hermes and which captures were deleted.
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -608,5 +608,166 @@ describe("Setting the screenshot shortcut", () => {
     expect(key.textContent).toContain("Off");
     await user.click(screen.getByRole("button", { name: "Use Ctrl+Shift+S" }));
     expect(key.textContent).toContain("Ctrl+Shift+S");
+  });
+});
+
+describe("Images placed in the words (ADR 0197)", () => {
+  const caretAt = (at: number) =>
+    act(() => {
+      composer().focus();
+      composer().setSelectionRange(at, at);
+      fireEvent.select(composer());
+    });
+  const stripped = () => document.querySelectorAll(".composer .chips .chip");
+  const lastBubble = () => [...document.querySelectorAll<HTMLElement>(".msg.user")].at(-1)!;
+  const openChat = async (user: ReturnType<typeof userEvent.setup>, hermes: Hermes, title: RegExp) => {
+    await user.click(screen.getByRole("button", { name: title }));
+    await settle(hermes);
+  };
+
+  it("keeps the first image above the words, marks each later one where the cursor was, and sends each image's bytes in the order its mark says", async () => {
+    const { server, hermes, rust, user } = await signedIn();
+    await user.click(screen.getByRole("button", { name: "Attach a screenshot" }));
+    await rust.land("\x89PNG first");
+    await waitFor(() => expect(stripped()).toHaveLength(1));
+    await user.type(composer(), "Compare these.{Shift>}{Enter}{/Shift}Both are image.png");
+    await caretAt("Compare these.".length);
+    server.files["/home/lena/left/image.png"] = "\x89PNG left";
+    server.files["/home/lena/right/image.png"] = "\x89PNG right";
+    dialog.picked = ["/home/lena/left/image.png", "/home/lena/right/image.png"];
+    await user.click(screen.getByRole("button", { name: "Attach files" }));
+    const placed = "Compare these. [image 2: image.png] [image 3: image.png]\nBoth are image.png";
+    await waitFor(() => expect(composer().value).toBe(placed));
+    // The two marked images aren't shown again above the words; the first still is.
+    expect(stripped()).toHaveLength(1);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Attach files" }));
+
+    await user.click(composer());
+    await user.keyboard("{Enter}");
+    await settle(hermes);
+    const uploads = server.requests.filter((r) => r.method === "image.attach_bytes").map((r) => r.params.content_base64);
+    expect(uploads).toEqual([btoa("\x89PNG first"), btoa("\x89PNG left"), btoa("\x89PNG right")]);
+    expect(server.requests.find((r) => r.method === "prompt.submit")?.params).toMatchObject({ text: placed });
+
+    const bubble = lastBubble();
+    expect(bubble.querySelectorAll(".msg-images > *")).toHaveLength(1);
+    const inline = [...bubble.querySelectorAll(".bubble-text .inline-image")];
+    expect(inline.map((i) => i.textContent)).toEqual(["image.png", "image.png"]);
+    expect(bubble.querySelector(".bubble-text")!.textContent).toBe("Compare these. image.png image.png\nBoth are image.png");
+  });
+
+  it("marks a late image where the cursor was when it was added, after words typed before it meanwhile, and leaves the focus where it went", async () => {
+    const { hermes, rust, user } = await signedIn();
+    await user.click(screen.getByRole("button", { name: "Attach a screenshot" }));
+    await rust.land();
+    await waitFor(() => expect(stripped()).toHaveLength(1));
+    await user.type(composer(), "one two");
+    await caretAt(3);
+    const check = hermes.checkAttachments.bind(hermes);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const checking = vi.spyOn(hermes, "checkAttachments").mockImplementationOnce(async (paths) => {
+      await gate;
+      return check(paths);
+    });
+    await user.click(screen.getByRole("button", { name: "Attach a screenshot" }));
+    await rust.land("\x89PNG late");
+    await waitFor(() => expect(checking).toHaveBeenCalledTimes(1));
+    await caretAt(0);
+    await user.keyboard("zero ");
+    await caretAt(composer().value.length);
+    await user.keyboard(" three");
+    const elsewhere = screen.getByRole("button", { name: "Attach files" });
+    act(() => elsewhere.focus());
+    await act(async () => release());
+    await waitFor(() => expect(composer().value).toBe(`zero one [image 2: ${rust.names[1]}.png] two three`));
+    expect(document.activeElement).toBe(elsewhere);
+    expect(stripped()).toHaveLength(1);
+    checking.mockRestore();
+    await user.clear(composer());
+  });
+
+  it("marks nothing when the chat changed before a picked image was checked: it waits above the words of the chat it was added to", async () => {
+    const { server, hermes, rust, user } = await signedIn();
+    await openChat(user, hermes, /Nightly backup/);
+    await user.click(screen.getByRole("button", { name: "Attach a screenshot" }));
+    await rust.land();
+    await waitFor(() => expect(stripped()).toHaveLength(1));
+    await user.type(composer(), "backup words");
+    const check = hermes.checkAttachments.bind(hermes);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const checking = vi.spyOn(hermes, "checkAttachments").mockImplementationOnce(async (paths) => {
+      await gate;
+      return check(paths);
+    });
+    server.files["/home/lena/late.png"] = "\x89PNG late";
+    dialog.picked = ["/home/lena/late.png"];
+    await user.click(screen.getByRole("button", { name: "Attach files" }));
+    await waitFor(() => expect(checking).toHaveBeenCalledTimes(1));
+    await openChat(user, hermes, /NAS disks/);
+    await user.type(composer(), "nas words");
+    await act(async () => release());
+    await settle(hermes);
+    expect(composer().value).toBe("nas words");
+    expect(stripped()).toHaveLength(0);
+    await openChat(user, hermes, /Nightly backup/);
+    expect(composer().value).toBe("backup words");
+    expect([...stripped()].map((c) => c.textContent)).toEqual([expect.stringMatching(/^screenshot-/), expect.stringMatching(/^late\.png/)]);
+    checking.mockRestore();
+  });
+
+  it("takes a whole mark out with Backspace and brings it back with Undo, and renumbers the marks of what is sent", async () => {
+    const { server, hermes, rust, user } = await signedIn();
+    await user.click(screen.getByRole("button", { name: "Attach a screenshot" }));
+    await rust.land("\x89PNG top");
+    await waitFor(() => expect(stripped()).toHaveLength(1));
+    await user.type(composer(), "see");
+    await user.click(screen.getByRole("button", { name: "Attach a screenshot" }));
+    await rust.land("\x89PNG marked");
+    const mark = `[image 2: ${rust.names[1]}.png]`;
+    await waitFor(() => expect(composer().value).toBe(`see ${mark}`));
+    expect(stripped()).toHaveLength(1);
+
+    await caretAt(composer().value.length);
+    await user.keyboard("{Backspace}");
+    expect(composer().value).toBe("see ");
+    // The image isn't dropped with its mark: it waits above the words.
+    expect(stripped()).toHaveLength(2);
+    await user.keyboard("{Control>}z{/Control}");
+    expect(composer().value).toBe(`see ${mark}`);
+    expect(stripped()).toHaveLength(1);
+
+    // The image above goes; the marked one stays where it is, now the first sent.
+    await user.click(within(stripped()[0] as HTMLElement).getByRole("button", { name: "Remove" }));
+    expect(stripped()).toHaveLength(0);
+    expect(composer().value).toBe(`see ${mark}`);
+    await caretAt(composer().value.length);
+    await user.keyboard("{Enter}");
+    await settle(hermes);
+    expect(server.requests.filter((r) => r.method === "image.attach_bytes").map((r) => r.params.content_base64)).toEqual([btoa("\x89PNG marked")]);
+    expect(server.requests.find((r) => r.method === "prompt.submit")?.params).toMatchObject({ text: `see [image 1: ${rust.names[1]}.png]` });
+    expect(lastBubble().querySelectorAll(".msg-images")).toHaveLength(0);
+    expect(lastBubble().querySelectorAll(".bubble-text .inline-image")).toHaveLength(1);
+  });
+
+  it("places a stored message's images by its marks without reading any this app didn't send, and keeps an old message's above its words", async () => {
+    const { server, hermes, user } = await signedIn();
+    server.transcripts.backup = [
+      { role: "user", text: "old one\n@image:/home/lena/.hermes/images/upload_a.png" },
+      { role: "assistant", text: "Seen." },
+      { role: "user", text: "look [image 2: second.png] and [image 9: nothing.png]\n@image:/home/lena/.hermes/images/upload_b.png\n@image:/home/lena/.hermes/images/upload_c.png" },
+    ];
+    const reads = vi.spyOn(hermes, "readHostFile");
+    await openChat(user, hermes, /Nightly backup/);
+    const [old, placed] = [...document.querySelectorAll<HTMLElement>(".msg.user")];
+    expect(old.querySelectorAll(".msg-images > *")).toHaveLength(1);
+    expect(old.querySelector(".bubble-text")!.textContent).toBe("old one");
+    expect(placed.querySelectorAll(".msg-images > *")).toHaveLength(1);
+    const inline = placed.querySelectorAll(".bubble-text .inline-image");
+    expect(inline).toHaveLength(1);
+    expect(within(inline[0] as HTMLElement).getByRole("button", { name: "Show image upload_c.png" })).toBeTruthy();
+    expect(placed.querySelector(".bubble-text")!.textContent).toMatch(/^look upload_c\.png.*second\.png and \[image 9: nothing\.png\]$/s);
+    expect(reads).not.toHaveBeenCalled();
   });
 });

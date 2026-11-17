@@ -121,6 +121,19 @@ export function SentImages({ images, offline }: { images: readonly SentImage[]; 
   );
 }
 
+/**
+ * An image a mark places in a message's words (inlineImages.ts): read and opened as one above the words is, beside the
+ * name the mark gives it.
+ */
+export function InlineSentImage({ image, name, offline }: { image: SentImage; name: string; offline: boolean }) {
+  return (
+    <span className="inline-image">
+      <SentPicture image={image} offline={offline} />
+      <span className="chip-name">{name}</span>
+    </span>
+  );
+}
+
 const NO_STORE: SentImageLoad = { state: "failed", why: "Images from Hermes can't be read here." };
 
 function SentPicture({ image, offline }: { image: SentImage; offline: boolean }) {

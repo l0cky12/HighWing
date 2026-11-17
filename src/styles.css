@@ -652,6 +652,17 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
   overflow-x: hidden;
 }
 .composer textarea::placeholder { color: var(--faint); }
+/* Image marks in the composer's words (inlineMarks.tsx): a mirror of the text, and a chip over each mark. */
+.inline-marks {
+  position: absolute; overflow: hidden; pointer-events: none; color: transparent; margin: 0; z-index: 1;
+}
+.inline-mark {
+  position: absolute; display: flex; align-items: center; gap: 4px; overflow: hidden; white-space: nowrap; border-radius: 6px;
+  background: var(--raised-2); color: var(--text-2); font-size: 0.82em; padding: 0 4px 0 2px;
+}
+.inline-mark img, .inline-mark-blank { height: calc(100% - 4px); aspect-ratio: 1; border-radius: 4px; object-fit: cover; flex: none; background: var(--line-2); }
+.inline-mark-name { color: var(--accent); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.inline-mark-size { color: var(--muted); font-size: 0.85em; flex: none; }
 .composer-bar { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
 .composer-bar > .icon-btn, .composer-bar > .send { flex: none; }
 .composer-keys { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: calc(12rem / 14); color: var(--faint); opacity: 0; transition: opacity 0.2s; }
@@ -1258,6 +1269,11 @@ div.route-result { display: flex; flex-direction: column; gap: 6px; }
 .sent-image-tile .btn { height: 24px; padding: 0 9px; font-size: calc(12rem / 14); }
 .sent-image-why { flex-basis: 100%; color: var(--muted); overflow-wrap: anywhere; }
 .msg.user.sending .msg-images { opacity: 0.6; }
+/* An image placed in a message's words by its mark (inlineImages.ts): small, on the line it was put on. */
+.inline-image { display: inline-flex; align-items: center; gap: 4px; vertical-align: middle; max-width: 100%; white-space: normal; }
+.inline-image .sent-image img { max-height: 120px; }
+.inline-image .sent-image-loading { width: 96px; }
+
 .chip-size { color: var(--faint); font-size: calc(12rem / 14); }
 .chip button { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 5px; color: var(--muted); }
 .chip button:hover { background: var(--line-2); color: var(--text); }

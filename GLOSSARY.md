@@ -227,6 +227,10 @@ _Avoid_: project settings (the project screen also renames and deletes), workspa
 A local file the owner sends with a message: an image Hermes looks at, or any other file Hermes can read. Hermes takes images up to 25 MB and other files up to 256 MB.
 _Avoid_: upload, file (when the attachment is meant)
 
+**Image mark**:
+Where an image goes in a message's words, written in them as `[image 2: shot.png]`: the second image attached to the message goes there. The first image the owner adds to a composer goes above the words. Each image added after it is marked at the cursor, and the composer shows the mark as a chip with the image's thumbnail, name and size. Hermes stores the mark with the words, so the sent message, and the chat read back later, show the image on that line. An image no mark places shows above the words (ADR 0197).
+_Avoid_: placeholder, inline attachment, reference (a Referenced chat is something else)
+
 **Referenced chat**:
 Another of the owner's chats in the same profile, picked with "@" in the composer so a message can build on it. Hermes summarizes it with the profile's Text generation model, and the summary goes with that one message as attached context the model reads and the bubble doesn't show. Edit and Regenerate send it again. The message shows which chats it referenced. A reference is kept only while the app runs until its message is sent; a message waits for every summary, and can't be queued or steered (ADR 0165).
 _Avoid_: chat reference or `ChatRef` (a chat named by connection, profile and id), mention, link, attachment

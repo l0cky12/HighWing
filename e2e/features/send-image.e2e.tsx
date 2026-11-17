@@ -29,14 +29,14 @@ const imagesInLastSent = () =>
     shown: img.complete && img.getBoundingClientRect().width > 0,
   }));
 
-/** A 40 × 30 PNG, as a screenshot on the clipboard is. */
-async function screenshotPng(): Promise<Blob> {
-  const canvas = Object.assign(document.createElement("canvas"), { width: 40, height: 30 });
+/** A 40 × 30 PNG, as a screenshot on the clipboard is, or one `width` × `height` in `fill`. */
+async function screenshotPng(width = 40, height = 30, fill = "#c0392b"): Promise<Blob> {
+  const canvas = Object.assign(document.createElement("canvas"), { width, height });
   const g = canvas.getContext("2d")!;
-  g.fillStyle = "#c0392b";
-  g.fillRect(0, 0, 40, 30);
+  g.fillStyle = fill;
+  g.fillRect(0, 0, width, height);
   g.fillStyle = "#ecf0f1";
-  g.fillRect(8, 8, 24, 14);
+  g.fillRect(width / 5, height / 4, (width * 3) / 5, height / 2);
   return new Promise((resolve) => canvas.toBlob((b) => resolve(b!), "image/png"));
 }
 
@@ -50,6 +50,13 @@ function paste(...files: File[]) {
 
 /** The screenshot name from the report this test comes from. */
 const REPORTED = "clipboard-2026-11-17T092255.png";
+
+/** Drops files on the chat pane, as Windows hands a drop from another app to the page. */
+function drop(...files: File[]) {
+  const data = new DataTransfer();
+  for (const f of files) data.items.add(f);
+  appDocument().querySelector(".chat")!.dispatchEvent(new DragEvent("drop", { dataTransfer: data, bubbles: true, cancelable: true }));
+}
 
 const base64 = async (b: Blob) => btoa(Array.from(new Uint8Array(await b.arrayBuffer()), (c) => String.fromCharCode(c)).join(""));
 /** A blob's bytes, one char per byte, as FakeHermes keeps a file. */
@@ -204,4 +211,70 @@ it("doesn't read an image a stored message names that this app didn't send until
   await expect.element(app.getByText(/^Is this your router page\?/)).toBeVisible();
   await expect.element(app.getByRole("button", { name: /^Show image/ }), { message: "showing it once doesn't make it this app's" }).toBeVisible();
   expect(routesAbout(server, planted), "nothing more read after the relaunch").toEqual(["/api/files", "/api/files/read"]);
+});
+
+it("keeps the first image above the words and shows each later one on the line it was put on, in the composer, sent and after a relaunch", async () => {
+  const { app, server, relaunch } = await boot({ seed });
+  const first = await screenshotPng();
+  const [left, right] = [await screenshotPng(20, 10, "#2471a3"), await screenshotPng(30, 20, "#1e8449")];
+  const doc = appDocument;
+
+  await app.getByRole("button", { name: /Router admin page/ }).click();
+  await expect.element(app.getByText("Paste a screenshot of what the browser shows.")).toBeVisible();
+  const composer = app.getByPlaceholder("Message Hermes");
+  await composer.click();
+  paste(new File([first], REPORTED, { type: "image/png" }));
+  await expect.element(app.getByText(REPORTED), { message: "the first screenshot waits above the words" }).toBeVisible();
+  await composer.fill("The first is the login page.\nThese two  show the error.");
+  const ta = doc().querySelector<HTMLTextAreaElement>("textarea[data-composer]")!;
+  const at = ta.value.indexOf("  show") + 1;
+  ta.setSelectionRange(at, at);
+  drop(new File([left], "image.png", { type: "image/png" }), new File([right], "image.png", { type: "image/png" }));
+  const typed = "The first is the login page.\nThese two [image 2: image.png] [image 3: image.png] show the error.";
+  await expect.poll(() => ta.value, { message: "both dropped images are marked where the cursor was" }).toBe(typed);
+  await expect
+    .poll(() => [...doc().querySelectorAll<HTMLElement>(".inline-mark")].map((m) => m.textContent), { message: "each mark shows a chip with its name and size" })
+    .toEqual([expect.stringMatching(/^image\.png\d/), expect.stringMatching(/^image\.png\d/)]);
+  await expect.poll(() => doc().querySelectorAll(".inline-mark img").length, { message: "each chip has its thumbnail" }).toBe(2);
+  expect([...doc().querySelectorAll(".composer .chips .chip-name")].map((c) => c.textContent), "only the first stays above the words").toEqual([REPORTED]);
+  await shot("composer");
+
+  await userEvent.keyboard("{Enter}");
+  const session = await sessionOfPrompt(server, typed);
+  const uploads = server.requests.filter((r) => r.method === "image.attach_bytes");
+  expect(uploads.map((r) => r.params.content_base64), "the bytes of each image, in the order the marks number them").toEqual([await base64(first), await base64(left), await base64(right)]);
+  server.event(session, "message.start");
+  server.event(session, "message.complete", { text: "The second shows a timeout.", status: "complete" });
+  await expect.element(app.getByText("The second shows a timeout.")).toBeVisible();
+
+  /** The last sent message's pictures above its words, then those in its words, by size. */
+  const placed = () => {
+    const bubble = lastSentBubble();
+    const sizes = (sel: string) => [...(bubble?.querySelectorAll<HTMLImageElement>(sel) ?? [])].map((img) => (img.complete ? [img.naturalWidth, img.naturalHeight] : []));
+    return { above: sizes(".msg-images img"), inline: sizes(".bubble-text .inline-image img"), words: bubble?.querySelector(".bubble-text")?.textContent };
+  };
+  const expected = {
+    above: [[40, 30]],
+    inline: [[20, 10], [30, 20]],
+    words: "The first is the login page.\nThese two image.png image.png show the error.",
+  };
+  await expect.poll(placed, { message: "the first above the words, the others on their line, each once" }).toEqual(expected);
+  await shot("sent");
+
+  await relaunch();
+  await app.getByRole("button", { name: /Router admin page/ }).click();
+  await expect.element(app.getByText(/^The first is the login page\./)).toBeVisible();
+  await expect.poll(placed, { message: "the same after a relaunch, read back from what Hermes stored" }).toEqual(expected);
+  await shot("after relaunch");
+
+  const second = lastSentBubble()!.querySelectorAll<HTMLButtonElement>(".bubble-text .inline-image button.sent-image")[1];
+  second.focus();
+  expect(appDocument().activeElement, "a picture in the words takes keyboard focus").toBe(second);
+  await userEvent.keyboard("{Enter}");
+  await expect
+    .poll(() => [...appDocument().querySelectorAll<HTMLImageElement>(".preview-image img")].map((img) => [img.naturalWidth, img.naturalHeight]), {
+      message: "Enter opens that image, not the other image.png, in the Preview",
+    })
+    .toEqual([[30, 20]]);
+  await shot("opened in preview");
 });

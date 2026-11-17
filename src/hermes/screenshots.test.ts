@@ -259,6 +259,36 @@ describe("Each chat's staged attachments", () => {
     expect(rust.discarded).toEqual(["/c/1/0/a.png"]);
   });
 
+  it("numbers each chat's staged images from 1 as they are added, files not counted, and starts again once the chat has none", () => {
+    const desk = new ScreenshotDesk(fakeApi().api);
+    const notes: Attachment = { path: "/home/lena/notes.txt", name: "notes.txt", size: 3, kind: "file" };
+    desk.change({ kind: "added", key: "chat-a", attachments: [file("/c/a.png"), notes, file("/c/b.png")] });
+    desk.change({ kind: "added", key: "chat-b", attachments: [file("/c/x.png")] });
+    expect([...desk.numbersIn("chat-a")]).toEqual([["/c/a.png", 1], ["/c/b.png", 2]]);
+    expect([...desk.numbersIn("chat-b")]).toEqual([["/c/x.png", 1]]);
+    // A number that went with its image isn't given to the next one while the chat still has others.
+    desk.change({ kind: "removed", key: "chat-a", paths: ["/c/b.png"] });
+    desk.change({ kind: "added", key: "chat-a", attachments: [file("/c/c.png")] });
+    expect([...desk.numbersIn("chat-a")]).toEqual([["/c/a.png", 1], ["/c/c.png", 3]]);
+    desk.change({ kind: "sent", key: "chat-a", paths: ["/c/a.png", "/c/c.png", notes.path] });
+    desk.change({ kind: "added", key: "chat-a", attachments: [file("/c/d.png")] });
+    expect([...desk.numbersIn("chat-a")]).toEqual([["/c/d.png", 1]]);
+  });
+
+  it("tells the composer that checked a capture once it is staged, so it can mark where it goes", async () => {
+    const rust = fakeApi();
+    const desk = new ScreenshotDesk(rust.api);
+    const placed: string[][] = [];
+    const { s } = sink((p) => p.filter((x) => !x.includes("huge")));
+    desk.attachTo({ ...s, place: (staged) => void placed.push(staged.map((a) => a.path)) });
+    void desk.capture();
+    await rust.land({ path: "/c/0/shot.png" });
+    void desk.capture();
+    await rust.land({ path: "/c/1/huge.png" });
+    expect(placed).toEqual([["/c/0/shot.png"]]);
+    expect([...desk.numbersIn("chat-a")]).toEqual([["/c/0/shot.png", 1]]);
+  });
+
   it("deletes a file staged after signing out", async () => {
     const rust = fakeApi();
     const desk = new ScreenshotDesk(rust.api);

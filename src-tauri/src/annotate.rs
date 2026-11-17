@@ -49,7 +49,7 @@ pub enum StillSource {
     View { key: String },
     /// Windows: the sandboxed frame. `rect`: the frame's box in the window's CSS pixels. `viewport`: the window's CSS
     /// size, to work out the device scale from the capture. `url`: the address the frame shows. `page`: the size the
-    /// frame lays out at, when the owner picked one and it is drawn scaled to `rect` (ADR 0197).
+    /// frame lays out at, when the owner picked one and it is drawn scaled to `rect` (ADR 0198).
     Frame {
         url: String,
         rect: Rect,

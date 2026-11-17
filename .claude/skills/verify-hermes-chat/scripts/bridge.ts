@@ -68,6 +68,8 @@
 // New bot's Skills (ADR 0195).
 // HV_PERSONA_REPLY=<path>: an `llm.oneshot` whose input holds `<persona>` (New bot's Generate with AI) answers with that
 // file's text, read at each call; an empty file answers no text. Every other one-off call answers as FakeHermes does.
+// HV_SETTLING=<command>: a profile delete answers `settlement_pending` with that `retry_command` (empty: none).
+// HV_MODEL_ERROR=<text>: a profile create makes the profile but not its model, and answers `model_error` with the text.
 // HV_TURNS=<n> adds the bench's two long chats to `default`'s Inbox, `long1` and `long2`, n turns each (bench/fixture.ts
 // makeChat(n, 1) and (n, 2)), so the app can be timed on the chats `bench/run.mjs` renders (bench/app-split).
 // Read-only check of what the server holds (the side-effect proof): `GET /__state` returns sessions, transcripts, and
@@ -212,6 +214,9 @@ if (personaReply) {
   const plain = server.oneshotAnswer;
   server.oneshotAnswer = (call) => (call.input.includes("<persona>") ? readFileSync(personaReply, "utf8") : typeof plain === "string" ? plain : plain(call));
 }
+
+if (process.env.HV_SETTLING !== undefined) server.profileSettlementPending = process.env.HV_SETTLING;
+if (process.env.HV_MODEL_ERROR) server.profileModelError = process.env.HV_MODEL_ERROR;
 
 const memoryUrl = process.env.HV_MEMORY_URL;
 const honcho = memoryUrl ? { ...HONCHO, docsUrl: memoryUrl, fields: HONCHO.fields.map((f) => (f.kind === "secret" ? { ...f, url: memoryUrl } : f)) } : HONCHO;

@@ -56,6 +56,7 @@ import {
   type WebPages,
 } from "./tauriPreview";
 import { usePlacement } from "./pagePlacement";
+import { fitScale, STAGE_INSET, useBoxSize, ViewportBar, type PageSize, type PageViewport } from "./PageViewport";
 import { canGoBack, canGoForward, type HistoryStep, type PreviewHistory } from "./previewHistory";
 import type { ArtifactRef, ArtifactStore } from "../hermes/artifacts";
 import { ArtifactEditor } from "./ArtifactEditor";
@@ -134,7 +135,11 @@ export function PreviewPane({
   const [busy, setBusy] = useState(false);
   const [picking, setPicking] = useState(false);
   const browserUrl = here?.kind === "web" ? viewUrlOf(here, tunnel) : undefined;
-  const annotate = useAnnotation(web, desk, here, tunnel, setNote);
+  const [viewport, setViewport] = useState<PageViewport>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const box = useBoxSize(body);
+  const fit = viewport ? { size: viewport, scale: box ? fitScale(box, viewport) : 1 } : undefined;
+  const annotate = useAnnotation(web, desk, here, tunnel, setNote, viewport ? `${viewport.width}x${viewport.height}` : "");
 
   const open = (target: PreviewTarget) => {
     setNote(undefined);
@@ -225,12 +230,13 @@ export function PreviewPane({
         )}
         <MoreMenu address={here && addressOf(here)} framed={!web.native} picking={picking} onCopy={copy} onPick={() => void pick()} />
       </div>
+      {here?.kind === "web" && <ViewportBar value={viewport} box={box} scale={fit?.scale ?? 1} onChange={setViewport} />}
       {note && (
         <div className={note.failed ? "attach-note preview-opened failed" : "attach-note preview-opened"} role={note.failed ? "alert" : "status"}>
           {note.text}
         </div>
       )}
-      <div className="preview-body">
+      <div className="preview-body" ref={body}>
         {!history || !here ? (
           <EmptyState web={web} connected={connected} picking={picking} onOpen={open} onPick={() => void pick()} />
         ) : here.kind === "web" ? (
@@ -244,6 +250,7 @@ export function PreviewPane({
             onTunnel={setTunnel}
             onBusy={setBusy}
             onOpenInBrowser={openInBrowser}
+            fit={fit}
             annotating={annotate.covering}
             onAnnotatable={annotate.setSource}
             onMoved={annotate.moved}
@@ -276,6 +283,9 @@ export function PreviewPane({
   );
 }
 
+/** A page laid out at `size` and drawn `scale` times that, to fit the Preview. */
+type Fit = { size: PageSize; scale: number };
+
 /** What a page body tells the Preview about annotating it (ADR 0094). */
 type Annotatable = {
   /** The still covers the page: its view is hidden, and stays loaded behind. */
@@ -299,6 +309,8 @@ function useAnnotation(
   here: PreviewTarget | undefined,
   tunnel: Tunnel | undefined,
   onNote: (note: { text: string; failed: boolean } | undefined) => void,
+  /** The page's size as picked: a still taken at another size no longer matches the page. */
+  sizeKey: string,
 ) {
   const api = web.annotate;
   const [source, setSourceNow] = useState<() => StillSource | undefined>();
@@ -325,7 +337,7 @@ function useAnnotation(
     if (held.current || capturing.current) end(false);
   }, [end]);
   const hereKey = here?.kind === "web" ? here.url : here ? `${here.kind}` : "";
-  useEffect(() => () => end(false), [hereKey, end]);
+  useEffect(() => () => end(false), [hereKey, sizeKey, end]);
 
   const start = () => {
     const from = source?.();
@@ -791,10 +803,11 @@ function FramedWebView({
   src,
   check,
   onOpenInBrowser,
+  fit,
   annotating,
   onAnnotatable,
   onMoved,
-}: { url: string; src: string; check: (url: string) => Promise<Framing>; onOpenInBrowser: () => void } & Annotatable) {
+}: { url: string; src: string; check: (url: string) => Promise<Framing>; onOpenInBrowser: () => void; fit: Fit | undefined } & Annotatable) {
   const [loaded, setLoaded] = useState(false);
   const frame = useRef<HTMLIFrameElement>(null);
   const [slow, setSlow] = useState(false);
@@ -856,11 +869,13 @@ function FramedWebView({
       </div>
     );
   return (
-    <div className="preview-web">
+    <div className={fit ? "preview-web sized" : "preview-web"} style={fit && { padding: STAGE_INSET }}>
       {/* Covered by the still, the page stays loaded but out of reach of the keyboard and the pointer. */}
-      <div className="preview-web-frame" inert={annotating || undefined}>
+      <div className="preview-web-frame" style={scaledBox(fit)} inert={annotating || undefined}>
         <iframe
           className="preview-frame"
+          // The frame lays out at the size picked, and a transform draws it smaller, which leaves its viewport be.
+          style={fit && { flex: "none", width: fit.size.width, height: fit.size.height, transform: `scale(${fit.scale})`, transformOrigin: "0 0" }}
           title={`Web page: ${url}`}
           src={src}
           sandbox={WEB_SANDBOX}
@@ -951,12 +966,14 @@ function BrowserView({
   onTunnel,
   onBusy,
   onOpenInBrowser,
+  fit,
   annotating,
   onAnnotatable,
   onMoved,
 }: {
   here: WebTarget;
   reloadSeq: number;
+  fit: Fit | undefined;
   web: WebPages;
   serverPages: ServerPages;
   serverLabel: string;
@@ -1002,6 +1019,7 @@ function BrowserView({
           src={src}
           check={web.check}
           onOpenInBrowser={() => onOpenInBrowser(src)}
+          fit={fit}
           annotating={annotating}
           onAnnotatable={onAnnotatable}
           onMoved={onMoved}
@@ -1017,6 +1035,7 @@ function BrowserView({
       reloadSeq={reloadSeq}
       cover={tryingNote || tunnelState}
       native={web.native}
+      fit={fit}
       onStep={onStep}
       onBusy={onBusy}
       annotating={annotating}
@@ -1067,6 +1086,7 @@ function PageView({
   reloadSeq,
   cover,
   native,
+  fit,
   onStep,
   onBusy,
   annotating,
@@ -1074,6 +1094,7 @@ function PageView({
   onMoved,
 }: {
   here: WebTarget;
+  fit: Fit | undefined;
   src: ViewUrl | undefined;
   /** The entry's https try is out (`useHttpsFirst`): nothing is asked of the view, and what it reports isn't the entry's. */
   trying: boolean;
@@ -1144,7 +1165,7 @@ function PageView({
 
   const showing = !cover && !!src && (state === "shown" || (state === "loading" && !!viewAt.current));
   // Annotating covers the page with its still and hides the view; it stays loaded behind (ADR 0094).
-  usePlacement(box, showing && !annotating ? page : undefined);
+  usePlacement(box, showing && !annotating ? page : undefined, fit?.size);
   const ready = !cover && !!src && state === "shown" && !!page;
   useEffect(() => {
     if (!ready || !page) return;
@@ -1152,8 +1173,8 @@ function PageView({
     return () => onAnnotatable(undefined);
   }, [ready, page, onAnnotatable]);
   return (
-    <div className="preview-web">
-      <div ref={box} className="preview-web-frame" tabIndex={-1}>
+    <div className={fit ? "preview-web sized" : "preview-web"} style={fit && { padding: STAGE_INSET }}>
+      <div ref={box} className="preview-web-frame" style={scaledBox(fit)} tabIndex={-1}>
         {cover ||
           (typeof state === "object" ? (
             <div className="preview-state preview-error preview-loading" role="alert">
@@ -1177,6 +1198,9 @@ function PageView({
     </div>
   );
 }
+
+/** The page's box at the size picked, scaled to fit. */
+const scaledBox = (fit: Fit | undefined) => fit && { flex: "none", width: fit.size.width * fit.scale, height: fit.size.height * fit.scale };
 
 const FAILED_TITLE: Record<string, string> = {
   noSshTarget: "No SSH target for this server",

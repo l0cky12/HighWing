@@ -1723,3 +1723,63 @@ describe("A bot's menu in the chat list panel", { timeout: 30_000 }, () => {
     await waitFor(() => expect(document.activeElement).toBe(screen.getByPlaceholderText(/Message/)));
   });
 });
+
+describe("Write with AI for a new bot's persona", () => {
+  const form = () => screen.getByRole("dialog", { name: "New bot" });
+  const oneshots = (server: FakeHermes) => server.requests.filter((r) => r.method === "llm.oneshot").map((r) => r.params);
+  const writesSent = (server: FakeHermes) => server.restRequests.filter((r) => r.method !== "GET").map((r) => [`${r.method} ${r.path}`, r.body]);
+
+  it("writes from notes on the profile in use's model, and Create alone sends the applied persona", async () => {
+    const { server, hermes, user } = await launch();
+    server.oneshotAnswer = "# Ada\n\nReads papers closely.";
+    await openBots(user);
+    await user.click(screen.getByRole("button", { name: "New bot" }));
+    await user.type(within(form()).getByLabelText("Name"), "ada");
+    await user.click(within(form()).getByRole("button", { name: "Write with AI…" }));
+    await user.type(within(form()).getByLabelText("Notes for Hermes"), "Reads papers, cites pages.");
+    expect(oneshots(server)).toEqual([]);
+    expect(within(form()).getByText(/with the default profile's Text generation model/)).toBeTruthy();
+
+    await user.click(within(form()).getByRole("button", { name: "Write with AI" }));
+    const s = await within(form()).findByRole<HTMLTextAreaElement>("textbox", { name: "Suggested SOUL.md" });
+    expect(oneshots(server)).toHaveLength(1);
+    expect(oneshots(server)[0]).toMatchObject({ profile: "default" });
+    expect(oneshots(server)[0].session_id).toBeUndefined();
+    expect(writesSent(server)).toEqual([]);
+    const soul = within(form()).getByLabelText<HTMLTextAreaElement>("Persona (optional)");
+    expect(soul.value).toBe("");
+
+    await user.type(s, " Never invents a citation.");
+    await user.click(within(form()).getByRole("button", { name: "Apply" }));
+    expect(soul.value).toBe("# Ada\n\nReads papers closely. Never invents a citation.");
+    expect(document.activeElement).toBe(soul);
+    await user.type(soul, "\n");
+    expect(writesSent(server)).toEqual([]);
+
+    await user.click(within(form()).getByRole("button", { name: /Create bot/ }));
+    await waitFor(() => expect(botRows()).toHaveLength(3));
+    expect(writesSent(server)).toEqual([["POST /api/profiles", { name: "ada", soul: "# Ada\n\nReads papers closely. Never invents a citation.\n" }]]);
+    expect(server.souls.ada).toBe("# Ada\n\nReads papers closely. Never invents a citation.\n");
+    expect(server.requests.filter((r) => r.method === "session.create" || r.method === "prompt.submit")).toEqual([]);
+    expect(hermes.profile).toBe("default");
+  });
+
+  it("never sends a suggestion that wasn't applied, and asks before closing over notes", async () => {
+    const { server, user } = await launch();
+    server.oneshotAnswer = "# Not applied\n";
+    await openBots(user);
+    await user.click(screen.getByRole("button", { name: "New bot" }));
+    await user.click(within(form()).getByRole("button", { name: "Write with AI…" }));
+    await user.type(within(form()).getByLabelText("Notes for Hermes"), "Terse.");
+    await user.click(within(form()).getByRole("button", { name: "Cancel" }));
+    // Notes alone are worth asking about; keeping on editing finds them where they were.
+    await user.click(within(form()).getByRole("button", { name: "Keep editing" }));
+    expect(within(form()).getByLabelText<HTMLTextAreaElement>("Notes for Hermes").value).toBe("Terse.");
+    await user.type(within(form()).getByLabelText("Name"), "terse");
+    await user.click(within(form()).getByRole("button", { name: "Write with AI" }));
+    await within(form()).findByRole("textbox", { name: "Suggested SOUL.md" });
+    await user.click(within(form()).getByRole("button", { name: /Create bot/ }));
+    await waitFor(() => expect(botRows()).toHaveLength(3));
+    expect(writesSent(server)).toEqual([["POST /api/profiles", { name: "terse" }]]);
+  });
+});

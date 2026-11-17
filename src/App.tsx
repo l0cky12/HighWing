@@ -25,6 +25,8 @@ import { chatContext, contextLedger, knownWindow, type ChatContexts } from "./he
 import { ProjectsStore, type Project } from "./hermes/projects";
 import { instructionsMessage, modelProblem, resolveNewChat, savedDefaults, type ProjectDefaults } from "./hermes/projectDefaults";
 import { unavailableWords } from "./hermes/instructionsAI";
+import { unavailableWords as personaWords } from "./hermes/personaAI";
+import type { PersonaWriter } from "./ui/PersonaAI";
 import { systemSecrets } from "./hermes/tauriKeyring";
 import { appUpdates } from "./hermes/tauriUpdates";
 import { tauriSnapshots } from "./hermes/snapshots";
@@ -1846,9 +1848,16 @@ export function Main({
   workingRef.current = working;
   // Read when the restore dialog renders and again just before it writes: sends and refused writes aren't React state.
   const restoreBusy = () => restoreBlocked({ working: workingRef.current, unsaved: unsaved.size, sending: sending.size });
+  // Write with AI for a SOUL.md runs on `p`'s own Text generation model, with no chat, so no session lends a model.
+  const personaWriter = (p: string): PersonaWriter => ({
+    profile: p,
+    model: () => hermes.modelSettings.textModel(p),
+    ask: (call) => hermes.askForEdit({ profile: p, ...call, words: personaWords(p) }).then((r) => r.text),
+  });
   // Settings → Persona edits the SOUL.md of any profile on this connection, starting on the one in use; its edits are
   // kept apart per connection and profile.
   const persona: PersonaWiring = {
+    writerFor: personaWriter,
     api: hermes.persona,
     store: personaStore,
     keyOf: (p) => personaKey(connection, p),
@@ -3294,6 +3303,8 @@ export function Main({
       },
     },
     copyText: (text) => (navigator.clipboard?.writeText ? navigator.clipboard.writeText(text) : Promise.reject(new Error("No clipboard"))),
+    // A new bot has no model of its own yet, so its persona is written by the profile in use.
+    writer: personaWriter(profile),
   };
   // Bot mode's row menu (ADR 0194): its dialogs are drawn outside the list panel, so a delete that leaves bot mode finishes.
   const panelBotMenu = usePanelBotMenu({

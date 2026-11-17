@@ -887,3 +887,182 @@ describe("the row layout (#174, ADR 0059, ADR 0160)", () => {
     expect(problem.closest(".set-note")).toBe(persona().querySelector(":scope > .set-card")!.firstElementChild);
   });
 });
+
+describe("Write with AI on Persona", () => {
+  const picker = () => screen.getByRole<HTMLSelectElement>("combobox", { name: "Profile" });
+  const oneshots = (server: FakeHermes) => server.requests.filter((r) => r.method === "llm.oneshot").map((r) => r.params);
+  const modelReads = (server: FakeHermes) => server.restRequests.filter((r) => r.path === "/api/model/auxiliary").map((r) => r.query.get("profile"));
+  const suggestion = () => screen.findByRole<HTMLTextAreaElement>("textbox", { name: "Suggested SOUL.md" });
+  async function gate(server: FakeHermes) {
+    let open!: () => void;
+    server.oneshotGate = new Promise<void>((r) => (open = r));
+    return async () => {
+      open();
+      await act(async () => void (await server.oneshotGate));
+    };
+  }
+
+  it("writes a picked profile's SOUL.md from notes on that profile's model, and only Save writes it, to that profile", async () => {
+    const { server, hermes, user } = await launch({ souls: { default: SOUL, work: "" } });
+    server.oneshotAnswer = "# Scout\n\nCalm and exact.";
+    await openPersona(user);
+    await editor();
+    await user.selectOptions(picker(), "work");
+    const box = await editor("work");
+    expect(box.value).toBe("");
+    const before = { rpc: oneshots(server).length, reads: modelReads(server).length };
+
+    // Opening the panel and typing notes asks Hermes nothing.
+    await user.click(screen.getByRole("button", { name: "Write with AI…" }));
+    await user.type(screen.getByLabelText("Notes for Hermes"), "A calm scout. Never guesses.");
+    expect(oneshots(server)).toHaveLength(before.rpc);
+    expect(modelReads(server)).toHaveLength(before.reads);
+    expect(screen.getByText(/Hermes writes this with the work profile's Text generation model/)).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Write with AI" }));
+    const s = await suggestion();
+    expect(s.value).toBe("# Scout\n\nCalm and exact.");
+    expect(screen.getByText(/Written by the work profile's Text generation model: openrouter · deepseek-v4-flash/)).toBeTruthy();
+    // On the picked profile, with no chat lent, read for that profile; the file and the app's profile are untouched.
+    const call = oneshots(server).at(-1)!;
+    expect(call.profile).toBe("work");
+    expect(call.session_id).toBeUndefined();
+    expect(call.task).toBeUndefined();
+    expect(call.input).toContain("<notes>A calm scout. Never guesses.</notes>");
+    expect(modelReads(server).at(-1)).toBe("work");
+    expect(server.requests.filter((r) => r.method === "session.create" || r.method === "prompt.submit")).toEqual([]);
+    expect(writes(server)).toEqual([]);
+    expect(box.value).toBe("");
+
+    await user.type(s, " Short answers.");
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    expect(box.value).toBe("# Scout\n\nCalm and exact. Short answers.");
+    expect(document.activeElement).toBe(box);
+    expect(screen.getByText("Unsaved")).toBeTruthy();
+    expect(writes(server)).toEqual([]);
+
+    await user.type(box, "\n");
+    await user.click(screen.getByRole("button", { name: /^Save$/ }));
+    await screen.findByText(/Saved SOUL.md/);
+    expect(server.souls).toEqual({ default: SOUL, work: "# Scout\n\nCalm and exact. Short answers.\n" });
+    expect(writes(server)).toEqual([["/api/profiles/work/soul", "# Scout\n\nCalm and exact. Short answers.\n"]]);
+    expect(hermes.profile).toBe("default");
+  });
+
+  it("improves the text in the editor, and Discard leaves it and the server alone", async () => {
+    const { server, user } = await launch();
+    server.oneshotAnswer = (c) => (c.input.includes("<soul>") ? "# Persona\n\nTerse." : "wrong");
+    await openPersona(user);
+    const box = await editor();
+    await user.click(screen.getByRole("button", { name: "Write with AI…" }));
+    await user.click(screen.getByRole("button", { name: "Improve with AI" }));
+    expect((await suggestion()).value).toBe("# Persona\n\nTerse.");
+    expect(oneshots(server).at(-1)!.input).toContain(`<soul>${SOUL}</soul>`);
+    await user.click(screen.getByRole("button", { name: "Discard" }));
+    expect(screen.queryByRole("textbox", { name: "Suggested SOUL.md" })).toBeNull();
+    expect(box.value).toBe(SOUL);
+    expect(screen.queryByText("Unsaved")).toBeNull();
+    expect(writes(server)).toEqual([]);
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Improve with AI" })));
+  });
+
+  it("asks before a suggestion replaces text typed while it was written", async () => {
+    const { server, user } = await launch();
+    server.oneshotAnswer = "# Suggested\n";
+    await openPersona(user);
+    await editor();
+    await user.click(screen.getByRole("button", { name: "Write with AI…" }));
+    const release = await gate(server);
+    await user.click(screen.getByRole("button", { name: "Improve with AI" }));
+    expect(screen.getByRole("status").textContent).toContain("Hermes is writing…");
+    // A second press can't start another call while one is out.
+    expect(screen.queryByRole("button", { name: "Improve with AI" })).toBeNull();
+    await edit(user, "# Mine, typed meanwhile\n");
+    await release();
+    await suggestion();
+    expect(oneshots(server)).toHaveLength(1);
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    const ask = screen.getByRole("alertdialog", { name: /changed since this was written/ });
+    await user.click(within(ask).getByRole("button", { name: "Keep mine" }));
+    expect((await editor()).value).toBe("# Mine, typed meanwhile\n");
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    await user.click(within(screen.getByRole("alertdialog", { name: /changed since/ })).getByRole("button", { name: "Replace" }));
+    expect((await editor()).value).toBe("# Suggested");
+    expect(writes(server)).toEqual([]);
+  });
+
+  it("drops an answer that comes after Stop", async () => {
+    const { server, user } = await launch();
+    server.oneshotAnswer = "# Late\n";
+    await openPersona(user);
+    const box = await editor();
+    await user.click(screen.getByRole("button", { name: "Write with AI…" }));
+    const release = await gate(server);
+    await user.click(screen.getByRole("button", { name: "Improve with AI" }));
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    expect(screen.getByRole("status").textContent).toContain("Hermes may still finish writing on the server");
+    await release();
+    expect(screen.queryByRole("textbox", { name: "Suggested SOUL.md" })).toBeNull();
+    expect(box.value).toBe(SOUL);
+  });
+
+  it("never puts an answer written for one profile into another profile's editor", async () => {
+    const { server, user } = await launch();
+    server.oneshotAnswer = "# For default\n";
+    await openPersona(user);
+    await editor();
+    await user.click(screen.getByRole("button", { name: "Write with AI…" }));
+    const release = await gate(server);
+    await user.click(screen.getByRole("button", { name: "Improve with AI" }));
+    await user.selectOptions(picker(), "work");
+    const work = await editor("work");
+    await release();
+    expect(screen.queryByRole("textbox", { name: "Suggested SOUL.md" })).toBeNull();
+    expect(work.value).toBe("# Work persona\n");
+    expect(server.souls).toEqual({ default: SOUL, work: "# Work persona\n" });
+  });
+
+  it("drops a call when the connection goes, and its late answer never fills the editor", async () => {
+    const { server, hermes, user } = await launch();
+    server.oneshotAnswer = "# Late\n";
+    await openPersona(user);
+    const box = await editor();
+    await user.click(screen.getByRole("button", { name: "Write with AI…" }));
+    const release = await gate(server);
+    await user.click(screen.getByRole("button", { name: "Improve with AI" }));
+    server.refuse = "connection refused";
+    await act(async () => server.drop());
+    await screen.findByText("The connection to Hermes changed, so the suggestion being written was dropped.");
+    expect(screen.getByText("Write with AI needs a connection to Hermes.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Improve with AI" }).hasAttribute("disabled")).toBe(true);
+    await release();
+    server.refuse = undefined;
+    await act(async () => void (await hermes.reconnect()));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Improve with AI" }).hasAttribute("disabled")).toBe(false));
+    expect(screen.queryByRole("textbox", { name: "Suggested SOUL.md" })).toBeNull();
+    expect(box.value).toBe(SOUL);
+  });
+
+  it("names the profile and setting when the model's provider has no sign-in, masks keys, and leaves manual editing working", async () => {
+    const { server, user } = await launch();
+    server.signedOut.add("openrouter");
+    await openPersona(user);
+    await user.selectOptions(picker(), "work");
+    const box = await editor("work");
+    await user.click(screen.getByRole("button", { name: "Write with AI…" }));
+    await user.click(screen.getByRole("button", { name: "Improve with AI" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/Write with AI uses the work profile's Text generation model, which runs on openrouter/);
+
+    server.signedOut.clear();
+    // Built at run time, so the repository holds no key-shaped literal.
+    server.oneshotFailure = `upstream said: invalid key ${["sk", "or", "v1", "0123456789abcdef".repeat(4)].join("-")}`;
+    await user.click(screen.getByRole("button", { name: "Improve with AI" }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("upstream said: invalid key"));
+    expect(document.body.textContent).not.toContain("0123456789abcdef0123");
+
+    await edit(user, "# Typed by hand\n", "work");
+    expect(box.value).toBe("# Typed by hand\n");
+    expect(writes(server)).toEqual([]);
+  });
+});

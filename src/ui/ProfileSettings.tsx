@@ -28,6 +28,7 @@ import { Spinner, composing } from "./bits";
 import { Menu } from "./ChatMenu";
 import { CloneProfileDialog } from "./CloneProfile";
 import { useModal } from "./modal";
+import { PersonaAI, usePersonaAI, type PersonaWriter } from "./PersonaAI";
 import { SettingNote, SettingsSection } from "./SettingRows";
 import { HeadPart, useInPage } from "./SettingsPage";
 
@@ -75,6 +76,8 @@ export type ProfilesWiring = {
   /** Shows Settings → Persona, Memory or Skills on `name`. */
   showTab: (tab: "persona" | "memory" | "skills", name: string) => void;
   copyText: (text: string) => Promise<void>;
+  /** Write with AI for a new profile's persona (PersonaAI.tsx); without it, none. */
+  writer?: PersonaWriter;
 };
 
 /** How long a rename or delete runs before its button says the gateway is being stopped. */
@@ -834,6 +837,8 @@ export function ProfileForm({
   const [pictureNote, setPictureNote] = useState<string>();
   const pictureInput = useRef<HTMLInputElement>(null);
   const [soul, setSoul] = useState("");
+  const soulBox = useRef<HTMLTextAreaElement>(null);
+  const ai = usePersonaAI(row ? undefined : wiring.writer, connected);
   const [catalog, setCatalog] = useState<CatalogProvider[]>();
   const [catalogError, setCatalogError] = useState<string>();
   const [states, setStates] = useState<FormStates>({});
@@ -867,7 +872,7 @@ export function ProfileForm({
   const formLook = base.look && { ...base.look, title, color, picture };
   const lookEdits = base.look && formLook ? editsOf(base.look, formLook, BOT_LOOK_SAME) : {};
   const lookChanged = Object.keys(lookEdits).length > 0;
-  const dirty = (row ? nameChanged : !!trimmed) || descChanged || modelTouched || lookChanged || !!soul.trim();
+  const dirty = (row ? nameChanged : !!trimmed) || descChanged || modelTouched || lookChanged || !!soul.trim() || ai.held;
 
   const issue = isDefault
     ? !trimmed
@@ -1301,8 +1306,21 @@ export function ProfileForm({
                 <label className="field-label" htmlFor={soulId}>
                   {f.persona}
                 </label>
-                <textarea id={soulId} className="persona-text profile-soul" rows={4} readOnly={saving} placeholder={f.personaDefault} value={soul} onChange={(e) => setSoul(e.target.value)} />
+                <textarea ref={soulBox} id={soulId} className="persona-text profile-soul" rows={4} readOnly={saving} placeholder={f.personaDefault} value={soul} onChange={(e) => setSoul(e.target.value)} />
                 <div className="set-hint">{f.personaHint}</div>
+                {ai.writer && (
+                  <PersonaAI
+                    ai={ai}
+                    writer={ai.writer}
+                    text={soul}
+                    locked={saving}
+                    persist="create"
+                    onApply={(t) => {
+                      setSoul(t);
+                      soulBox.current?.focus();
+                    }}
+                  />
+                )}
               </div>
             )}
             {bot && nameField}

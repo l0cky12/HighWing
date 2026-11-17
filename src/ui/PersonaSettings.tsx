@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { Copy, FileText, RefreshCw, RotateCcw, Save, TriangleAlert, Undo2, X } from "lucide-react";
 import { asReadBack, certainlyUnwritten, PersonaError, sameSoul, soulNotes, type PersonaApi, type ProfileHome, type Soul } from "../hermes/persona";
 import { LeavePersona } from "./LeavePersona";
+import { PersonaAI, usePersonaAI, type PersonaWriter } from "./PersonaAI";
 import { SettingNote, SettingRow, SettingsSection } from "./SettingRows";
 import { AppliesBox, EditingProfile, HeadPart, MetaChip, useInPage } from "./SettingsPage";
 import { EARLIER_KEPT, type EarlierSoul, type PersonaDraft, type PersonaStore } from "../hermes/personaStore";
@@ -45,6 +46,7 @@ export function PersonaPage({
   now,
   start,
   defaultName,
+  writerFor,
 }: {
   api: PersonaApi;
   /** `profile`: the profile in use, which the picker starts on unless `start` names another. */
@@ -59,6 +61,8 @@ export function PersonaPage({
   keyOf: (profile: string) => string;
   onDirty: PersonaDirty;
   now?: () => number;
+  /** Write with AI for a profile's SOUL.md, on that profile's own Text generation model; without it, none. */
+  writerFor?: (profile: string) => PersonaWriter;
 }) {
   const inUse = where.profile;
   const [picked, setPicked] = useState(start ?? inUse);
@@ -143,6 +147,7 @@ export function PersonaPage({
         profiles={listed}
         storeKeyFor={keyOf}
         onDirty={report}
+        writer={writerFor?.(picked)}
         now={now}
       />
       {asking && (
@@ -200,6 +205,7 @@ export function PersonaSettings({
   now = Date.now,
   profiles,
   storeKeyFor,
+  writer,
 }: {
   api: PersonaApi;
   where: PersonaWhere;
@@ -223,8 +229,12 @@ export function PersonaSettings({
    */
   onDirty: PersonaDirty;
   now?: () => number;
+  /** Write with AI for this profile's SOUL.md; its suggestion only fills the editor. */
+  writer?: PersonaWriter;
 }) {
   const { profile } = where;
+  const editor = useRef<HTMLTextAreaElement>(null);
+  const ai = usePersonaAI(writer, connected);
   const [load, setLoad] = useState<Load>(() =>
     connected ? { state: "loading" } : { state: "problem", problem: new PersonaError("disconnected", "Not connected to Hermes.") },
   );
@@ -773,6 +783,7 @@ export function PersonaSettings({
                     {!loaded.base.exists && <span className="badge">New file</span>}
                   </span>
                   <textarea
+                    ref={editor}
                     className="persona-text"
                     aria-label={`SOUL.md for the ${profile} profile`}
                     value={text}
@@ -792,6 +803,21 @@ export function PersonaSettings({
                     {chars(text.length)} · Read from Hermes {when(loaded.readAt)}
                   </span>
                 </label>
+
+                {ai.writer && (
+                  <PersonaAI
+                    ai={ai}
+                    writer={ai.writer}
+                    text={text}
+                    locked={saving || reloading || !!recover}
+                    persist="save"
+                    onApply={(t) => {
+                      setText(t);
+                      setNotice(undefined);
+                      editor.current?.focus();
+                    }}
+                  />
+                )}
 
                 {notes.map((n) => (
                   <p key={n} className="muted small persona-note">

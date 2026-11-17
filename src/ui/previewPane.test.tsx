@@ -1360,7 +1360,7 @@ describe("Closing and resizing", () => {
     const { user } = await signedIn();
     await user.click(screen.getByRole("button", { name: "Open the side panel" }));
     await user.click(screen.getByRole("button", { name: "Preview" }));
-    const edge = screen.getByRole("separator");
+    const edge = screen.getByRole("separator", { name: "Resize the side panel" });
     fireEvent.pointerDown(edge, { button: 0, clientX: 800, pointerId: 1 });
     fireEvent.pointerMove(edge, { clientX: 700, pointerId: 1 });
     expect(pane().style.width).toBe("580px");
@@ -1385,7 +1385,7 @@ describe("Closing and resizing", () => {
     const { user } = await signedIn();
     await user.click(screen.getByRole("link", { name: "the docs" }));
     expect(pane().className).toContain("overlay");
-    expect(screen.queryByRole("separator")).toBeNull();
+    expect(screen.queryByRole("separator", { name: "Resize the side panel" })).toBeNull();
     expect(pane().contains(document.activeElement)).toBe(true);
     // The chat underneath can't be reached while the pane covers it.
     expect(document.querySelector(".main-chat")!.hasAttribute("inert")).toBe(true);

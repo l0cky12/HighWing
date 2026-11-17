@@ -52,7 +52,7 @@ The owner's actions, from a chat's right-click menu or its header's More menu (P
 _Avoid_: favourite, star (starred models are the model picker's), sticky
 
 **Chat list section**:
-One of the chat list's groups: Pinned, Inbox, Snoozed, Archived and Working in the list's scroll, in that order, so Working sits right above Settled, then Settled, a drawer at the list's foot that opens upward with its own scroll (ADR 0090). Each chat is in exactly one. Each has a header with its count that collapses or expands it; which are collapsed is kept on this computer across restarts. Settings → General picks which sections show, any mix but never none; a chat in a hidden section is still found by Search (ADR 0063).
+One of the chat list's groups: Pinned, Inbox, Snoozed and Working in the list's scroll, in that order, so Working sits right above Settled, then Settled and Archived, drawers at the list's foot that open upward with their own scroll (ADR 0090, ADR 0197). Each chat is in exactly one. Each has a header with its count that collapses or expands it; which are collapsed is kept on this computer across restarts. Settings → General picks which sections show, any mix but never none; a chat in a hidden section is still found by Search (ADR 0063).
 _Avoid_: group, folder, tab
 
 **Snooze** / **Unsnooze**:
@@ -60,7 +60,7 @@ The owner's actions, from a chat's right-click menu, that snooze an Active chat 
 _Avoid_: remind me, defer
 
 **Archived**:
-A chat the owner has hidden in every Hermes client without deleting it. Its history stays on the server, and so does whether it is Active or Settled. Archived chats show only in the list's Archived section, when Settings → General shows it, or in a search the owner asks to include them. A chat archived in another Hermes client is Archived here too.
+A chat the owner has hidden in every Hermes client without deleting it. Its history stays on the server, and so does whether it is Active or Settled. Archived chats show only in the list's Archived drawer, under Settled, while Settings → General shows it, or in a search the owner asks to include them. A chat archived in another Hermes client is Archived here too.
 _Avoid_: hidden, settled, deleted
 
 **Archive** / **Restore**:

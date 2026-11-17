@@ -42,7 +42,7 @@ afterEach(() => {
 
 describe("reading", () => {
   it("is the defaults when nothing is stored", () => {
-    expect(getUIPrefs()).toEqual({ theme: "system", reopenLastChat: false, checkUpdatesOnLaunch: true, lastOpenChat: {}, modelPicker: null, modelPicks: {}, modelFavorites: [], statusBar: ["context", "model", "status"], previewWidth: null, screenshotShortcut: "Ctrl+Shift+S", templates: [], terminalKind: "server", followUp: "queue", idleCompact: { enabled: false, percent: 70, idleMinutes: 15 }, chatSectionsShown: ["pinned", "inbox", "snoozed", "working", "settled"], chatSectionsCollapsed: ["snoozed", "archived", "settled"], chatListMode: "chats", agentOffice: "plan", officeQuality: "normal", inboxAutoDismissDays: null, messageDetails: "time", spellCheck: true, summonSelection: true, keybindings: {} });
+    expect(getUIPrefs()).toEqual({ theme: "system", reopenLastChat: false, checkUpdatesOnLaunch: true, lastOpenChat: {}, modelPicker: null, modelPicks: {}, modelFavorites: [], statusBar: ["context", "model", "status"], previewWidth: null, sidebarWidth: null, zoom: 1, screenshotShortcut: "Ctrl+Shift+S", templates: [], terminalKind: "server", followUp: "queue", idleCompact: { enabled: false, percent: 70, idleMinutes: 15 }, chatSectionsShown: ["pinned", "inbox", "snoozed", "working", "settled", "archived"], chatSectionsCollapsed: ["snoozed", "settled", "archived"], chatListMode: "chats", agentOffice: "plan", officeQuality: "normal", inboxAutoDismissDays: null, messageDetails: "time", spellCheck: true, summonSelection: true, keybindings: {} });
     expect(getUIPrefs()).toEqual(DEFAULT_UI_PREFS);
   });
 
@@ -66,6 +66,8 @@ describe("reading", () => {
         statusBar: ["model", 3, "", "tokens", "model"],
         lastOpenChat: { default: "c1", work: 7, "": "c2", home: "" },
         previewWidth: 12.5,
+        sidebarWidth: "wide",
+        zoom: 1.3,
         terminalKind: "laptop",
         followUp: "interrupt",
         idleCompact: { enabled: "yes", percent: 100, idleMinutes: 30 },
@@ -87,11 +89,11 @@ describe("reading", () => {
       modelPicks: {},
       modelFavorites: ["openai/gpt-5", "anthropic/claude-opus-5-5"],
       statusBar: ["model", "tokens"],
-      previewWidth: null, screenshotShortcut: "Ctrl+Shift+S", templates: [], terminalKind: "server", followUp: "queue", spellCheck: true,
+      previewWidth: null, sidebarWidth: null, zoom: 1, screenshotShortcut: "Ctrl+Shift+S", templates: [], terminalKind: "server", followUp: "queue", spellCheck: true,
       idleCompact: { enabled: false, percent: 70, idleMinutes: 30 },
       // A version 1 list gains Pinned, new in version 2.
       chatSectionsShown: ["pinned", "inbox", "settled"],
-      chatSectionsCollapsed: ["snoozed", "archived", "settled"],
+      chatSectionsCollapsed: ["snoozed", "settled", "archived"],
       chatListMode: "chats",
       agentOffice: "plan",
       officeQuality: "normal",
@@ -201,6 +203,15 @@ describe("reading", () => {
     for (const bad of [-5, 50, 9000, 420.5]) {
       localStorage.setItem(UI_PREFS_KEY, JSON.stringify({ v: 1, previewWidth: bad }));
       expect(getUIPrefs().previewWidth).toBeNull();
+    }
+  });
+
+  it("keeps the chat list's width and the app's zoom, and drops a width no window could have or a zoom that isn't a step", () => {
+    setUIPrefs({ sidebarWidth: 360, zoom: 1.25 });
+    expect(stored()).toMatchObject({ sidebarWidth: 360, zoom: 1.25 });
+    for (const [sidebarWidth, zoom] of [[-5, 0], [50, 1.3], [9000, 3], [300.5, "1.25"], ["300", null]]) {
+      localStorage.setItem(UI_PREFS_KEY, JSON.stringify({ v: 5, sidebarWidth, zoom }));
+      expect(getUIPrefs()).toMatchObject({ sidebarWidth: null, zoom: 1 });
     }
   });
 

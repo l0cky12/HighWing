@@ -6,6 +6,7 @@ import { restoreDraftsAfterRestart } from "./hermes/tauriUpdates";
 import { syncScreenshotOutbox } from "./hermes/tauriScreenshot";
 import { captureAppDiagnostics } from "./hermes/logs";
 import { followEditKeys } from "./ui/editKeys";
+import { followZoomKeys } from "./ui/zoom";
 import { followWindowVisibility } from "./ui/windowState";
 import { followTouchKeyboard } from "./ui/touchKeyboard";
 import { refuseStrayFileDrops } from "./ui/ChatPane";
@@ -37,6 +38,7 @@ void followWindowVisibility();
 void followTouchKeyboard();
 refuseStrayFileDrops();
 followEditKeys();
+followZoomKeys();
 
 void restoreDraftsAfterRestart().then((failed) => {
   const root = createRoot(document.getElementById("root")!);

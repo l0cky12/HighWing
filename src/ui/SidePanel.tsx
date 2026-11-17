@@ -2,14 +2,14 @@
 // that picks one (ADR 0159). Each tab is made the first time it is opened and kept from then on, so a shell or the screen
 // keeps running while the owner is in another tab or the launcher, or the panel is hidden or closed. The panel is resizable from its left edge, and in a window too narrow
 // for both it covers the chat until the owner goes back.
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { ArrowLeft, Eye, FolderOpen, Monitor, Plus, SquareTerminal, X } from "lucide-react";
+import { ResizeHandle } from "./ResizeHandle";
 
 export type PanelTab = "preview" | "terminal" | "files" | "screen";
 
-/** The narrowest the panel gets, and the step the arrow keys resize it by. */
+/** The narrowest the panel gets. */
 export const PANE_MIN_WIDTH = 300;
-const KEY_STEP = 32;
 
 const TABS: { tab: PanelTab; label: string; title: string; Icon: typeof Eye; key: string }[] = [
   { tab: "preview", label: "Preview", title: "Pages, files and tool output", Icon: Eye, key: "P" },
@@ -108,7 +108,18 @@ export function SidePanel({
       aria-label="Side panel"
       onKeyDown={onKey}
     >
-      {!overlay && <ResizeHandle width={width} maxWidth={maxWidth} onResize={onResize} onDragging={setDragging} />}
+      {!overlay && (
+        <ResizeHandle
+          edge="left"
+          className="preview-resize"
+          label="Resize the side panel"
+          width={width}
+          min={PANE_MIN_WIDTH}
+          max={maxWidth}
+          onResize={onResize}
+          onDragging={setDragging}
+        />
+      )}
       <div className="panel-tabs">
         {overlay && (
           <button className="icon-btn" title="Back to the chat" onClick={onHide}>
@@ -172,67 +183,5 @@ function Launcher({ onTab }: { onTab: (t: PanelTab) => void }) {
         ))}
       </ul>
     </div>
-  );
-}
-
-/** The panel's left edge: drag it, or focus it and use the arrow keys, to make the panel wider or narrower. */
-function ResizeHandle({
-  width,
-  maxWidth,
-  onResize,
-  onDragging,
-}: {
-  width: number;
-  maxWidth: number;
-  onResize: (width: number, done: boolean) => void;
-  onDragging: (on: boolean) => void;
-}) {
-  const start = useRef<{ x: number; width: number } | null>(null);
-  const clamp = (w: number) => Math.round(Math.min(Math.max(w, PANE_MIN_WIDTH), Math.max(PANE_MIN_WIDTH, maxWidth)));
-  const move = (e: ReactPointerEvent, done: boolean) => {
-    if (!start.current) return;
-    // The panel is on the right, so dragging its edge left makes it wider.
-    onResize(clamp(start.current.width + start.current.x - e.clientX), done);
-    if (done) {
-      start.current = null;
-      onDragging(false);
-    }
-  };
-  return (
-    <div
-      className="preview-resize"
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize the side panel"
-      aria-valuemin={PANE_MIN_WIDTH}
-      aria-valuemax={Math.max(PANE_MIN_WIDTH, maxWidth)}
-      aria-valuenow={width}
-      tabIndex={0}
-      onPointerDown={(e) => {
-        if (e.button !== 0) return;
-        e.preventDefault();
-        e.currentTarget.setPointerCapture?.(e.pointerId);
-        start.current = { x: e.clientX, width };
-        onDragging(true);
-      }}
-      onPointerMove={(e) => move(e, false)}
-      onPointerUp={(e) => move(e, true)}
-      onPointerCancel={(e) => move(e, true)}
-      onKeyDown={(e) => {
-        const next =
-          e.key === "ArrowLeft"
-            ? width + KEY_STEP
-            : e.key === "ArrowRight"
-              ? width - KEY_STEP
-              : e.key === "Home"
-                ? maxWidth
-                : e.key === "End"
-                  ? PANE_MIN_WIDTH
-                  : undefined;
-        if (next === undefined) return;
-        e.preventDefault();
-        onResize(clamp(next), true);
-      }}
-    />
   );
 }

@@ -1,6 +1,6 @@
 // Display preferences for this computer: the theme, whether the last chat reopens at launch and which chat each profile
 // had open, whether reasoning shows, how much shows under each message, the model last picked and the starred models,
-// which items the status bar shows, the screenshot shortcut and preview pane width, which computer the Terminal opens
+// which items the status bar shows, the screenshot shortcut, the preview pane's and chat list's widths, the app's zoom, which computer the Terminal opens
 // on, what sending does while a reply runs, whether message boxes check spelling, Idle compaction, which of the chat
 // list's sections show and which are collapsed, how the agent office shows, and the keyboard shortcuts the owner changed. All preferences live in one
 // versioned localStorage document.
@@ -49,6 +49,10 @@ export type UIPrefs = {
   screenshotShortcut: string | null;
   /** How wide the owner made the preview pane, in px; null until they resize it. */
   previewWidth: number | null;
+  /** How wide the owner dragged the chat list, in CSS px; null until they resize it (ADR 0197). */
+  sidebarWidth: number | null;
+  /** How far the whole app is zoomed, one of ZOOM_LEVELS; 1 is unzoomed (ADR 0197). */
+  zoom: number;
   /** The owner's message templates (templates.ts, ADR 0028). */
   templates: Template[];
   /** The Terminal's shell picked last: the Hermes server's, through ssh, or this computer's (ADR 0051). */
@@ -113,6 +117,10 @@ export const IDLE_COMPACT_PERCENTS = [50, 60, 70, 75, 80, 85, 90] as const;
 /** The idle-time choices Settings → Model offers, in minutes. */
 export const IDLE_COMPACT_MINUTES = [5, 10, 15, 30, 60, 120] as const;
 
+/** The app's zoom steps, as browsers offer them: Ctrl+= and Ctrl+- move one step, Ctrl+0 goes back to 1. */
+export const ZOOM_LEVELS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2] as const;
+const isZoom = (v: unknown): v is number => (ZOOM_LEVELS as readonly unknown[]).includes(v);
+
 /** The shape of a stored shortcut: modifiers in order, then one key (ui/shortcut.ts writes them). */
 const SHORTCUT = /^(?:Ctrl\+)?(?:Alt\+)?(?:Shift\+)?(?:Super\+)?(?:[A-Z0-9]|F(?:[1-9]|1\d|2[0-4])|PrintScreen|Pause|ScrollLock|Insert)$/;
 export const isShortcut = (s: unknown): s is string => typeof s === "string" && SHORTCUT.test(s);
@@ -130,13 +138,15 @@ export const DEFAULT_UI_PREFS: Readonly<UIPrefs> = Object.freeze({
   statusBar: [...STATUS_BAR_ITEMS],
   screenshotShortcut: "Ctrl+Shift+S",
   previewWidth: null,
+  sidebarWidth: null,
+  zoom: 1,
   templates: [],
   terminalKind: "server",
   followUp: "queue",
   spellCheck: true,
   idleCompact: Object.freeze({ enabled: false, percent: 70, idleMinutes: 15 }),
-  chatSectionsShown: SECTION_KEYS.filter((k) => k !== "archived"),
-  chatSectionsCollapsed: ["snoozed", "archived", "settled"] as SectionKey[],
+  chatSectionsShown: [...SECTION_KEYS],
+  chatSectionsCollapsed: ["snoozed", "settled", "archived"] as SectionKey[],
   chatListMode: "chats",
   agentOffice: "plan",
   officeQuality: "normal",
@@ -225,8 +235,8 @@ function toStatusBar(v: unknown): string[] | undefined {
   return [...new Set(items)];
 }
 
-/** A preview width, in px, that a window could have. */
-const toPreviewWidth = (v: unknown): number | null | undefined =>
+/** A pane width, in px, that a window could have. */
+const toPaneWidth = (v: unknown): number | null | undefined =>
   v === null ? null : typeof v === "number" && Number.isInteger(v) && v >= 200 && v <= 8000 ? v : undefined;
 
 /**
@@ -281,7 +291,8 @@ function toKeybindings(v: unknown): Record<string, string[]> | undefined {
 /** The prefs `doc` holds, each field that is missing or not a valid value taken from `d`: the defaults, unless given. */
 export function readUIPrefs(doc: UIPrefsDoc, d: Readonly<UIPrefs> = DEFAULT_UI_PREFS): UIPrefs {
   const pick = toModelPick(doc.modelPicker);
-  const previewWidth = toPreviewWidth(doc.previewWidth);
+  const previewWidth = toPaneWidth(doc.previewWidth);
+  const sidebarWidth = toPaneWidth(doc.sidebarWidth);
   return {
     theme: THEMES.includes(doc.theme as Theme) ? (doc.theme as Theme) : d.theme,
     reopenLastChat: typeof doc.reopenLastChat === "boolean" ? doc.reopenLastChat : d.reopenLastChat,
@@ -293,6 +304,8 @@ export function readUIPrefs(doc: UIPrefsDoc, d: Readonly<UIPrefs> = DEFAULT_UI_P
     statusBar: toStatusBar(doc.statusBar) ?? [...d.statusBar],
     screenshotShortcut: doc.screenshotShortcut === null || isShortcut(doc.screenshotShortcut) ? doc.screenshotShortcut : d.screenshotShortcut,
     previewWidth: previewWidth === undefined ? d.previewWidth : previewWidth,
+    sidebarWidth: sidebarWidth === undefined ? d.sidebarWidth : sidebarWidth,
+    zoom: isZoom(doc.zoom) ? doc.zoom : d.zoom,
     templates: toTemplates(doc.templates) ?? [...d.templates],
     terminalKind: doc.terminalKind === "server" || doc.terminalKind === "local" ? doc.terminalKind : d.terminalKind,
     followUp: doc.followUp === "queue" || doc.followUp === "steer" ? doc.followUp : d.followUp,

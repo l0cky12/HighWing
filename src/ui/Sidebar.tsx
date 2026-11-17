@@ -29,6 +29,7 @@ import { dragChat, dragChatEnd, rowDragged } from "./Tabs";
 import { ariaKeys, chordLabel, chordParts, pick, useBindings } from "./keybindings";
 import { errorText } from "../hermes/values";
 import { BrandMark } from "./BrandMark";
+import { ResizeHandle } from "./ResizeHandle";
 
 
 
@@ -1003,16 +1004,21 @@ function moveBetweenChats(e: KeyboardEvent<HTMLElement>) {
   rows[rows.indexOf(e.target as HTMLButtonElement) + (command === "rowDown" ? 1 : -1)]?.focus();
 }
 
-/** How many Settled chats the drawer draws when it opens, and how many more each Show more press adds (ADR 0185). */
+/** How many chats a drawer draws when it opens, and how many more each Show more press adds (ADR 0185). */
 export const SETTLED_FIRST = 10;
 export const SETTLED_PAGE = 25;
 
+/** The sections drawn as drawers at the list's foot, Settled above Archived (ADR 0197). */
+const DRAWERS = ["settled", "archived"] as const satisfies readonly SectionKey[];
+type DrawerKey = (typeof DRAWERS)[number];
+const isDrawer = (k: SectionKey): k is DrawerKey => (DRAWERS as readonly SectionKey[]).includes(k);
+
 /**
- * The open Settled drawer's rows: the first ten, then a Show more button for 25 more at a time (ADR 0185). The drawer
+ * An open drawer's rows: the first ten, then a Show more button for 25 more at a time (ADR 0185). The drawer
  * mounts this only while open, so closing and reopening it starts at ten again. The chat on screen is always drawn,
- * with the rows above it, so opening a Settled chat from a search still shows its row.
+ * with the rows above it, so opening a Settled or Archived chat from a search still shows its row.
  */
-function SettledList({ chats, selectedId, row }: { chats: Chat[]; selectedId: string | null; row: (c: Chat) => ReactNode }) {
+function DrawerList({ section, chats, selectedId, row }: { section: DrawerKey; chats: Chat[]; selectedId: string | null; row: (c: Chat) => ReactNode }) {
   const [shown, setShown] = useState(SETTLED_FIRST);
   const upTo = Math.max(shown, chats.findIndex((c) => c.id === selectedId) + 1);
   const rest = chats.length - upTo;
@@ -1026,7 +1032,7 @@ function SettledList({ chats, selectedId, row }: { chats: Chat[]; selectedId: st
     setFocusOn(undefined);
   }, [focusOn]);
   return (
-    <div className="settled-list" ref={list}>
+    <div className={`drawer-list ${section}-list`} ref={list}>
       {chats.slice(0, upTo).map(row)}
       {rest > 0 && (
         <button
@@ -1039,7 +1045,7 @@ function SettledList({ chats, selectedId, row }: { chats: Chat[]; selectedId: st
           Show {Math.min(SETTLED_PAGE, rest)} more
         </button>
       )}
-      {!chats.length && <div className="empty-hint">No settled chats.</div>}
+      {!chats.length && <div className="empty-hint">No {SECTION_LABEL[section].toLowerCase()} chats.</div>}
     </div>
   );
 }
@@ -1233,6 +1239,7 @@ export function ChatList({
   onHide,
   mode,
   shownBot,
+  resize,
 }: {
   profile: string;
   bots?: (under: ReactNode) => ReactNode;
@@ -1298,6 +1305,8 @@ export function ChatList({
   onHide?: () => void;
   mode?: ListModes;
   shownBot?: ShownBot;
+  /** The list's width and its bounds, in CSS px, and what dragging its right edge does (ADR 0197); without it, the stylesheet's width. */
+  resize?: { width: number; min: number; max: number; onResize: (width: number, done: boolean) => void };
 }) {
   const { chatSectionsShown: shown, chatSectionsCollapsed: collapsed } = useSyncExternalStore(subscribeUIPrefs, getUIPrefs);
   const keys = useBindings();
@@ -1429,8 +1438,6 @@ export function ChatList({
       />
     );
   };
-  // Archived can hold every chat the profile has ever had, so a collapsed one draws no rows (Settled, the drawer, neither).
-  const keepsHidden = (k: SectionKey) => k !== "archived";
   // Pinned, Working and Snoozed come and go with what the owner and Hermes do; the others keep their header when empty.
   const drawnEmpty = (k: SectionKey) => k !== "pinned" && k !== "working" && k !== "snoozed";
   const busy = sections.working.length + sections.snoozed.length > 0;
@@ -1454,7 +1461,23 @@ export function ChatList({
       </div>
     );
   };
-  const settledOpen = !collapsed.includes("settled");
+  // The drawers at the list's foot, outside its scroll (ADR 0090, ADR 0197). Each can hold every chat the profile has
+  // had, so a closed one draws no rows.
+  const drawer = (k: DrawerKey) => {
+    const open = !collapsed.includes(k);
+    const settled = k === "settled";
+    return (
+      <div
+        key={k}
+        className={`foot-drawer ${k}-drawer ${open ? "open" : ""} ${settled && dropOn === "settled" ? "drop" : ""}`}
+        {...(settled ? dropHandlers("settled") : {})}
+      >
+        {header(k, sections[k], open)}
+        {open && <DrawerList section={k} chats={sections[k]} selectedId={selectedId} row={(c) => row(c, k)} />}
+      </div>
+    );
+  };
+  const drawers = DRAWERS.filter((k) => shown.includes(k));
   const botsShown = mode?.value === "bots";
   const switcher = (
     <ProfileSwitcher
@@ -1479,7 +1502,13 @@ export function ChatList({
     </div>
   );
   return (
-    <aside className={`sidebar${mode ? ` is-${mode.value}` : ""}`} onKeyDown={moveBetweenChats} onContextMenu={menuForFocusedRow}>
+    <aside
+      className={`sidebar${mode ? ` is-${mode.value}` : ""}`}
+      style={resize && { width: resize.width }}
+      onKeyDown={moveBetweenChats}
+      onContextMenu={menuForFocusedRow}
+    >
+      {resize && <ResizeHandle edge="right" className="list-resize" label="Resize the chat list" {...resize} />}
       <div className={`sb-head${mode ? " sb-head-modes" : ""}`}>
         {mode ? <ModeSwitch {...mode} inbox={sections.inbox.length} waiting={mode.waiting.length} /> : switcher}
         {onHide && (
@@ -1550,13 +1579,13 @@ export function ChatList({
             {
               // One keyed array, so React keeps a row that moves from one section to another.
               shown.flatMap((k) => {
-                if (k === "settled") return [];
+                if (isDrawer(k)) return [];
                 const list = sections[k];
                 if (!list.length && !drawnEmpty(k)) return [];
                 const open = !collapsed.includes(k);
                 return [
                   header(k, list, open),
-                  ...(open || keepsHidden(k) ? list.map((c) => row(c, k, !open)) : []),
+                  ...list.map((c) => row(c, k, !open)),
                   open && !list.length && (
                     <div key={`empty-${k}`} className="empty-hint" data-section={k === "inbox" ? "inbox" : undefined}>
                       {k === "inbox" ? (busy ? "Nothing needs you right now." : "Nothing needs you. Start a new chat.") : `No ${SECTION_LABEL[k].toLowerCase()} chats.`}
@@ -1566,13 +1595,7 @@ export function ChatList({
               })
             }
           </div>
-          {shown.includes("settled") && (
-            // The drawer at the list's foot (ADR 0090): its header stays at the bottom however long the scroll above is.
-            <div className={`settled-drawer ${settledOpen ? "open" : ""} ${dropOn === "settled" ? "drop" : ""}`} {...dropHandlers("settled")}>
-              {header("settled", sections.settled, settledOpen)}
-              {settledOpen && <SettledList chats={sections.settled} selectedId={selectedId} row={(c) => row(c, "settled")} />}
-            </div>
-          )}
+          {drawers.length > 0 && <div className="sb-foot">{drawers.map(drawer)}</div>}
         </>
       )}
       {customFor && !customGone && (

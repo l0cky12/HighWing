@@ -192,6 +192,10 @@ const PANEL_COMPACT_WIDTH = 640;
 /** The narrowest the chat gets beside the preview pane; narrower than this and the pane covers the chat instead. */
 const CHAT_MIN_WIDTH = 440;
 const PREVIEW_DEFAULT_WIDTH = 480;
+/** The chat list's width until the owner drags its edge, and how narrow and wide a drag can make it (ADR 0197). */
+const LIST_DEFAULT_WIDTH = 272;
+const LIST_MIN_WIDTH = 200;
+const LIST_MAX_WIDTH = 560;
 
 /** How the preview pane names the Hermes server: the SSH target, or the dashboard's host. */
 function serverLabel(route?: Route): string {
@@ -1572,7 +1576,7 @@ export function Main({
   // The model pick is sticky: new chats start on it, in this profile, until the owner picks another. It is kept on this
   // computer only and never becomes the profile's default. Picked in another profile, it gives way to this profile's
   // own model. A chat on screen shows the model it runs on, and a pick there switches that chat alone.
-  const { modelPicker, modelPicks, modelFavorites, previewWidth, screenshotShortcut, agentOffice, inboxAutoDismissDays, summonSelection, chatListMode } = useSyncExternalStore(subscribeUIPrefs, getUIPrefs);
+  const { modelPicker, modelPicks, modelFavorites, previewWidth, sidebarWidth, screenshotShortcut, agentOffice, inboxAutoDismissDays, summonSelection, chatListMode } = useSyncExternalStore(subscribeUIPrefs, getUIPrefs);
   const keys = useBindings();
   const officeShown = officeOpen && agentOffice !== "off";
   // Who sits where in the building. It outlives the building's view, so hidden to the tray, minimized, behind Settings
@@ -1591,6 +1595,8 @@ export function Main({
   const [previewHistory, stepPreview] = useReducer(stepHistory, null);
   // The width while the owner drags the panel's edge; it is kept in the display preferences once they let go.
   const [dragWidth, setDragWidth] = useState<number | null>(null);
+  // The same for the chat list's right edge.
+  const [dragListWidth, setDragListWidth] = useState<number | null>(null);
   const openPanel = useCallback((tab: PanelTab | null) => {
     setPanelTab(tab);
     setPanelOpen(true);
@@ -1622,6 +1628,14 @@ export function Main({
   );
   const mainRef = useRef<HTMLElement>(null);
   const mainWidth = useWidth(mainRef);
+  // The list and the chat share the room beside the rail: the list never takes so much that the chat is narrower than
+  // it can be beside the side panel, so a smaller window or a zoom narrows the list without changing the kept width.
+  const listShownWidth = useRef(0);
+  const listMax = mainWidth ? Math.min(LIST_MAX_WIDTH, Math.max(LIST_MIN_WIDTH, Math.floor(mainWidth + listShownWidth.current - CHAT_MIN_WIDTH))) : LIST_MAX_WIDTH;
+  const listWidth = Math.min(Math.max(dragListWidth ?? sidebarWidth ?? LIST_DEFAULT_WIDTH, LIST_MIN_WIDTH), listMax);
+  useLayoutEffect(() => {
+    listShownWidth.current = listOpen && !settingsOpen ? listWidth : 0;
+  });
 
   // Projects are Hermes's, one store for each connection and profile; which chats are in each is kept on this computer.
   // A project picked in the switcher narrows the list to its chats. Active, Settled and Unread work as before inside it.
@@ -3562,6 +3576,15 @@ export function Main({
           onNew={() => newChat()}
           onSearch={() => openSearch()}
           onHide={() => setListOpen(false)}
+          resize={{
+            width: listWidth,
+            min: LIST_MIN_WIDTH,
+            max: listMax,
+            onResize: (w, done) => {
+              setDragListWidth(done ? null : w);
+              if (done) setUIPrefs({ sidebarWidth: w });
+            },
+          }}
         />
         </div>
       )}

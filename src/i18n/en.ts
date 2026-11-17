@@ -523,9 +523,11 @@ export const en = {
     failed: (why: string) => `Hermes couldn't write a suggestion: ${why}`,
     answerEmpty: "Hermes answered with no text.",
     answerLong: (length: string, max: string) => `Hermes answered with ${length} characters, more than the ${max} a SOUL.md suggestion may have.`,
-    /** Before and after Hermes's own words for a missing sign-in (transport.ts `titleModelUnavailable`). */
-    unavailableRuns: (profile: string) => `Write with AI uses the ${profile} profile's Text generation model, which runs on`,
-    unavailableFix: (profile: string) => `or pick another Text generation model for ${profile} in Settings → Model while Highwing uses that profile.`,
+    /** The Text generation model's provider has no sign-in on the server (transport.ts `TitleModelUnavailable`). */
+    signInNous: (profile: string, command: string) =>
+      `Write with AI uses the ${profile} profile's Text generation model, which runs on Nous Portal, and Hermes on the server isn't signed in to Nous Portal. Sign it in there with ${command}, or pick another Text generation model for ${profile} in Settings → Model while Highwing uses that profile.`,
+    noKey: (profile: string, provider: string) =>
+      `Write with AI uses the ${profile} profile's Text generation model, which runs on ${provider}, and Hermes on the server has no API key or sign-in for it. Add one there, or pick another Text generation model for ${profile} in Settings → Model while Highwing uses that profile.`,
     disconnected: "Write with AI needs a connection to Hermes.",
     issues: {
       empty: "Write some notes first, or put text in the editor to improve.",

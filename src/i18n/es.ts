@@ -505,8 +505,10 @@ export const es: Catalogue = {
     failed: (why: string) => `Hermes no pudo escribir una sugerencia: ${why}`,
     answerEmpty: "Hermes respondió sin texto.",
     answerLong: (length: string, max: string) => `Hermes respondió con ${length} caracteres, más de los ${max} que puede tener una sugerencia de SOUL.md.`,
-    unavailableRuns: (profile: string) => `Escribir con IA usa el modelo de generación de texto del perfil ${profile}, que funciona con`,
-    unavailableFix: (profile: string) => `o elige otro modelo de generación de texto para ${profile} en Ajustes → Modelo mientras Highwing usa ese perfil.`,
+    signInNous: (profile: string, command: string) =>
+      `Escribir con IA usa el modelo de generación de texto del perfil ${profile}, que funciona con Nous Portal, y Hermes en el servidor no ha iniciado sesión en Nous Portal. Inicia sesión allí con ${command}, o elige otro modelo de generación de texto para ${profile} en Ajustes → Modelo mientras Highwing usa ese perfil.`,
+    noKey: (profile: string, provider: string) =>
+      `Escribir con IA usa el modelo de generación de texto del perfil ${profile}, que funciona con ${provider}, y Hermes en el servidor no tiene clave de API ni sesión para él. Añade una allí, o elige otro modelo de generación de texto para ${profile} en Ajustes → Modelo mientras Highwing usa ese perfil.`,
     disconnected: "Escribir con IA necesita una conexión con Hermes.",
     issues: {
       empty: "Escribe primero algunas notas, o pon texto en el editor para mejorarlo.",

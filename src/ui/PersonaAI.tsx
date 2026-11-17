@@ -8,7 +8,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { safeReason, soulCall, soulFrom, sourceOf, UnusableAnswer, NOTES_MAX, SOUL_MAX, type Call, type Source } from "../hermes/personaAI";
-import type { UnavailableWords } from "../hermes/transport";
+import { TitleModelUnavailable } from "../hermes/transport";
 import { shortName } from "../hermes/models";
 import { deadline } from "../hermes/remoteFiles";
 import { ASK_DEADLINE_MS } from "../hermes/artifacts";
@@ -24,8 +24,8 @@ export type PersonaWriter = {
   /** The profile whose Text generation model writes, which the panel names. */
   profile: string;
   model: () => Promise<TextModel>;
-  /** One `llm.oneshot` on `profile`, with no chat; resolves with Hermes's text. `words` name the model if its sign-in is missing. */
-  ask: (call: Call, words: UnavailableWords) => Promise<string>;
+  /** One `llm.oneshot` on `profile`, with no chat; resolves with Hermes's text. */
+  ask: (call: Call) => Promise<string>;
 };
 
 /** Hermes's answer, as the owner edits it, with the editor text it was written from, so a changed editor isn't replaced without asking. */
@@ -86,14 +86,21 @@ export function usePersonaAI(writer: PersonaWriter | undefined, connected: boole
       if (!current()) return;
       const name = shortName(m.model) || w.defaultModel;
       const by = w.by(writer.profile, `${m.provider ? `${m.provider} · ` : ""}${m.followsMain ? w.mainModel(name) : name}`);
-      const words = { runs: w.unavailableRuns(writer.profile), fix: w.unavailableFix(writer.profile) };
-      const answer = await deadline(writer.ask(soulCall(source), words), ASK_DEADLINE_MS);
+      const answer = await deadline(writer.ask(soulCall(source)), ASK_DEADLINE_MS);
       if (!current()) return;
       setPhase({ kind: "suggested", text: soulFrom(answer), from, by, confirm: false });
     } catch (e) {
       if (!current()) return;
       const why =
-        e instanceof UnusableAnswer ? (e.kind === "empty" ? w.answerEmpty : w.answerLong(l.fmt.number(e.length), l.fmt.number(SOUL_MAX))) : safeReason(errorText(e));
+        e instanceof UnusableAnswer
+          ? e.kind === "empty"
+            ? w.answerEmpty
+            : w.answerLong(l.fmt.number(e.length), l.fmt.number(SOUL_MAX))
+          : e instanceof TitleModelUnavailable
+            ? e.provider === "nous"
+              ? w.signInNous(writer.profile, `hermes ${writer.profile === "default" ? "" : `-p ${writer.profile} `}auth add nous`)
+              : w.noKey(writer.profile, e.provider)
+            : safeReason(errorText(e));
       settle({ tone: "bad", text: w.failed(why) });
     }
   }

@@ -1851,7 +1851,7 @@ export function Main({
   const personaWriter = (p: string): PersonaWriter => ({
     profile: p,
     model: () => hermes.modelSettings.textModel(p),
-    ask: (call, words) => hermes.askForEdit({ profile: p, ...call, words }).then((r) => r.text),
+    ask: (call) => hermes.askForEdit({ profile: p, ...call }).then((r) => r.text),
   });
   // Settings → Persona edits the SOUL.md of any profile on this connection, starting on the one in use; its edits are
   // kept apart per connection and profile.

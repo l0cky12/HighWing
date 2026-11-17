@@ -36,7 +36,7 @@ type Option = { name: string };
  * these names the owner had changed. `reset`: the list couldn't be read, or offers nothing, so the area went back to
  * Hermes's defaults.
  */
-export type Reread = { kind: "dropped"; names: string[] } | { kind: "reset" };
+type Reread = { kind: "dropped"; names: string[] } | { kind: "reset" };
 
 /**
  * One area's choice, from the lists of `profile` (the profile in use). `read` lists the options; `start` is what Choose

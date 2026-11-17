@@ -78,9 +78,10 @@ export async function boot(opts: BootOptions = {}) {
     hermes_get_limited: (args) => heldPipe(args).getLimited(args.path, args.maxBytes),
     hermes_voice_setup: (args) => heldPipe(args).voiceSetup(args.profile),
     hermes_toolset_guards: (args) => heldPipe(args).toolsetGuards(args.profile),
-    // The owner's disk is `server.files`, one char per byte, as FakeHermes's pipe reads and sends it.
+    // The owner's disk is `server.files`, one char per byte, as FakeHermes's pipe reads and sends it. Each file gets a
+    // folder of its own, as `Captures::slot` gives it, so two pasted files of one name are two files.
     stage_clipboard_file: (bytes, headers) => {
-      const path = `/home/owner/.cache/highwing/captures/${decodeURIComponent(headers?.["x-name"] ?? "")}`;
+      const path = `/home/owner/.cache/highwing/captures/${Object.keys(server.files).length}/${decodeURIComponent(headers?.["x-name"] ?? "")}`;
       server.files[path] = Array.from(new Uint8Array(bytes as unknown as ArrayBuffer), (b) => String.fromCharCode(b)).join("");
       return path;
     },

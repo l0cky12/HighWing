@@ -3,7 +3,6 @@
 // tools, and nothing is saved: a suggestion only fills the editor once the owner applies it, and Save or Create decides.
 import { SOUL_INCLUDED_CHARS } from "./persona";
 import { redactSecrets } from "./secrets";
-import type { UnavailableWords } from "./transport";
 
 /** Most characters of the owner's notes sent. */
 export const NOTES_MAX = 4_000;
@@ -42,36 +41,43 @@ const RULES = [
 /** What `llm.oneshot` is told and given. */
 export type Call = { instructions: string; input: string; maxTokens: number };
 
+/** `text` with its own `<notes>`, `<soul>` and closing tags written as entities, so it can't end the tag it is sent in. */
+const inTag = (tag: "notes" | "soul", text: string) => `<${tag}>${text.replace(/<(\/?)(notes|soul)>/gi, "&lt;$1$2&gt;")}</${tag}>`;
+
 /** The call that writes or improves a SOUL.md from `source`. */
 export function soulCall(source: Source): Call {
   const lead =
     source.kind === "write"
       ? "You write a SOUL.md from the owner's rough notes."
       : "You improve the owner's SOUL.md: clearer and better organised, without changing what it means.";
-  const notes = source.notes ? [`The owner's notes:`, `<notes>${source.notes}</notes>`] : [];
+  const notes = source.notes ? [`The owner's notes:`, inTag("notes", source.notes)] : [];
   const material =
     source.kind === "write"
       ? notes
-      : [`The SOUL.md to improve:`, `<soul>${source.text}</soul>`, ...(notes.length ? ["", "Change it as these notes ask.", ...notes] : [])];
+      : [`The SOUL.md to improve:`, inTag("soul", source.text), ...(notes.length ? ["", "Change it as these notes ask.", ...notes] : [])];
   return { instructions: [lead, WHAT_IT_IS, ...RULES].join(" "), input: material.join("\n"), maxTokens: SOUL_TOKENS };
 }
 
-/** Hermes's answer as a suggestion; throws if it holds no text or more than SOUL.md takes. Tags or a fence it echoed come off. */
+/** Hermes's answer held no text, or more than a SOUL.md suggestion may (`length` characters). */
+export class UnusableAnswer extends Error {
+  constructor(
+    readonly kind: "empty" | "long",
+    readonly length: number,
+  ) {
+    super(kind === "empty" ? "Hermes answered with no text." : `Hermes answered with ${length} characters, more than ${SOUL_MAX}.`);
+  }
+}
+
+/** Hermes's answer as a suggestion; throws `UnusableAnswer` if it can't be one. Tags or a fence it echoed come off. */
 export function soulFrom(answer: string): string {
   const fenced = /^\s*```(?:markdown|md)?\n([\s\S]*?)\n```\s*$/.exec(answer);
   const body = fenced ? fenced[1] : answer;
   const tagged = /^\s*<soul>([\s\S]*)<\/soul>\s*$/.exec(body);
   const text = (tagged ? tagged[1] : body).trim();
-  if (!text) throw new Error("Hermes answered with no text.");
-  if (text.length > SOUL_MAX) throw new Error(`Hermes answered with ${text.length.toLocaleString("en-US")} characters, more than the ${SOUL_MAX.toLocaleString("en-US")} a SOUL.md suggestion may have.`);
+  if (!text) throw new UnusableAnswer("empty", 0);
+  if (text.length > SOUL_MAX) throw new UnusableAnswer("long", text.length);
   return text;
 }
-
-/** How a missing sign-in names the model that writes, and what picks another (transport.ts `titleModelUnavailable`). */
-export const unavailableWords = (profile: string): UnavailableWords => ({
-  runs: `Write with AI uses the ${profile} profile's Text generation model, which runs on`,
-  fix: `or pick another Text generation model for ${profile} in Settings → Model while Highwing uses that profile.`,
-});
 
 /** A failure's words with anything shaped like a key or token masked, so none reaches the screen. */
 export const safeReason = (message: string) => redactSecrets(message).text;

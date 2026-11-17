@@ -25,7 +25,6 @@ import { chatContext, contextLedger, knownWindow, type ChatContexts } from "./he
 import { ProjectsStore, type Project } from "./hermes/projects";
 import { instructionsMessage, modelProblem, resolveNewChat, savedDefaults, type ProjectDefaults } from "./hermes/projectDefaults";
 import { unavailableWords } from "./hermes/instructionsAI";
-import { unavailableWords as personaWords } from "./hermes/personaAI";
 import type { PersonaWriter } from "./ui/PersonaAI";
 import { systemSecrets } from "./hermes/tauriKeyring";
 import { appUpdates } from "./hermes/tauriUpdates";
@@ -1852,7 +1851,7 @@ export function Main({
   const personaWriter = (p: string): PersonaWriter => ({
     profile: p,
     model: () => hermes.modelSettings.textModel(p),
-    ask: (call) => hermes.askForEdit({ profile: p, ...call, words: personaWords(p) }).then((r) => r.text),
+    ask: (call, words) => hermes.askForEdit({ profile: p, ...call, words }).then((r) => r.text),
   });
   // Settings → Persona edits the SOUL.md of any profile on this connection, starting on the one in use; its edits are
   // kept apart per connection and profile.

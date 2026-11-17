@@ -1043,6 +1043,31 @@ describe("Write with AI on Persona", () => {
     expect(box.value).toBe(SOUL);
   });
 
+  it("keeps an edited suggestion when asking again fails or is stopped, and says why an answer is unusable", async () => {
+    const { server, user } = await launch();
+    server.oneshotAnswer = "# First\n";
+    await openPersona(user);
+    await editor();
+    await user.click(screen.getByRole("button", { name: "Write with AI…" }));
+    await user.click(screen.getByRole("button", { name: "Improve with AI" }));
+    await user.type(await suggestion(), " edited");
+
+    server.oneshotAnswer = "x".repeat(20_001);
+    await user.click(screen.getByRole("button", { name: "Improve with AI" }));
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Hermes couldn't write a suggestion: Hermes answered with 20,001 characters, more than the 20,000 a SOUL.md suggestion may have.",
+    );
+    expect((await suggestion()).value).toBe("# First edited");
+
+    const release = await gate(server);
+    await user.click(screen.getByRole("button", { name: "Improve with AI" }));
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    expect((await suggestion()).value).toBe("# First edited");
+    await release();
+    expect((await suggestion()).value).toBe("# First edited");
+    expect(writes(server)).toEqual([]);
+  });
+
   it("names the profile and setting when the model's provider has no sign-in, masks keys, and leaves manual editing working", async () => {
     const { server, user } = await launch();
     server.signedOut.add("openrouter");

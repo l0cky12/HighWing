@@ -503,6 +503,10 @@ export const es: Catalogue = {
     appliedSave: "Aplicado en el editor. No se guarda nada en el servidor hasta que guardes.",
     appliedCreate: "Aplicado a la persona. No se guarda nada en el servidor hasta que crees el bot.",
     failed: (why: string) => `Hermes no pudo escribir una sugerencia: ${why}`,
+    answerEmpty: "Hermes respondió sin texto.",
+    answerLong: (length: string, max: string) => `Hermes respondió con ${length} caracteres, más de los ${max} que puede tener una sugerencia de SOUL.md.`,
+    unavailableRuns: (profile: string) => `Escribir con IA usa el modelo de generación de texto del perfil ${profile}, que funciona con`,
+    unavailableFix: (profile: string) => `o elige otro modelo de generación de texto para ${profile} en Ajustes → Modelo mientras Highwing usa ese perfil.`,
     disconnected: "Escribir con IA necesita una conexión con Hermes.",
     issues: {
       empty: "Escribe primero algunas notas, o pon texto en el editor para mejorarlo.",

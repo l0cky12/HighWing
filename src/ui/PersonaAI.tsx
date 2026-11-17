@@ -7,7 +7,8 @@
 // the form) without losing notes, a call or a suggestion.
 import { useEffect, useId, useRef, useState } from "react";
 import { Sparkles } from "lucide-react";
-import { safeReason, soulCall, soulFrom, sourceOf, NOTES_MAX, SOUL_MAX, type Call, type Source } from "../hermes/personaAI";
+import { safeReason, soulCall, soulFrom, sourceOf, UnusableAnswer, NOTES_MAX, SOUL_MAX, type Call, type Source } from "../hermes/personaAI";
+import type { UnavailableWords } from "../hermes/transport";
 import { shortName } from "../hermes/models";
 import { deadline } from "../hermes/remoteFiles";
 import { ASK_DEADLINE_MS } from "../hermes/artifacts";
@@ -23,18 +24,17 @@ export type PersonaWriter = {
   /** The profile whose Text generation model writes, which the panel names. */
   profile: string;
   model: () => Promise<TextModel>;
-  /** One `llm.oneshot` on `profile`, with no chat; resolves with Hermes's text. */
-  ask: (call: Call) => Promise<string>;
+  /** One `llm.oneshot` on `profile`, with no chat; resolves with Hermes's text. `words` name the model if its sign-in is missing. */
+  ask: (call: Call, words: UnavailableWords) => Promise<string>;
 };
 
-/**
- * `writing`: the call numbered `id` is out. `suggested`: Hermes's answer, as the owner edits it, with the editor text it
- * was written from (`from`), so a changed editor isn't replaced without asking.
- */
-type Phase =
-  | { kind: "idle"; note?: { tone: "muted" | "bad"; text: string } }
-  | { kind: "writing"; id: number }
-  | { kind: "suggested"; text: string; from: string; by: string; confirm: boolean };
+/** Hermes's answer, as the owner edits it, with the editor text it was written from, so a changed editor isn't replaced without asking. */
+type Suggested = { kind: "suggested"; text: string; from: string; by: string; confirm: boolean };
+
+/** `writing`: the call numbered `id` is out, and `previous` is the suggestion it replaces, put back if it fails or stops. */
+type Phase = { kind: "idle" } | { kind: "writing"; id: number; previous?: Suggested } | Suggested;
+
+type Note = { tone: "muted" | "bad"; text: string };
 
 export type PersonaAIState = ReturnType<typeof usePersonaAI>;
 
@@ -43,10 +43,12 @@ export type PersonaAIState = ReturnType<typeof usePersonaAI>;
  * profile changes, and its answer when it comes after Stop, a newer call, or the form closing.
  */
 export function usePersonaAI(writer: PersonaWriter | undefined, connected: boolean) {
-  const w = useLocale().personaAI;
+  const l = useLocale();
+  const w = l.personaAI;
   const [open, setOpen] = useState(false);
   const [notes, setNotes] = useState("");
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
+  const [note, setNote] = useState<Note>();
   const latest = useRef(0);
   const alive = useRef(true);
   useEffect(() => {
@@ -56,10 +58,13 @@ export function usePersonaAI(writer: PersonaWriter | undefined, connected: boole
     };
   }, []);
 
-  const drop = (why: string) => {
+  /** Ends the call out, giving back the suggestion it would have replaced. */
+  const settle = (n: Note) => {
     latest.current++;
-    setPhase({ kind: "idle", note: { tone: "muted", text: why } });
+    setPhase((p) => (p.kind === "writing" && p.previous) || { kind: "idle" });
+    setNote(n);
   };
+  const drop = (why: string) => settle({ tone: "muted", text: why });
 
   const writing = phase.kind === "writing";
   const bound = useRef({ connected, profile: writer?.profile });
@@ -74,21 +79,26 @@ export function usePersonaAI(writer: PersonaWriter | undefined, connected: boole
     if (!writer || writing || !connected) return;
     const id = ++latest.current;
     const current = () => alive.current && latest.current === id;
-    setPhase({ kind: "writing", id });
+    setPhase({ kind: "writing", id, previous: phase.kind === "suggested" ? { ...phase, confirm: false } : undefined });
+    setNote(undefined);
     try {
       const m = await deadline(writer.model(), ASK_DEADLINE_MS);
       if (!current()) return;
       const name = shortName(m.model) || w.defaultModel;
       const by = w.by(writer.profile, `${m.provider ? `${m.provider} · ` : ""}${m.followsMain ? w.mainModel(name) : name}`);
-      const answer = await deadline(writer.ask(soulCall(source)), ASK_DEADLINE_MS);
+      const words = { runs: w.unavailableRuns(writer.profile), fix: w.unavailableFix(writer.profile) };
+      const answer = await deadline(writer.ask(soulCall(source), words), ASK_DEADLINE_MS);
       if (!current()) return;
       setPhase({ kind: "suggested", text: soulFrom(answer), from, by, confirm: false });
     } catch (e) {
-      if (current()) setPhase({ kind: "idle", note: { tone: "bad", text: w.failed(safeReason(errorText(e))) } });
+      if (!current()) return;
+      const why =
+        e instanceof UnusableAnswer ? (e.kind === "empty" ? w.answerEmpty : w.answerLong(l.fmt.number(e.length), l.fmt.number(SOUL_MAX))) : safeReason(errorText(e));
+      settle({ tone: "bad", text: w.failed(why) });
     }
   }
 
-  return { writer, connected, open, setOpen, notes, setNotes, phase, setPhase, write, drop, held: !!notes.trim() || phase.kind !== "idle" };
+  return { writer, connected, open, setOpen, notes, setNotes, phase, setPhase, note, setNote, write, drop, held: !!notes.trim() || phase.kind !== "idle" };
 }
 
 export function PersonaAI({
@@ -112,7 +122,7 @@ export function PersonaAI({
 }) {
   const l = useLocale();
   const w = l.personaAI;
-  const { connected, open, setOpen, notes, setNotes, phase, setPhase } = ai;
+  const { connected, open, setOpen, notes, setNotes, phase, setPhase, note, setNote } = ai;
   const writeBtn = useRef<HTMLButtonElement>(null);
   const openBtn = useRef<HTMLButtonElement>(null);
   const suggestionBox = useRef<HTMLTextAreaElement>(null);
@@ -126,9 +136,10 @@ export function PersonaAI({
     const from = was.current;
     was.current = phase.kind;
     if (from === phase.kind) return;
-    if (phase.kind === "suggested" && from === "writing") suggestionBox.current?.focus();
-    else if (phase.kind === "idle" && from !== "suggested") writeBtn.current?.focus();
-  }, [phase.kind]);
+    if (from !== "writing") return;
+    if (phase.kind === "suggested" && !note) suggestionBox.current?.focus();
+    else writeBtn.current?.focus();
+  }, [phase.kind, note]);
 
   const writing = phase.kind === "writing";
   const source = sourceOf(text, notes);
@@ -146,7 +157,8 @@ export function PersonaAI({
     if (phase.kind !== "suggested" || locked || !phase.text.trim()) return;
     if (!force && text !== phase.from) return setPhase({ ...phase, confirm: true });
     onApply(phase.text);
-    setPhase({ kind: "idle", note: { tone: "muted", text: persist === "save" ? w.appliedSave : w.appliedCreate } });
+    setPhase({ kind: "idle" });
+    setNote({ tone: "muted", text: persist === "save" ? w.appliedSave : w.appliedCreate });
   }
 
   if (!open)
@@ -214,9 +226,9 @@ export function PersonaAI({
         </div>
       )}
       {!connected ? <p className="muted small persona-note">{w.disconnected}</p> : issue && notes.trim() && <p className="muted small persona-note">{issue}</p>}
-      {phase.kind === "idle" && phase.note && (
-        <p className={`small persona-note ${phase.note.tone === "bad" ? "sign-in-error" : "muted"}`} role={phase.note.tone === "bad" ? "alert" : "status"}>
-          {phase.note.text}
+      {!writing && note && (
+        <p className={`small persona-note ${note.tone === "bad" ? "sign-in-error" : "muted"}`} role={note.tone === "bad" ? "alert" : "status"}>
+          {note.text}
         </p>
       )}
 
@@ -260,6 +272,7 @@ export function PersonaAI({
                 className="btn"
                 onClick={() => {
                   setPhase({ kind: "idle" });
+                  setNote(undefined);
                   requestAnimationFrame(() => writeBtn.current?.focus());
                 }}
               >

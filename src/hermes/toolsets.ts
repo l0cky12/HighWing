@@ -79,9 +79,10 @@ export type ToolsetChange =
   | { kind: "mismatch"; list: ToolsetList }
   /**
    * Hermes didn't confirm it: the answer was lost, or a server error, and a read afterwards (`list`, if any) doesn't
-   * show it as asked. It may have been written, or may yet land.
+   * show it as asked. It may have been written, or may yet land. `answered`: Hermes answered (a server error, or the
+   * change, then the read back with an error), rather than an answer never coming.
    */
-  | { kind: "unknown"; reason: string; list?: ToolsetList };
+  | { kind: "unknown"; reason: string; answered: boolean; list?: ToolsetList };
 
 /** A change being written, one at a time for the whole app (`ToolsetsApi.pending`). */
 export type Pending = { profile: string; name: string; enabled: boolean };
@@ -163,8 +164,18 @@ const noRoute = (f: Failure) => f.status === 405 || (f.status === 404 && f.reaso
 
 export class UnsupportedServerError extends Error {}
 
+/** A toolset list that couldn't be read. `answered`: Hermes answered the read, with an error or a list this app can't read. */
+export class ToolsetReadError extends Error {
+  constructor(
+    message: string,
+    readonly answered: boolean,
+  ) {
+    super(message);
+  }
+}
+
 function rowsFrom(res: unknown): Toolset[] {
-  if (!Array.isArray(res)) throw new Error("Hermes answered with something other than a toolset list.");
+  if (!Array.isArray(res)) throw new ToolsetReadError("Hermes answered with something other than a toolset list.", true);
   return res.flatMap((r): Toolset[] => {
     const row = obj(r);
     const name = textOrEmpty(row.name);
@@ -268,16 +279,18 @@ export class ToolsetsApi {
 
   /** `GET /api/tools/toolsets` for `profile`. A server without the route throws `UnsupportedServerError`. */
   async list(profile: string): Promise<ToolsetList> {
+    let res: unknown;
     try {
-      return { profile, toolsets: rowsFrom(await this.rest("GET", this.path(profile))), readAt: Date.now() };
+      res = await this.rest("GET", this.path(profile));
     } catch (e) {
       const f = failureOf(e);
       if (noRoute(f))
         throw new UnsupportedServerError(
           "This Hermes server doesn't list toolsets: it has no /api/tools/toolsets route. Updating Hermes adds it.",
         );
-      throw new Error(f.reason);
+      throw new ToolsetReadError(f.reason, f.status !== undefined);
     }
+    return { profile, toolsets: rowsFrom(res), readAt: Date.now() };
   }
 
   /** The profile's `no_mcp` platforms, coding focus and `agent.disabled_toolsets`; undefined when the config couldn't be read. */
@@ -447,12 +460,13 @@ export class ToolsetsApi {
       if (now === enabled) return { kind: "saved", list: list!, warning: f.reason, ...(await this.clearedBySave(profile, row, had)) };
       // A 4xx is answered before anything is written (validation, an unknown name, the sign-in). A lost answer or a
       // server error may have written it, even when the read shows otherwise (a composite in agent.disabled_toolsets).
-      if (f.status === undefined || f.status >= 500) return { kind: "unknown", reason: f.reason, list };
+      if (f.status === undefined || f.status >= 500) return { kind: "unknown", reason: f.reason, answered: f.status !== undefined, list };
       return { kind: "rejected", reason: f.reason, list };
     }
     this.changed(profile, name);
     const after = await this.list(profile).catch((e) => e as Error);
-    if (after instanceof Error) return { kind: "unknown", reason: `Hermes took the change, but reading it back failed: ${after.message}` };
+    if (after instanceof Error)
+      return { kind: "unknown", reason: `Hermes took the change, but reading it back failed: ${after.message}`, answered: after instanceof ToolsetReadError && after.answered };
     const now = after.toolsets.find((t) => t.name === name);
     if (answer.ok !== true || now?.enabled !== enabled) return { kind: "mismatch", list: after };
     const installing = textOrEmpty(answer.post_setup_started);

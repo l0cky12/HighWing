@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { applySetup, retryItem, skillOptions, toolsetOptions, type SetupItem, type SkillOption } from "./botSetup";
 import { FakeHermes } from "./fakeHermes";
 import { memoryCache } from "./memoryCache";
+import { RestError } from "./pipe";
 import { connect } from "./transport";
 
 const BUILT_IN = ["arxiv", "git-helper", "hermes-agent", "recipes"];
@@ -148,6 +149,83 @@ describe("One run over skills and tools", () => {
     server.restTap = undefined;
     expect((await retryItem(apis, "picky", items.find((i) => i.name === "recipes")!)).state).toEqual({ kind: "applied" });
     expect(server.skills.disabled.picky?.has("recipes")).toBe(true);
+  });
+
+  it("sends nothing more once a skill switch goes unanswered and the list read after it doesn't show the change", async () => {
+    const { server, hermes, apis } = await signedIn();
+    const options = toolsetOptions(await apis.toolsets.list("default"));
+    await hermes.manageProfiles.create({ name: "picky" });
+    // The switch never reaches Hermes; the list read after it does, and shows the skill still on.
+    server.restTap = (req) => {
+      if (req.path === "/api/skills/toggle") throw new Error("Can't reach the Hermes dashboard: connection reset");
+    };
+    const before = server.restRequests.length;
+    const items = await applySetup(apis, "picky", { skills: { options: BUILT_IN.map(option), on: new Set(["hermes-agent"]) }, toolsets: { options, on: new Set() } });
+    expect(server.restRequests.slice(before).map((r) => `${r.method} ${r.path}`)).toEqual(["GET /api/skills", "PUT /api/skills/toggle", "GET /api/skills", "GET /api/config"]);
+    expect(items[0]).toMatchObject({ name: "arxiv", state: { kind: "failed", miss: { kind: "said", text: expect.stringContaining("connection reset") } } });
+    expect(items.slice(1).every((i) => i.state.kind === "failed" && i.state.miss.kind === "unsent")).toBe(true);
+  });
+
+  it("stops the toolsets once the skills list read gets no answer", async () => {
+    const { server, hermes, apis } = await signedIn();
+    const options = toolsetOptions(await apis.toolsets.list("default"));
+    await hermes.manageProfiles.create({ name: "picky" });
+    server.restTap = (req) => {
+      if (req.path === "/api/skills") throw new Error("Can't reach the Hermes dashboard: connection reset");
+    };
+    const before = server.restRequests.length;
+    const items = await applySetup(apis, "picky", { skills: { options: BUILT_IN.map(option), on: new Set() }, toolsets: { options, on: new Set() } });
+    expect(server.restRequests.slice(before).map((r) => `${r.method} ${r.path}`)).toEqual(["GET /api/skills"]);
+    expect(items.filter((i) => i.area === "toolset").every((i) => i.state.kind === "failed" && i.state.miss.kind === "unsent")).toBe(true);
+  });
+
+  it("goes on with the toolsets after a skills list read Hermes answered with an error", async () => {
+    const { server, hermes, apis } = await signedIn();
+    const options = toolsetOptions(await apis.toolsets.list("default"));
+    await hermes.manageProfiles.create({ name: "picky" });
+    server.restTap = (req) => {
+      if (req.path === "/api/skills") throw new RestError(401, JSON.stringify({ detail: "Session expired." }));
+    };
+    const items = await applySetup(apis, "picky", { skills: { options: BUILT_IN.map(option), on: new Set() }, toolsets: { options, on: new Set(["file"]) } });
+    expect(items.filter((i) => i.area === "skill").every((i) => i.state.kind === "failed" && i.state.miss.kind === "said")).toBe(true);
+    expect(server.toolsetWrites.map((w) => w.name)).toEqual(["web", "terminal", "stt"]);
+  });
+
+  it("still tries a later toolset after one Hermes refused with a 4xx, or answered with a server error", async () => {
+    for (const refuse of [
+      (server: FakeHermes) => {
+        // The read just before Web's change is turned down.
+        let reads = 0;
+        server.restTap = (req) => {
+          if (req.method === "GET" && req.path === "/api/tools/toolsets" && ++reads === 2) throw new RestError(403, JSON.stringify({ detail: "Not for this sign-in." }));
+        };
+      },
+      (server: FakeHermes) => {
+        server.toolsetRefusal = { status: 500, detail: "Internal Server Error" };
+      },
+    ]) {
+      const { server, hermes, apis } = await signedIn();
+      const options = toolsetOptions(await apis.toolsets.list("default"));
+      await hermes.manageProfiles.create({ name: "writer" });
+      refuse(server);
+      const items = await applySetup(apis, "writer", { toolsets: { options, on: new Set(["file", "stt"]) } });
+      expect(items.find((i) => i.name === "web")?.state).toMatchObject({ kind: "failed", miss: { kind: "said" } });
+      expect(server.restRequests.filter((r) => r.method === "PUT" && r.path === "/api/tools/toolsets/terminal")).toHaveLength(1);
+    }
+  });
+
+  it("stops once a toolset read or change takes longer than its limit, first time and on Try again", async () => {
+    const { server, hermes, apis } = await signedIn();
+    const options = toolsetOptions(await apis.toolsets.list("default"));
+    await hermes.manageProfiles.create({ name: "writer" });
+    server.toolsetGateBeforeWrite = new Promise<void>(() => {});
+    const limits = { readMs: 1_000, writeMs: 20 };
+    const items = await applySetup(apis, "writer", { toolsets: { options, on: new Set(["file", "stt"]) } }, undefined, limits);
+    expect(items.find((i) => i.name === "web")?.state).toEqual({ kind: "failed", miss: { kind: "said", text: "Hermes didn't answer the change to Web Search & Scraping within 0 seconds." } });
+    expect(items.find((i) => i.name === "terminal")?.state).toMatchObject({ kind: "failed", miss: { kind: "unsent" } });
+    server.toolsetListGateOnce = new Promise<void>(() => {});
+    const again = await retryItem(apis, "writer", items.find((i) => i.name === "terminal")!, [], { readMs: 20, writeMs: 20 });
+    expect(again.state).toEqual({ kind: "failed", miss: { kind: "said", text: "Hermes didn't answer the toolset list within 0 seconds." } });
   });
 
   it("sends nothing more once Hermes doesn't confirm a toolset change", async () => {

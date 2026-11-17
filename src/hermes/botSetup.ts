@@ -3,9 +3,11 @@
 // nothing for them, and once Hermes answers, each choice is applied to the new profile alone and read back: a skill the
 // owner turned off through Settings → Skills' switch, a toolset through Settings → Toolsets' change, one at a time. A
 // skill the owner wasn't shown is never touched. Every item ends applied, failed with why, or waiting for the owner to
-// confirm a caution. Once a call goes unanswered, nothing more is sent: the rest fail with that reason.
-import { ESSENTIAL_SKILLS, SkillsError, safeSkillName, type SkillRow, type SkillsApi } from "./skills";
-import { changeableName, type Caution, type Toolset, type ToolsetList, type ToolsetsApi } from "./toolsets";
+// confirm a caution. Once a call gets no answer from Hermes, nothing more is sent: the rest fail with that reason. A
+// call Hermes answered with an error fails only its own item, or its area's items when it was the area's list read.
+import { deadline } from "./persona";
+import { ESSENTIAL_SKILLS, SKILL_TIMEOUTS, SkillsError, safeSkillName, type SkillRow, type SkillsApi } from "./skills";
+import { changeableName, ToolsetReadError, UnsupportedServerError, type Caution, type Toolset, type ToolsetList, type ToolsetsApi } from "./toolsets";
 import { errorText } from "./values";
 
 /** Hermes's defaults for a new profile, or exactly the set `on`. */
@@ -76,11 +78,28 @@ const APPLIED: ItemState = { kind: "applied" };
 const failed = (miss: Miss): ItemState => ({ kind: "failed", miss });
 const said = (e: unknown): ItemState => failed({ kind: "said", text: errorText(e) });
 
+/**
+ * How long a toolset read, and a toolset change with its reads, may go unanswered here: Settings → Skills' limits, as
+ * `ToolsetsApi` sets none of its own.
+ */
+export const TOOLSET_TIMEOUTS = { readMs: SKILL_TIMEOUTS.readMs, writeMs: SKILL_TIMEOUTS.writeMs };
+
 /** One item judged. `unanswered`: why a call for it got no answer from Hermes, after which nothing more is sent. */
 type Judged = { item: SetupItem; unanswered?: string };
 
-/** A skills call that failed without Hermes answering it: lost on the way, or never sent. */
-const skillsUnanswered = (e: unknown) => !(e instanceof SkillsError) || e.kind === "disconnected" || e.status === undefined;
+/**
+ * Whether a failed call got no answer from Hermes: lost on the way, cut off, or past its deadline. A status, a sign-in
+ * Hermes turned down, or an answer this app can't read is an answer; so is a route the server lacks.
+ */
+const noAnswer = (e: unknown): boolean =>
+  e instanceof SkillsError
+    ? e.status === undefined && (e.kind === "disconnected" || e.kind === "error")
+    : e instanceof ToolsetReadError
+      ? !e.answered
+      : !(e instanceof UnsupportedServerError);
+
+/** An item failed by `e`, in its own words; with no answer from Hermes, nothing more is sent after it. */
+const failedBy = (item: SetupItem, e: unknown): Judged => ({ item: { ...item, state: said(e) }, ...(noAnswer(e) && { unanswered: errorText(e) }) });
 
 const readBack = (want: boolean, enabled: boolean | undefined): ItemState =>
   enabled === undefined ? failed({ kind: "missing" }) : enabled === want ? APPLIED : failed({ kind: enabled ? "readOn" : "readOff" });
@@ -96,21 +115,21 @@ const skillState = (want: boolean, row: SkillRow | undefined): ItemState => (!ro
  * Skills' switch and judged by what Hermes lists after it. A skill Hermes keeps on is only read back, never switched.
  */
 async function settleSkill(apis: SetupApis, profile: string, item: SetupItem, rows: Promise<SkillRow[]>): Promise<Judged> {
-  const fail = (e: unknown): Judged => ({ item: { ...item, state: said(e) }, ...(skillsUnanswered(e) && { unanswered: errorText(e) }) });
   let row: SkillRow | undefined;
   try {
     row = (await rows).find((r) => r.name === item.name);
   } catch (e) {
-    return fail(e);
+    return failedBy(item, e);
   }
   const state = skillState(item.want, row);
   if (state.kind === "applied" || !row || ESSENTIAL_SKILLS.has(item.name)) return { item: { ...item, state } };
   try {
     const r = await apis.skills.setEnabled(profile, item.name, item.want);
     const now = skillState(item.want, r.view.skills.find((s) => s.name === item.name));
-    return { item: { ...item, state: now.kind !== "applied" && r.lost ? failed({ kind: "said", text: r.lost.message }) : now } };
+    // The switch's own answer was lost, and the list read after it doesn't show the change.
+    return now.kind !== "applied" && r.lost ? failedBy(item, r.lost) : { item: { ...item, state: now } };
   } catch (e) {
-    return fail(e);
+    return failedBy(item, e);
   }
 }
 
@@ -124,17 +143,22 @@ const notesOf = (r: { installing?: string; warning?: string; mcpBack?: boolean; 
 
 /**
  * One toolset against `list`, what the new profile has: left alone if as chosen, else set as Settings → Toolsets sets
- * it (`ToolsetsApi.set`) and read back. `accepted`: the cautions the owner confirmed with Apply anyway. A read that
- * throws, and a change Hermes didn't confirm (`unknown`), went unanswered.
+ * it (`ToolsetsApi.set`, within `writeMs`) and read back. `accepted`: the cautions the owner confirmed with Apply anyway.
  */
-async function settleToolset(apis: SetupApis, profile: string, item: SetupItem, list: Promise<ToolsetList>, accepted: Caution[]): Promise<Judged> {
+async function settleToolset(
+  apis: SetupApis,
+  profile: string,
+  item: SetupItem,
+  list: Promise<ToolsetList>,
+  accepted: Caution[],
+  writeMs: number,
+): Promise<Judged> {
   const done = (state: ItemState): Judged => ({ item: { ...item, state } });
-  const lost = (text: string): Judged => ({ item: { ...item, state: failed({ kind: "said", text }) }, unanswered: text });
   try {
     const row = (await list).toolsets.find((t) => t.name === item.name);
     if (!row) return done(failed({ kind: "missing" }));
     if (row.enabled === item.want) return done(APPLIED);
-    const r = await apis.toolsets.set(profile, item.name, item.want, row.enabled, accepted);
+    const r = await deadline(apis.toolsets.set(profile, item.name, item.want, row.enabled, accepted), writeMs, `the change to ${item.label}`);
     switch (r.kind) {
       case "saved": {
         const notes = notesOf(r);
@@ -151,24 +175,28 @@ async function settleToolset(apis: SetupApis, profile: string, item: SetupItem, 
       case "rejected":
         return done(failed({ kind: "said", text: r.reason }));
       case "unknown":
-        return lost(r.reason);
+        return { item: { ...item, state: failed({ kind: "said", text: r.reason }) }, ...(!r.answered && { unanswered: r.reason }) };
     }
   } catch (e) {
-    return lost(errorText(e));
+    return failedBy(item, e);
   }
 }
+
+/** The new profile's toolsets, read within `readMs`. */
+const listWithin = (apis: SetupApis, profile: string, readMs: number) => deadline(apis.toolsets.list(profile), readMs, "the toolset list");
 
 /**
  * Applies `plan` to the new profile, skills first, then toolsets, one item at a time, each read back. Each area's list
  * is read once; items already as chosen are left alone. A caution is never accepted here: it waits for the owner. Once
- * a call goes unanswered, the rest fail with its reason and nothing more is sent. `progress` hears how many items of
- * how many are judged, from none.
+ * a call gets no answer, the rest fail with its reason and nothing more is sent. `progress` hears how many items of
+ * how many are judged, from none. `limits`: how long a toolset read or change may take.
  */
 export async function applySetup(
   apis: SetupApis,
   profile: string,
   plan: SetupPlan,
   progress: (done: number, total: number) => void = () => {},
+  limits = TOOLSET_TIMEOUTS,
 ): Promise<SetupItem[]> {
   const items: SetupItem[] = [
     ...(plan.skills?.options ?? [])
@@ -189,7 +217,7 @@ export async function applySetup(
         ? { item: { ...item, state: failed({ kind: "unsent", text: unanswered }) } }
         : item.area === "skill"
           ? await settleSkill(apis, profile, item, (rows ??= apis.skills.rows(profile)))
-          : await settleToolset(apis, profile, item, (list ??= apis.toolsets.list(profile)), []);
+          : await settleToolset(apis, profile, item, (list ??= listWithin(apis, profile, limits.readMs)), [], limits.writeMs);
     out.push(judged.item);
     unanswered ??= judged.unanswered;
     progress(out.length, items.length);
@@ -198,8 +226,10 @@ export async function applySetup(
 }
 
 /** Tries one item again, as the first apply did it, against a fresh read. `accepted`: the cautions confirmed with Apply anyway. */
-export async function retryItem(apis: SetupApis, profile: string, item: SetupItem, accepted: Caution[] = []): Promise<SetupItem> {
+export async function retryItem(apis: SetupApis, profile: string, item: SetupItem, accepted: Caution[] = [], limits = TOOLSET_TIMEOUTS): Promise<SetupItem> {
   const judged =
-    item.area === "skill" ? await settleSkill(apis, profile, item, apis.skills.rows(profile)) : await settleToolset(apis, profile, item, apis.toolsets.list(profile), accepted);
+    item.area === "skill"
+      ? await settleSkill(apis, profile, item, apis.skills.rows(profile))
+      : await settleToolset(apis, profile, item, listWithin(apis, profile, limits.readMs), accepted, limits.writeMs);
   return judged.item;
 }

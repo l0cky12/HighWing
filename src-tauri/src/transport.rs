@@ -2811,14 +2811,12 @@ fn profile_id(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
 }
 
-/// Whether a `POST api/profiles` body is the Clone profile dialog's (ADR 0074) or the New profile form's (ADR 0195):
-/// `{"name"}` with only `"soul"`, `"description"`, `"provider"` and `"model"` beside it, or `{"name", "clone_from"}` with
-/// only `"description"` beside them, the full copy the owner opted in to; each a string. The fresh form may also carry
-/// the built-in skills to keep, `"keep_skills"`, a non-empty list of skill folder names (`keep_skill`), or
-/// `"no_skills": true` to start with none, never both. The name is a profile id other than `default`, and the source a
-/// profile id or `default`. Every other field Hermes takes is refused: `clone_all` copies the source's whole home,
-/// `clone_channels` its bot tokens, `clone_from_default` the default profile's keys, `mcp_servers` writes secrets and
-/// `hub_skills` starts installs.
+/// Whether a `POST api/profiles` body is the Clone profile dialog's (ADR 0074): `{"name"}` with only `"soul"`,
+/// `"description"`, `"provider"` and `"model"` beside it, or `{"name", "clone_from"}` with only `"description"` beside
+/// them, the full copy the owner opted in to; each a string. The name is a profile id other than `default`, and the
+/// source a profile id or `default`. Every other field Hermes takes is refused: `clone_all` copies the source's whole
+/// home, `clone_channels` its bot tokens, `clone_from_default` the default profile's keys, `mcp_servers` writes secrets
+/// and `hub_skills` starts installs.
 pub fn profile_create_allowed(body: Option<&str>) -> bool {
     let Some(fields) = body.and_then(|b| serde_json::from_str::<serde_json::Value>(b).ok()) else {
         return false;
@@ -2829,21 +2827,15 @@ pub fn profile_create_allowed(body: Option<&str>) -> bool {
     let name_ok = fields.get("name").and_then(|n| n.as_str()).is_some_and(|n| n != "default" && profile_id(n));
     let source_ok = fields.get("clone_from").is_none_or(|s| s.as_str().is_some_and(|s| s == "default" || profile_id(s)));
     let full = fields.contains_key("clone_from");
-    let known = fields.iter().all(|(k, v)| match k.as_str() {
-        "name" | "clone_from" | "description" => v.is_string(),
-        "soul" | "provider" | "model" => !full && v.is_string(),
-        "keep_skills" => !full && v.as_array().is_some_and(|names| !names.is_empty() && names.len() <= 1000 && names.iter().all(keep_skill)),
-        "no_skills" => !full && v.as_bool() == Some(true),
-        _ => false,
+    let known = fields.iter().all(|(k, v)| {
+        v.is_string()
+            && match k.as_str() {
+                "name" | "clone_from" | "description" => true,
+                "soul" | "provider" | "model" => !full,
+                _ => false,
+            }
     });
-    let one_skill_choice = !(fields.contains_key("keep_skills") && fields.contains_key("no_skills"));
-    name_ok && source_ok && known && one_skill_choice
-}
-
-/// A built-in skill's folder name for `keep_skills`: 1 to 128 bytes, no `/`, `\` or control character, and not starting
-/// with `.`. Hermes only compares it with the folder names it seeded, so this keeps it to one plain name.
-fn keep_skill(v: &serde_json::Value) -> bool {
-    v.as_str().is_some_and(|s| (1..=128).contains(&s.len()) && !s.starts_with('.') && !s.chars().any(|c| c == '/' || c == '\\' || c.is_control()))
+    name_ok && source_ok && known
 }
 
 /// Whether a `PUT` is Settings → Profiles' description or model write for one profile (ADR 0156):
@@ -3552,12 +3544,6 @@ mod tests {
             r#"{"name":"work_2","clone_from":"default"}"#,
             r#"{"name":"work-2","clone_from":"work","description":"Release"}"#,
             &format!(r#"{{"name":"{}"}}"#, "a".repeat(64)),
-            r#"{"name":"work-2","keep_skills":["x"]}"#,
-            r#"{"name":"work-2","soul":"You are terse.","keep_skills":["arxiv","git-helper","hermes-agent"]}"#,
-            r#"{"name":"work-2","no_skills":true}"#,
-            r#"{"name":"work-2","description":"Release","no_skills":true}"#,
-            &format!(r#"{{"name":"work-2","keep_skills":["{}"]}}"#, "a".repeat(128)),
-            &format!(r#"{{"name":"work-2","keep_skills":[{}]}}"#, [r#""s""#; 1000].join(",")),
         ] {
             assert!(profile_create_allowed(Some(body)), "{body}");
         }
@@ -3570,23 +3556,8 @@ mod tests {
             r#"{"name":"work-2","clone_from_default":true}"#,
             r#"{"name":"work-2","mcp_servers":[{"name":"m","url":"http://x","bearer_token":"t"}]}"#,
             r#"{"name":"work-2","hub_skills":["x"]}"#,
-            r#"{"name":"work-2","keep_skills":[]}"#,
-            r#"{"name":"work-2","keep_skills":"x"}"#,
-            r#"{"name":"work-2","keep_skills":[1]}"#,
-            r#"{"name":"work-2","keep_skills":[null]}"#,
-            r#"{"name":"work-2","keep_skills":[""]}"#,
-            r#"{"name":"work-2","keep_skills":["../x"]}"#,
-            r#"{"name":"work-2","keep_skills":["a/b"]}"#,
-            r#"{"name":"work-2","keep_skills":["a\\b"]}"#,
-            r#"{"name":"work-2","keep_skills":[".hidden"]}"#,
-            r#"{"name":"work-2","keep_skills":["a\nb"]}"#,
-            r#"{"name":"work-2","keep_skills":null}"#,
-            r#"{"name":"work-2","keep_skills":["x"],"no_skills":true}"#,
-            r#"{"name":"work-2","clone_from":"work","keep_skills":["x"]}"#,
-            r#"{"name":"work-2","clone_from":"work","no_skills":true}"#,
-            r#"{"name":"work-2","no_skills":false}"#,
-            r#"{"name":"work-2","no_skills":"true"}"#,
-            r#"{"name":"work-2","no_skills":1}"#,
+            r#"{"name":"work-2","keep_skills":["x"]}"#,
+            r#"{"name":"work-2","no_skills":true}"#,
             r#"{"name":"work-2","clone_from":"../work"}"#,
             r#"{"name":"work-2","clone_from":null}"#,
             r#"{"name":"work-2","soul":null}"#,
@@ -3601,8 +3572,6 @@ mod tests {
             assert!(!profile_create_allowed(Some(body)), "{body}");
         }
         assert!(!profile_create_allowed(Some(&format!(r#"{{"name":"{}"}}"#, "a".repeat(65)))));
-        assert!(!profile_create_allowed(Some(&format!(r#"{{"name":"work-2","keep_skills":["{}"]}}"#, "a".repeat(129)))));
-        assert!(!profile_create_allowed(Some(&format!(r#"{{"name":"work-2","keep_skills":[{}]}}"#, [r#""s""#; 1001].join(",")))));
         assert!(!profile_create_allowed(None));
     }
 

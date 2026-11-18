@@ -13,7 +13,7 @@ if [[ ${1:-} == --inside ]]; then
   home=$(mktemp -d)
   log=$home/app.log
   pid=
-  trap '[[ -n $pid ]] && kill -TERM -- "-$pid" 2> /dev/null; rm -rf "$home"' EXIT
+  trap '[[ -z $pid ]] || kill -TERM -- "-$pid" 2> /dev/null || true; rm -rf "$home"' EXIT
   mkdir -m 700 "$home/run"
   # A throwaway account, so a Highwing of this machine's own can't be what answers. HERMES_CHAT_NEW_INSTANCE makes
   # the app start even if one is already running, which would otherwise hand over to it and exit.
@@ -27,7 +27,7 @@ if [[ ${1:-} == --inside ]]; then
       cat "$log" >&2
       exit 1
     fi
-    if xdotool search --name '^Highwing$' > /dev/null 2>&1; then
+    if xdotool search --onlyvisible --name '^Highwing$' > /dev/null 2>&1; then
       echo "ok: $appimage opened a window titled Highwing"
       exit 0
     fi

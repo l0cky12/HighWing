@@ -1,6 +1,6 @@
 # Writing model: evidence
 
-Evidence for ADR 0204: the Writing model, which writes personas and project instructions for every bot with no model pinned on the server.
+Evidence for ADR 0205: the Writing model, which writes personas and project instructions for every bot with no model pinned on the server.
 
 ## Where the screenshots come from
 

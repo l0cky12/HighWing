@@ -382,7 +382,7 @@ describe("The Project instructions model (ADR 0177)", () => {
   });
 });
 
-describe("The Writing model's copy in a bot's config (ADR 0204)", () => {
+describe("The Writing model's copy in a bot's config (ADR 0205)", () => {
   it("is written whole for the profile named, a user-defined endpoint pointed at its own URL and stale keys cleared, and read back", async () => {
     const { server, api } = await setup();
     server.modelConfig.unslottedAuxiliary.highwing_writing = { provider: "openrouter", model: "x", api_key: "sk-or-old" };

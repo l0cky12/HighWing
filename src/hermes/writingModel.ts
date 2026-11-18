@@ -1,4 +1,4 @@
-// Writing for a bot (ADR 0204): Write with AI on the profile form's Persona (New and Edit), and project
+// Writing for a bot (ADR 0205): Write with AI on the profile form's Persona (New and Edit), and project
 // instructions. One stateless `llm.oneshot` per call, which takes no model: Hermes runs `auxiliary.<task>` of the
 // profile's config. So which model writes is decided here, as which `task` to send and, for the app's Writing model,
 // one config key this app keeps in step. Precedence: a model pinned on the server for the bot, then the app's Writing

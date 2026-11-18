@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # A real Hermes dashboard for verify runs: a fresh isolated home with the bots ada, bram and cleo, a model stub whose
 # replies name no one (room-model.py), and `hermes dashboard` from the venv the SKILL names. See ../SKILL.md.
-#   real-hermes up <dir>     make <dir> fresh, start the stub and the dashboard, print `export RH_DIR=<dir>` and the URL
+#   real-hermes up <dir>     check the room mention vectors against this Hermes, make <dir> fresh, start the stub and the
+#                            dashboard, print `export RH_DIR=<dir>` and the URL
 #   real-hermes down         stop what `up` started in $RH_DIR (by PID); the dir and its logs stay
 #   real-hermes turns <text> which bots Hermes gave a turn, and which answered, for the owner message <text>
 set -euo pipefail
@@ -16,6 +17,10 @@ up() {
   [ -n "${1:-}" ] || die "usage: real-hermes up <dir>"
   [ -x "$VENV/bin/hermes" ] || die "no Hermes at $VENV/bin/hermes; build the venv the SKILL names"
   RH_DIR=$(realpath -m "$1")
+  local src
+  src=$(env -i PATH=/usr/bin:/bin "$VENV/bin/python" -I -c 'import gateway, pathlib; print(pathlib.Path(gateway.__file__).parent.parent)')
+  python3 -I "$(git -C "$HERE" rev-parse --show-toplevel)/scripts/room-mention-vectors.py" --check "$src" ||
+    die "the room mention vectors don't describe the Hermes at $src; regenerate them before trusting a run"
   [ ! -f "$RH_DIR/dashboard.pid" ] || ! kill -0 "$(cat "$RH_DIR/dashboard.pid")" 2>/dev/null || die "$RH_DIR is still running; real-hermes down first"
   rm -rf "${RH_DIR:?}"
   mkdir -p "$RH_DIR/home/.hermes" "$RH_DIR/web"

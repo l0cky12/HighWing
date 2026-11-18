@@ -140,12 +140,13 @@ function mayMatch(block: Block, finds: RegExp) {
   return (block.kind === "user" || block.kind === "thinking") && finds.test(block.text);
 }
 
-// A group is rebuilt on every render, so it counts as unchanged when it holds the same tool calls.
+// A group is rebuilt on every render, so it counts as unchanged when it holds the same tool calls. A run's state also
+// reads the reply after it, so a run with the same calls changes when that reply is stopped.
 const sameBlock = (a: Block, b: Block) =>
   a === b ||
   (a.kind === "tools" && b.kind === "tools" && a.tools.length === b.tools.length && a.tools.every((t, i) => t === b.tools[i])) ||
   (a.kind === "sent" && b.kind === "sent" && a.tool === b.tool) ||
-  (a.kind === "cu-run" && b.kind === "cu-run" && a.items.length === b.items.length && a.items.every((x, i) => x === b.items[i]));
+  (a.kind === "cu-run" && b.kind === "cu-run" && a.state === b.state && a.items.length === b.items.length && a.items.every((x, i) => x === b.items[i]));
 // A side question's block is rebuilt too, so it counts as unchanged when it holds the same question.
 const sameChunkBlock = (a: Block | SideBlock, b: Block | SideBlock) =>
   a.kind === "side" ? b.kind === "side" && a.question === b.question : b.kind !== "side" && sameBlock(a, b);

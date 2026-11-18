@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { localChatCache } from "./chatCache";
 import { foldRuns, screenUse, type CuRun } from "./computerUse";
 import { CU_TURNS, cuFixture, type CuFixture } from "./cuFixtures";
+import { CU, HUMAN_HAS_CONTROL } from "./fakeComputerUse";
 import { FakeHermes } from "./fakeHermes";
 import type { ApprovalChoice, Item } from "./model";
 import { connect, type Hermes } from "./transport";
@@ -69,5 +70,72 @@ describe("Who holds the screen, for the run", () => {
     await hermes.idle();
     await new Promise((r) => setTimeout(r, 0));
     expect(hermes.getSnapshot().screen?.holder).toEqual({ kind: "agent" });
+  });
+});
+
+describe("FakeHermes's computer_use turn, as the app sees it", () => {
+  async function started() {
+    const server = new FakeHermes();
+    server.display = { status: { supported: true, installed: true, missing: [], running: true }, lease: { holder: "agent", viewer_hash: null, since: 1, epoch: 0 }, minted: new Set() };
+    const hermes = await connect(server.openPipe);
+    open.push(hermes);
+    const id = await hermes.newChat();
+    await hermes.send(id, "Tidy the desktop");
+    const chat = () => hermes.getSnapshot().chats.find((c) => c.id === id)!;
+    const answer = async (choice: ApprovalChoice) => {
+      let ask: Item | undefined;
+      while (!(ask = chat().items.find((i) => i.kind === "approval" && !i.answer && !i.ended))) await new Promise((r) => setTimeout(r, 2));
+      await hermes.answerApproval(id, ask.id, choice, true);
+    };
+    return { server, hermes, id, chat, answer, rid: server.runtimeIdOf(id)! };
+  }
+
+  it("asks once for an action allowed for the chat, and stores each call as Hermes does, with no result", async () => {
+    const { server, id, chat, answer, rid } = await started();
+    const turn = server.computerUseTurn(rid, { steps: [CU.capture(), CU.click([10, 20], "foreground"), CU.click([30, 40], "foreground"), CU.type("ls"), CU.wait(1)], reply: "Done." });
+    await answer("session");
+    await answer("deny");
+    await turn;
+    expect(runLines(chat().items).map(([n, line, outcome]) => [n, line, outcome])).toEqual([
+      [1, "capture", "done"],
+      [2, "click at (10, 20)", "done"],
+      [3, "click at (30, 40)", "done"],
+      [4, "type 'ls'", "denied"],
+      [5, "wait 1s", "done"],
+    ]);
+    expect(chat().items.filter((i) => i.kind === "approval").map((i) => i.kind === "approval" && [i.command, i.answer])).toEqual([
+      ["computer_use: click at (10, 20) [FOREGROUND — briefly raises the window / changes focus]", "session"],
+      ["computer_use: type 'ls' [FOREGROUND — briefly raises the window / changes focus]", "deny"],
+    ]);
+    const stored = server.transcripts[id].filter((m) => m.role === "tool");
+    expect(stored.map((m) => [m.name, m.context, (m.args!.calls as { name: string }[])[0].name, m.result])).toEqual(Array(5).fill(["tool_call", "Computer Use", "computer_use", undefined]));
+
+    const reopened = await connect(server.openPipe);
+    open.push(reopened);
+    await reopened.sync();
+    await reopened.open(id);
+    const back = reopened.getSnapshot().chats.find((c) => c.id === id)!.items;
+    expect(runLines(back).map(([n, line, outcome]) => [n, line, outcome])).toEqual(runLines(chat().items).map(([n, line]) => [n, line, "unrecorded"]));
+  });
+
+  it("is refused before any Approval while a person holds the screen", async () => {
+    const { server, chat, rid } = await started();
+    server.display!.lease = { holder: "human", viewer_hash: "0123456789ab", since: 2, epoch: 1 };
+    await server.computerUseTurn(rid, { steps: [CU.scroll("down", 3, "foreground")], reply: "Someone has the screen." });
+    expect(chat().items.some((i) => i.kind === "approval")).toBe(false);
+    expect(screenUse(chat())?.refused).toBe(HUMAN_HAS_CONTROL);
+  });
+
+  it("ends between two calls when the owner stops the reply", async () => {
+    const { server, hermes, id, chat, rid } = await started();
+    let release!: () => void;
+    const turn = server.computerUseTurn(rid, { steps: [CU.capture(), CU.capture(), CU.capture()], reply: "never" }, (s) => (s > 0.6 ? new Promise((r) => (release = () => r())) : Promise.resolve()));
+    await new Promise((r) => setTimeout(r, 10));
+    await hermes.stop(id);
+    release();
+    await turn;
+    const [run] = foldRuns(chat().items).filter((b): b is CuRun => b.kind === "cu-run");
+    expect(run).toMatchObject({ steps: 1, state: "stopped" });
+    expect(chat().running).toBe(false);
   });
 });

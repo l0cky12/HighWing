@@ -70,22 +70,31 @@ describe("a Group room seat's session", () => {
     expect(liveIds(hermes)).toEqual(["owner-x"]);
   });
 
-  it("never shows, when more seats are live than one check looks up", async () => {
+  it.each([
+    ["titled Group: <room>", (room: string) => `Group: ${room}`],
+    ["titled from its prompt, as real Hermes lists it", () => '[Discussion: "Crew"] You are @ada, one…'],
+  ])("never shows or counts, %s, when more rows are live than one check looks up", async (_, title) => {
     vi.useFakeTimers();
     const { server, hermes } = await signedIn();
-    for (const [profile, room] of [["ada", "r1"], ["bram", "r1"], ["ada", "r2"], ["bram", "r2"]]) server.seatSession(profile, room, "Hello.");
+    for (const [profile, room] of [["ada", "r1"], ["bram", "r1"], ["ada", "r2"], ["bram", "r2"]]) {
+      const seat = server.seatSession(profile, room, "Hello.");
+      server.liveSessions.find((l) => l.session_key === seat)!.title = title(room);
+    }
     server.otherProfiles.bram.push(readRow("bram-busy", 0, { title: "Plain work" }));
     server.liveSessions.push({ id: "rt-b", session_key: "bram-busy", status: "working", last_active: nowS(), title: "Plain work" });
     const lookups = () => new Set(server.restRequests.filter((r) => r.path.startsWith("/api/sessions/seat-")).map((r) => r.path)).size;
 
     await hermes.checkOtherProfiles();
     expect(lookups()).toBe(3);
-    expect(liveIds(hermes)).toEqual(["bram-busy"]);
+    expect(liveIds(hermes)).toEqual([]);
+    expect(inbox(hermes).unmatched).toBe(0);
 
-    await nextCheck(hermes);
     await nextCheck(hermes);
     expect(liveIds(hermes)).toEqual(["bram-busy"]);
     expect(hermes.getSnapshot().live?.sessions[0]).toMatchObject({ profile: "bram" });
+    await nextCheck(hermes);
+    expect(liveIds(hermes)).toEqual(["bram-busy"]);
+    expect(inbox(hermes).unmatched).toBe(0);
   });
 
   it("reaches no inbox entry, working or waiting", async () => {

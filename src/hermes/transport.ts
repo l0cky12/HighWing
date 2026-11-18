@@ -1932,7 +1932,8 @@ export class Hermes {
         const placed = sessions.flatMap(({ key, seatTitle, ...s }): LiveSession[] => {
           if (s.profile) return [s];
           const owner = this.sessionOwners.get(key);
-          if (owner === "seat" || (owner === undefined && seatTitle)) return [];
+          // Until its lookup has run, any row may be a seat's: Hermes titles a seat's live row from its prompt.
+          if (owner === "seat" || (owner === undefined && (seatTitle || !this.ownerTried.has(key)))) return [];
           return [owner ? { ...s, ...owner } : s];
         });
         this.checkTimes.set({ live: Date.now() });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { FakeHermes, row, type TranscriptMessage } from "./fakeHermes";
 import { connect } from "./transport";
+import { cuFixture } from "./cuFixtures";
 
 async function listed(transcript: TranscriptMessage[] = [], server = new FakeHermes()) {
   server.sessions = [row("tg", 2, { source: "telegram" })];
@@ -69,6 +70,30 @@ describe("Opening a listed chat", () => {
       { kind: "tool", id: "h-3", name: "todo", status: "done" },
       { kind: "thinking", id: "h-4-r", text: "Keep it short." },
       { kind: "assistant", id: "h-4", text: "Hello!" },
+    ]);
+  });
+
+  it("shows each call a stored tool_call row holds as that call, as Hermes stores computer_use", async () => {
+    const resumed = cuFixture("15-resume-history").find((f) => (f.frame.result as { messages?: unknown } | undefined)?.messages)!;
+    const { hermes, chat } = await listed((resumed.frame.result as { messages: TranscriptMessage[] }).messages);
+    await hermes.open("tg");
+    const tools = chat().items.filter((i) => i.kind === "tool");
+    expect(tools.map((t) => t.name)).toEqual(["tool_describe", "skill_view", ...Array<string>(10).fill("computer_use")]);
+    expect(tools[2]).toEqual({
+      kind: "tool",
+      id: "h-3",
+      callId: "call_c58c32dfc4814a69a0198ff4022d8b7f",
+      name: "computer_use",
+      args: { action: "capture", mode: "som", app: "desktop", delivery_mode: "background" },
+      status: "done",
+      at: 1795016821474.639,
+    });
+
+    const two = await listed([{ role: "tool", name: "tool_call", context: "Computer Use", tool_call_id: "c9", args: { calls: [{ name: "computer_use", arguments: '{"action":"wait","seconds":2}' }, { name: "computer_use", arguments: { action: "capture" } }] } }]);
+    await two.hermes.open("tg");
+    expect(two.chat().items).toEqual([
+      { kind: "tool", id: "h-0", callId: "c9", name: "computer_use", args: { action: "wait", seconds: 2 }, status: "done" },
+      { kind: "tool", id: "h-0-1", callId: "c9:1", name: "computer_use", args: { action: "capture" }, status: "done" },
     ]);
   });
 

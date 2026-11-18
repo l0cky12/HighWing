@@ -102,6 +102,8 @@ export type Item =
       preview?: string;
       /** `stopped`: the reply was interrupted while the tool call was running. */
       status: "running" | "done" | "stopped";
+      /** When the call started, live, or its stored row's time. */
+      at?: number;
       durationS?: number;
       result?: string;
       summary?: string;

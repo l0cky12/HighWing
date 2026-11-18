@@ -4873,7 +4873,7 @@ export class Hermes {
           const args = obj(p.args);
           return type === "tool.start"
             ? { kind: "tool.start", at, id, name, ...(args && { args }) }
-            : { kind: "tool.complete", at, id, name, ...(args && { args }), ...(num(p.duration_s) !== undefined && { durationS: num(p.duration_s) }), result: toolResultText(p.result) };
+            : { kind: "tool.complete", at, id, name, ...(args && { args }), ...(num(p.duration_s) !== undefined && { durationS: num(p.duration_s) }), result: toolResultText(p.result, name) };
         }
         case "session.usage": {
           const counters = countersOf(p.usage);
@@ -6508,8 +6508,11 @@ const withoutLoadError = (items: Item[]) => items.filter((i) => i.id !== LOAD_ER
 function historyItems(messages: TranscriptMessage[]): Item[] {
   return messages.flatMap((m, i): Item[] => {
     const id = `h-${i}`;
+    const at = storedAt(m.timestamp);
     const thought: Item[] = m.role === "assistant" && m.reasoning?.trim() ? [{ kind: "thinking", id: `${id}-r`, text: m.reasoning.trim() }] : [];
-    if (m.role === "tool")
+    if (m.role === "tool") {
+      const calls = storedCalls(m);
+      if (calls) return calls.map((call, k) => ({ kind: "tool", id: k ? `${id}-${k}` : id, ...(m.tool_call_id && { callId: k ? `${m.tool_call_id}:${k}` : m.tool_call_id }), ...call, status: "done", ...(at && { at }) }));
       return [
         {
           kind: "tool",
@@ -6520,12 +6523,13 @@ function historyItems(messages: TranscriptMessage[]): Item[] {
           preview: m.context || undefined,
           status: "done",
           result: typeof m.content === "string" ? m.content : undefined,
+          ...(at && { at }),
           ...inlineDiffOf(obj(displayMetadata(m.display_metadata)?.tool_result_metadata)?.inline_diff),
         },
       ];
+    }
     // Assistant rows can be reasoning only; system rows are timeline notes this app doesn't show yet.
     if (!m.text?.trim()) return thought;
-    const at = storedAt(m.timestamp);
     const rowId = Number.isSafeInteger(m.row_id) ? (m.row_id as number) : undefined;
     if (m.role === "user") {
       const back = returnedItem(m.text, m.display_kind, m.display_metadata);
@@ -6538,6 +6542,30 @@ function historyItems(messages: TranscriptMessage[]): Item[] {
     return [];
   });
 }
+
+/**
+ * The calls a stored `tool_call` row holds, each as the call itself, or undefined for any other row. Hermes stores
+ * computer_use this way, under that wrapper's name, with the calls in `args.calls` and no result.
+ */
+function storedCalls(m: TranscriptMessage): { name: string; args?: Record<string, unknown> }[] | undefined {
+  if (m.name !== "tool_call" || !Array.isArray(m.args?.calls)) return undefined;
+  const calls = m.args.calls.flatMap((c) => {
+    const call = obj(c);
+    const name = optionalText(call?.name);
+    if (!call || name === undefined) return [];
+    const args = obj(typeof call.arguments === "string" ? parsedJson(call.arguments) : call.arguments);
+    return [{ name, ...(args && { args }) }];
+  });
+  return calls.length ? calls : undefined;
+}
+
+const parsedJson = (s: string): unknown => {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return undefined;
+  }
+};
 
 /** A file edit's `inline_diff`, to spread into its tool item. */
 const inlineDiffOf = (v: unknown): { inlineDiff?: string } => (typeof v === "string" && v ? { inlineDiff: v } : {});
@@ -6797,6 +6825,7 @@ function applyEvent(c: Chat, type: string, p: Record<string, unknown>, from?: st
         args: obj(p.args),
         preview: optionalText(p.preview),
         status: "running",
+        at: Date.now(),
       });
       return { ...c, items };
     }
@@ -6805,7 +6834,7 @@ function applyEvent(c: Chat, type: string, p: Record<string, unknown>, from?: st
       const call = items[at];
       if (call?.kind !== "tool") return c;
       // A screenshot inside the result stays on the server (ADR 0061).
-      items[at] = { ...call, status: "done", durationS: num(p.duration_s), result: toolResultText(p.result), summary: optionalText(p.summary), ...inlineDiffOf(p.inline_diff) };
+      items[at] = { ...call, status: "done", durationS: num(p.duration_s), result: toolResultText(p.result, call.name), summary: optionalText(p.summary), ...inlineDiffOf(p.inline_diff) };
       return { ...c, items };
     }
     // Every second or so while a turn runs.

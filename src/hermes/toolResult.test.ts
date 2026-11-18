@@ -83,7 +83,9 @@ describe("A computer-use chat", () => {
 
     const tools = hermes.getSnapshot().chats.find((c) => c.id === id)!.items.filter((i) => i.kind === "tool");
     expect(tools).toHaveLength(3);
-    for (const t of tools) expect(t).toMatchObject({ status: "done", result: expect.stringContaining("[image/png, 435 KB, not kept in the chat]") });
+    // keptResult drops the image part before ADR 0061's swap would have noted it (ADR 0213).
+    for (const t of tools) expect(t).toMatchObject({ status: "done", result: expect.stringContaining("capture mode=vision 1440x900") });
+    for (const t of tools) expect(t.kind === "tool" && t.result).not.toMatch(/;base64,|image_url/);
     expect(cache.loadTranscript("default", id)?.items).toHaveLength(5);
     expect(cache.loadTranscript("default", "older")).toBeDefined();
   });

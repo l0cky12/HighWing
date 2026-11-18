@@ -208,7 +208,7 @@ describe("Hermes transport", () => {
     server.event(runtime(id), "message.delta", { text: "92% used." });
     server.event(runtime(id), "message.complete", { text: "Checking.92% used.", status: "complete" });
     expect(chat(id).items.map((i) => i.kind)).toEqual(["user", "assistant", "tool", "assistant"]);
-    expect(chat(id).items[2]).toMatchObject({ status: "done", durationS: 0.2, result: "92% used", summary: "1 line" });
+    expect(chat(id).items[2]).toMatchObject({ status: "done", durationS: 0.2, result: "92% used", summary: "1 line", at: expect.any(Number) });
   });
 
   describe("a reply's final answer (#615)", () => {
@@ -571,7 +571,7 @@ describe("A malformed frame from the server (#476)", () => {
     server.event(runtime(id), "message.start");
     server.raw(event(runtime(id), "tool.start", { tool_id: "t1", name: { tool: "terminal" }, args: "ls", preview: 5 }));
     server.raw(event(runtime(id), "tool.complete", { tool_id: "t1", summary: { lines: 3 }, duration_s: "2.5", result: "a\nb\nc" }));
-    expect(chat(id).items.at(-1)).toEqual({ kind: "tool", id: "t1", callId: "t1", name: "tool", status: "done", result: "a\nb\nc" });
+    expect(chat(id).items.at(-1)).toEqual({ kind: "tool", id: "t1", callId: "t1", name: "tool", status: "done", result: "a\nb\nc", at: expect.any(Number) });
   });
 });
 

@@ -95,6 +95,21 @@ describe("A message_agent call", () => {
     expect(agentSend({ name: "message_agent", status: "done", args, result: "not json" })).toEqual({ to: "@beta", text: args.message });
   });
 
+  it("names, for a message to several, who got it and who didn't", () => {
+    const two = { target: "beta, ghost", message: "Status?" };
+    const partial = JSON.stringify({ status: "queued", fan_out: [{ to: "@beta", status: "queued", delivery_id: "d-1" }, { to: "@ghost", error: "NOT sent: no such teammate" }] });
+    expect(agentSend({ name: "message_agent", status: "done", args: two, result: partial })).toEqual({
+      to: "@beta",
+      text: "Status?",
+      ack: { kind: "queued", deliveryId: "d-1", to: "@beta", failed: "@ghost: NOT sent: no such teammate" },
+    });
+    const none = JSON.stringify({ status: "failed", fan_out: [{ to: "@ghost", error: "NOT sent: no such teammate" }, { to: "@phantom", error: "NOT sent: no such teammate" }] });
+    expect(agentSend({ name: "message_agent", status: "done", args: two, result: none })?.ack).toEqual({
+      kind: "refused",
+      why: "@ghost: NOT sent: no such teammate\n@phantom: NOT sent: no such teammate",
+    });
+  });
+
   it("stays a tool call when it withdraws a request, names nobody, says nothing or was stopped", () => {
     expect(agentSend({ name: "message_agent", status: "done", args: { target: "beta", cancel: ID } })).toBeUndefined();
     expect(agentSend({ name: "message_agent", status: "done", args: { message: "Hello" } })).toBeUndefined();

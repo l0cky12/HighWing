@@ -14,8 +14,11 @@ const MESSAGE_AGENT_TOOL = "message_agent";
  */
 export type Teammate = { name: string; handle: string };
 
-/** What Hermes answered a `message_agent` call with, when the tool item holds it. History leaves most tool results out. */
-export type SendAck = { kind: "queued"; deliveryId: string; to: string } | { kind: "refused"; why: string };
+/**
+ * What Hermes answered a `message_agent` call with, when the tool item holds it. History leaves most tool results out.
+ * `failed`: for a message to several teammates, each one Hermes couldn't send to, with its reason.
+ */
+export type SendAck = { kind: "queued"; deliveryId: string; to: string; failed?: string } | { kind: "refused"; why: string };
 
 /** One `message_agent` call in the sender's chat. `to`: Hermes's own label once it has answered, else `@` and each target. */
 export type AgentSend = { to: string; text: string; ack?: SendAck };
@@ -35,6 +38,13 @@ function ackOf(result: string | undefined): SendAck | undefined {
   const answer = result ? json(result) : undefined;
   if (!answer) return undefined;
   if (text(answer.error)) return { kind: "refused", why: text(answer.error) };
+  if (Array.isArray(answer.fan_out)) {
+    const each = answer.fan_out.filter(isObj);
+    const failed = each.filter((e) => text(e.error)).map((e) => `${text(e.to)}: ${text(e.error)}`).join("\n");
+    const sent = each.filter((e) => !text(e.error) && text(e.delivery_id));
+    if (!sent.length) return { kind: "refused", why: failed || text(answer.detail) };
+    return { kind: "queued", deliveryId: sent.map((e) => text(e.delivery_id)).join(","), to: sent.map((e) => text(e.to)).join(", "), ...(failed && { failed }) };
+  }
   return text(answer.delivery_id) && text(answer.to) ? { kind: "queued", deliveryId: text(answer.delivery_id), to: text(answer.to) } : undefined;
 }
 

@@ -140,7 +140,6 @@ describe("A message between two bots, in their Bot Chats", () => {
     const { hermes, user } = await delivered();
     const [sent, answer] = cards();
     expect(sent.querySelector(".returned-title")?.textContent).toBe("Messaged @quill");
-    expect(sent.querySelector(".returned-note")?.textContent).toBe("Queued");
     expect(sent.querySelector(".returned-body strong")?.textContent).toBe("backup window");
     expect(sent.closest(".tools")).toBeNull();
     expect(document.querySelector(".tools")).toBeNull();

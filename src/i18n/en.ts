@@ -32,7 +32,6 @@ export const en = {
       sending: (to: string) => `Messaging ${to}…`,
       sent: (to: string) => `Messaged ${to}`,
       notSent: (to: string) => `Not sent to ${to}`,
-      queued: "Queued",
       from: (name: string, handle: string) => `Message from ${name} (@${handle})`,
       fromHermes: "From Hermes",
       noAnswer: "No answer came back",

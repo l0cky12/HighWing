@@ -1617,19 +1617,17 @@ function TurnCard({
   kind = "",
   icon,
   heading,
-  note,
   tips,
   foot,
   children,
   ...rest
-}: { kind?: string; icon: ReactNode; heading: ReactNode; note?: string; tips: { hide: string; show: string }; foot?: ReactNode; children: ReactNode } & HTMLAttributes<HTMLDivElement>) {
+}: { kind?: string; icon: ReactNode; heading: ReactNode; tips: { hide: string; show: string }; foot?: ReactNode; children: ReactNode } & HTMLAttributes<HTMLDivElement>) {
   const [open, setOpen] = useState(true);
   return (
     <div className={`msg returned ${kind}`.trimEnd()} {...rest}>
       <button className="returned-head" aria-expanded={open} title={open ? tips.hide : tips.show} onClick={() => setOpen((o) => !o)}>
         {icon}
         <span className="returned-title">{heading}</span>
-        {note && <span className="returned-note">{note}</span>}
         <ChevronRight size={13} className={`chev ${open ? "open" : ""}`} aria-hidden />
       </button>
       {open && children}
@@ -1669,21 +1667,21 @@ function SentCard({ block, query }: { block: SentBlock; query: string }) {
   const l = useLocale().chat.agent;
   const { tool, send } = block;
   const refused = send.ack?.kind === "refused" ? send.ack.why : undefined;
+  const why = refused ?? (send.ack?.kind === "queued" ? send.ack.failed : undefined);
   const running = tool.status === "running";
   return (
     <TurnCard
       kind="sent"
       icon={running ? <Spinner /> : refused ? <CircleAlert size={14} aria-hidden /> : <Send size={14} aria-hidden />}
       heading={running ? l.sending(send.to) : refused ? l.notSent(send.to) : l.sent(send.to)}
-      note={send.ack?.kind === "queued" ? l.queued : undefined}
       tips={l}
       data-item={tool.id}
       data-call={tool.callId}
       tabIndex={tool.callId ? -1 : undefined}
     >
-      {refused && (
+      {why && (
         <p className="returned-why" translate="no">
-          {refused}
+          {why}
         </p>
       )}
       <div className="returned-body msg assistant" translate="no">

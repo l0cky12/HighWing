@@ -265,6 +265,18 @@ describe("Stop during a computer-use turn", () => {
     expect(hermes.getSnapshot().screen?.holder).toEqual({ kind: "agent" });
   });
 
+  it("times a call the Stop cut short until the reply ended, so the run's time is its whole span", async () => {
+    const { server, hermes, id, chat, rid } = await started();
+    const turn = server.computerUseTurn(rid, { steps: [CU.capture(), CU.click([10, 20])], reply: "never" });
+    await until(() => chat().items.some((i) => i.kind === "approval"));
+    await new Promise((r) => setTimeout(r, 30));
+    await hermes.stop(id);
+    await turn;
+    const run = foldRuns(chat().items).find((b): b is CuRun => b.kind === "cu-run")!;
+    expect(run.lines.map((l) => l.kind === "step" && l.step.outcome.kind)).toEqual(["done", "stopped"]);
+    expect(run.span.to! - run.span.from!).toBeGreaterThanOrEqual(30);
+  });
+
   it("takes no screen when the reply used no computer_use", async () => {
     const { server, hermes, id, rid } = await started();
     server.event(rid, "message.start");

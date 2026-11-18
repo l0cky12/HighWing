@@ -42,6 +42,10 @@ export const en = {
     computerUse: {
       title: "Computer use",
       steps: (n: number) => (n === 1 ? "1 step" : `${n} steps`),
+      step: (n: number) => `step ${n}`,
+      stop: "Stop",
+      stopTip: "Stop the reply and take the Bot Desktop, so Hermes can't use it until you hand it back",
+      stopping: "Stopping",
       state: { asking: "waiting for your approval", acting: "working", refused: "refused", stopped: "stopped", done: "done" },
       holder: {
         agent: "Hermes drives the screen",

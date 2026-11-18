@@ -6723,16 +6723,18 @@ function errorItem(c: Chat, text: string): Item {
   return { kind: "error", id: nextId(c.items, "e"), text };
 }
 
-/** Ends a turn's tool calls that were still running when it ended. */
-const endRunningTools = (items: Item[], status: "done" | "stopped") =>
-  items.map((i): Item => (i.kind === "tool" && i.status === "running" ? { ...i, status } : i));
+/** Ends a turn's tool calls that were still running when it ended; with `now`, each with a start ran until then. */
+const endRunningTools = (items: Item[], status: "done" | "stopped", now?: number) =>
+  items.map((i): Item =>
+    i.kind === "tool" && i.status === "running" ? { ...i, status, ...(now !== undefined && i.at !== undefined && { durationS: Math.max(0, now - i.at) / 1000 }) } : i,
+  );
 
 /**
  * Marks the last reply interrupted and its running tool calls stopped. A reply stopped before it said anything gets
  * an empty one, so the transcript still shows the stop.
  */
-function markInterrupted(items: Item[], from?: string | null): Item[] {
-  const out = endRunningTools(items, "stopped");
+function markInterrupted(items: Item[], from: string | null | undefined, now: number): Item[] {
+  const out = endRunningTools(items, "stopped", now);
   const last = out[out.length - 1];
   if (last?.kind === "assistant" && last.id !== from) out[out.length - 1] = { ...last, interrupted: true };
   else out.push({ kind: "assistant", id: nextId(out, "a"), text: "", interrupted: true });
@@ -6916,7 +6918,7 @@ function applyEvent(c: Chat, type: string, p: Record<string, unknown>, from?: st
       }
       const end = { ...c, live: withLive(c.live, undefined, p.usage), running: false, stopping: false, updatedAt: Date.now() };
       // Stopped here or from another Hermes client.
-      if (p.status === "interrupted") return { ...end, items: markInterrupted(endApprovals(items, "turn ended"), from) };
+      if (p.status === "interrupted") return { ...end, items: markInterrupted(endApprovals(items, "turn ended"), from, end.updatedAt) };
       const failure = p.error ?? (p.status === "error" ? p.failure_reason ?? "The turn failed." : undefined);
       if (failure) items.push(errorItem({ ...c, items }, textOf(failure) ?? "The turn failed."));
       return { ...end, items: endRunningTools(endApprovals(items, "turn ended"), "done") };

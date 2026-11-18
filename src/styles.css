@@ -602,6 +602,9 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
 .cu-holder { font-size: calc(12rem / 14); color: var(--muted); }
 .cu-holder.you, .cu-holder.you-before { color: var(--accent); }
 .cu-holder.someone { color: var(--warn); }
+.cu-counter { font-variant-numeric: tabular-nums; }
+.preview-chip.cu-stop { color: var(--bad); }
+.preview-chip.cu-stop:disabled { opacity: 0.6; cursor: default; }
 .cu-steps { list-style: none; margin: 0; padding: 0; }
 .cu-step > .tool-line { margin-left: 0; width: 100%; }
 .cu-step.latest > .tool-line { background: var(--hover); color: var(--text-2); }

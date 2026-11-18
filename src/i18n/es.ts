@@ -37,6 +37,10 @@ export const es: Catalogue = {
     computerUse: {
       title: "Uso del ordenador",
       steps: (n) => (n === 1 ? "1 paso" : `${n} pasos`),
+      step: (n) => `paso ${n}`,
+      stop: "Detener",
+      stopTip: "Detener la respuesta y tomar el Bot Desktop, para que Hermes no pueda usarlo hasta que se lo devuelvas",
+      stopping: "Deteniendo",
       state: { asking: "esperando tu aprobación", acting: "trabajando", refused: "rechazado", stopped: "detenido", done: "hecho" },
       holder: {
         agent: "Hermes maneja la pantalla",

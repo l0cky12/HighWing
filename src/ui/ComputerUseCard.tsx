@@ -2,7 +2,7 @@
 // holds the screen now, and Watch live, which opens the side panel's Screen. Above the composer, a note when Hermes's
 // last step was refused because a person holds the screen. The run is `foldRuns`'s (computerUse.ts); who holds the
 // screen is the connection's ScreenControl's, through `ScreenDesk`.
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { Ban, Check, ChevronRight, CircleAlert, Hand, Minus, MonitorPlay, Square, X } from "lucide-react";
 import { screenUse, type CuRun, type CuStep, type RunLine } from "../hermes/computerUse";
 import { isWaiting, type ApprovalChoice, type Chat, type Item } from "../hermes/model";
@@ -22,7 +22,42 @@ export function ScreenDeskProvider({ value, children }: { value: ScreenDesk; chi
   return <ScreenDeskContext.Provider value={value}>{children}</ScreenDeskContext.Provider>;
 }
 
+/**
+ * The chat's own Stop, the composer's (ADR 0216), for the Stop on its live run. `lastRun`: the id of the chat's last
+ * run, the one that offers Hand back once a Stop has taken the screen. ChatPane provides it.
+ */
+export type RunStop = { onStop: () => void; stopping: boolean; lastRun?: string };
+
+const RunStopContext = createContext<RunStop | undefined>(undefined);
+
+export const RunStopProvider = RunStopContext.Provider;
+
 type Words = ReturnType<typeof useLocale>["chat"]["computerUse"];
+
+/** `m:ss` of a span in ms. */
+const clock = (ms: number) => {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+};
+
+/** The time now, ticking once a second while `live`. */
+function useNow(live: boolean): number {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!live) return;
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [live]);
+  return now;
+}
+
+/** `step N · m:ss` while the run is live, `N steps · m:ss` after; no time without the steps' times. */
+function counter(run: CuRun, live: boolean, latest: number, now: number, l: Words): string {
+  const { from, to } = run.span;
+  const end = live ? now : to;
+  return [live ? l.step(latest) : l.steps(run.steps), from !== undefined && end !== undefined && clock(end - from)].filter(Boolean).join(" · ");
+}
 
 const holderWords = (holder: ScreenHolder, l: Words) =>
   holder.kind === "agent" ? l.holder.agent : holder.kind === "you" ? l.holder.you : holder.kind === "you-before" ? l.holder.youBefore : l.holder.someone;
@@ -39,22 +74,31 @@ export function ComputerUseCard({
   onAnswer: (approvalId: string, choice: ApprovalChoice, confirmed?: boolean) => void;
 }) {
   const l = useLocale().chat.computerUse;
-  const { screen, onWatch } = useContext(ScreenDeskContext);
+  const { screen, onWatch, onHandBack } = useContext(ScreenDeskContext);
+  const stop = useContext(RunStopContext);
   const [open, setOpen] = useState(true);
   const live = run.state === "acting" || run.state === "asking";
   const latest = [...run.lines].reverse().find((x) => x.kind === "step");
+  const now = useNow(live);
   return (
     <div className={`msg returned cu-run ${run.state}`} data-item={run.id} data-calls={callIds(run.items) || undefined} tabIndex={-1}>
       <button className="returned-head" aria-expanded={open} title={open ? l.hide : l.show} onClick={() => setOpen((o) => !o)}>
         {live ? <Spinner /> : <MonitorPlay size={14} aria-hidden />}
         <span className="returned-title">
-          {l.title} · {l.steps(run.steps)}
+          {l.title} · <span className="cu-counter">{counter(run, live, latest?.kind === "step" ? latest.step.n : run.steps, now, l)}</span>
         </span>
         <span className={`cu-state ${run.state}`}>{l.state[run.state]}</span>
         <ChevronRight size={13} className={`chev ${open ? "open" : ""}`} aria-hidden />
       </button>
       <div className="cu-bar">
         {screen && <span className={`cu-holder ${screen.holder.kind}`}>{holderWords(screen.holder, l)}</span>}
+        {live && stop && (
+          <button className="preview-chip cu-stop" title={stop.stopping ? l.stopping : l.stopTip} disabled={stop.stopping || offline} onClick={stop.onStop}>
+            <Square size={10} fill="currentColor" aria-hidden />
+            <span>{stop.stopping ? l.stopping : l.stop}</span>
+          </button>
+        )}
+        {screen?.holder.kind === "you" && run.state === "stopped" && run.id === stop?.lastRun && onHandBack && <HandBack onHandBack={onHandBack} />}
         {onWatch && (
           <button className="preview-chip cu-watch" title={l.watchTip} onClick={onWatch}>
             <MonitorPlay size={12} aria-hidden />
@@ -206,13 +250,29 @@ function Outcome({ step, asking }: { step: CuStep; asking: boolean }) {
 export function HumanHasControlBanner({ chat }: { chat: Pick<Chat, "items" | "running"> }) {
   const l = useLocale().chat.computerUse.banner;
   const { screen, onWatch, onHandBack } = useContext(ScreenDeskContext);
-  const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState<string>();
   const refused = screenUse(chat)?.refused;
   const holder = screen?.holder;
   if (!refused || !holder || holder.kind === "agent") return null;
+  return (
+    <div className="cu-banner" role="status" title={refused}>
+      <Hand size={14} aria-hidden />
+      <span className="cu-banner-text">{holder.kind === "you" ? l.you : holder.kind === "you-before" ? l.youBefore : l.someone}</span>
+      {holder.kind === "you" && onHandBack && <HandBack onHandBack={onHandBack} primary />}
+      {holder.kind !== "you" && onWatch && (
+        <button className="btn" onClick={onWatch}>
+          <MonitorPlay size={14} /> {l.openScreen}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Gives the screen back to Hermes, saying why when it couldn't. */
+function HandBack({ onHandBack, primary }: { onHandBack: () => Promise<void>; primary?: boolean }) {
+  const l = useLocale().chat.computerUse.banner;
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState<string>();
   const handBack = async () => {
-    if (!onHandBack) return;
     setBusy(true);
     setFailed(undefined);
     try {
@@ -224,24 +284,15 @@ export function HumanHasControlBanner({ chat }: { chat: Pick<Chat, "items" | "ru
     }
   };
   return (
-    <div className="cu-banner" role="status" title={refused}>
-      <Hand size={14} aria-hidden />
-      <span className="cu-banner-text">{holder.kind === "you" ? l.you : holder.kind === "you-before" ? l.youBefore : l.someone}</span>
-      {holder.kind === "you" && onHandBack && (
-        <button className="btn primary" disabled={busy} onClick={() => void handBack()}>
-          {busy ? <Spinner /> : <Hand size={14} />} {l.handBack}
-        </button>
-      )}
-      {holder.kind !== "you" && onWatch && (
-        <button className="btn" onClick={onWatch}>
-          <MonitorPlay size={14} /> {l.openScreen}
-        </button>
-      )}
+    <>
+      <button className={primary ? "btn primary" : "preview-chip cu-hand-back"} disabled={busy} onClick={() => void handBack()}>
+        {busy ? <Spinner /> : <Hand size={primary ? 14 : 12} aria-hidden />} {l.handBack}
+      </button>
       {failed && (
         <span className="cu-banner-why" role="alert">
           <X size={12} aria-hidden /> {failed}
         </span>
       )}
-    </div>
+    </>
   );
 }

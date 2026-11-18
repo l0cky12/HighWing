@@ -18,6 +18,13 @@ export const es: Catalogue = {
     workOn: (name) => `¿En qué debería trabajar ${name}?`,
     botChat: "Bot Chat",
     botChatTip: "La conversación continua de su bot",
+    at: {
+      bots: "Bots",
+      chats: "Chats",
+      menu: "Bots y chats",
+      keys: "↑↓ para elegir · Intro o Tab para ponerlo · Esc para cerrar",
+      button: "Nombrar un bot o citar un chat",
+    },
     returned: {
       work: "Terminó un trabajo en segundo plano",
       process: "Terminó un proceso en segundo plano",

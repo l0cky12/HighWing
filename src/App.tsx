@@ -3,7 +3,7 @@ import { createPortal, flushSync } from "react-dom";
 import { ArrowLeft, ArrowRight, Columns2, FolderCog, PanelBottom, PanelLeft, PanelRight, PanelTop, Target, X } from "lucide-react";
 import { CONNECT_STOPPED, RenameConflict, TitleModelUnavailable, connect, openSaved, readSaved, toSource, type Delivery, type Hermes, type NoticeCard, type Notify } from "./hermes/transport";
 import { invoke } from "@tauri-apps/api/core";
-import type { CommandHost } from "./ui/SlashCommands";
+import type { CommandHost, NamedBot } from "./ui/SlashCommands";
 import { STEER, type ServerCommandList } from "./hermes/commands";
 import { offeredCommands, takenName, type ChatContext } from "./hermes/extensions";
 import { useExtensions } from "./ui/extensionsContext";
@@ -2308,6 +2308,11 @@ export function Main({
     () => (shownName === undefined ? undefined : { name: shownName, color: shownColor, picture: shownPicture }),
     [shownName, shownColor, shownPicture],
   );
+  // The bots an "@" in a Bot Chat names: every one on this connection but the shown profile's, whose chat it is.
+  const otherBots = useMemo<NamedBot[]>(
+    () => (hasBotMode ? (bots?.roster ?? []).filter((b) => b.profile !== profile).map((b) => ({ ...lookShown(b, botPictures), handle: b.handle, description: b.description })) : []),
+    [hasBotMode, bots?.roster, profile, botPictures],
+  );
   const beforeBotChat = useRef<string | null>(null);
   useEffect(() => {
     beforeBotChat.current = null;
@@ -3024,6 +3029,7 @@ export function Main({
           connection={connection}
           profile={profile}
           bot={shownLook}
+          otherBots={otherBots}
           status={status}
           paneKey={p.key}
           chatId={p.chatId}
@@ -3966,6 +3972,7 @@ function ChatView({
   connection,
   profile,
   bot,
+  otherBots,
   status,
   paneKey,
   chatId,
@@ -4019,6 +4026,7 @@ function ChatView({
   connection: SavedConnection;
   profile: string;
   bot?: BotLookShown;
+  otherBots: readonly NamedBot[];
   status: ConnectionStatus;
   paneKey: string;
   chatId: string | null;
@@ -4307,7 +4315,7 @@ function ChatView({
     [listedChats, chat.id],
   );
   const commands: CommandHost = {
-    references: { chats: referable, reference: (c) => referenceDesk.add(shownDraft, { chatId: c.id, title: c.title }) },
+    references: { chats: referable, bots: kind === "bot" ? otherBots : undefined, reference: (c) => referenceDesk.add(shownDraft, { chatId: c.id, title: c.title }) },
     skills: status === "connected" ? skillCommands.skills : undefined,
     refreshSkills: skillCommands.refresh,
     guide: caps.caps.commands.state === "unsupported" ? () => openGuide(guideUrl("commands")) : undefined,

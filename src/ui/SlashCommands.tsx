@@ -1,12 +1,17 @@
 // The composer's slash commands (commands.ts, ADR 0015): the menu that opens as a "/" starts the message, the command
 // help, the question before a destructive command, and what a command answers. The same menu offers the profile's
 // skills after the commands, and a "$" anywhere in the message opens it with skills alone (skillCommands.ts). An "@"
-// opens it with the profile's other chats, to reference one (chatReferences.ts).
+// opens it with the profile's other chats, to reference one (chatReferences.ts), and in a Bot Chat with the other bots
+// above them, to name one (mentionPicker.ts).
 import { type KeyboardEvent, type ReactNode, type RefObject, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Link2, X } from "lucide-react";
 import { COMMANDS, argProblem, completion, matchCommands, menuQuery, typedCommand, type CommandDef } from "../hermes/commands";
 import { dollarQuery, matchSkills, skillRun, type SkillCommand, type SkillCommands, type SkillRun } from "../hermes/skillCommands";
 import { atQuery, matchChats, type ReferableChat } from "../hermes/chatReferences";
+import { completeMention, matchBots } from "../hermes/mentionPicker";
+import type { Bot } from "../hermes/bots";
+import { BotFace, type BotLookShown } from "./BotFace";
+import { useLocale } from "../i18n/locale";
 import { Spinner, composing } from "./bits";
 import { errorText } from "../hermes/values";
 import type { OfferedCommand } from "../hermes/extensions";
@@ -28,9 +33,14 @@ export type CommandHost = {
   refreshSkills?: () => void;
   /** The installed extensions' commands offered here (ADR 0126, section 5), after the commands and the skills. */
   extensions?: ExtensionCommands;
-  /** The chats an "@" can reference here, and adding one to the message. Picking one never sends. */
-  references?: { chats: readonly ReferableChat[]; reference(chat: ReferableChat): void };
+  /**
+   * The chats an "@" can reference here, and adding one to the message. Picking one never sends. `bots`: the bots an
+   * "@" can name, set only in a Bot Chat: every bot on the connection but this chat's. Picking one puts its "@handle" in.
+   */
+  references?: { chats: readonly ReferableChat[]; bots?: readonly NamedBot[]; reference(chat: ReferableChat): void };
 };
+
+export type NamedBot = BotLookShown & Pick<Bot, "handle" | "description">;
 
 /** `why`: why an extension's command can't run here now. `run` resolves with its note, as `CommandHost.run` does. */
 export type ExtensionCommands = {
@@ -51,8 +61,13 @@ const matchExtensions = (q: string, offered: readonly OfferedCommand[]) => [
   ...offered.filter((c) => !c.name.startsWith(q) && (c.name.includes(q) || c.description.toLowerCase().split(/\W+/).some((w) => w.startsWith(q)))),
 ];
 
-/** A row of the menu: one of the app's commands, a skill, an extension's command, or a chat to reference. */
-type Row = { kind: "command"; def: CommandDef } | { kind: "skill"; skill: SkillCommand } | { kind: "extension"; cmd: OfferedCommand } | { kind: "reference"; chat: ReferableChat };
+/** A row of the menu: one of the app's commands, a skill, an extension's command, a bot to name, or a chat to reference. */
+type Row =
+  | { kind: "command"; def: CommandDef }
+  | { kind: "skill"; skill: SkillCommand }
+  | { kind: "extension"; cmd: OfferedCommand }
+  | { kind: "bot"; bot: NamedBot }
+  | { kind: "reference"; chat: ReferableChat };
 
 type Note = { title?: string; text: string; error?: boolean };
 
@@ -81,6 +96,7 @@ const runsWith = (run: SkillRun) =>
  */
 export function useSlashCommands(host: CommandHost | undefined, text: string, onText: (text: string) => void, taRef: RefObject<HTMLTextAreaElement | null>) {
   const listId = useId();
+  const words = useLocale().chat.at;
   const [index, setIndex] = useState(0);
   // The text the menu was closed on, by Escape or by picking a command. Typing anything else opens it again.
   const [closedFor, setClosedFor] = useState<string>();
@@ -104,8 +120,10 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
   const query = host && closedFor !== text ? menuQuery(text) : undefined;
   const dollar = host && closedFor !== text && query === undefined ? dollarQuery(before) : undefined;
   const at = host?.references && closedFor !== text && query === undefined && !dollar ? atQuery(before) : undefined;
+  const bots = host?.references?.bots;
   // The "/" menu: the app's commands, then the skills whose name no command has. The "$" menu: skills alone, and only
-  // while one matches, so a price or a shell variable typed in prose opens nothing. The "@" menu likewise, with chats.
+  // while one matches, so a price or a shell variable typed in prose opens nothing. The "@" menu likewise, with the bots
+  // in a Bot Chat, then the chats.
   const rows: Row[] =
     query !== undefined
       ? [
@@ -116,7 +134,10 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
       : dollar
         ? matchSkills(dollar.query, skills).map((skill): Row => ({ kind: "skill", skill }))
         : at
-          ? matchChats(at.query, host!.references!.chats).map((chat): Row => ({ kind: "reference", chat }))
+          ? [
+              ...matchBots(at.query, bots ?? []).map((bot): Row => ({ kind: "bot", bot })),
+              ...matchChats(at.query, host!.references!.chats).map((chat): Row => ({ kind: "reference", chat })),
+            ]
           : [];
   const open = query !== undefined || rows.length > 0;
   const matches = rows;
@@ -148,6 +169,7 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
     let to: number | undefined;
     if (row.kind === "command") next = completion(row.def);
     else if (row.kind === "extension") next = `/${row.cmd.name} `;
+    else if (row.kind === "bot") ({ text: next, caret: to } = completeMention(text, at!.start, before.length, row.bot.handle));
     else if (row.kind === "reference") {
       // The "@title" typed so far goes; the chat goes with the message as a chip above the text instead.
       next = `${text.slice(0, at!.start)}${text.slice(before.length)}`;
@@ -268,6 +290,8 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
     onClick: (e: { currentTarget: HTMLTextAreaElement }) => setCaret(e.currentTarget.selectionEnd),
   };
   const firstSkill = matches.findIndex((r) => r.kind === "skill");
+  const firstBot = matches.findIndex((r) => r.kind === "bot");
+  const firstChat = bots ? matches.findIndex((r) => r.kind === "reference") : -1;
 
   const view: ReactNode = host && (
     <>
@@ -313,19 +337,24 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
       {open && (
         <div className="cmd-menu">
           {matches.length ? (
-            <div role="listbox" id={listId} aria-label={at ? "Chats" : dollar ? "Skills" : "Commands"}>
+            <div role="listbox" id={listId} aria-label={at ? (bots ? words.menu : "Chats") : dollar ? "Skills" : "Commands"}>
               {matches.map((row, i) => {
                 const why = row.kind === "command" ? host.why(row.def) : row.kind === "extension" ? host.extensions?.why(row.cmd) : undefined;
                 const prev = matches[i - 1];
                 const newExtension = row.kind === "extension" && (prev?.kind !== "extension" || prev.cmd.id !== row.cmd.id);
                 return (
                   <div
-                    key={row.kind === "command" ? `c-${row.def.name}` : row.kind === "skill" ? `s-${row.skill.key}` : row.kind === "reference" ? `h-${row.chat.id}` : `e-${row.cmd.name}`}
+                    key={row.kind === "command" ? `c-${row.def.name}` : row.kind === "skill" ? `s-${row.skill.key}` : row.kind === "reference" ? `h-${row.chat.id}` : row.kind === "bot" ? `b-${row.bot.handle}` : `e-${row.cmd.name}`}
                     role="presentation"
                   >
                     {i === firstSkill && !dollar && (
                       <div className="cmd-group" aria-hidden="true">
                         Skills
+                      </div>
+                    )}
+                    {(i === firstBot || i === firstChat) && (
+                      <div className="cmd-group" aria-hidden="true">
+                        {i === firstBot ? words.bots : words.chats}
                       </div>
                     )}
                     {newExtension && (
@@ -350,6 +379,15 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
                           <Scope def={row.def} />
                           <span className="cmd-desc">{row.def.description}</span>
                           {why && <span className="cmd-why">{why}</span>}
+                        </>
+                      ) : row.kind === "bot" ? (
+                        <>
+                          <BotFace bot={row.bot} size="xs" />
+                          <span className="cmd-bot-name">{row.bot.name}</span>
+                          <span className="cmd-name" translate="no">
+                            @{row.bot.handle}
+                          </span>
+                          {row.bot.description && <span className="cmd-desc">{row.bot.description}</span>}
                         </>
                       ) : row.kind === "reference" ? (
                         <>
@@ -389,7 +427,9 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
           )}
           <div className="cmd-keys">
             {at
-              ? "↑↓ to choose · Enter or Tab to reference it · Esc to close"
+              ? bots
+                ? words.keys
+                : "↑↓ to choose · Enter or Tab to reference it · Esc to close"
               : dollar
                 ? "↑↓ to choose · Enter or Tab to put it in · Esc to close"
                 : "↑↓ to choose · Enter or Tab to fill in · Esc to close · /help lists them all"}
@@ -399,7 +439,8 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
     </>
   );
 
-  return { run, skill: toRun, onKeyDown, inputProps, view, startReference };
+  const typingAt = open && at ? at.start : undefined;
+  return { run, skill: toRun, onKeyDown, inputProps, view, startReference, typingAt };
 }
 
 /** Every command, with its argument, what it does, where it runs and why it can't run now. */

@@ -1,6 +1,7 @@
 // Referenced chats (ADR 0165): another of the owner's chats, condensed by Hermes into a short summary that goes with a
 // message as attached context. What the summarizing `llm.oneshot` call is told and given, the block a summary is sent
 // as, and the composer's references while they are summarized. Nothing here is kept between launches.
+import { HANDLE_CHAR } from "./mentionPicker";
 import { spineOf, typedText, type StoredBranchRow } from "./branch";
 import type { SentReference } from "./model";
 import { neutralize } from "./projectContext";
@@ -82,9 +83,11 @@ export function storedReferences(text: string): SentReference[] {
   }));
 }
 
-/** The "@" menu's query while a chat is being picked: `before` ends in "@" and the start of a title, the "@" at the start or after a space. */
+const AT_QUERY = new RegExp(`(?:^|\\s)@(${HANDLE_CHAR}*)$`, "u");
+
+/** The "@" menu's query while a bot or chat is being picked: `before` ends in "@" and the start of a handle or title, the "@" at the start or after a space. */
 export function atQuery(before: string): { query: string; start: number } | undefined {
-  const m = /(?:^|\s)@([\p{L}\p{N}_-]*)$/u.exec(before);
+  const m = AT_QUERY.exec(before);
   return m ? { query: m[1].toLowerCase(), start: before.length - m[1].length - 1 } : undefined;
 }
 

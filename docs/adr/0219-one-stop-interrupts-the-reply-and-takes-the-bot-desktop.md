@@ -1,6 +1,6 @@
 # One Stop interrupts the reply and takes the Bot Desktop
 
-> **Accepted.** Phase 4 of computer use (issue #43). Amends [ADR 0147](0147-shortcuts-are-a-command-table-each-handler-asks-and-the-owners-changes-are-a-diff-in-the-display-preferences.md): its command table gains `stopScreen`. Builds on [ADR 0214](0214-one-screencontrol-per-connection-owns-the-viewer-id-and-the-lease.md).
+> **Accepted.** Phase 4 of computer use (issue #43). Amends [ADR 0147](0147-shortcuts-are-a-command-table-each-handler-asks-and-the-owners-changes-are-a-diff-in-the-display-preferences.md): its command table gains `stopScreen`. Builds on [ADR 0217](0217-one-screencontrol-per-connection-owns-the-viewer-id-and-the-lease.md).
 
 When Hermes drives its Bot Desktop, the owner needs one control that ends what it is doing on the screen. Stopping the reply alone isn't enough. `session.interrupt` ends the turn between two steps (`14-turn-interrupt.jsonl`), but the next turn, or a wake turn, can drive the screen again at once. Hermes's own answer is the lease: while a person holds the screen, every `computer_use` call is refused with `human_has_control` before any Approval (`13-turn-takeover.jsonl`). Until now only the Screen tab's Take over took the lease, and only on a live stream.
 

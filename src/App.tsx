@@ -1248,7 +1248,7 @@ export function Main({
   localStt?: LocalSttApi;
   /** Tells the window `hermes-chat --show` or `--toggle` brought it forward; none outside the desktop app. */
   summon?: SummonApi;
-  /** Calls its function whenever `hermes-chat --stop` asks to stop computer use (ADR 0216); returns its unsubscribe. */
+  /** Calls its function whenever `hermes-chat --stop` asks to stop computer use (ADR 0219); returns its unsubscribe. */
   desktopStop?: (fn: () => void) => () => void;
   onSignOut: () => Promise<void>;
   updates?: Updater;
@@ -2018,7 +2018,7 @@ export function Main({
     focusPane(active.key);
   };
 
-  // The panic Stop, from the shortcut or `hermes-chat --stop` (ADR 0216): it says what it stopped and whether it got the screen.
+  // The panic Stop, from the shortcut or `hermes-chat --stop` (ADR 0219): it says what it stopped and whether it got the screen.
   const panicStop = () =>
     void hermes.stopScreen().then(({ stopped, hold }) => {
       const l = words.chat.computerUse.panic;

@@ -53,7 +53,7 @@ async function launch() {
   const server = new FakeHermes();
   server.sessions = [row("backup", 1, { pinned: true, title: "Nightly backup" }), row("nas", 2, { pinned: true, title: "NAS disks" })];
   server.otherProfiles = { work: [row("deploy", 1, { pinned: true, title: "Deploy plan" }), row("old", 60, { title: "Old retro" })], ops: [] };
-  server.souls = { default: "# Default persona\n", work: "# Work persona\n", ops: "" };
+  server.memory = { default: { memory: ["Backups run nightly."], profile: [] } };
   const hermes = await connect(server.openPipe, undefined, memoryCache());
   running.push(hermes);
   const connection: SavedSignIn = { mode: "ssh", sshTarget: `lena@hermes-${++launches}`, url: "", username: "lena" };
@@ -301,34 +301,35 @@ describe("A chat link and what the owner does meanwhile", () => {
     expect(notice()).toBeNull();
   });
 
-  async function unsavedPersona(user: ReturnType<typeof userEvent.setup>) {
+  const memoryEntry = () => screen.getByRole<HTMLTextAreaElement>("textbox", { name: /Entry in/ });
+  async function unsavedMemory(user: ReturnType<typeof userEvent.setup>) {
     await user.click(screen.getByRole("button", { name: /Settings/ }));
-    await user.click(screen.getByRole("tab", { name: /Persona/ }));
-    const box = await screen.findByRole<HTMLTextAreaElement>("textbox", { name: "SOUL.md for the default profile" });
-    await user.click(box);
-    await user.paste("Unsaved words");
+    await user.click(screen.getByRole("tab", { name: /Memory/ }));
+    const list = await screen.findByRole("list", { name: /entries$/ });
+    await user.click(within(list).getByRole("button", { name: /^Backups run nightly\./ }));
+    await user.type(memoryEntry(), " Unsaved words");
   }
 
-  it("asks about an unsaved persona edit first, and Keep editing drops the link", async () => {
+  it("asks about an unsaved memory edit first, and Keep editing drops the link", async () => {
     const { hermes, linkTo, open, user } = await launch();
-    await unsavedPersona(user);
+    await unsavedMemory(user);
     await open(linkTo("work", "deploy"));
     const ask = await screen.findByRole("alertdialog");
     await user.click(within(ask).getByRole("button", { name: "Keep editing" }));
     expect(notice()).toBeNull();
     expect(hermes.getSnapshot().profile).toBe("default");
-    expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: "SOUL.md for the default profile" }).value).toMatch(/Unsaved words/);
+    expect(memoryEntry().value).toMatch(/Unsaved words/);
   });
 
   it("won't switch for a link a newer one replaced while the unsaved-edit question was open", async () => {
     const { hermes, linkTo, open, user } = await launch();
-    await unsavedPersona(user);
+    await unsavedMemory(user);
     await open(linkTo("work", "deploy"));
     const ask = await screen.findByRole("alertdialog");
     // A newer link, which can't open, arrives while the question is up.
     await open(linkTo("default", "nas", "fromanothercomputer1"));
     await screen.findByText(/connection this computer doesn't know/);
-    await user.click(within(ask).getByRole("button", { name: "Switch anyway" }));
+    await user.click(within(ask).getByRole("button", { name: "Discard edit" }));
     await act(async () => void (await hermes.idle()));
     expect(hermes.getSnapshot().profile).toBe("default");
     expect(onScreen()).not.toBe("Deploy plan");

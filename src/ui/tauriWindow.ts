@@ -8,16 +8,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-/**
- * Calls `ask` instead of closing the window, with a function that closes it anyway. Resolves to the function that
- * stops asking.
- */
-export type CloseGuard = (ask: (close: () => void) => void) => Promise<() => void>;
-
 let guards = 0;
 const tellRust = (unsaved: boolean) => void invoke("window_unsaved", { unsaved }).catch(() => {});
 
-/** Registers a close guard on the Tauri window. */
+/**
+ * Registers a close guard on the Tauri window: calls `ask` instead of closing it, with a function that closes it
+ * anyway. Resolves to the function that stops asking.
+ */
 export async function guardWindowClose(ask: (close: () => void) => void): Promise<() => void> {
   const win = getCurrentWindow();
   const unlisten = await win.onCloseRequested(async (e) => {
@@ -35,5 +32,3 @@ export async function guardWindowClose(ask: (close: () => void) => void): Promis
     if (--guards === 0) tellRust(false);
   };
 }
-
-export const tauriCloseGuard: CloseGuard = guardWindowClose;

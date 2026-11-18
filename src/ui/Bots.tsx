@@ -59,8 +59,8 @@ type BotsNote = { text: string; warn: boolean; focus?: string; command?: string 
  * picture, by profile. `activity`: what the bot is doing in its Bot Chat. `leaving`: what switching away from the shown
  * profile leaves behind, asked about before a row in another profile opens. `onUnsupported`: this Hermes turned out to
  * have no Bot Mode. `profiles`: Settings → Profiles' wiring, for New bot and each row's menu; without it there is
- * neither. `botEdit`: the menu's Edit bot, Pin and Hide. `onProfileSettings`: shows Settings → Profiles or Persona on a
- * profile.
+ * neither. `botEdit`: the menu's Edit bot, Edit persona, Pin and Hide. `onProfileSettings`: shows Settings → Profiles
+ * on a profile.
  */
 export function Bots({
   server,
@@ -95,7 +95,7 @@ export function Bots({
   onUnsupported?: (why: string) => void;
   profiles?: Omit<ProfilesWiring, "showTab">;
   botEdit?: BotEditWiring;
-  onProfileSettings?: (name: string, tab: "profiles" | "persona") => void;
+  onProfileSettings?: (name: string) => void;
 }) {
   const l = useLocale();
   const w = l.bots;
@@ -405,7 +405,7 @@ export function Bots({
                 label={w.menu.settings}
                 onPick={() => {
                   setMenu(undefined);
-                  onProfileSettings(menu.bot.profile, "profiles");
+                  onProfileSettings(menu.bot.profile);
                 }}
               />
             </>

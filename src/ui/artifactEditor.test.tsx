@@ -6,7 +6,6 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { FakeHermes, row, type TranscriptMessage } from "../hermes/fakeHermes";
 import { memoryCache } from "../hermes/memoryCache";
-import { PersonaStore } from "../hermes/personaStore";
 import { connect, type Hermes } from "../hermes/transport";
 import { Main } from "../App";
 
@@ -23,11 +22,6 @@ afterEach(async () => {
   await Promise.all(running.splice(0).map((h) => h.close()));
   localStorage.clear();
 });
-
-function memoryStorage() {
-  const items = new Map<string, string>();
-  return { getItem: (k: string) => items.get(k) ?? null, setItem: (k: string, v: string) => void items.set(k, v), removeItem: (k: string) => void items.delete(k) };
-}
 
 const utf8 = (s: string) => Array.from(new TextEncoder().encode(s), (b) => String.fromCharCode(b)).join("");
 const written = (path: string, bytes: number) => JSON.stringify({ bytes_written: bytes, dirs_created: false, resolved_path: path, files_modified: [path] });
@@ -259,45 +253,6 @@ describe("The artifact editor", () => {
     delete server.serverFiles["/srv/out/plan.md"];
     await editPlan(user);
     expect((await editor()).value).toBe(PLAN + "!!");
-  });
-
-  it("asks about an unsaved artifact edit too, after an unsaved persona was let go on closing the window", async () => {
-    const s = server();
-    s.souls = { default: "# Persona\n" };
-    const hermes = await connect(s.openPipe, undefined, memoryCache());
-    running.push(hermes);
-    const close = vi.fn();
-    let ask: ((close: () => void) => void) | undefined;
-    render(
-      <Main
-        hermes={hermes}
-        connection={{ mode: "ssh", sshTarget: `lena@hermes-${++launches}`, url: "", username: "lena" }}
-        onSignOut={async () => {}}
-        personaStore={new PersonaStore(memoryStorage())}
-        guardClose={async (a) => {
-          ask = a;
-          return () => (ask = undefined);
-        }}
-      />,
-    );
-    await waitFor(() => expect(hermes.hasListed()).toBe(true));
-    await act(async () => void (await hermes.idle()));
-    const user = userEvent.setup();
-    await user.click(screen.getByText("Launch planning"));
-    await editPlan(user);
-    await user.type(await editor(), "!!");
-    await user.click(screen.getByRole("button", { name: /Settings/ }));
-    await user.click(screen.getByRole("tab", { name: /Persona/ }));
-    const soul = await screen.findByRole<HTMLTextAreaElement>("textbox", { name: "SOUL.md for the default profile" });
-    await user.click(soul);
-    await user.paste("Mine. ");
-    await waitFor(() => expect(ask).toBeDefined());
-    act(() => ask!(close));
-    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Close anyway" }));
-    const artifactAsk = await screen.findByRole("alertdialog", { name: "Close and discard your edit?" });
-    expect(close).not.toHaveBeenCalled();
-    await user.click(within(artifactAsk).getByRole("button", { name: "Discard edit" }));
-    expect(close).toHaveBeenCalledTimes(1);
   });
 
   it("asks before signing out would drop an unsaved edit", async () => {

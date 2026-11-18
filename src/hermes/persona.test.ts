@@ -1,4 +1,4 @@
-// Settings → Persona's reads and writes of a profile's SOUL.md, against the fake dashboard (which mirrors
+// The reads and writes of a profile's SOUL.md, against the fake dashboard (which mirrors
 // `GET`/`PUT /api/profiles/{name}/soul` at the deployed `bf0203a`): read-back, conflicts, failed and lost writes, servers
 // without the routes, and that every call stays on the profile it names.
 import { afterEach, describe, expect, it } from "vitest";

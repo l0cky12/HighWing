@@ -2551,13 +2551,9 @@ label.memory-pick { cursor: pointer; }
 .skills-problems ul { margin: 4px 0 8px; padding-left: 18px; }
 .settings .skills-problems p { margin: 4px 0 8px; }
 .leave-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); z-index: 50; display: flex; align-items: center; justify-content: center; }
-/* The memory question shares the persona one's box (below), wider than a plain .confirm. */
+/* The questions over the whole window, wider than a plain .confirm. */
 .leave-overlay .leave-dialog { max-width: 420px; }
-/* Settings → Persona (PersonaSettings.tsx) and the question before leaving an unsaved edit (LeavePersona.tsx) */
-.persona-fact { overflow-wrap: anywhere; }
-.persona-profile { min-width: 180px; max-width: 100%; }
-.settings p.persona-note svg { vertical-align: -2px; }
-.settings p.persona-note { margin: 8px 0 0; }
+/* The profile form's Persona field (ProfileSettings.tsx). */
 .persona-text {
   width: 100%; box-sizing: border-box; resize: vertical; min-height: max(160px, calc(100vh - 460px)); padding: 12px 14px; border-radius: var(--radius);
   background: var(--code-bg); border: 1px solid var(--line-2); color: var(--text); outline: none;
@@ -2565,21 +2561,6 @@ label.memory-pick { cursor: pointer; }
 }
 .persona-text:focus { border-color: var(--line-3); }
 .persona-text[readonly] { color: var(--text-2); }
-.persona-readonly { min-height: 100px; }
-.persona-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.persona-actions-left { justify-content: flex-start; margin-top: 10px; }
-.persona-banner, .persona-conflict, .persona-problem {
-  display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; margin-bottom: 14px; border-radius: var(--radius);
-  border: 1px solid var(--line-2); background: var(--raised); font-size: calc(13rem / 14); line-height: 1.5;
-}
-.persona-banner { flex-direction: row; align-items: flex-start; gap: 10px; }
-.persona-banner > svg { flex: none; margin-top: 3px; color: var(--muted); }
-.persona-conflict, .persona-problem { border-color: rgba(245, 184, 74, 0.4); }
-.persona-problem.permission, .persona-problem.error, .persona-problem.no-profile { border-color: rgba(248, 113, 113, 0.4); }
-.persona-confirm { max-width: none; margin-top: 12px; }
-.persona-missing p { margin-bottom: 4px; }
-.settings p.persona-saved { color: var(--ok); margin: 10px 0 0; }
-.persona .field-label .badge { margin-left: 2px; }
 .leave-scrim { z-index: 60; align-items: flex-start; }
 /* Square and without a shadow (ADR 0084): WebKitGTK repaints a modal with every frame of a reply streaming behind it,
    and a rounded or shadowed box made those frames slow enough that keys in the dialog waited half a second. */
@@ -4657,13 +4638,3 @@ button.budget-chat:hover { text-decoration: underline; }
 .budget-chat-amount { grid-column: 2; grid-row: 1; font-variant-numeric: tabular-nums; color: var(--text-2); text-align: right; }
 .budget-notes ul { padding-left: 18px; display: grid; gap: 4px; }
 
-/* Write with AI for a SOUL.md (PersonaAI.tsx), under Settings → Persona's editor and in the New bot form. */
-.persona-ai { margin-top: 10px; }
-.persona-ai-panel { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: var(--radius); background: var(--raised); }
-.persona-ai-open { display: inline-flex; align-items: center; gap: 6px; }
-.persona-ai .persona-text.persona-ai-notes { min-height: 70px; }
-.persona-ai .persona-text.persona-ai-text { min-height: 140px; max-height: 50vh; }
-.persona-ai .persona-actions { margin-top: 4px; }
-.persona-ai-working { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 0; color: var(--muted); }
-.persona-ai-working .btn { margin-left: auto; }
-.persona-ai-suggestion { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }

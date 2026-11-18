@@ -134,9 +134,6 @@ describe("Settings → Profiles", { timeout: 30_000 }, () => {
     await waitFor(() => expect(option(screen.getByRole("listbox", { name: "Profiles" }), "default").textContent).toMatch(/Main \(default\)/));
     await waitFor(() => expect(document.querySelector(".profile-btn .profile-name")?.textContent).toBe("Main"));
     expect(document.querySelector(".profile-btn .profile-id")?.textContent).toBe("default");
-    // Persona's own picker names it the same way.
-    await user.click(screen.getByRole("tab", { name: "Persona" }));
-    await waitFor(() => expect([...document.querySelectorAll("option")].map((o) => o.textContent)).toContain("Main (default) (in use)"));
   });
 
   it("sets the model and has Hermes write the description, each through its own route", async () => {

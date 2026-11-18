@@ -78,8 +78,8 @@ export type ProfilesWiring = {
     /** Forgets this computer's data for `name`. */
     deleted: (name: string) => Promise<void>;
   };
-  /** Shows Settings → Persona, Memory or Skills on `name`. */
-  showTab: (tab: "persona" | "memory" | "skills", name: string) => void;
+  /** Shows Settings → Memory or Skills on `name`. */
+  showTab: (tab: "memory" | "skills", name: string) => void;
   copyText: (text: string) => Promise<void>;
   /**
    * Write with AI on the form's Persona (ADR 0197, 0203), run as `profile` on its Text generation model: the profile in
@@ -792,8 +792,8 @@ type SoulRead = { kind: "reading" } | { kind: "read"; base: Soul } | { kind: "fa
 
 /**
  * New profile and Edit, one modal. New makes a blank profile in one create. Edit saves each changed field through its
- * own route, in order: description, model, then the name, so the earlier calls still use the old name. A failed field
- * keeps the dialog open, marked with Hermes's words; the fields that saved stay saved.
+ * own route, in order: description, model, the bot's look, the persona, then the name, so the earlier calls still use
+ * the old name. A failed field keeps the dialog open, marked with Hermes's words; the fields that saved stay saved.
  *
  * Edit never writes over a change made elsewhere since the dialog opened (ADR 0189): each field is saved only where
  * Hermes still has what the form last showed. One that changed keeps the owner's text, shows Hermes's value with Use

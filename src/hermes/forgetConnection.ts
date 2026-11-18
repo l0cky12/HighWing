@@ -2,7 +2,6 @@
 // connection's scope (connections.ts), so another connection's data, even for a profile of the same name, is never
 // touched. Nothing here talks to Hermes: the server's chats, projects, jobs and settings stay as they are.
 import type { SavedConnection } from "./connections";
-import type { PersonaStore } from "./personaStore";
 import { forgetConnectionLocally } from "./profileLocalData";
 import type { Drafts } from "./drafts";
 import type { DefaultsDoc } from "./projectDefaults";
@@ -17,7 +16,7 @@ export const REMOVED_LOCALLY = [
   "the chat lists and Saved copies kept for reading offline, and which profile was shown",
   "which chats are in each project, and the projects' defaults for new chats",
   "tags, Saved filters, pins, snoozes, branch origins, the imports record, and which chats were started in a worktree",
-  "unsaved persona edits and the persona versions kept to put back",
+  "persona edits and versions an earlier Highwing kept",
   "inbox dismissals, the chat to reopen, the model pick, and the terminal's SSH target",
 ] as const;
 
@@ -37,13 +36,12 @@ export async function forgetConnectionData(
     storage = localStorage as Store,
     defaults,
     tags,
-    persona,
     drafts,
     afterwards,
-  }: { storage?: Store; defaults?: DefaultsDoc; tags?: TagsFile; persona?: PersonaStore; drafts?: Pick<Drafts, "move">; afterwards?: () => Promise<void> } = {},
+  }: { storage?: Store; defaults?: DefaultsDoc; tags?: TagsFile; drafts?: Pick<Drafts, "move">; afterwards?: () => Promise<void> } = {},
 ): Promise<void> {
   // Every profile's data, through the one list a profile's rename and delete walk too (profileLocalData.ts).
-  await forgetConnectionLocally(c, { storage, defaults, tags, persona, drafts });
+  await forgetConnectionLocally(c, { storage, defaults, tags, drafts });
   storage.removeItem(terminalTargetKey(c));
   await afterwards?.().catch(() => {});
 }

@@ -1,17 +1,15 @@
 // @vitest-environment jsdom
-// Settings → Skills, Memory and Persona for any profile (ADR 0118), in the whole app against the fake dashboard: each
-// tab picks the profile it shows; skills are copied, moved and deleted (archived) in Select mode, each read back;
-// memory entries are deleted several at a time; SOUL.md is copied over another profile's; and picking another profile
-// with an unsaved edit asks first. Every skill, entry and persona here is synthetic.
+// Settings → Skills and Memory for any profile (ADR 0118), in the whole app against the fake dashboard: each tab picks
+// the profile it shows; skills are copied, moved and deleted (archived) in Select mode, each read back; memory entries
+// are deleted several at a time; and picking another profile with an unsaved edit asks first. Every skill and entry
+// here is synthetic.
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { FakeHermes, row } from "../hermes/fakeHermes";
 import { memoryCache } from "../hermes/memoryCache";
-import { PersonaStore, personaKey } from "../hermes/personaStore";
 import { connect, type Hermes } from "../hermes/transport";
 import { Main } from "../App";
-import { RestError } from "../hermes/pipe";
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }));
 
@@ -31,13 +29,6 @@ const HOME = "/home/lena/.hermes";
 const SPARE = `${HOME}/profiles/spare`;
 const skill = (name: string, description: string) => `---\nname: ${name}\ndescription: ${description}\n---\n\nWhen asked.\n`;
 const NOTES = skill("release-notes", "Write release notes from merged PRs.");
-const SOUL = "# Default\n\nYou are terse.\n";
-const SPARE_SOUL = "# Spare\n\nYou are chatty.\n";
-
-function memoryStorage() {
-  const items = new Map<string, string>();
-  return { getItem: (k: string) => items.get(k) ?? null, setItem: (k: string, v: string) => void items.set(k, v), removeItem: (k: string) => void items.delete(k) };
-}
 
 let launches = 0;
 async function launch() {
@@ -52,17 +43,15 @@ async function launch() {
     default: { memory: ["Project Falcon uses Postgres 16."], profile: ["Works in UTC+1."] },
     spare: { memory: ["Spare note one.", "Spare note two.", "Spare note three."], profile: [] },
   };
-  s.souls = { default: SOUL, spare: SPARE_SOUL };
   const hermes = await connect(s.openPipe, undefined, memoryCache());
   running.push(hermes);
-  const store = new PersonaStore(memoryStorage());
   const connection = { mode: "ssh" as const, sshTarget: `lena@hermes-profiles-${++launches}`, url: "", username: "lena" };
-  render(<Main hermes={hermes} connection={connection} onSignOut={async () => {}} personaStore={store} />);
+  render(<Main hermes={hermes} connection={connection} onSignOut={async () => {}} />);
   await waitFor(() => expect(hermes.hasListed()).toBe(true));
   await act(async () => void (await hermes.idle()));
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: /Settings/ }));
-  return { s, hermes, store, connection, user };
+  return { s, hermes, connection, user };
 }
 
 type User = ReturnType<typeof userEvent.setup>;
@@ -258,86 +247,5 @@ describe("Settings → Memory selection after a partial removal", () => {
     await user.click(screen.getByRole("button", { name: "Remove 1 entry" }));
     await screen.findByText(/Removed 1 of 1 entry/);
     expect(s.memory.spare.memory).toEqual(["Spare note two."]);
-  });
-});
-
-describe("Settings → Persona for any profile", () => {
-  const soul = (profile: string) => screen.findByRole<HTMLTextAreaElement>("textbox", { name: `SOUL.md for the ${profile} profile` });
-
-  it("shows the picked profile's SOUL.md, and copies the saved one over another profile's after asking", async () => {
-    const { s, store, connection, user } = await launch();
-    await user.click(screen.getByRole("tab", { name: /Persona/ }));
-    expect((await soul("default")).value).toBe(SOUL);
-    await user.selectOptions(screen.getByRole("combobox", { name: "Profile" }), "spare");
-    expect((await soul("spare")).value).toBe(SPARE_SOUL);
-    await user.selectOptions(screen.getByRole("combobox", { name: "Profile" }), "default");
-    await soul("default");
-    await user.click(screen.getByRole("button", { name: /Copy…/ }));
-    const ask = await screen.findByRole("alertdialog", { name: "Replace spare's SOUL.md?" });
-    await waitFor(() => expect(ask.textContent).toMatch(/Replace spare's SOUL.md \(25 characters\) with default's \(26 characters\)/));
-    await user.click(within(ask).getByRole("button", { name: "Replace spare's" }));
-    await screen.findByText(/Copied to spare, and read back from Hermes/);
-    expect(s.souls.spare).toBe(SOUL);
-    expect(s.souls.default).toBe(SOUL);
-    // What spare had is kept with spare's own earlier versions.
-    expect(store.earlier(personaKey(connection, "spare")).map((v) => v.content)).toEqual([SPARE_SOUL]);
-  });
-
-  it("keeps what the other profile had when a copy's outcome can't be told, and says it may have been written", async () => {
-    const { s, store, connection, user } = await launch();
-    await user.click(screen.getByRole("tab", { name: /Persona/ }));
-    await soul("default");
-    await user.click(screen.getByRole("button", { name: /Copy…/ }));
-    await waitFor(() => expect(screen.getByRole("alertdialog", { name: "Replace spare's SOUL.md?" }).textContent).toMatch(/25 characters/));
-    // Hermes writes it, then the answer is lost, and reading it back fails too.
-    s.soulWriteLost = "Can't reach the Hermes dashboard: connection reset";
-    s.afterSoulWrite = () => (s.soulReadError = new RestError(500, `{"detail":"read failed"}`));
-    await user.click(screen.getByRole("button", { name: "Replace spare's" }));
-    expect((await screen.findByRole("alert")).textContent).toMatch(/Hermes may have written the copy to spare, but it couldn't be confirmed/);
-    expect(s.souls.spare).toBe(SOUL);
-    expect(store.earlier(personaKey(connection, "spare")).map((v) => v.content)).toEqual([SPARE_SOUL]);
-  });
-
-  it("waits for a save to the other profile already under way, and won't copy over one that starts meanwhile", async () => {
-    const { s, store, connection, user } = await launch();
-    await user.click(screen.getByRole("tab", { name: /Persona/ }));
-    await soul("default");
-    const key = personaKey(connection, "spare");
-    let finish = () => {};
-    store.trackSave(key, new Promise<void>((r) => (finish = r)));
-    await user.click(screen.getByRole("button", { name: /Copy…/ }));
-    const ask = screen.getByRole("alertdialog", { name: "Replace spare's SOUL.md?" });
-    expect(ask.textContent).toMatch(/Reading spare's SOUL.md…/);
-    expect(s.restRequests.filter((r) => r.method === "GET" && r.path === "/api/profiles/spare/soul")).toHaveLength(0);
-    await act(async () => finish());
-    await waitFor(() => expect(ask.textContent).toMatch(/Replace spare's SOUL.md \(25 characters\)/));
-    // Another save to spare starts after the question was answered.
-    store.trackSave(key, new Promise<void>(() => {}));
-    await user.click(screen.getByRole("button", { name: "Replace spare's" }));
-    expect((await screen.findByRole("alert")).textContent).toMatch(/A save to spare's persona is still under way, so nothing was copied/);
-    expect(s.souls.spare).toBe(SPARE_SOUL);
-  });
-
-  it("drops the copy question once the owner starts editing", async () => {
-    const { s, user } = await launch();
-    await user.click(screen.getByRole("tab", { name: /Persona/ }));
-    await user.click(screen.getByRole("button", { name: /Copy…/ }));
-    await waitFor(() => expect(screen.getByRole("alertdialog", { name: "Replace spare's SOUL.md?" }).textContent).toMatch(/25 characters/));
-    await user.type(await soul("default"), "More.");
-    expect(screen.queryByRole("alertdialog", { name: "Replace spare's SOUL.md?" })).toBeNull();
-    expect(screen.getByRole<HTMLButtonElement>("button", { name: /Copy…/ }).disabled).toBe(true);
-    expect(s.souls.spare).toBe(SPARE_SOUL);
-  });
-
-  it("copies nothing while there's an unsaved edit, and the question before leaving names the profile edited", async () => {
-    const { user } = await launch();
-    await user.click(screen.getByRole("tab", { name: /Persona/ }));
-    await soul("default");
-    await user.selectOptions(screen.getByRole("combobox", { name: "Profile" }), "spare");
-    await user.type(await soul("spare"), "More.");
-    expect(screen.getByRole<HTMLButtonElement>("button", { name: /Copy…/ }).disabled).toBe(true);
-    await user.click(screen.getByRole("button", { name: /Back to chat/ }));
-    const dialog = screen.getByRole("alertdialog", { name: /without saving the persona/ });
-    expect(dialog.textContent).toMatch(/SOUL.md for the spare profile/);
   });
 });

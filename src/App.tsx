@@ -17,7 +17,6 @@ import { clearRename, forgetProfileLocally, noteRename, renameProfileLocally, re
 import { serial as makeSerial } from "./hermes/serial";
 import { localChatCache } from "./hermes/chatCache";
 import { draftKey, drafts } from "./hermes/drafts";
-import { PersonaStore, personaKey } from "./hermes/personaStore";
 import { sending, unsaved, type Sending } from "./hermes/unsaved";
 import { connOf, restoreBlocked, savedBackupEnv } from "./hermes/backup";
 import { chatToReopen, forgetOpenChat, rememberOpenChat, type ReopenOn } from "./hermes/uiPrefs";
@@ -26,7 +25,6 @@ import { chatContext, contextLedger, knownWindow, type ChatContexts } from "./he
 import { ProjectsStore, type Project } from "./hermes/projects";
 import { instructionsMessage, modelProblem, resolveNewChat, savedDefaults, type ProjectDefaults } from "./hermes/projectDefaults";
 import { unavailableWords } from "./hermes/instructionsAI";
-import type { PersonaWriter } from "./ui/PersonaAI";
 import { systemSecrets } from "./hermes/tauriKeyring";
 import { appUpdates } from "./hermes/tauriUpdates";
 import { tauriSnapshots } from "./hermes/snapshots";
@@ -90,14 +88,12 @@ import { TagsStore, savedTagsFile, type SavedFilter } from "./hermes/tags";
 import { AttentionClock, ClearedStore, PINS_KEY, PinStore, SNOOZE_KEY, STOP_WAITING_KEY, SnoozeStore, StopWaitingStore, chatSections, heldClears, wakeFull } from "./hermes/snooze";
 import { IDLE_COMPACT_CHECK_MS, IdleCompactor, idleCompactionNote } from "./hermes/idleCompact";
 import { runFilter } from "./hermes/chatFilter";
-import { SettingsScreen, type PersonaWiring } from "./ui/Settings";
+import { SettingsScreen } from "./ui/Settings";
 import type { ProfilesWiring } from "./ui/ProfileSettings";
-import { LeavePersona, type LeaveWhat } from "./ui/LeavePersona";
 import { LeaveArtifacts } from "./ui/ArtifactEditor";
 import { ASK_DEADLINE_MS, ArtifactStore, artifactIo, isDirty } from "./hermes/artifacts";
 import { useWindowTitle, windowTitle } from "./ui/windowTitle";
 import { LeaveMemoryEdit, useCloseGuard } from "./ui/LeaveMemoryEdit";
-import { tauriCloseGuard, type CloseGuard } from "./ui/tauriWindow";
 import { FileBrowser } from "./ui/FileBrowser";
 import { UsageAnalytics, type UsageTab } from "./ui/UsageAnalytics";
 import { BudgetOpener, BudgetWatches, budgetShelves } from "./hermes/budgetWatch";
@@ -298,14 +294,17 @@ const account: Account = {
   openSaved: (c, d) => openSaved(pipeFor(c, d), localChatCache(c), notifyFor(c)),
 };
 
+/** What leaving an unsaved edit does: leave Settings, switch `profile` or `connection`, `signout`, or `close` the window. */
+type LeaveWhat = "leave" | "profile" | "connection" | "signout" | "close";
+
 /** The sign-in methods a connection's server offers, read without signing in (ADR 0058). */
 const serverMethods = (d: SignInDetails) => readMethods((one, expect) => tauriReach(one, expect, true, true), d);
 
 /** Deletes what this computer keeps for a removed connection (forgetConnection.ts). */
 const forgetLocal = (c: SavedConnection) =>
-  forgetConnectionData(c, { defaults: savedDefaults, tags: savedTagsFile, persona: savedPersona, drafts: savedDrafts, afterwards: syncScreenshotOutbox });
+  forgetConnectionData(c, { defaults: savedDefaults, tags: savedTagsFile, drafts: savedDrafts, afterwards: syncScreenshotOutbox });
 /** The stores a profile's rename moves and its delete forgets, beside this webview's storage (profileLocalData.ts). */
-const profileStores = () => ({ defaults: savedDefaults, tags: savedTagsFile, persona: savedPersona, drafts: savedDrafts });
+const profileStores = () => ({ defaults: savedDefaults, tags: savedTagsFile, drafts: savedDrafts });
 
 const savedDrafts = drafts(localStorage);
 /** Adds `text` to the Draft at `key`, after anything already there. */
@@ -337,7 +336,6 @@ const budgetWatches = new BudgetWatches((id) => {
   };
 });
 const savedContextLedger = contextLedger(localStorage);
-const savedPersona = new PersonaStore(localStorage);
 // Applied as the app loads, so the chosen fonts show from the first screen.
 const appearance = appearanceStore(localStorage, document.documentElement);
 const backupEnv = savedBackupEnv(() => savedConnections().recent());
@@ -1181,8 +1179,6 @@ export function Main({
   serverPages = tauriServerPages,
   screenshots = tauriScreenshotWiring,
   summon = desktopSummon,
-  personaStore = savedPersona,
-  guardClose = tauriCloseGuard,
   onSignOut,
   updates = appUpdates,
   link,
@@ -1279,10 +1275,6 @@ export function Main({
   localStt?: LocalSttApi;
   /** Tells the window `hermes-chat --show` or `--toggle` brought it forward; none outside the desktop app. */
   summon?: SummonApi;
-  /** Where Settings → Persona keeps unsaved edits and replaced versions on this computer. */
-  personaStore?: PersonaStore;
-  /** Asks before the window closes; registered only while Settings → Persona holds an unsaved edit. */
-  guardClose?: CloseGuard;
   onSignOut: () => Promise<void>;
   updates?: Updater;
   /**
@@ -1305,19 +1297,6 @@ export function Main({
     hermes.getSnapshot,
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // Settings → Persona holds an edit Hermes doesn't have, or a save under way: leaving it asks first.
-  const personaDirty = useRef(false);
-  const [personaUnsaved, setPersonaUnsaved] = useState(false);
-  // This computer could keep the unsaved edit, so leaving doesn't lose it.
-  const [personaKept, setPersonaKept] = useState(true);
-  // The profile whose persona is open: Settings → Persona can edit any profile's, not only the one in use.
-  const [personaProfile, setPersonaProfile] = useState<string>();
-  const onPersonaDirty = useCallback((dirty: boolean, kept: boolean, profile: string) => {
-    personaDirty.current = dirty;
-    setPersonaUnsaved(dirty);
-    setPersonaKept(kept);
-    setPersonaProfile(profile);
-  }, []);
   // An unsaved edit in Settings → Memory (MemorySettings.tsx) lives only on screen: leaving it asks first too.
   const memoryDirty = useRef(false);
   const [memoryUnsaved, setMemoryUnsaved] = useState(false);
@@ -1343,41 +1322,26 @@ export function Main({
   );
   const artSnap = useSyncExternalStore(artifacts.subscribe, artifacts.getSnapshot);
   const artifactUnsaved = [...artSnap.values()].some(isDirty);
-  const [leaving, setLeaving] = useState<{ edit: "persona" | "memory" | "skill" | "artifact"; what: LeaveWhat; go: () => void; stay?: () => void }>();
-  /** Runs `go` now, or once the owner agrees to leave an unsaved persona, memory, skill or artifact edit behind. `stay` runs if they don't. */
+  const [leaving, setLeaving] = useState<{ edit: "memory" | "skill" | "artifact"; what: LeaveWhat; go: () => void; stay?: () => void }>();
+  /** Runs `go` now, or once the owner agrees to leave an unsaved memory, skill or artifact edit behind. `stay` runs if they don't. */
   const guard = (go: () => void, what: LeaveWhat = "leave", stay?: () => void) => {
     // Signing out or closing drops artifact edits too: once a settings edit is left, they are asked about in turn.
     const next = what === "signout" || what === "close" ? () => (artifacts.unsaved().length ? setLeaving({ edit: "artifact", what, go, stay }) : go()) : go;
     if (memoryDirty.current) return setLeaving({ edit: "memory", what, go: next, stay });
     if (skillDirty.current) return setLeaving({ edit: "skill", what, go: next, stay });
-    if (personaDirty.current) return setLeaving({ edit: "persona", what, go: next, stay });
     next();
   };
   const guardRef = useRef(guard);
   guardRef.current = guard;
   // Closing the window asks too, only while there is something to lose. A memory edit also holds a page reload.
   useCloseGuard(memoryUnsaved || skillUnsaved || artifactUnsaved, (close) => guardRef.current(close, "close"));
-  const guardCloseRef = useRef(guardClose);
-  useEffect(() => {
-    if (!personaUnsaved) return;
-    let stop: (() => void) | undefined;
-    let gone = false;
-    guardCloseRef.current((close) => guardRef.current(close, "close")).then(
-      (off) => (gone ? off() : (stop = off)),
-      () => {},
-    );
-    return () => {
-      gone = true;
-      stop?.();
-    };
-  }, [personaUnsaved]);
   // A new object each time a row asks Settings to show the Text generation model; the rail's button opens it plainly.
   const [showTextGeneration, setShowTextGeneration] = useState<object>();
   /** Set to open Settings on its Memory tab, from the context inspector. */
   const [showMemory, setShowMemory] = useState<object>();
   /** Set, each time anew, to open Settings → Diagnostics, at the capability a screen's note named. */
   const [showDiagnostics, setShowDiagnostics] = useState<{ id?: CapabilityId }>();
-  const [showProfile, setShowProfile] = useState<{ name: string; tab: "profiles" | "persona" }>();
+  const [showProfile, setShowProfile] = useState<{ name: string }>();
   /** What the connected Hermes supports, for the menus that say what it lacks (capabilities.ts). */
   const caps = useCapabilities(hermes.capabilities);
   const workLacking = (Object.keys(WORK_PARTS) as WorkFeature[]).filter((part) => caps.caps[WORK_PARTS[part]].state === "unsupported").join(" ");
@@ -1809,11 +1773,11 @@ export function Main({
     openSettings();
     setShowDiagnostics({ id });
   };
-  /** Opens Settings → Profiles on profile `name`, or Settings → Persona on it, from a bot's menu in the Bots view. */
-  const openProfileSettings = (name: string, tab: "profiles" | "persona") => {
+  /** Opens Settings → Profiles on profile `name`, from a bot's menu in the Bots view. */
+  const openProfileSettings = (name: string) => {
     setBotsOpen(false);
     openSettings();
-    setShowProfile({ name, tab });
+    setShowProfile({ name });
   };
   /** Opens a page of the compatibility guide in the owner's browser. */
   const openGuide = (url: string) =>
@@ -1865,22 +1829,6 @@ export function Main({
   workingRef.current = working;
   // Read when the restore dialog renders and again just before it writes: sends and refused writes aren't React state.
   const restoreBusy = () => restoreBlocked({ working: workingRef.current, unsaved: unsaved.size, sending: sending.size });
-  // Write with AI for a SOUL.md runs on `p`'s own Text generation model, with no chat, so no session lends a model.
-  const personaWriter = (p: string): PersonaWriter => ({
-    profile: p,
-    model: () => hermes.modelSettings.textModel(p),
-    ask: (call) => hermes.askForEdit({ profile: p, ...call }).then((r) => r.text),
-  });
-  // Settings → Persona edits the SOUL.md of any profile on this connection, starting on the one in use; its edits are
-  // kept apart per connection and profile.
-  const persona: PersonaWiring = {
-    writerFor: personaWriter,
-    api: hermes.persona,
-    store: personaStore,
-    keyOf: (p) => personaKey(connection, p),
-    where: { server: route ? serverLabel(route) : connection.mode === "ssh" ? connection.sshTarget : serverLabel({ kind: "url", url: connection.url, addresses: [] }), route: where, profile },
-  };
-
   const stillIn = (p: string) => hermes.profile === p;
 
   // A pane moving to another chat keeps its tabs in step (Tabs.tsx `navigateTabs`).
@@ -2288,7 +2236,7 @@ export function Main({
     );
 
   // Another saved connection (ADR 0112). Whatever is running or waiting here is named first, from the inbox's entries,
-  // which cover every profile on this server; an unsaved persona or memory edit asks first too. Nothing is stopped:
+  // which cover every profile on this server; an unsaved memory or skill edit asks first too. Nothing is stopped:
   // Hermes keeps a running reply going after this connection closes, as it does when the profile switches.
   const [connectionAsk, setConnectionAsk] = useState<{ to: SavedConnection; notes: string[]; go: () => void; stay?: () => void }>();
   const [removeAsk, setRemoveAsk] = useState<SavedConnection>();
@@ -2345,7 +2293,7 @@ export function Main({
 
   // An inbox entry opens its chat, in its own profile, in the pane already showing it or else the active one. Another
   // profile is switched to first, the way the switcher does, and the chat opens once that profile's list has it.
-  // An unsaved persona or memory edit asks first, as any other way of leaving Settings does.
+  // An unsaved memory or skill edit asks first, as any other way of leaving Settings does.
   const openEntry = (e: InboxEntry) => {
     setInboxOpen(false);
     guard(() => {
@@ -3899,8 +3847,6 @@ export function Main({
                 focusPane(active.key);
               })
             }
-            persona={persona}
-            onPersonaDirty={onPersonaDirty}
             guard={guard}
             listProfiles={listProfiles}
             defaultName={defaultProfileName}
@@ -4158,22 +4104,6 @@ export function Main({
           onDiscard={() => {
             setLeaving(undefined);
             artifacts.clear();
-            leaving.go();
-          }}
-        />
-      )}
-      {leaving?.edit === "persona" && (
-        <LeavePersona
-          what={leaving.what}
-          profile={personaProfile ?? profile}
-          kept={personaKept}
-          onStay={() => {
-            leaving.stay?.();
-            setLeaving(undefined);
-          }}
-          onGo={() => {
-            setLeaving(undefined);
-            personaDirty.current = false;
             leaving.go();
           }}
         />

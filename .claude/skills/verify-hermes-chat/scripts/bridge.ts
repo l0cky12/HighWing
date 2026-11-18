@@ -42,6 +42,8 @@
 //   change watcher does when another process writes the session store (a test's control).
 //   `POST /__gone?id=<chat id>` deletes the chat, as another client would, and drops the app's WebSocket, so the app
 //   reads the list again on reconnecting (a test's control).
+//   `POST /__archive?id=<chat id>` sets the chat's Hermes `archived` flag, as another client would, and broadcasts
+//   `sessions.changed` so the app reads the list again (a test's control).
 //   `POST /__frame[?chat=<chat id>]` sends the request body to the app verbatim, as one WebSocket text frame, malformed
 //   or not (a test's control). With `chat`, each `$SESSION` in the body is first replaced by the runtime session id of
 //   that chat, which must be open in the app: `{"jsonrpc":"2.0","method":"event","params":{"type":"tool.start",
@@ -500,6 +502,14 @@ const http = createServer(async (req, res) => {
     if (server.sessions.length === before) return json(404, { detail: `No stand-in chat ${id}` });
     save();
     closeSocket?.();
+    return json(200, { ok: true });
+  }
+  if (url.pathname === "/__archive" && req.method === "POST") {
+    const session = server.sessions.find((s) => s.id === url.searchParams.get("id"));
+    if (!session) return json(404, { detail: `No stand-in chat ${url.searchParams.get("id")}` });
+    session.archived = true;
+    save();
+    server.broadcast("sessions.changed");
     return json(200, { ok: true });
   }
   if (url.pathname === "/__frame" && req.method === "POST") {

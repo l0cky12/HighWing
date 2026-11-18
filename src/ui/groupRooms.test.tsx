@@ -329,6 +329,8 @@ describe("An approval in a Group room", () => {
 describe("Choosing who a room message goes to", () => {
   const options = () => within(pane()).queryAllByRole("option");
   const line = () => pane().querySelector<HTMLElement>(".room-goes-to")!;
+  const live = () => within(line()).getByRole("status");
+  const describedBy = () => (composer().getAttribute("aria-describedby") ?? "").split(" ").filter(Boolean).map((id) => document.getElementById(id));
   const spoken = (el: Element) => {
     const copy = el.cloneNode(true) as Element;
     copy.querySelectorAll("[aria-hidden]").forEach((n) => n.remove());
@@ -467,26 +469,41 @@ describe("Choosing who a room message goes to", () => {
     expect(spoken(line())).toBe("Goes to everyone");
   });
 
-  it("is a status that the composer is described by, once there is text", async () => {
+  it("says who it goes to in a status, and the composer is described by that and the notes, once there is text", async () => {
     const { user } = await launch({ room: true });
-    expect(line().getAttribute("role")).toBe("status");
-    expect(line().getAttribute("aria-atomic")).toBe("true");
-    await user.type(composer(), "hi");
-    expect(document.getElementById(composer().getAttribute("aria-describedby")!)).toBe(line());
+    expect(live().getAttribute("aria-atomic")).toBe("true");
+    await user.type(composer(), "@quill hi");
+    expect(spoken(live())).toBe("Goes to everyone (no bot named)");
+    const described = describedBy();
+    expect(described[0]).toBe(live());
+    expect(described.map((el) => spoken(el!)).join(" ")).toBe("Goes to everyone (no bot named) No one in this room is @quill");
+  });
+
+  it("keeps the status still while an unknown name is typed, and shows the note beside it", async () => {
+    const { user } = await launch({ room: true });
+    await user.type(composer(), "hi @");
+    const changes: MutationRecord[] = [];
+    const watcher = new MutationObserver((records) => changes.push(...records));
+    watcher.observe(live(), { subtree: true, childList: true, characterData: true, attributes: true });
+    await user.type(composer(), "quil");
+    expect(options()).toHaveLength(0);
+    expect(spoken(line())).toBe("Goes to everyone (no bot named)No one in this room is @quil");
+    expect([...changes, ...watcher.takeRecords()], "typing the unknown name changed nothing a screen reader announces").toEqual([]);
+    watcher.disconnect();
   });
 
   it("changes the line's text only when who it goes to changes, so a screen reader hears it once", async () => {
     const { user } = await launch({ room: true });
     await user.type(composer(), "hello");
-    const before = textNodes(line());
+    const before = textNodes(live());
     const changes: MutationRecord[] = [];
     const watcher = new MutationObserver((records) => changes.push(...records));
-    watcher.observe(line(), { subtree: true, childList: true, characterData: true, attributes: true });
+    watcher.observe(live(), { subtree: true, childList: true, characterData: true, attributes: true });
     const changed = () => [...changes.splice(0), ...watcher.takeRecords()];
     await user.type(composer(), " there, team");
     expect(changed(), "typing more words changed nothing in the line").toEqual([]);
-    expect(textNodes(line()), "and it has the same number of text nodes").toHaveLength(before.length);
-    for (const [i, node] of before.entries()) expect(textNodes(line())[i]).toBe(node);
+    expect(textNodes(live()), "and it has the same number of text nodes").toHaveLength(before.length);
+    for (const [i, node] of before.entries()) expect(textNodes(live())[i]).toBe(node);
     await user.type(composer(), " @bram ok");
     expect(changed().length, "naming a bot did").toBeGreaterThan(0);
     watcher.disconnect();

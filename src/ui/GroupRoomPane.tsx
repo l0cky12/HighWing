@@ -420,9 +420,10 @@ function noteWords(w: Locale["groupRooms"]["goesTo"], n: MentionNote<SeatShown>)
 }
 
 /**
- * Who the message will go to, worked out the way Hermes will, and what to know about each @ in it. A live region has to
- * be on the page before its text changes to be announced, so it is always mounted, and its text changes only when the
- * answer does, so a screen reader doesn't repeat it for each keystroke.
+ * Who the message will go to, worked out the way Hermes will, and what to know about each @ in it. Only who it goes to is
+ * a live region: a live region has to be on the page before its text changes to be announced, so it is always mounted,
+ * and its text changes only when the answer does. The notes sit outside it, because a note about a name still being
+ * typed changes with every key; the composer is described by both.
  */
 function GoesToLine({ id, shown, goes, pickingAt }: { id: string; shown: boolean; goes: GoesTo<SeatShown>; pickingAt: number | undefined }) {
   const w = useLocale().groupRooms.goesTo;
@@ -445,20 +446,22 @@ function GoesToLine({ id, shown, goes, pickingAt }: { id: string; shown: boolean
       </>
     );
   return (
-    <div id={id} className="room-goes-to" role="status" aria-atomic="true">
-      {shown && (
-        <>
-          <p>
+    <div className="room-goes-to">
+      <p id={`${id}-to`} role="status" aria-atomic="true">
+        {shown && (
+          <>
             {w.label} {named(goes.to)}
+          </>
+        )}
+      </p>
+      <div id={`${id}-notes`}>
+        {shown && notes.slice(0, NOTES_SHOWN).map((n) => (
+          <p key={`${n.kind}:${n.raw}`} className={"target" in n ? "is-routed" : "is-dropped"}>
+            {noteWords(w, n)}
           </p>
-          {notes.slice(0, NOTES_SHOWN).map((n) => (
-            <p key={`${n.kind}:${n.raw}`} className={"target" in n ? "is-routed" : "is-dropped"}>
-              {noteWords(w, n)}
-            </p>
-          ))}
-          {notes.length > NOTES_SHOWN && <p className="is-routed">{w.more(notes.length - NOTES_SHOWN)}</p>}
-        </>
-      )}
+        ))}
+        {shown && notes.length > NOTES_SHOWN && <p className="is-routed">{w.more(notes.length - NOTES_SHOWN)}</p>}
+      </div>
     </div>
   );
 }
@@ -574,7 +577,7 @@ function RoomComposer({
           aria-controls={rows.length ? listId : undefined}
           aria-expanded={rows.length > 0}
           aria-activedescendant={rows.length ? rowId(listId, rows[picked]) : undefined}
-          aria-describedby={draft.trim() ? goesToId : undefined}
+          aria-describedby={draft.trim() ? `${goesToId}-to ${goesToId}-notes` : undefined}
           role="combobox"
           aria-autocomplete="list"
           placeholder={steppingIn ? w.stepIn : w.placeholder}

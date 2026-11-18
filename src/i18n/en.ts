@@ -485,7 +485,7 @@ export const en = {
         failed: (why: string) => `Hermes couldn't rewrite it: ${why} Your persona is unchanged.`,
         blockedAsking: "Wait for the persona's rewrite, or stop it, first.",
         noText: "Hermes answered with no text.",
-        cut: (max: number) => `Your persona is longer than ${max} characters, so only its first ${max} were rewritten.`,
+        tooLong: (max: number) => `Write with AI rewrites up to ${max} characters, and this persona is longer. Shorten it first, or edit it by hand.`,
       },
       /** New's Skills, Tools and MCP servers (ADR 0197), and what applying them came to after the create. */
       setup: {

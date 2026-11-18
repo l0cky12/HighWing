@@ -265,14 +265,17 @@ describe("Write with AI", () => {
     expect(persona().value).toBe(ROUGH);
   });
 
-  it("says so when only the start of a long persona was sent", async () => {
-    const { user } = await open();
+  it("won't rewrite a persona too long to send whole, so its end isn't lost", async () => {
+    let asked = 0;
+    const { user } = await open({ seed: (s) => (s.oneshotAnswer = () => (asked++, REWRITTEN)) });
     await user.click(persona());
     await user.paste(`${ROUGH} `.repeat(200));
     await modelReadDone();
     await user.click(generate());
-    await waitFor(() => expect(persona().value).toBe(REWRITTEN));
-    expect(within(dialog()).getByText(/^Your persona is longer than 8000 characters, so only its first 8000 were rewritten\./)).toBeTruthy();
+    expect(generate().getAttribute("aria-disabled")).toBe("true");
+    expect(hintOf(generate())).toBe("Write with AI rewrites up to 8000 characters, and this persona is longer. Shorten it first, or edit it by hand.");
+    expect(asked).toBe(0);
+    expect(persona().value).toBe(`${ROUGH} `.repeat(200));
   });
 
   it("lets Create run again once a connection drops during a rewrite and comes back", async () => {

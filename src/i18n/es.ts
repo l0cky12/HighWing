@@ -467,7 +467,7 @@ export const es: Catalogue = {
         failed: (why) => `Hermes no pudo reescribirla: ${why} Tu persona no cambió.`,
         blockedAsking: "Espera a que termine la reescritura de la persona, o detenla, primero.",
         noText: "Hermes respondió sin texto.",
-        cut: (max) => `Tu persona tiene más de ${max} caracteres, así que solo se reescribieron los primeros ${max}.`,
+        tooLong: (max) => `Escribir con IA reescribe hasta ${max} caracteres, y esta persona es más larga. Acórtala primero o edítala a mano.`,
       },
       setup: {
         skills: "Habilidades",

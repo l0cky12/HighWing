@@ -18,12 +18,12 @@ export type RephraseWiring = { ask: (call: Call) => Promise<string>; model: () =
 
 /**
  * Where a rewrite stands. `asking`: call `n` is out, written from `before`. `replaced`: the field held `before` and now
- * holds Hermes's answer, `after`; `cut`: only the first `PERSONA_INPUT_MAX` characters of `before` were sent.
+ * holds Hermes's answer, `after`.
  */
 export type Rephrase =
   | { kind: "idle" }
   | { kind: "asking"; n: number; before: string }
-  | { kind: "replaced"; before: string; after: string; cut: boolean }
+  | { kind: "replaced"; before: string; after: string }
   | { kind: "failed"; message: string };
 
 type ModelRead = { kind: "reading" } | { kind: "read"; provider: string; model: string } | { kind: "failed"; message: string };
@@ -87,7 +87,10 @@ export function usePersonaRephrase({
               ? w.asking
               : !text.trim()
                 ? w.empty
-                : undefined;
+                : // The answer replaces the whole field, so a persona only partly sent would lose its end.
+                  personaCut(text)
+                  ? w.tooLong(PERSONA_INPUT_MAX)
+                  : undefined;
   const runsOn = model.kind === "read" && model.provider ? w.runsOn(shortName(model.model) || model.provider, profile) : undefined;
 
   const ask = async () => {
@@ -101,7 +104,7 @@ export function usePersonaRephrase({
       if (latest.current !== n) return;
       if (answer === undefined) return setState({ kind: "failed", message: w.noText });
       setText(answer);
-      setState({ kind: "replaced", before, after: answer, cut: personaCut(before) });
+      setState({ kind: "replaced", before, after: answer });
     } catch (e) {
       if (latest.current === n) setState({ kind: "failed", message: errorText(e) });
     } finally {
@@ -174,7 +177,6 @@ export function RephrasePanel({ r, hintId, focusBox }: { r: PersonaRephraseState
       )}
       {r.undoable && state.kind === "replaced" && (
         <div className="persona-rephrase-note small" role="status">
-          {state.cut && `${w.cut(PERSONA_INPUT_MAX)} `}
           {w.replaced}{" "}
           <button className="btn" onClick={() => close(r.undo)}>
             {w.undo}

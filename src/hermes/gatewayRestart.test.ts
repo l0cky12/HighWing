@@ -142,6 +142,22 @@ describe("Gateway restart: restart", () => {
     expect([...api.marksOf("work")]).toEqual(["gateways:telegram"]);
   });
 
+  it("keeps a mark saved again while the restart ran, though the restart was asked with it", async () => {
+    const { rest, timing } = await setUp();
+    let saved = false;
+    const api: GatewayRestartApi = new GatewayRestartApi((m, p, b) => {
+      if (p.startsWith("api/actions/") && !saved) {
+        saved = true;
+        api.unmark("default", "mcp:fs");
+        api.mark("default", "mcp:fs");
+      }
+      return rest(m, p, b);
+    }, timing);
+    api.mark("default", "mcp:fs");
+    expect(await api.restart("default")).toEqual({ kind: "restarted" });
+    expect([...api.marksOf("default")]).toEqual(["mcp:fs"]);
+  });
+
   it("stops waiting on a read Hermes never answers, once the limit has passed", async () => {
     const { rest, clock, timing } = await setUp();
     const stalled: typeof rest = (m, p, b) => (p.startsWith("api/actions/gateway-restart/status") ? new Promise(() => {}) : rest(m, p, b));

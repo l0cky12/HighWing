@@ -87,6 +87,8 @@ function commandOf(v: unknown): Command {
  */
 const COOLDOWN_MS = 10_500;
 
+const saveKey = (profile: string, mark: RestartMark) => `${profile}\n${mark}`;
+
 const LATE: unique symbol = Symbol("late");
 
 const lastLines = (lines: string[]) =>
@@ -106,6 +108,9 @@ export class GatewayRestartApi {
    * an MCP server edited in place, or a token replaced on a platform that stays connected. Never changed in place.
    */
   private marks = new Map<string, ReadonlySet<RestartMark>>();
+  /** Which save each mark is from, so a restart clears only the saves made before it was asked for. */
+  private saves = new Map<string, number>();
+  private saveCount = 0;
   private listeners = new Set<() => void>();
 
   constructor(
@@ -121,11 +126,18 @@ export class GatewayRestartApi {
   };
 
   mark(profile: string, mark: RestartMark) {
+    this.saves.set(saveKey(profile, mark), ++this.saveCount);
     if (!this.marksOf(profile).has(mark)) this.setMarks(profile, new Set([...this.marksOf(profile), mark]));
   }
 
   unmark(profile: string, mark: RestartMark) {
+    this.saves.delete(saveKey(profile, mark));
     if (this.marksOf(profile).has(mark)) this.setMarks(profile, new Set([...this.marksOf(profile)].filter((m) => m !== mark)));
+  }
+
+  /** The profile's marks with the save each is from, as they stand now. */
+  private savesOf(profile: string): Map<RestartMark, number | undefined> {
+    return new Map([...this.marksOf(profile)].map((m) => [m, this.saves.get(saveKey(profile, m))]));
   }
 
   private setMarks(profile: string, marks: ReadonlySet<RestartMark>) {
@@ -154,10 +166,10 @@ export class GatewayRestartApi {
     if (before) await sleep(Math.max(0, before.at + COOLDOWN_MS - now()));
     let pid: number | undefined;
     // The changes saved before the restart is asked for; one saved while it runs may come too late for it.
-    let applies = NO_MARKS;
+    let applies = this.savesOf(profile);
     // A restart asked inside Hermes's cooldown gets the last one back; it has a new pid only once the cooldown is over.
     for (let tries = 0; ; tries++) {
-      applies = this.marksOf(profile);
+      applies = this.savesOf(profile);
       try {
         const res = await this.within(this.rest("POST", `api/gateway/restart?${q(profile)}`), this.timing.commandLimitMs);
         if (res === LATE) return { kind: "unconfirmed", why: `Hermes didn't answer the restart request within ${seconds(this.timing.commandLimitMs)} seconds.` };
@@ -215,8 +227,10 @@ export class GatewayRestartApi {
       if (s !== LATE && s) {
         last = s;
         if (s.running && s.state === "running") {
-          const left = [...this.marksOf(profile)].filter((m) => !applies.has(m));
-          if (left.length < this.marksOf(profile).size) this.setMarks(profile, new Set(left));
+          const current = this.savesOf(profile);
+          const applied = [...current].filter(([m, save]) => applies.has(m) && applies.get(m) === save).map(([m]) => m);
+          for (const m of applied) this.saves.delete(saveKey(profile, m));
+          if (applied.length) this.setMarks(profile, new Set([...current.keys()].filter((m) => !applied.includes(m))));
           return { kind: "restarted" };
         }
       }

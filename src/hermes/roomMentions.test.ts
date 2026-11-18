@@ -62,6 +62,14 @@ describe("goesTo", () => {
     expect(goesTo(text, TRIO).mentions).toMatchObject([{ kind: "trailing", raw, tail, meant: { kind: "seat", seat: BRAM } }]);
   });
 
+  it("finds the bot a trailing mark hides when its handle itself ends in a mark, taking the longest handle", () => {
+    const REVIEW = { handle: "review-", name: "Reviewer" };
+    const REVIEW_BARE = { handle: "review", name: "Review" };
+    expect(goesTo("@review-.", [REVIEW, ADA]).mentions).toMatchObject([{ kind: "trailing", raw: "review-.", tail: ".", meant: { kind: "seat", seat: REVIEW } }]);
+    expect(goesTo("@review-.", [REVIEW_BARE, REVIEW]).mentions).toMatchObject([{ kind: "trailing", tail: ".", meant: { kind: "seat", seat: REVIEW } }]);
+    expect(goesTo("@review-.", [REVIEW_BARE]).mentions).toMatchObject([{ kind: "trailing", tail: "-.", meant: { kind: "seat", seat: REVIEW_BARE } }]);
+  });
+
   it("does not call a comma or a question mark trailing: Hermes stops the name there", () => {
     expect(sentence("@bram, @ada?").to).toEqual(["Ada", "Bram"]);
   });
@@ -250,6 +258,13 @@ describe("pickerRows", () => {
     expect(names("\u00c5")).toEqual([ANGSTROM]);
     expect(names("a")).toEqual(["Ada", "Everyone"]);
     expect(names("\u00e1")).toEqual([]);
+  });
+
+  it("matches a Greek name in capitals, where lowercasing makes a final sigma", () => {
+    const SISYPHUS = { handle: "sisyphus", name: "\u03a3\u03af\u03c3\u03c5\u03c6\u03bf\u03c2" };
+    const rows = (q: string) => pickerRows(q, [SISYPHUS], "Everyone").filter((r) => r.kind === "seat");
+    expect(rows("\u03c3\u03af\u03c3")).toHaveLength(1);
+    expect(rows("\u03a3\u038a\u03a3")).toHaveLength(1);
   });
 
   it("finds a name after an apostrophe, which is not part of a word", () => {

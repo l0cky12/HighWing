@@ -95,8 +95,8 @@ export function goesTo<S extends Handled>(text: string, roster: readonly S[]): G
       mentions.push(!glued && !inCode ? { at, raw, kind: "plain", target } : inCode ? { at, raw, kind: "inCode", target } : { at, raw, kind: "glued", target, before: runBefore(text, at) });
     } else if (!glued && !inCode) {
       let stem = raw.length;
-      while (stem > 0 && TAIL.has(raw[stem - 1])) stem--;
-      const meant = stem < raw.length ? targetOf(fold(raw.slice(0, stem))) : undefined;
+      let meant: Target<S> | undefined;
+      while (!meant && stem > 0 && TAIL.has(raw[stem - 1])) meant = targetOf(fold(raw.slice(0, --stem)));
       mentions.push(meant ? { at, raw, kind: "trailing", meant, tail: raw.slice(stem) } : { at, raw, kind: "unknown" });
     }
   }
@@ -122,7 +122,8 @@ export type PickerRow<S> = { readonly kind: "seat"; readonly seat: S } | { reado
 
 export const rowHandle = (row: PickerRow<Handled>): string => (row.kind === "seat" ? row.seat.handle : "all");
 
-const caseOnly = (s: string): string => s.normalize("NFC").toLowerCase();
+// toLowerCase writes a word-final capital sigma as the final form, which a typed prefix doesn't end in.
+const caseOnly = (s: string): string => s.normalize("NFC").toLowerCase().replaceAll("\u03c2", "\u03c3");
 const words = (s: string): string[] => caseOnly(s).split(/[^\p{L}\p{M}\p{N}]+/u);
 
 export function pickerRows<S extends Named>(query: string, roster: readonly S[], everyoneName: string): readonly PickerRow<S>[] {

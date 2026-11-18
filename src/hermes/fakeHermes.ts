@@ -941,7 +941,7 @@ export class FakeHermes {
         const answer = () => this.respond(r.id, { session_id: sid, stored_session_id: stored, message_count: messages.length, messages, info: this.sessionInfo, running: true, inflight });
         const before = this.beforeResumeAnswer;
         if (!before) return answer();
-        // Hermes answers from another task than the app's request, so the app is waiting on it when these frames come.
+        // Hermes answers on its own task, so the app is already waiting on the resume when these frames reach it.
         return queueMicrotask(() => (before(sid), answer()));
       }
       const runtimeId = `rt-r${++this.resumed}`;

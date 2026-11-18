@@ -216,15 +216,17 @@ describe("Reconnecting", () => {
     ]);
   });
 
-  describe.each([
-    ["with stamps", true],
-    ["without stamps", false],
-  ])("coming back to a reply that still streams, %s (#77)", (_, stamped) => {
-    const words = Array.from({ length: 12 }, (_, n) => `w${n + 1}`);
-    const reply = words.join(" ");
+  describe("coming back to a reply that still streams (#77)", () => {
+    const words = Array.from({ length: 12 }, (_, n) => `w${n + 1} `);
+    const w = (from: number, to: number) => words.slice(from, to);
+    const reply = (from = 0, to = 12) => w(from, to).join("").trim();
+    const stamps = [
+      ["with stamps", true],
+      ["without stamps", false],
+    ] as const;
 
-    /** A chat whose reply streams `w1 w2 w3 w4`, then the connection drops and `w5 w6` stream while the app is away. */
-    async function droppedMidReply() {
+    /** A chat whose reply streams `before`, then the connection drops and `away` streams while the app can't hear. */
+    async function droppedMidReply(stamped: boolean, before = w(0, 4), away = w(4, 6)) {
       const signed = await signedIn();
       const { server, hermes } = signed;
       server.reattachTurns = true;
@@ -232,28 +234,118 @@ describe("Reconnecting", () => {
       const id = await hermes.newChat();
       await hermes.send(id, "slow 12");
       const rt = server.runtimeIdOf(id)!;
-      const say = (from: number, to: number) => words.slice(from, to).forEach((w) => server.event(rt, "message.delta", { text: `${w} ` }));
+      const say = (texts: string[]) => texts.forEach((text) => server.event(rt, "message.delta", { text }));
       server.event(rt, "message.start");
-      say(0, 4);
+      say(before);
       server.drop();
-      say(4, 6);
-      const back = async () => {
-        await vi.advanceTimersByTimeAsync(1_000);
+      say(away);
+      /** Reconnects, which resumes the chat. */
+      const back = async (ms = 1_000) => {
+        await vi.advanceTimersByTimeAsync(ms);
         await hermes.idle();
       };
-      const shown = () => signed.chat(id).items.map((i) => [i.kind, "text" in i ? i.text.trim() : i.id]);
+      const shown = () => signed.chat(id).items.map((i) => [i.kind, i.kind === "tool" ? i.status : "text" in i ? i.text.trim() : i.id]);
       return { ...signed, id, rt, say, back, shown };
     }
 
-    it("shows the deltas Hermes sends on the new connection before it answers the resume", async () => {
-      const { server, say, back, shown } = await droppedMidReply();
-      server.beforeResumeAnswer = () => say(6, 8);
+    it.each(stamps)("shows the deltas Hermes sends on the new connection before it answers the resume, %s", async (_, stamped) => {
+      const { server, say, back, shown } = await droppedMidReply(stamped);
+      server.beforeResumeAnswer = () => say(w(6, 8));
       await back();
-      say(8, 12);
+      say(w(8, 12));
 
       expect(shown()).toEqual([
         ["user", "slow 12"],
-        ["assistant", reply],
+        ["assistant", reply()],
+      ]);
+    });
+
+    it("shows once the delta Hermes was sending as the resume read the reply, when it comes before the answer", async () => {
+      const { server, rt, say, back, shown } = await droppedMidReply(true);
+      const send = server.heldDelta(rt, words[6]);
+      server.beforeResumeAnswer = () => (send(), say(w(7, 8)));
+      await back();
+      say(w(8, 12));
+
+      expect(shown()).toEqual([
+        ["user", "slow 12"],
+        ["assistant", reply()],
+      ]);
+    });
+
+    it("shows once the delta Hermes was sending as the resume read the reply, when it comes after the answer", async () => {
+      const { server, rt, say, back, shown } = await droppedMidReply(true);
+      const send = server.heldDelta(rt, words[6]);
+      await back();
+      send();
+      say(w(7, 12));
+
+      expect(shown()).toEqual([
+        ["user", "slow 12"],
+        ["assistant", reply()],
+      ]);
+    });
+
+    it.each(stamps)("keeps a delta that repeats the end of the reply the resume read, %s", async (_, stamped) => {
+      const { server, say, back, shown } = await droppedMidReply(stamped, ["ha "], ["ha "]);
+      server.beforeResumeAnswer = () => say(["ha "]);
+      await back();
+
+      expect(shown()).toEqual([
+        ["user", "slow 12"],
+        ["assistant", "ha ha ha"],
+      ]);
+    });
+
+    it.each(stamps)("ends the turn when the reply ends before Hermes answers the resume, %s", async (_, stamped) => {
+      const { server, rt, say, back, shown, chat, id } = await droppedMidReply(stamped);
+      server.beforeResumeAnswer = () => {
+        say(w(6, 8));
+        server.event(rt, "message.complete", { text: reply(0, 8), status: "complete" });
+      };
+      await back();
+
+      expect(chat(id).running).toBe(false);
+      expect(shown()).toEqual([
+        ["user", "slow 12"],
+        ["assistant", reply(0, 8)],
+      ]);
+    });
+
+    it.each(stamps)("shows a tool call made before Hermes answers the resume after the reply so far, %s", async (_, stamped) => {
+      const { server, rt, say, back, shown } = await droppedMidReply(stamped);
+      server.beforeResumeAnswer = () => {
+        server.event(rt, "tool.start", { tool_id: "t1", name: "terminal", preview: "df -h" });
+        server.event(rt, "tool.complete", { tool_id: "t1", result: "82% used" });
+      };
+      await back();
+      say(w(6, 12));
+
+      expect(shown()).toEqual([
+        ["user", "slow 12"],
+        ["assistant", reply(0, 6)],
+        ["tool", "done"],
+        ["assistant", reply(6, 12)],
+      ]);
+    });
+
+    it.each(stamps)("shows the reply once when the connection drops again before Hermes answers the resume, %s", async (_, stamped) => {
+      const { server, hermes, say, back, shown, chat, id } = await droppedMidReply(stamped);
+      server.beforeResumeAnswer = () => {
+        server.beforeResumeAnswer = undefined;
+        say(w(6, 8));
+        server.drop();
+      };
+      await back();
+      expect(chat(id).runtimeId).toBeUndefined();
+      await back(2_000);
+      await hermes.open(id);
+      expect(resumes(server)).toHaveLength(2);
+      say(w(8, 12));
+
+      expect(shown()).toEqual([
+        ["user", "slow 12"],
+        ["assistant", reply()],
       ]);
     });
   });

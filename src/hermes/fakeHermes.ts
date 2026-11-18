@@ -2895,14 +2895,95 @@ export class FakeHermes {
    * stored as a user row with its display kind and title, and the turn's `message.start` carries only the turn's id.
    */
   returnWork(stored: string, notice: { text: string; display_kind: string; display_metadata?: Record<string, unknown> }, reply: string) {
+    if (!this.runtimeIdOf(stored)) throw new Error(`No runtime session for ${stored}`);
+    this.wake(stored, notice, reply);
+  }
+
+  /**
+   * A turn Hermes starts by itself in a stored session: the notice and the reply are stored whoever is attached, and
+   * the turn's events go only to a client that has the session open.
+   */
+  wake(stored: string, notice: { text: string; display_kind: string; display_metadata?: Record<string, unknown> }, reply: string) {
     const runtime = this.runtimeIdOf(stored);
-    if (!runtime) throw new Error(`No runtime session for ${stored}`);
     this.storeMessage(stored, { role: "user", ...notice });
     const user_row_id = this.transcripts[stored].at(-1)!.row_id!;
-    this.event(runtime, "message.start", { turn_id: `wake-${user_row_id}` });
-    this.event(runtime, "message.delta", { text: reply });
+    if (runtime) {
+      this.event(runtime, "message.start", { turn_id: `wake-${user_row_id}` });
+      this.event(runtime, "message.delta", { text: reply });
+    }
     this.storeMessage(stored, { role: "assistant", text: reply });
-    this.event(runtime, "message.complete", { text: reply, status: "complete", persisted_turn: { user_row_id } });
+    if (runtime) this.event(runtime, "message.complete", { text: reply, status: "complete", persisted_turn: { user_row_id } });
+  }
+
+  /**
+   * Hermes's gate on `message_agent` (`tools/bot_mode_dm.py` `message_agent_authorized` at 0.23.2): the session is
+   * titled exactly "Bot Chat", and any profile's `profile.yaml` has a `ui_meta['hermes-bots']` mapping, empty or not.
+   */
+  messageAgentOffered(stored: string): boolean {
+    const session = this.profileNames().flatMap((p) => this.store(p) ?? []).find((s) => s.id === stored);
+    const managed = (v: unknown) => typeof v === "object" && v !== null && !Array.isArray(v);
+    return session?.title === "Bot Chat" && this.profileNames().some((p) => managed(this.profileMeta[p]?.ui_meta?.["hermes-bots"]));
+  }
+
+  private deliverySeq = 0;
+
+  /**
+   * One bot messages another, as Hermes 0.23.2 stored it between two profiles on a headless gateway. Throws while
+   * `messageAgentOffered` is false for the sender's Bot Chat, where the tool wouldn't exist. In order:
+   * 1. The sender's turn calls `message_agent {target, message}`, and its result is the queued ack. The owner's
+   *    prompt for that turn is stored already.
+   * 2. The recipient's Bot Chat gets a user row with `display_kind: "internal_notification"`, signed
+   *    `Message from 🤖 <name> (@<handle>): <message>`, and its reply.
+   * 3. The sender's Bot Chat is woken with a `process_complete` row whose output is the delivery's answer, and replies.
+   * A session that isn't open here gets its rows and no events. `handle`: the profile's name, or `hermes` for the
+   * default profile while no profile has that name (`bot_mode_probe._handle`).
+   */
+  async messageAgent(from: string, to: string, message: string, replies: { sent?: string; recipient: string; sender: string }): Promise<{ deliveryId: string }> {
+    const botChat = (profile: string) => {
+      const chat = this.store(profile)?.find((s) => s.title === "Bot Chat");
+      if (!chat) throw new Error(`${profile} has no Bot Chat`);
+      return chat.id;
+    };
+    const [sender, recipient] = [botChat(from), botChat(to)];
+    if (!this.messageAgentOffered(sender)) throw new Error("This install is not Bot-Mode-managed, so Hermes offers no message_agent.");
+    const handle = (profile: string) => (profile === "default" && !this.profileNames().includes("hermes") ? "hermes" : profile);
+    const title = (this.profileMeta[from]?.ui_meta?.["hermes-bots"] as { title?: unknown } | undefined)?.title;
+    const name = (typeof title === "string" && title.trim()) || this.profileMeta[from]?.display_name || handle(from);
+    const n = ++this.deliverySeq;
+    const deliveryId = `delivery-${n}`;
+    const process = `proc_dm${n}`;
+    const args = { target: to, message };
+    const ack = {
+      status: "queued",
+      delivery_id: deliveryId,
+      to: `@${handle(to)}`,
+      detail: "Durably queued for the live Bot Chat owner. Do NOT wait or resend; finish your turn.",
+      process_id: process,
+      reply_delivery: "notification",
+      target_state: "idle",
+    };
+    const sent = replies.sent ?? `Asked @${handle(to)}.`;
+    const runtime = this.runtimeIdOf(sender);
+    if (runtime) await this.toolTurn(runtime, { calls: [[{ name: "message_agent", args, result: ack, seconds: 0 }]], reply: sent, modelSeconds: 0, tokens: { prompt: 0, output: 0 }, costUsd: 0 });
+    else {
+      const call = `call_dm${n}`;
+      this.storeMessage(sender, { role: "assistant", text: "", tool_calls: [{ id: call, type: "function", function: { name: "message_agent", arguments: JSON.stringify(args) } }] });
+      this.storeMessage(sender, { role: "tool", tool_call_id: call, name: "message_agent", args, result: JSON.stringify(ack) });
+      this.storeMessage(sender, { role: "assistant", text: sent });
+    }
+    this.wake(recipient, { text: `Message from 🤖 ${name} (@${handle(from)}): ${message}`, display_kind: "internal_notification", display_metadata: { gateway_input_owner: `owner-${n}` } }, replies.recipient);
+    const command = `/opt/hermes/venv/bin/python /opt/hermes/tools/bot_mode_dm.py --run-delivery --author '{"id":"bot:${from}","name":"${name}","is_bot":true}' query-file /tmp/hermes-dm/dm-${n}.txt --profile-home /home/lena/.hermes/profiles/${to} /opt/hermes/venv/bin/hermes -p ${to}`;
+    const output = `{"outcome": "@${handle(to)} answered.", "reply": ${JSON.stringify(replies.recipient)}, "status": "settled", "delivery_id": "${deliveryId}"}`;
+    this.wake(
+      sender,
+      {
+        text: `[IMPORTANT: Background process ${process} completed normally (exit code 0).\nCommand: ${command}\nOutput:\n${output}\n]`,
+        display_kind: "process_complete",
+        display_metadata: { display_text: `Background Process Finished: ${command}` },
+      },
+      replies.sender,
+    );
+    return { deliveryId };
   }
 
   /**

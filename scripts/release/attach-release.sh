@@ -61,7 +61,7 @@ else
 
 **Debian and Ubuntu (x86_64):** download $package and install it with \`sudo apt install ./$package\`. It is built on Ubuntu 24.04, so it needs Ubuntu 24.04, Debian 13 or newer. The app doesn't update a .deb install: to update, install a newer .deb the same way.
 
-**Other Linux (x86_64):** download $portable, make it executable with \`chmod +x $portable\`, and run it. It is built on Ubuntu 24.04, so it needs a system at least that new (glibc 2.39). It needs FUSE 2 (\`libfuse2\` on Debian and Ubuntu, \`fuse2\` on Arch). Without it, run \`./$portable --appimage-extract-and-run\`. The app doesn't update an AppImage: to update, download a newer one."
+**Other Linux (x86_64):** download $portable, make it executable with \`chmod +x $portable\`, and run it. It is built on Ubuntu 24.04, so it needs a system at least that new (glibc 2.39). It needs FUSE with a \`fusermount\` command (package \`fuse3\` on Debian and Ubuntu, \`fuse2\` on Arch). Without FUSE, run \`./$portable --appimage-extract-and-run\`. The app doesn't update an AppImage: to update, download a newer one."
   gh release create "$tag" "${assets[@]}" --verify-tag \
     --title "Highwing $version" --notes "$notes" "${prerelease[@]}"
 fi

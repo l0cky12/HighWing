@@ -1,6 +1,6 @@
 # A persona is drafted with one-off calls, and only Apply fills the editor
 
-> **Accepted.** The prompt and answer handling are in `src/hermes/personaAI.ts`. The panel and its state are `PersonaAI` and `usePersonaAI` in `src/ui/PersonaAI.tsx`, used by `PersonaSettings` (Settings → Persona). Tested in `src/hermes/personaAI.test.ts`, `src/ui/persona.test.tsx`, `src/ui/personaAITranslated.test.tsx` and `e2e/features/persona-ai.e2e.tsx`.
+> **Superseded by [ADR 0203](0203-a-persona-is-edited-only-in-the-profile-form-and-write-with-ai-rewrites-it-in-place.md).** Settings → Persona and its Write with AI panel are gone. Write with AI is now one button on the profile form's Persona, which rewrites the field in place with Undo. The code this ADR described was removed with it: `src/hermes/personaAI.ts`, `PersonaAI` and `usePersonaAI` in `src/ui/PersonaAI.tsx`, `PersonaSettings`, and their tests.
 
 The owner wants Hermes to write a profile's `SOUL.md` from a rough description, or to improve the one they have, on Settings → Persona, for any profile picked there. Writing a persona must not save it, start a chat, or give the profile any tool or permission. Only Save on Persona (ADR 0014) writes to the server. The New bot form has its own Generate with AI, which rewrites the persona typed in the form (ADR 0197); this decision leaves it as it is.
 

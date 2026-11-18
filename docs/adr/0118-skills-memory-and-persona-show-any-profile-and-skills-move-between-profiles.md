@@ -1,5 +1,7 @@
 # Skills, Memory and Persona show any profile, and skills copy and move between profiles through Hermes's routes
 
+> **Partly superseded by [ADR 0203](0203-a-persona-is-edited-only-in-the-profile-form-and-write-with-ai-rewrites-it-in-place.md).** Settings → Persona is gone, and with it the copy of one profile's `SOUL.md` over another's; Clone profile still copies a persona into a new profile. Skills and Memory stand as decided here.
+
 Settings → Skills, Memory and Persona each showed only the profile the app shows. The owner wants to pick which profile each tab shows from a list in the tab, see all of that profile's skills, memory and SOUL.md, and, in an edit (Select) mode, pick several skills and copy, move or delete them, the same for memory, and to put one profile's persona on another. The deployed Hermes (`f0d94882`, research checkout `~/.cache/hermes-src-168`) has profile-scoped routes for each part, so the app uses those and never writes the server's files itself.
 
 ## Decisions

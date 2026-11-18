@@ -2,6 +2,8 @@
 
 Evidence for ADR 0199: Write with AI on Settings → Persona.
 
+A historical record: [ADR 0203](../../adr/0203-a-persona-is-edited-only-in-the-profile-form-and-write-with-ai-rewrites-it-in-place.md) removed Settings → Persona and this panel, and its `persona-ai` e2e feature with them.
+
 ## Where the screenshots come from
 
 Every PNG here is from the native desktop app (Tauri, WebKitGTK), driven through WebDriver by the `verify-hermes-chat` skill (`.claude/skills/verify-hermes-chat/`), against its stand-in dashboard (`scripts/bridge.ts`, the repo's `FakeHermes` behind HTTP and WebSocket on loopback). Every profile is seeded test data: `default` (in use) and `work`. Every suggestion is a fixed answer the stand-in was told to give with `POST /__oneshot`. No real model wrote any of this text.

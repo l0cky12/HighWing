@@ -119,7 +119,7 @@ The switches also need `PUT /api/tools/toolsets/{name}`. Settings → Toolsets a
 
 ## Persona
 
-Needs `GET` and `PUT /api/profiles/{name}/soul`. Checked with the `GET`. Without them, Settings → Persona shows a note instead of the editor.
+Needs `GET` and `PUT /api/profiles/{name}/soul`. Checked with the `GET`. Without them, the Persona field of Edit profile and Edit bot says what is missing and stays off; the rest of the form still saves.
 
 ## Clone profile
 

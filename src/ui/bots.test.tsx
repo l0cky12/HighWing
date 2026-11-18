@@ -1414,6 +1414,18 @@ describe("The chat list panel's two modes", () => {
     expect(within(document.querySelector<HTMLElement>(".chat-head")!).getByText("Bot Chat")).toBeTruthy();
   });
 
+  it("opens a bot in another profile on one click while a reply runs here, and says the bot left is still replying", async () => {
+    const { hermes, user } = await launch((s) => (s.liveSessions = []));
+    await openScribe(user);
+    await act(async () => void (await hermes.send("scribe-bot", "Now the notes for 1.0")));
+    await waitFor(() => expect(hermes.getSnapshot().chats.find((c) => c.id === "scribe-bot")?.running).toBe(true));
+    await user.click(panelBots()[0]);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await waitFor(() => expect(hermes.profile).toBe("default"));
+    await waitFor(() => expect(current()).toEqual(["true", null]));
+    expect(toast()).toBe("Scribe is still replying. The whole reply will be here when you come back.");
+  });
+
   it("asks before a bot in another profile opens while an Approval waits here", async () => {
     const { server, hermes, user } = await launch((s) => (s.liveSessions = []));
     await openScribe(user);

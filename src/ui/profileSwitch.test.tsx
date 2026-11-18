@@ -91,15 +91,25 @@ describe("Switching profile in the app", () => {
     await switched(hermes, "work");
   });
 
-  it("switches on one pick while a reply is still running, without asking", async () => {
+  it("switches on one pick while replies are still running, without asking, and says they go on", async () => {
     const { hermes, user } = await launch();
     await act(async () => {
-      const id = await hermes.newChat();
-      await hermes.send(id, "Summarise the logs");
+      for (const words of ["Summarise the logs", "Check the backups"]) await hermes.send(await hermes.newChat(), words);
     });
     await pickProfile(user, "work");
     await switched(hermes, "work");
     expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(document.querySelector(".toast")?.textContent).toBe("Hermes is still replying in 2 chats. Every reply will be here when you come back.");
+  });
+
+  it("names the profile left by its id in that note on a Hermes without Bot Mode", async () => {
+    const { server, hermes, user } = await launch();
+    server.botMode = "none";
+    await act(async () => void (await hermes.capabilities.refresh()));
+    await act(async () => void (await hermes.send(await hermes.newChat(), "Summarise the logs")));
+    await pickProfile(user, "work");
+    await switched(hermes, "work");
+    expect(document.querySelector(".toast")?.textContent).toBe("A reply is still running in default. The whole reply will be here when you come back.");
   });
 
   it("keeps the question open if the Approval ends meanwhile, and puts focus back on the switcher on Stay", async () => {

@@ -651,7 +651,16 @@ export const en = {
       /** What switching away from the profile in use leaves behind, asked about first (the switcher's own question). */
       approval: (profile: string) => `An approval is waiting in ${profile}. Hermes waits for your answer only until it times out: switch back and open the chat to answer it.`,
       /** A clarify, sudo or secret question waiting in the profile (ADR 0146). */
-      question: (profile: string) => `A question from Hermes is waiting in ${profile}. Hermes waits for your answer only until it times out: switch back and open the chat to answer it.`,    },
+      question: (profile: string) => `A question from Hermes is waiting in ${profile}. Hermes waits for your answer only until it times out: switch back and open the chat to answer it.`,
+      /** The toast after a switch that leaves `n` replies running in the bot left, which Hermes keeps going (ADR 0224). */
+      replying: (bot: string, n: number) =>
+        n === 1 ? `${bot} is still replying. The whole reply will be here when you come back.` : `${bot} is still replying in ${n} chats. Every reply will be here when you come back.`,
+      /** The same, for a profile that isn't a bot (a Hermes without Bot Mode), named as the switcher names it. */
+      running: (profile: string, n: number) =>
+        n === 1
+          ? `A reply is still running in ${profile}. The whole reply will be here when you come back.`
+          : `${n} replies are still running in ${profile}. Every reply will be here when you come back.`,
+    },
     form: {
       newTitle: "New profile",
       editTitle: (name: string) => `Edit profile: ${name}`,

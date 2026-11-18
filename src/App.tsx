@@ -45,7 +45,7 @@ import { PreferredRoutes, type RouteHealth, routesOf, sshAddressOf } from "./her
 import { signInError, testSignIn, type SignInError, type TestOutcome } from "./hermes/setup";
 import { isOutgoing, isWaiting, type Attachment, type Chat, type ConnectionStatus, type Found, type Hit, type SentReference } from "./hermes/model";
 import { shortName, type ModelCatalog, type ModelPick } from "./hermes/models";
-import { ChatList, Rail, leavingNote } from "./ui/Sidebar";
+import { ChatList, Rail, leavingNote, profileLabel } from "./ui/Sidebar";
 import { lookShown, type BotLookShown } from "./ui/BotFace";
 import { type ChatLink, type ConnectionRefs, checkConnection, connectionKey, connectionLabel, connectionRefs, formatChatLink, locateChat, parseChatLink } from "./hermes/chatLinks";
 import { desktopLinks, type LinkInbox } from "./hermes/tauriLinks";
@@ -2166,7 +2166,13 @@ export function Main({
 
   // The other profile's chats replace the list, so one pane stays, on a fresh draft. The profile left keeps its last
   // open chat for the next launch. A switch is a bot visit only when `visit` says so; any other ends one (ADR 0203).
+  // A reply running in the profile left goes on in Hermes, so the switch asks nothing about it; a toast says so instead
+  // (ADR 0224).
   const switchProfileNow = (name: string, { keepSettings = false, visit: visiting }: { keepSettings?: boolean; visit?: BotVisit } = {}) => {
+    const left = hermes.getSnapshot();
+    const replies = name === left.profile ? 0 : left.chats.filter((c) => c.running).length;
+    const bot = hasBotMode ? bots?.roster.find((b) => b.profile === left.profile) : undefined;
+    const still = words.profiles.leaving;
     navGen.current++;
     const keep = activeKeyRef.current;
     setGoTo(undefined);
@@ -2181,7 +2187,11 @@ export function Main({
     shown?.set(prefScope(connection, name), null);
     if (!keepSettings) setSettingsOpen(false);
     setProjectOpen(false);
-    setToast(null);
+    setToast(
+      replies
+        ? { text: bot ? still.replying(bot.name, replies) : still.running(profileLabel(words, left.profile, defaultProfileName), replies), at: Date.now() }
+        : null,
+    );
     // What the Preview showed was the old profile's; the Screen tab starts again for the new one.
     stepPreview({ kind: "clear" });
     if (panelTab === "preview") setPanelOpen(false);

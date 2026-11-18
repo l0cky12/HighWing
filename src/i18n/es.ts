@@ -628,7 +628,14 @@ export const es: Catalogue = {
       stay: "Quedarse",
       go: "Cambiar de todos modos",
       approval: (profile) => `Hay una aprobación esperando en ${profile}. Hermes espera tu respuesta solo hasta que se agote el tiempo: vuelve y abre el chat para responder.`,
-      question: (profile) => `Hay una pregunta de Hermes esperando en ${profile}. Hermes espera tu respuesta solo hasta que se agote el tiempo: vuelve y abre el chat para responder.`,    },
+      question: (profile) => `Hay una pregunta de Hermes esperando en ${profile}. Hermes espera tu respuesta solo hasta que se agote el tiempo: vuelve y abre el chat para responder.`,
+      replying: (bot, n) =>
+        n === 1 ? `${bot} sigue respondiendo. La respuesta completa estará aquí cuando vuelvas.` : `${bot} sigue respondiendo en ${n} chats. Todas las respuestas estarán aquí cuando vuelvas.`,
+      running: (profile, n) =>
+        n === 1
+          ? `Todavía hay una respuesta en curso en ${profile}. La respuesta completa estará aquí cuando vuelvas.`
+          : `Todavía hay ${n} respuestas en curso en ${profile}. Todas estarán aquí cuando vuelvas.`,
+    },
     form: {
       newTitle: "Nuevo perfil",
       editTitle: (name) => `Editar el perfil: ${name}`,

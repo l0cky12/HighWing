@@ -120,7 +120,7 @@ describe("Settings → Persona", () => {
     // The file shows from ~, and in full on hover.
     expect(chip("File").textContent).toBe("~/.hermes/SOUL.md");
     expect(chip("File").title).toBe("/home/lena/.hermes/SOUL.md");
-    expect(within(applies()).getByText(/Hermes reads SOUL.md when a chat starts/).textContent).toMatch(/doesn't need to restart, and Highwing never restarts it/);
+    expect(within(applies()).getByText(/Hermes reads SOUL.md when a chat starts/).textContent).toMatch(/doesn't need to restart, and saving restarts nothing/);
     // Plain text, never rendered: the Markdown shows as typed.
     expect(document.querySelector(".persona strong")).toBeNull();
     expect(screen.getByRole("button", { name: /^Save$/ }).hasAttribute("disabled")).toBe(true);

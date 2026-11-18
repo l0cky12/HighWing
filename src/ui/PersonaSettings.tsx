@@ -579,7 +579,7 @@ export function PersonaSettings({
     <p>
       Hermes reads SOUL.md when a chat starts. Chats started after you save use the new persona, in Highwing, in other Hermes clients and on messaging
       platforms that use the {profile} profile. A chat already under way keeps the persona it started with, unless Hermes rebuilds its instructions, as it
-      does when the chat's model changes. Hermes doesn't need to restart, and Highwing never restarts it.
+      does when the chat's model changes. Hermes doesn't need to restart, and saving restarts nothing.
     </p>
   );
   return (

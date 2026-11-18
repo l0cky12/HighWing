@@ -1,11 +1,12 @@
-import { Children, Fragment, isValidElement, memo, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
+import { Fragment, isValidElement, memo, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
+import type { Element } from "hast";
 import { invoke } from "@tauri-apps/api/core";
 import { Check, CodeXml, Copy, Image as ImageIcon, Workflow } from "lucide-react";
 import "katex/dist/katex.min.css";
 import { PathLink, PreviewLink } from "./previewContext";
 import { splitBlocks, type Blocks } from "./markdownBlocks";
-import { rehypePlugins, remarkPlugins } from "./markdownPipeline";
+import { classes, rehypePlugins, remarkPlugins } from "./markdownPipeline";
 import { drawDiagram, drawnAlready, subscribeTheme, themeNow, type Drawing } from "./mermaid";
 import { errorText } from "../hermes/values";
 
@@ -41,13 +42,12 @@ function useDrawing(source: string, wanted: boolean, box: RefObject<HTMLElement 
   return already ?? (wanted && drawn?.source === source ? drawn.drawing : undefined);
 }
 
-function CodeBlock({ children }: { children?: ReactNode }) {
-  const code = (Children.toArray(children).find(isValidElement) as { props: { className?: unknown; "data-growing"?: unknown } } | undefined)?.props;
-  const language = (typeof code?.className === "string" && code.className.match(/language-(\S+)/)?.[1]) || "";
+function CodeBlock({ code, children }: { code: Element | undefined; children?: ReactNode }) {
+  const language = (code && classes(code).join(" ").match(/language-(\S+)/)?.[1]) || "";
   const box = useRef<HTMLDivElement>(null);
   const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle");
   const [showSource, setShowSource] = useState(false);
-  const diagram = language === "mermaid" && code?.["data-growing"] === undefined;
+  const diagram = language === "mermaid" && code?.properties.dataGrowing === undefined;
   const drawing = useDrawing(diagram ? textOf(children) : "", diagram, box);
   const svg = drawing && "svg" in drawing ? drawing.svg : undefined;
   return (
@@ -119,11 +119,11 @@ function MarkdownImage({ src, alt, title }: { src?: string; alt?: string; title?
 // Made once, not on each render: a new `pre` function is a new component type to React, which remounts every code
 // block on each streamed delta.
 const components: Components = {
-  pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
-  a: ({ href, title, children, ...rest }) => {
-    const path = rest as { "data-path"?: unknown; "data-folder"?: unknown };
-    return typeof path["data-path"] === "string" ? (
-      <PathLink written={path["data-path"]} folder={path["data-folder"] !== undefined} title={title}>
+  pre: ({ node, children }) => <CodeBlock code={node?.children.find((child) => child.type === "element")}>{children}</CodeBlock>,
+  a: ({ node, href, title, children }) => {
+    const { dataPath, dataFolder } = node?.properties ?? {};
+    return typeof dataPath === "string" ? (
+      <PathLink written={dataPath} folder={dataFolder !== undefined} title={title}>
         {children}
       </PathLink>
     ) : (

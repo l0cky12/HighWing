@@ -11,7 +11,7 @@ import { lru } from "./lru";
 import { remarkTranscriptSyntax } from "./markdownMath";
 import { findPaths, hrefPath, type PathMention } from "../hermes/paths";
 
-const classes = (node: Element) => {
+export const classes = (node: Element) => {
   const className = node.properties.className;
   return Array.isArray(className) ? className.map(String) : [];
 };

@@ -267,6 +267,9 @@ export function screenUse(chat: Pick<Chat, "items" | "running">): ScreenUse | un
  */
 export type CuAsk = { verb: string; scope: Delivery; target: string; patternKey: string };
 
+/** The scope Hermes asks for when a call keeps its window raised: it moves the focus whatever its key's delivery suffix says. */
+export const BRING_TO_FRONT = "bring_to_front";
+
 const PATTERN = /^cua:([a-z_]+):(background|foreground)$/;
 const FOREGROUND_NOTE = /\s*\[FOREGROUND\b[^\]]*\]\s*$/;
 

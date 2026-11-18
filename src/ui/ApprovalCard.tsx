@@ -3,7 +3,7 @@ import { useCallback, useId, useRef, useState, type MouseEvent } from "react";
 import { ShieldAlert } from "lucide-react";
 import type { ApprovalChoice, ApprovalItem } from "../hermes/model";
 import { endedNote, isBroadGrant, offeredChoices } from "../hermes/model";
-import { grantWords, otherScope, type CuAsk } from "../hermes/computerUse";
+import { BRING_TO_FRONT, grantWords, otherScope, type CuAsk } from "../hermes/computerUse";
 import { useLocale } from "../i18n/locale";
 
 const CHOICE_LABEL: Record<ApprovalChoice, string> = {
@@ -69,14 +69,16 @@ function CommandText({ command }: { command: string }) {
 /** A computer_use Approval's body: the action once the heading no longer says it, the window it aims at, and how it is delivered. */
 function CuBody({ ask, app, closed }: { ask: CuAsk; app?: string; closed: boolean }) {
   const l = useLocale().chat.computerUse.ask;
+  const raises = ask.verb === BRING_TO_FRONT;
+  const tip = raises ? l.raiseTip : l.scopeTip[ask.scope];
   return (
     <div className="approval-cu">
       {closed && <code className="approval-target">{visible(ask.target)}</code>}
       {app && <span className="cu-app">{l.in(visible(app))}</span>}
-      <span className={`cu-scope ${ask.scope}`} title={l.scopeTip[ask.scope]}>
-        {l.scope[ask.scope]}
+      <span className={`cu-scope ${raises ? "foreground" : ask.scope}`} title={tip}>
+        {raises ? l.raise : l.scope[ask.scope]}
       </span>
-      {!closed && <div className="approval-desc">{l.scopeTip[ask.scope]}</div>}
+      {!closed && <div className="approval-desc">{tip}</div>}
     </div>
   );
 }
@@ -214,10 +216,10 @@ export function ConfirmGrant({
       <div className="approval-desc">{words}</div>
       <div className="approval-actions" ref={keepFocus}>
         <button className="btn danger" aria-disabled={offline || undefined} onClick={deliberate(() => !offline && onConfirm())}>
-          {always ? "Yes, always allow" : "Yes, allow for this chat"}
+          {cua ? (always ? l.yesAlways : l.yesSession) : always ? "Yes, always allow" : "Yes, allow for this chat"}
         </button>
         <button className="btn" autoFocus onClick={onBack}>
-          Back
+          {cua ? l.back : "Back"}
         </button>
       </div>
     </div>

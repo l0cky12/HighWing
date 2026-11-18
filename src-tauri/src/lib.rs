@@ -233,11 +233,10 @@ const fn reach_within(quick: bool) -> std::time::Duration {
     }
 }
 
-/// Private screenshot storage and desktop requests waiting for a signed-in window.
+/// Private screenshot storage.
 #[derive(Default)]
 struct Screenshots {
     captures: std::sync::Mutex<Option<Arc<screenshot::Captures>>>,
-    requests: remote::Requests,
 }
 
 impl Screenshots {
@@ -699,19 +698,6 @@ async fn attach_copied_files(app: tauri::AppHandle, attachable: State<'_, Attach
     Ok(paths)
 }
 
-/// Takes a screenshot of a region or window the owner picks, staged privately as `<name>.png` for the composer.
-#[tauri::command]
-async fn screenshot_capture(
-    state: State<'_, Screenshots>,
-    attachable: State<'_, Attachable>,
-    name: String,
-) -> Result<screenshot::Capture, screenshot::CaptureError> {
-    let captures = state.captures()?;
-    let capture = screenshot::capture(&captures, &name).await?;
-    attachable.add([capture.path.clone()]);
-    Ok(capture)
-}
-
 /// Deletes a staged screenshot: removed from the composer, or its message sent. Paths that aren't one are ignored. The
 /// folder is deleted off the main thread.
 #[tauri::command]
@@ -722,12 +708,6 @@ async fn screenshot_discard(app: tauri::AppHandle, path: String) {
         }
     })
     .await;
-}
-
-/// How screenshots are taken on this desktop, for Settings.
-#[tauri::command]
-async fn screenshot_support() -> screenshot::Support {
-    tokio::task::spawn_blocking(screenshot::support).await.unwrap_or_else(|e| screenshot::Support { ok: false, summary: e.to_string() })
 }
 
 /// The renderer supplies all persisted outboxes at startup and whenever they change, before cleanup. The folders are
@@ -743,28 +723,10 @@ async fn screenshot_sync_outbox(app: tauri::AppHandle, paths: Vec<String>) -> Re
     tokio::task::spawn_blocking(sync).await.map_err(|e| screenshot::CaptureError::Failed(e.to_string()))?
 }
 
-/// Peeking leaves the request pending if the signed-in window goes away before handling it.
-#[tauri::command]
-fn screenshot_pending_request(state: State<'_, Screenshots>) -> Option<u64> {
-    state.requests.pending()
-}
-
-/// A live window started handling this request. A newer request remains pending.
-#[tauri::command]
-fn screenshot_ack_request(state: State<'_, Screenshots>, id: u64) {
-    state.requests.acknowledge(id);
-}
-
 /// The chat link waiting for the window, from the command line or a later launch (links.rs); handed out once.
 #[tauri::command]
 fn chat_link_take(links: State<'_, links::Links>) -> Option<String> {
     links.take()
-}
-
-/// Brings the window forward after a desktop shortcut's screenshot was attached, so the owner can review it.
-#[tauri::command]
-fn screenshot_show_window(app: tauri::AppHandle) {
-    tray::show(&app);
 }
 
 /// Stages a file pasted into the composer with the screenshots and returns its path. Its bytes come as the raw body,
@@ -1766,7 +1728,7 @@ async fn preview_annotate_stage(
         .map_err(|e| screenshot::CaptureError::Failed(e.to_string()))??;
     let path = staged.to_string_lossy().into_owned();
     attachable.add([path.clone()]);
-    Ok(screenshot::Capture { path, note: None })
+    Ok(screenshot::Capture { path })
 }
 
 /// `tag`: the webview's name for a notification about a waiting card; `deny`: it offers Deny (ADR 0173).
@@ -1913,13 +1875,8 @@ fn attach_dropped(window: &tauri::Window, event: &tauri::WindowEvent) {
     }
 }
 
-/// Starts the app. `screenshot`: it was started by `hermes-chat --screenshot`, with no other Hermes Chat to take it.
-/// `link`: it was started to open a chat link, with no other Hermes Chat to open it (links.rs).
-pub fn run(screenshot: bool, link: Option<String>) {
-    let screenshots = Screenshots::default();
-    if screenshot {
-        screenshots.requests.ask();
-    }
+/// Starts the app. `link`: it was started to open a chat link, with no other Hermes Chat to open it (links.rs).
+pub fn run(link: Option<String>) {
     std::thread::spawn(local_stt::sweep_scratch);
     let context = tauri::generate_context!();
     let mut builder = tauri::Builder::default();
@@ -1930,7 +1887,7 @@ pub fn run(screenshot: bool, link: Option<String>) {
     builder
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
-        .manage(screenshots)
+        .manage(Screenshots::default())
         .manage(links::Links::new(link))
         .manage(update::Updates::default())
         .manage(tray::Tray::default())
@@ -1973,10 +1930,6 @@ pub fn run(screenshot: bool, link: Option<String>) {
             let handle = app.handle().clone();
             // Requests that came while the app started (main.rs took the bus name first) are handled now.
             remote::set_handler(move |request| match request {
-                remote::Request::Screenshot => {
-                    handle.state::<Screenshots>().requests.ask();
-                    let _ = handle.emit(remote::EVENT, ());
-                }
                 // A second launch or `--show` brings back this window, hidden to the tray or not (ADR 0034).
                 remote::Request::Show { token } => summon::activate(&handle, false, true, token),
                 remote::Request::Toggle { token } => summon::activate(&handle, true, true, token),
@@ -2100,13 +2053,8 @@ pub fn run(screenshot: bool, link: Option<String>) {
             preview_dev_servers,
             notify_desktop,
             system_fonts,
-            screenshot_capture,
             screenshot_discard,
-            screenshot_support,
             screenshot_sync_outbox,
-            screenshot_pending_request,
-            screenshot_ack_request,
-            screenshot_show_window,
             chat_link_take,
             terminal_open,
             screen_apps_install,

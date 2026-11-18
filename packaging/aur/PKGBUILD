@@ -13,9 +13,6 @@ depends=('webkit2gtk-4.1' 'gtk3' 'libsoup3' 'glib2' 'cairo' 'gdk-pixbuf2' 'dbus'
 makedepends=('git' 'cargo' 'npm')
 optdepends=('openssh: sign in through an SSH tunnel'
             'org.freedesktop.secrets: remember the dashboard password'
-            'slurp: pick a region or window for screenshots on Hyprland and Sway'
-            'grim: take screenshots on Hyprland and Sway'
-            'xdg-desktop-portal: take screenshots on GNOME and KDE Plasma'
             'desktop-file-utils: let other apps open hermes-chat:// chat links'
             'libayatana-appindicator: show the tray icon and use Close to tray'
             'hunspell-en_us: underline misspelled words as you write (or another language'"'"'s hunspell dictionary)')

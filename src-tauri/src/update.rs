@@ -250,18 +250,18 @@ fn write_whole(path: &std::path::Path, text: &[u8]) -> std::io::Result<()> {
 pub async fn app_restart(app: AppHandle, state: State<'_, Updates>, drafts: String) -> Result<(), String> {
     let path = drafts_file(&app)?;
     write_whole(&path, drafts.as_bytes()).map_err(|e| format!("Couldn't save your drafts before restarting, so the app didn't restart: {e}"))?;
-    // Not `app.restart()`: that starts the app with the same arguments, and a copy started by the desktop shortcut
-    // (`--screenshot`) would hand the screenshot to this one as it exits, and quit (main.rs).
+    // Not `app.restart()`: that starts the app with the same arguments, and a copy started by a desktop shortcut
+    // (`--show`, `--toggle`) would hand its request to this one as it exits, and quit (main.rs).
     state.restart.store(true, Ordering::Relaxed);
     app.exit(0);
     Ok(())
 }
 
 /// The arguments to start the app again with: the same, less anything that asks a running Hermes Chat for something
-/// (`--screenshot`, `--show`, `--toggle`, a chat link). Started with one, the new app would hand it to this one, which
+/// (`--show`, `--toggle`, a chat link). Started with one, the new app would hand it to this one, which
 /// still owns the bus name as it exits, and quit (main.rs), leaving no app at all. The link was opened already.
 fn relaunch_args(args: impl IntoIterator<Item = std::ffi::OsString>) -> Vec<std::ffi::OsString> {
-    args.into_iter().skip(1).filter(|a| a != "--screenshot" && a != "--show" && a != "--toggle" && !a.to_str().is_some_and(crate::links::candidate)).collect()
+    args.into_iter().skip(1).filter(|a| a != "--show" && a != "--toggle" && !a.to_str().is_some_and(crate::links::candidate)).collect()
 }
 
 /// Starts the app again, if the owner asked to restart, from the binary it started from (or the AppImage, which the
@@ -345,7 +345,7 @@ fn set_aside(from: &std::path::Path, secs: u64) -> Result<PathBuf, String> {
     Ok(to)
 }
 
-/// The screenshots that drafts saved for a restart and not put back yet (`restart-drafts*.json`) attach, for screenshot
+/// The staged files that drafts saved for a restart and not put back yet (`restart-drafts*.json`) attach, for staging
 /// cleanup to keep (lib.rs `screenshot_sync_outbox`) until the owner moves or deletes the file.
 // ponytail: reads every such file on each outbox sync; they exist only after a restore failed, so there is rarely one.
 pub fn saved_attachment_paths(app: &AppHandle) -> Vec<PathBuf> {
@@ -419,8 +419,8 @@ mod tests {
     }
 
     #[test]
-    fn restarts_without_asking_for_a_screenshot_or_to_show_a_window() {
-        let args = ["/usr/bin/hermes-chat", "--screenshot", "--toggle", "--show", "--other"].map(std::ffi::OsString::from);
+    fn restarts_without_asking_to_show_a_window() {
+        let args = ["/usr/bin/hermes-chat", "--toggle", "--show", "--other"].map(std::ffi::OsString::from);
         assert_eq!(relaunch_args(args), ["--other"]);
     }
 

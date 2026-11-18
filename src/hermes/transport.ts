@@ -379,6 +379,8 @@ type StoredRow = { id: number; timestamp?: number | null };
  */
 type Asked = { req: ServerRequest; at: number; late?: boolean };
 
+type SessionEvent = Extract<Inbound, { kind: "event" }>;
+
 /**
  * The Questions the app shows as cards, by the request's method (`tui_gateway/contracts/server_requests.py`). `card`: the
  * card a request makes, or none when its params don't parse. `skip`: the result a Skip answers with (`ClarifyResult`
@@ -798,6 +800,18 @@ export class Hermes {
   private resumeOnReconnect = new Set<string>();
   /** Requests for a session no chat holds yet: the resume that reattaches it can answer after Hermes writes them. */
   private earlyRequests = new Map<string, Asked[]>();
+  /**
+   * Events for a session no chat holds yet, heard while a resume waits for its answer, by session id in the order heard.
+   * Hermes points a running turn at the new connection, reads its in-flight text, and answers only after its history
+   * read (`_live_session_payload`), so the turn's frames can come first (#77). Empty when no resume is pending.
+   */
+  private earlyEvents = new Map<string, SessionEvent[]>();
+  /**
+   * A resumed chat's in-flight text, by chat id, until its first `message.*` or `error` frame. `_emit_delta` appends
+   * under `history_lock` and sends after releasing it, so the one delta it was sending when the resume read the text
+   * can be in that text and also arrive as an event.
+   */
+  private resumedText = new Map<string, string>();
   /** Closed Question cards, answered here or that Hermes stopped waiting on, by request id. A resume replaces the
    * chat's cards with what Hermes lists, so this keeps one it lists again from coming back. */
   private closedQuestions = new PerProfile<QuestionItem>();
@@ -4744,7 +4758,8 @@ export class Hermes {
     }
   }
 
-  private onEvent({ type, sessionId: session_id, payload }: Extract<Inbound, { kind: "event" }>) {
+  private onEvent(heard: SessionEvent) {
+    const { type, sessionId: session_id, payload } = heard;
     if (type === "gateway.ready") {
       this.onReady?.(payload);
       return;
@@ -4771,7 +4786,11 @@ export class Hermes {
       return;
     }
     const chat = session_id ? this.snapshot.chats.find((c) => c.runtimeId === session_id) : undefined;
-    if (!chat) return;
+    if (!chat) {
+      if (session_id && this.resuming.size > 0) this.earlyEvents.set(session_id, [...(this.earlyEvents.get(session_id) ?? []), heard]);
+      return;
+    }
+    if (this.repeatsResumed(chat.id, type, payload)) return;
     // A chat's goal changed, here or in another Hermes client, or after a turn (goals.ts, ADR 0187).
     if (type === "session.control.update") {
       const control = controlOf(payload);
@@ -5227,6 +5246,8 @@ export class Hermes {
     for (const p of this.pending.values()) p.reject(new ConnectionLostError(`Connection closed: ${reason}`));
     this.pending.clear();
     this.earlyRequests.clear();
+    this.earlyEvents.clear();
+    this.resumedText.clear();
     // Runtime sessions end with the connection.
     this.usageFrom.clear();
     this.turnBegan.clear();
@@ -5313,6 +5334,15 @@ export class Hermes {
     this.request("gateway.ping", {}).catch(() => {});
   }
 
+  /** Whether this frame is the delta the chat's last resume already showed. Its first reply frame settles it. */
+  private repeatsResumed(chatId: string, type: string, payload: Record<string, unknown>): boolean {
+    if (!type.startsWith("message.") && type !== "error") return false;
+    const inflight = this.resumedText.get(chatId);
+    if (inflight === undefined) return false;
+    this.resumedText.delete(chatId);
+    return type === "message.delta" && echoesInflight(inflight, payload);
+  }
+
   /** The chat's runtime id on this connection, resuming it first if needed. The history goes before anything sent
    * meanwhile. */
   private resume(chatId: string): Promise<string> {
@@ -5383,10 +5413,16 @@ export class Hermes {
         this.saveTranscript(chatId);
         for (const id of lostIds) this.recorder.settled(profile, chatId, { kind: "settled", at: rejoinedAt, ids: [id], how: endedNote("lost") });
         this.showQuestions(chatId, asking);
+        if (streamed) this.resumedText.set(chatId, streamed);
+        else this.resumedText.delete(chatId);
+        const heard = this.earlyEvents.get(res.runtimeId) ?? [];
+        this.earlyEvents.delete(res.runtimeId);
+        for (const e of heard) this.onEvent(e);
         this.track(this.listSubagents(chatId, res.runtimeId));
         return res.runtimeId;
       } finally {
         this.resuming.delete(chatId);
+        if (this.resuming.size === 0) this.earlyEvents.clear();
         this.patchChat(chatId, (c) => ({ ...c, loading: false }));
       }
     })();
@@ -6792,6 +6828,17 @@ function runningCall(items: Item[], toolId: unknown): number {
     if (i.kind === "tool" && i.callId === callId && i.status === "running") return at;
   }
   return -1;
+}
+
+/**
+ * Whether a delta is the end of a resume's in-flight text, by its stamp: the turn's first segment, ending where the
+ * text ends. The in-flight text joins every segment with no bounds, and a delta without stamps can't be told from a
+ * repeated word, so either is kept.
+ */
+function echoesInflight(inflight: string, p: Record<string, unknown>): boolean {
+  const { text, segment, offset } = p;
+  if (typeof text !== "string" || !text || segment !== 0 || typeof offset !== "number" || !Number.isInteger(offset)) return false;
+  return offset + text.length === inflight.length && inflight.endsWith(text);
 }
 
 // Fold one session event into a chat. Text deltas extend the trailing assistant item, or start a new one

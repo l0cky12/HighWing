@@ -3,9 +3,11 @@
 // jsdom can't draw: what it says for each state of the screen, watching, taking over and handing back, another viewer
 // taking over, and letting go of the stream when it goes.
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { useSyncExternalStore, type ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ScreenTab, type RfbClient, type RfbConstructor } from "./Screen";
-import { BROWSER_FIX, viewerHash, type CliResult, type DisplayLease, type DisplayObserve, type DisplayStatus, type ScreenApi } from "../hermes/screen";
+import { BROWSER_FIX, type CliResult, type DisplayLease, type DisplayObserve, type DisplayStatus, type ScreenApi } from "../hermes/screen";
+import type { ScreenHolder, ScreenState } from "../hermes/screenControl";
 import { pasteCommand, type InstallSystem, type SystemOutcome } from "../hermes/screenApps";
 import type { LocalClipboard, ScreenDisplay } from "../hermes/screenClipboard";
 
@@ -48,10 +50,22 @@ const agent: DisplayLease = { holder: "agent", viewer_hash: null, since: 1, epoc
 
 class FakeScreen implements ScreenApi {
   state: DisplayStatus = { supported: true, installed: true, missing: [], running: false, geometry: "1440x900", lease: agent, profile_key: "/home/lena/.hermes" };
-  observed: (string | undefined)[] = [];
+  /** How many stream tickets the tab asked for. */
+  observed = 0;
   closes: ((code: number, reason: string) => void)[] = [];
   sockets = 0;
-  leaseListener?: (key: string, l: DisplayLease) => void;
+  private listeners = new Set<() => void>();
+  private shownState: ScreenState | undefined;
+  subscribe = (l: () => void) => {
+    this.listeners.add(l);
+    return () => void this.listeners.delete(l);
+  };
+  shownScreen = () => this.shownState;
+  /** Who holds the screen changed, as the connection's ScreenControl publishes it. */
+  lease(holder: ScreenHolder) {
+    this.shownState = { profileKey: this.state.profile_key, holder, epoch: (this.shownState?.epoch ?? 0) + 1 };
+    for (const l of this.listeners) l();
+  }
   missing = false;
   status = async () => {
     if (this.missing) throw Object.assign(new Error("unknown method: display.status"), { code: -32601 });
@@ -85,17 +99,18 @@ class FakeScreen implements ScreenApi {
     this.clipboardReads.push(where);
     return this.clipboard;
   };
-  observe = async (viewerId?: string): Promise<DisplayObserve> => {
-    this.observed.push(viewerId);
-    return { ...this.state, ticket: `t${this.observed.length}`, viewer_id: viewerId ?? "viewer-1" };
+  observe = async (): Promise<DisplayObserve> => {
+    this.observed++;
+    return { ...this.state, ticket: `t${this.observed}`, viewer_id: "viewer-1" };
   };
-  takeOver = async (id: string) => (this.state.lease = { holder: "human", viewer_hash: await viewerHash(id), since: 2, epoch: this.state.lease.epoch + 1 });
-  handBack = async () => (this.state.lease = { ...agent, epoch: this.state.lease.epoch + 1 });
-  held: (string | undefined)[] = [];
-  noteHeld = (id: string | undefined) => void this.held.push(id);
-  onLease = (l: (key: string, lease: DisplayLease) => void) => {
-    this.leaseListener = l;
-    return () => {};
+  takeOver = async () => {
+    this.state.lease = { holder: "human", viewer_hash: "viewer-1-hash", since: 2, epoch: this.state.lease.epoch + 1 };
+    this.lease({ kind: "you", since: 2 });
+    return { kind: "held" as const };
+  };
+  handBack = async () => {
+    this.state.lease = { ...agent, epoch: this.state.lease.epoch + 1 };
+    this.lease({ kind: "agent" });
   };
   openSocket = async (_t: string, _d: (b: ArrayBuffer) => void, c: (code: number, reason: string) => void) => {
     this.sockets++;
@@ -104,10 +119,16 @@ class FakeScreen implements ScreenApi {
   };
 }
 
+/** The tab as App.tsx mounts it, reading who holds the screen from the snapshot. */
+function Tab({ api, ...props }: Omit<ComponentProps<typeof ScreenTab>, "screen" | "api"> & { api: FakeScreen }) {
+  const shownScreen = useSyncExternalStore(api.subscribe, api.shownScreen);
+  return <ScreenTab api={api} screen={shownScreen} {...props} />;
+}
+
 function show(api = new FakeScreen()) {
   FakeRfb.made = [];
   const load = async () => FakeRfb as unknown as RfbConstructor;
-  const r = render(<ScreenTab api={api} shown connected loadRfb={load} />);
+  const r = render(<Tab api={api} shown connected loadRfb={load} />);
   return { api, ...r };
 }
 
@@ -140,7 +161,7 @@ describe("The Screen tab", () => {
     const { api } = show();
     fireEvent.click(await screen.findByRole("button", { name: /Start the screen/ }));
     await connected();
-    expect(api.observed).toEqual([undefined]);
+    expect(api.observed).toBe(1);
     const rfb = FakeRfb.made[0];
     expect(rfb.viewOnly).toBe(true);
     expect(rfb.scaleViewport).toBe(true);
@@ -151,44 +172,32 @@ describe("The Screen tab", () => {
   it("takes over and hands back, and only then sends keys and pointer", async () => {
     const api = new FakeScreen();
     api.state.running = true;
-    const onHeld = vi.fn();
-    FakeRfb.made = [];
-    render(<ScreenTab api={api} shown connected loadRfb={async () => FakeRfb as unknown as RfbConstructor} onHeld={onHeld} />);
+    show(api);
     await connected();
     fireEvent.click(screen.getByRole("button", { name: /Take over/ }));
     await screen.findByText(/You're in control/);
-    // viewOnly, onHeld and noteHeld follow `held` in effects, which can run a tick after the text shows.
-    await waitFor(() => {
-      expect(onHeld).toHaveBeenLastCalledWith(true);
-      expect(api.held.at(-1)).toBe("viewer-1");
-      expect(FakeRfb.made[0].viewOnly).toBe(false);
-    });
+    // viewOnly follows `held` in an effect, which can run a tick after the text shows.
+    await waitFor(() => expect(FakeRfb.made[0].viewOnly).toBe(false));
     expect(document.querySelector(".screen-view.held")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Hand back/ }));
     await screen.findByText("Watching: Hermes is in control.");
-    await waitFor(() => {
-      expect(FakeRfb.made[0].viewOnly).toBe(true);
-      expect(onHeld).toHaveBeenLastCalledWith(false);
-      expect(api.held.at(-1)).toBeUndefined();
-    });
+    await waitFor(() => expect(FakeRfb.made[0].viewOnly).toBe(true));
   });
 
-  it("watches again on a fresh ticket, as the same viewer, when someone else takes over", async () => {
+  it("watches again on a fresh ticket when someone else takes over", async () => {
     const api = new FakeScreen();
     api.state.running = true;
     show(api);
     await connected();
     // Hermes broadcasts the other viewer's lease, then closes this stream with 4000.
-    act(() => api.leaseListener!("/home/lena/.hermes", { holder: "human", viewer_hash: "0123456789ab", since: 3, epoch: 1 }));
+    act(() => api.lease({ kind: "someone", since: 3 }));
     expect(screen.getByText("Someone else has taken over this screen.")).toBeTruthy();
     expect((screen.getByRole("button", { name: /Take over/ }) as HTMLButtonElement).disabled).toBe(false);
     act(() => api.closes[0](4000, "control-taken"));
     act(() => FakeRfb.made[0].fire("disconnect", { clean: false }));
     await waitFor(() => expect(FakeRfb.made).toHaveLength(2));
-    expect(api.observed).toEqual([undefined, "viewer-1"]);
+    expect(api.observed).toBe(2);
     expect(screen.getByText("Someone else took over, so you're watching again.")).toBeTruthy();
-    // A lease for another profile's screen changes nothing here.
-    act(() => api.leaseListener!("/home/lena/.hermes/profiles/work", { ...agent, epoch: 9 }));
     expect(screen.getByText("Someone else has taken over this screen.")).toBeTruthy();
   });
 
@@ -197,11 +206,11 @@ describe("The Screen tab", () => {
     api.state.running = true;
     FakeRfb.made = [];
     const load = async () => FakeRfb as unknown as RfbConstructor;
-    const { rerender } = render(<ScreenTab api={api} shown connected loadRfb={load} />);
+    const { rerender } = render(<Tab api={api} shown connected loadRfb={load} />);
     await connected();
     fireEvent.click(screen.getByRole("button", { name: /Take over/ }));
     await screen.findByText(/You're in control/);
-    rerender(<ScreenTab api={api} shown connected={false} loadRfb={load} />);
+    rerender(<Tab api={api} shown connected={false} loadRfb={load} />);
     // No normal close from here: Hermes would take that as the owner leaving and hand control back.
     expect(FakeRfb.made[0].disconnected).toBe(false);
     // Rust drops the stream with the connection.
@@ -209,11 +218,8 @@ describe("The Screen tab", () => {
     act(() => FakeRfb.made[0].fire("disconnect", { clean: false }));
     expect(screen.getByText("The stream from the server was lost.")).toBeTruthy();
     // Back on a new connection, as a new viewer: Hermes still has the owner's earlier hold, and the tab says whose.
-    api.observe = async (viewerId?: string) => {
-      api.observed.push(viewerId);
-      return { ...api.state, ticket: "t2", viewer_id: "viewer-2" };
-    };
-    rerender(<ScreenTab api={api} shown connected loadRfb={load} />);
+    act(() => api.lease({ kind: "you-before", since: 2 }));
+    rerender(<Tab api={api} shown connected loadRfb={load} />);
     await waitFor(() => expect(FakeRfb.made).toHaveLength(2));
     expect(api.sockets).toBe(2);
     expect(await screen.findByText(/You still have control from before the connection dropped/)).toBeTruthy();
@@ -263,7 +269,7 @@ describe("The apps the Screen adds", () => {
   }
   function showWith(api: FakeScreen, system?: InstallSystem) {
     FakeRfb.made = [];
-    return render(<ScreenTab api={api} shown connected loadRfb={async () => FakeRfb as unknown as RfbConstructor} system={system} />);
+    return render(<Tab api={api} shown connected loadRfb={async () => FakeRfb as unknown as RfbConstructor} system={system} />);
   }
 
   it("adds a web browser, a terminal and a text editor with no click, and the next start puts them in the dock", async () => {
@@ -420,7 +426,7 @@ describe("The apps the Screen adds", () => {
     const ssh = sudo("hunter2");
     const { rerender } = showWith(api, ssh.install);
     await waitFor(() => expect(checks).toBe(1));
-    const tab = (connected: boolean) => <ScreenTab api={api} shown connected={connected} loadRfb={async () => FakeRfb as unknown as RfbConstructor} system={ssh.install} />;
+    const tab = (connected: boolean) => <Tab api={api} shown connected={connected} loadRfb={async () => FakeRfb as unknown as RfbConstructor} system={ssh.install} />;
     rerender(tab(false));
     rerender(tab(true));
     expect(await screen.findByText("Adding a terminal and a text editor needs the server's sudo password")).toBeTruthy();
@@ -436,7 +442,7 @@ describe("The apps the Screen adds", () => {
     const ssh = sudo("hunter2");
     const { rerender } = showWith(api, ssh.install);
     fireEvent.click(await screen.findByRole("button", { name: "Not now" }));
-    const tab = (connected: boolean) => <ScreenTab api={api} shown connected={connected} loadRfb={async () => FakeRfb as unknown as RfbConstructor} system={ssh.install} />;
+    const tab = (connected: boolean) => <Tab api={api} shown connected={connected} loadRfb={async () => FakeRfb as unknown as RfbConstructor} system={ssh.install} />;
     for (const check of [2, 3]) {
       rerender(tab(false));
       rerender(tab(true));
@@ -457,7 +463,7 @@ describe("The apps the Screen adds", () => {
     const slow: InstallSystem = () => new Promise((done) => (installed = () => done({ kind: "installed" })));
     const { rerender } = showWith(api, slow);
     await screen.findByText(/Adding a terminal and a text editor to the screen/);
-    const tab = (connected: boolean) => <ScreenTab api={api} shown connected={connected} loadRfb={async () => FakeRfb as unknown as RfbConstructor} system={slow} />;
+    const tab = (connected: boolean) => <Tab api={api} shown connected={connected} loadRfb={async () => FakeRfb as unknown as RfbConstructor} system={slow} />;
     rerender(tab(false));
     api.programs.add("xfce4-terminal").add("mousepad");
     await act(async () => installed());
@@ -479,7 +485,7 @@ describe("The apps the Screen adds", () => {
     api.status = () => (++reads === 2 ? new Promise((_, fail) => (cut = () => fail(new Error("the connection to Hermes closed")))) : status());
     const { rerender } = showWith(api, sudo().install);
     await waitFor(() => expect(cut).toBeDefined());
-    const tab = (connected: boolean) => <ScreenTab api={api} shown connected={connected} loadRfb={async () => FakeRfb as unknown as RfbConstructor} system={sudo().install} />;
+    const tab = (connected: boolean) => <Tab api={api} shown connected={connected} loadRfb={async () => FakeRfb as unknown as RfbConstructor} system={sudo().install} />;
     rerender(tab(false));
     await act(async () => cut());
     rerender(tab(true));
@@ -515,7 +521,7 @@ describe("Copy and paste with the screen", () => {
     api.programs = new Set(programs);
     const l = local(text);
     FakeRfb.made = [];
-    render(<ScreenTab api={api} shown connected loadRfb={async () => FakeRfb as unknown as RfbConstructor} clipboard={l.clipboard} system={async () => ({ kind: "needs-password" })} />);
+    render(<Tab api={api} shown connected loadRfb={async () => FakeRfb as unknown as RfbConstructor} clipboard={l.clipboard} system={async () => ({ kind: "needs-password" })} />);
     await connected();
     return { api, ...l, view: () => screen.getByRole("region", { name: "Hermes's screen" }) };
   }

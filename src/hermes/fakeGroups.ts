@@ -21,7 +21,10 @@ const MAX_MESSAGES = 10;
 const MAX_CONTINUES = 5;
 const MAX_LOG_LIMIT = 500;
 const GATEWAY = "install:stand-in";
-const MENTION = /@([A-Za-z0-9][A-Za-z0-9._:-]*)/g;
+// Hermes's _MENTION_RE under re.IGNORECASE, which on a str pattern widens [A-Za-z] to İ ı ſ and the Kelvin sign; JS /i would not.
+const MENTION = /@([A-Za-z0-9\u0130\u0131\u017f\u212a][A-Za-z0-9._:\-\u0130\u0131\u017f\u212a]*)/g;
+// str.casefold() on that alphabet: toLowerCase, but the long s folds to s.
+const casefold = (s: string): string => s.toLowerCase().replaceAll("\u017f", "s");
 const NO_METHOD = -32601;
 const WORKER_DOWN = "Group Chat worker is unavailable. Restart the Hermes gateway and try again.";
 const DRIVER_DOWN = "hosted room driver is unavailable";
@@ -56,6 +59,21 @@ export const GROUPS_BUILDS = {
   f0d9488: { absent: false, continues: false, activityDetail: true, saysPush: false, pushes: false, worker: true },
   bf0203a: { absent: false, continues: false, activityDetail: false, saysPush: false, pushes: false, worker: true },
 } as const satisfies Record<string, GroupsBuild>;
+
+export function resolveMentions<M extends { handle: string }>(texts: readonly string[], members: readonly M[], defaultAll: boolean): M[] {
+  const byHandle = new Set(members.map((m) => casefold(m.handle)));
+  const mentioned = new Set<string>();
+  let everyone = false;
+  for (const text of texts) {
+    for (const match of text.matchAll(MENTION)) {
+      const handle = casefold(match[1]);
+      if (handle === "all" || handle === "everyone") everyone = true;
+      else if (byHandle.has(handle)) mentioned.add(handle);
+    }
+  }
+  if (everyone || (defaultAll && !mentioned.size)) return [...members];
+  return members.filter((m) => mentioned.has(casefold(m.handle)));
+}
 
 export class FakeGroups {
   build: GroupsBuild = { ...GROUPS_BUILDS.ae2a81cc };
@@ -249,7 +267,7 @@ export class FakeGroups {
     }
     const discussion: Discussion = { id, thread: payload.thread_id, text: payload.text, round: 0, continues: 0, messages: 0, said: [], next: [], status: "running" };
     room.discussions.push(discussion);
-    this.queue(room, discussion, this.mentioned([payload.text], room.members, true));
+    this.queue(room, discussion, resolveMentions([payload.text], room.members, true));
     this.changed(room);
     return answer(event, false);
   }
@@ -317,12 +335,6 @@ export class FakeGroups {
     return { tombstone: { room_id: room.room_id, disbanded_at: room.disbanded_at } };
   }
 
-  private mentioned(texts: readonly string[], members: readonly Member[], defaultAll: boolean): Member[] {
-    const named = new Set(texts.flatMap((t) => [...t.matchAll(MENTION)].map((m) => m[1].toLowerCase())));
-    const some = members.filter((m) => named.has(m.handle.toLowerCase()));
-    return named.has("all") || named.has("everyone") || (defaultAll && !some.length) ? [...members] : some;
-  }
-
   private queue(room: Room, discussion: Discussion, members: readonly Member[]) {
     discussion.said = [];
     for (const member of members) room.tasks.push({ id: `task-${++this.ids}`, discussion, member, round: discussion.round, status: "queued" });
@@ -376,7 +388,7 @@ export class FakeGroups {
   }
 
   private decide(room: Room, d: Discussion) {
-    const next = this.mentioned(d.said, room.members, false);
+    const next = resolveMentions(d.said, room.members, false);
     const budget = d.continues + 1;
     const activity = (status: string, reason_code: string) =>
       this.append(room, "room.activity", { kind: "gateway", id: GATEWAY }, { status, reason_code, thread_id: d.thread, discussion_event_id: d.id }, `dactivity:${d.id}:${reason_code}${d.continues ? `:c${d.continues}` : ""}`);

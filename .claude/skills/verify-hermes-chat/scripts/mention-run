@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# One full Group-room mention run in the real app against a real Hermes (real-hermes), from a fresh Hermes home and a
+# fresh app: sign in, make a room of Ada, Bram and Cleo, then for each case type the message, check the Goes to line,
+# send it, and check from Hermes's own records which bots took a turn. Exits non-zero on the first failed check.
+#   mention-run <label>       evidence and logs go under ~/.cache/hermes-verify/mention-runs/<label>
+# RECORD=1 also records the screen to <evidence>/flow.mp4. HV_TARGET picks the app build, as for hv.
+set -euo pipefail
+
+S=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+label=${1:?usage: mention-run <label>}
+OUT=$HOME/.cache/hermes-verify/mention-runs/$label
+mkdir -p "$OUT"
+P='[data-room-pane]'
+BOX="$P textarea"
+GOES=${GOES:-"$P .room-goes-to"}
+step() { echo "== $*"; }
+fail() { echo "mention-run $label: FAIL: $*"; exit 1; }
+
+cleanup() {
+  [ -n "${FFMPEG_PID:-}" ] && kill -INT "$FFMPEG_PID" 2>/dev/null && wait "$FFMPEG_PID" 2>/dev/null || true
+  [ -n "${HV_RUN:-}" ] && "$S/hv" down >/dev/null 2>&1 || true
+  [ -n "${RH_DIR:-}" ] && "$S/real-hermes" down >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+step "real Hermes"
+eval "$("$S/real-hermes" up "$OUT/hermes" | grep '^export')"
+export RH_DIR
+URL=$(cat "$RH_DIR/url")
+step "app harness"
+eval "$("$S/hv" up --dashboard "$URL" | grep '^export HV_RUN=')"
+export HV_RUN
+# shellcheck disable=SC1091
+. "$HV_RUN/state.env"
+echo "evidence: $EVIDENCE"
+ln -sfn "$EVIDENCE" "$OUT/evidence"
+"$S/hv" doctor >/dev/null || fail "hv doctor"
+if [ "${RECORD:-}" = 1 ]; then
+  ffmpeg -loglevel error -y -f x11grab -video_size 1400x900 -framerate 10 -i ":${DISPLAY_NUM#:}" -c:v libx264 -pix_fmt yuv420p "$EVIDENCE/flow.mp4" </dev/null &
+  FFMPEG_PID=$!
+fi
+
+step "sign in"
+"$S/wd.mjs" open >/dev/null
+"$S/wd.mjs" wait button "Get started" 30000 >/dev/null
+"$S/wd.mjs" click button "Get started" >/dev/null
+"$S/wd.mjs" select select "Connect through" -- "Web address" >/dev/null
+"$S/wd.mjs" fill input "Dashboard URL" -- "$URL" >/dev/null
+"$S/wd.mjs" click button "Test the route" >/dev/null
+"$S/wd.mjs" wait '[role=status]' "Reached Hermes" 30000 >/dev/null
+"$S/wd.mjs" click button Next >/dev/null
+"$S/wd.mjs" fill input "Dashboard username" -- verify >/dev/null
+"$S/wd.mjs" fill input "Dashboard password" -- verify-pass >/dev/null
+"$S/wd.mjs" click button "Test connection" >/dev/null
+"$S/wd.mjs" wait '[role=status]' "At least one route works" 30000 >/dev/null
+"$S/wd.mjs" click button "Save and connect" >/dev/null
+"$S/wd.mjs" wait '[role=dialog]' "Model providers" 30000 >/dev/null
+"$S/wd.mjs" click button Skip >/dev/null
+"$S/wd.mjs" gone '[role=dialog]' "" 20000 >/dev/null
+"$S/wd.mjs" wait .toast "system keyring" 30000 >/dev/null || fail "no keyring toast after sign-in; this harness has a keyring now, so drop this wait"
+"$S/wd.mjs" gone .toast "" 60000 >/dev/null || fail "the keyring toast never cleared"
+
+step "new room"
+"$S/wd.mjs" click '[role=tab][data-mode=bots]' >/dev/null
+"$S/wd.mjs" wait button "New room" 30000 >/dev/null
+"$S/wd.mjs" click button "New room" >/dev/null
+"$S/wd.mjs" wait '[role=dialog]' "New group room" >/dev/null
+for b in Ada Bram Cleo; do "$S/wd.mjs" click '[data-room-dialog] input[type=checkbox]' "$b" >/dev/null; done
+"$S/wd.mjs" click button "Create room" >/dev/null
+"$S/wd.mjs" gone '[role=dialog]' "" 30000 >/dev/null
+"$S/wd.mjs" wait "$P" "Ada, Bram and Cleo" 30000 >/dev/null
+
+check() {
+  local shot=$1 expect=$2 sent want
+  shift 2
+  sent=$("$S/wd.mjs" value "$BOX")
+  for want in "$@"; do "$S/wd.mjs" wait "$GOES" "$want" 10000 >/dev/null || fail "$shot: the Goes to line lacks \"$want\": $("$S/wd.mjs" text "$GOES" 2>&1)"; done
+  echo "line: $("$S/wd.mjs" text "$GOES")"
+  "$S/wd.mjs" shot "$shot" >/dev/null
+  "$S/wd.mjs" press Enter >/dev/null
+  "$S/real-hermes" turns "$sent" --wait 180 --expect "$expect" >"$OUT/$shot.turns.json" || { cat "$OUT/$shot.turns.json"; fail "$shot: Hermes's records"; }
+  tail -1 "$OUT/$shot.turns.json"
+}
+
+step "case 1: pick @bram from the list"
+"$S/wd.mjs" click "$BOX" >/dev/null || {
+  "$S/wd.mjs" shot m0-click-intercepted >/dev/null
+  fail "case 1: the composer click was intercepted by $("$S/wd.mjs" eval 'const r=document.querySelector("[data-room-pane] textarea").getBoundingClientRect(); const e=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2); return e ? e.outerHTML.slice(0,300) : "nothing"')"
+}
+"$S/wd.mjs" keys "@br" >/dev/null
+"$S/wd.mjs" wait "$P [role=listbox] [role=option]" "Bram" >/dev/null || fail "case 1: no Bram row"
+"$S/wd.mjs" shot m1-picker >/dev/null
+"$S/wd.mjs" press Enter >/dev/null
+"$S/wd.mjs" keys "what do you think, $label?" >/dev/null
+[ "$("$S/wd.mjs" value "$BOX")" = "@bram what do you think, $label?" ] || fail "case 1: composer holds \"$("$S/wd.mjs" value "$BOX")\""
+check m2-goes-to-bram bram "Goes to" "Bram"
+
+step "case 2: a trailing period"
+"$S/wd.mjs" fill "$BOX" -- "Thanks @bram. Can you look, $label?" >/dev/null
+check m3-trailing-warning ada,bram,cleo "everyone" "won't reach Bram"
+
+step "case 3: two bots, typed"
+"$S/wd.mjs" fill "$BOX" -- "@cleo and @ada, compare notes, $label" >/dev/null
+check m4-goes-to-two ada,cleo "Ada" "Cleo"
+
+echo "mention-run $label: PASS"

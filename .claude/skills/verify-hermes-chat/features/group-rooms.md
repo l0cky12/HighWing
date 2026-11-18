@@ -12,6 +12,7 @@ A Group room is 2 to 6 bots that Hermes drives in turns. The owner makes one in 
 - `rooms-approval`: a bot's command waits in the strip with Approve once and Deny, and the bot goes on once approved.
 - `rooms-clarify`: a bot inside `clarify` shows as stuck, with Stop, until Hermes moves on.
 - `rooms-needs-you`: a room that needs the owner shows on its row, on the Bots tab while Chats shows, and in the Rail inbox.
+- `rooms-mentions`: typing `@` lists the room's bots (face, name, `@handle`, description; Everyone last), Enter or Tab picks one, and a Goes to line under the composer says who Hermes will hand the message to, with a note for a trailing mark, a mention glued to a word, one in code, and a handle nobody has (ADR 0219).
 
 ## How to get to it (user POV)
 
@@ -37,6 +38,8 @@ Preconditions:
 - **Approval.** `$S/wd.mjs fill "$P textarea" -- "approve the cleanup"`, `$S/wd.mjs press Enter`, `$S/wd.mjs wait "$F .approval" "rm -rf /srv/tmp/build-cache" 15000`. The strip is `[data-floor=approval]`. Wait half a second, `$S/wd.mjs click "$F .approval button" "Approve once"`, then `$S/wd.mjs wait "$P .room-reply[data-seat=cleo]" "ran it"`. `$S/hv state` lists `groups.approve` in `roomCalls`.
 - **Clarify.** `$S/wd.mjs fill "$P textarea" -- "clarify what we drink"`, `$S/wd.mjs press Enter`, `$S/wd.mjs wait "$F" "asking through a tool a room can't show" 15000`. After 12 s the strip moves on and Bram's reply says it got no answer.
 - **Needs you.** With an approval waiting, `$S/wd.mjs click '[role=tab][data-mode=chats]'`: `$S/wd.mjs wait '.sb-needs-you' "needs you"`, and the Bots tab's label reads "Bots, 1 needs you". `$S/wd.mjs click '.sb-needs-you'` opens the room. In Bots mode the room's row is `[data-room][data-floor=approval]`.
+- **Mentions.** `$S/wd.mjs click "$P textarea"`, `$S/wd.mjs keys "@br"`, `$S/wd.mjs wait "$P [role=option]" "Bram"`. The textarea's `aria-activedescendant` names that row's `id`. `$S/wd.mjs press Enter`, and `$S/wd.mjs value "$P textarea"` prints "@bram ". `$S/wd.mjs keys "only you"`, then `$S/wd.mjs wait "$P .room-goes-to" "Goes to"` shows Bram. `$S/wd.mjs fill "$P textarea" -- "Thanks @bram. ok"` shows "everyone (no bot named)" and "won't reach Bram". Send, and `$S/hv state` shows the text unchanged in the room's `message.user`.
+- **Mentions against a real Hermes.** `$S/mention-run <label>` does all of it from a fresh real Hermes (`$S/real-hermes up`) and a fresh app: sign in, a room of Ada, Bram and Cleo, then three cases, each checked on the Goes to line before Enter and in Hermes's own records after it (`$S/real-hermes turns <text> --expect <bots>`, which reads `hosted_room_driver_tasks` and `hosted_room_events` in `shared-state.db`). It exits non-zero on the first failed check. `RECORD=1` saves `flow.mp4` in the evidence. Evidence and logs go under `~/.cache/hermes-verify/mention-runs/<label>`.
 - **No write probe.** `$S/hv state` `roomCalls` never holds `groups.capabilities`.
 
 ## Gotchas
@@ -46,4 +49,6 @@ Preconditions:
 - The stand-in pushes `groups.changed`, so the pane follows within a moment. With `HV_ROOMS_BUILD=bf0203a` nothing is pushed and the pane follows by polling every 2 s; raise `wait` timeouts by a few seconds.
 - A room has no profile. Opening one leaves the profile switcher and the Chats list as they were.
 - The first two bots of a `pingpong` room name each other, so a room made in another pick order pauses with different names in Carry on.
+- `wd.mjs wait|gone` take `<css> [text] [ms]`: a timed wait with no text needs `""` in the text's place (`gone '[role=dialog]' "" 30000`), or the timeout is matched as text and `gone` returns at once (#60).
+- The keyring toast after sign-in covers the room composer for 5 s. Wait for it to come and go (`wait .toast "system keyring"`, then `gone .toast "" 60000`) before clicking the composer.
 - Against a real dashboard, bots answer with real model calls. A reply can take a minute, and what brings a teammate in depends on what the bots write.

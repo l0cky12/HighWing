@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# A real Hermes dashboard for verify runs: a fresh isolated home with the bots ada, bram and cleo, a model stub whose
+# replies name no one (room-model.py), and `hermes dashboard` from the venv the SKILL names. See ../SKILL.md.
+#   real-hermes up <dir>     check the room mention vectors against this Hermes, make <dir> fresh, start the stub and the
+#                            dashboard, print `export RH_DIR=<dir>` and the URL
+#   real-hermes down         stop what `up` started in $RH_DIR (by PID); the dir and its logs stay
+#   real-hermes turns <text> which bots Hermes gave a turn, and which answered, for the owner message <text>
+set -euo pipefail
+
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+VENV=${RH_VENV:-$HOME/.cache/hermes-venv-168}
+die() { echo "real-hermes: $*" >&2; exit 1; }
+free_port() { python3 -c 'import socket,sys; s=socket.socket(); s.bind((sys.argv[1],0)); print(s.getsockname()[1])' "$1"; }
+hermes_env() { env -i PATH=/usr/bin:/bin HOME="$RH_DIR/home" HERMES_HOME="$RH_DIR/home/.hermes" "$@"; }
+
+up() {
+  [ -n "${1:-}" ] || die "usage: real-hermes up <dir>"
+  [ -x "$VENV/bin/hermes" ] || die "no Hermes at $VENV/bin/hermes; build the venv the SKILL names"
+  RH_DIR=$(realpath -m "$1")
+  local src
+  src=$(env -i PATH=/usr/bin:/bin "$VENV/bin/python" -I -c 'import gateway, pathlib; print(pathlib.Path(gateway.__file__).parent.parent)')
+  python3 -I "$(git -C "$HERE" rev-parse --show-toplevel)/scripts/room-mention-vectors.py" --check "$src" ||
+    die "the room mention vectors don't describe the Hermes at $src; regenerate them before trusting a run"
+  [ ! -f "$RH_DIR/dashboard.pid" ] || ! kill -0 "$(cat "$RH_DIR/dashboard.pid")" 2>/dev/null || die "$RH_DIR is still running; real-hermes down first"
+  rm -rf "${RH_DIR:?}"
+  mkdir -p "$RH_DIR/home/.hermes" "$RH_DIR/web"
+  echo '<!doctype html><title>stub</title>' >"$RH_DIR/web/index.html"
+  local model_host=127.0.0.12 dash_host=127.0.0.13 model_port dash_port
+  model_port=$(free_port $model_host)
+  dash_port=$(free_port $dash_host)
+  cat >"$RH_DIR/home/.hermes/config.yaml" <<EOF
+model:
+  provider: custom
+  base_url: http://$model_host:$model_port/v1
+  default: stub-model
+  api_mode: chat_completions
+  context_length: 1000000
+EOF
+  for p in "ada:Plans the work" "bram:Reviews code" "cleo:Writes the docs"; do
+    hermes_env "$VENV/bin/hermes" profile create "${p%%:*}" --clone --no-alias --description "${p#*:}" >>"$RH_DIR/setup.log" 2>&1
+  done
+  setsid python3 -I "$HERE/room-model.py" $model_host "$model_port" "$RH_DIR/model-requests.jsonl" >"$RH_DIR/stub.log" 2>&1 </dev/null &
+  echo $! >"$RH_DIR/stub.pid"
+  setsid env -i PATH=/usr/bin:/bin HOME="$RH_DIR/home" HERMES_HOME="$RH_DIR/home/.hermes" HERMES_WEB_DIST="$RH_DIR/web" \
+    HERMES_DASHBOARD_BASIC_AUTH_USERNAME=verify HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=verify-pass \
+    HERMES_DASHBOARD_BASIC_AUTH_SECRET="real-hermes-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')" \
+    "$VENV/bin/hermes" dashboard --isolated --host $dash_host --port "$dash_port" --no-open --skip-build \
+    >"$RH_DIR/dashboard.log" 2>&1 </dev/null &
+  echo $! >"$RH_DIR/dashboard.pid"
+  local started=$SECONDS limit=${RH_READY_S:-180}
+  until grep -q HERMES_DASHBOARD_READY "$RH_DIR/dashboard.log" 2>/dev/null; do
+    kill -0 "$(cat "$RH_DIR/dashboard.pid")" 2>/dev/null || { down >&2; die "dashboard exited; see $RH_DIR/dashboard.log"; }
+    ((SECONDS - started < limit)) || { down >&2; die "dashboard not ready in $limit s; see $RH_DIR/dashboard.log"; }
+    sleep 0.5
+  done
+  echo $((SECONDS - started)) >"$RH_DIR/ready-seconds"
+  echo "http://$dash_host:$dash_port" >"$RH_DIR/url"
+  echo "export RH_DIR=$RH_DIR"
+  echo "dashboard: http://$dash_host:$dash_port  (username verify, password verify-pass; Hermes from $VENV)"
+}
+
+down() {
+  [ -n "${RH_DIR:-}" ] || die "RH_DIR is unset"
+  local f pid
+  for f in dashboard stub; do
+    pid=$(cat "$RH_DIR/$f.pid" 2>/dev/null) || continue
+    kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+    rm -f "$RH_DIR/$f.pid"
+  done
+  echo "real-hermes: stopped; logs kept in $RH_DIR"
+}
+
+case ${1:-} in
+  up) shift; up "$@" ;;
+  down) down ;;
+  turns) shift; [ -n "${RH_DIR:-}" ] || die "RH_DIR is unset"; python3 -I "$HERE/room-turns.py" "$RH_DIR/home/.hermes/shared-state.db" "$@" ;;
+  *) die "usage: real-hermes up <dir> | down | turns <owner text>" ;;
+esac

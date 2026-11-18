@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { FakeGroups, GROUPS_BUILDS, type FakeTurn, type TurnContext } from "./fakeGroups";
 
@@ -263,5 +264,13 @@ describe("FakeGroups reads and housekeeping", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("FakeGroups independence", () => {
+  it("reads an @ with its own port of Hermes's rule, so a test through it can fail when the client's reader is wrong", () => {
+    const source = readFileSync(new URL("./fakeGroups.ts", import.meta.url), "utf8");
+    const imported = [...source.matchAll(/(?:\bfrom|\bimport\()\s*["']([^"']+)["']/g)].map((m) => m[1]);
+    expect(imported.filter((from) => /(^|\/)(roomMentions|groupRooms)$/.test(from))).toEqual([]);
   });
 });

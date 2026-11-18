@@ -119,3 +119,51 @@ describe("Approval card", () => {
     expect(labels(html)).toEqual(["Yes, always allow", "Back"]);
   });
 });
+
+describe("A computer-use Approval card", () => {
+  const cua = (scope: "background" | "foreground", verb = "click", target = "click at (619, 777)"): Partial<ApprovalItem> => ({
+    command: `computer_use: ${target}${scope === "foreground" ? " [FOREGROUND — briefly raises the window / changes focus]" : ""}`,
+    description: `Allow computer_use to perform \`${verb}\`?`,
+    cua: { verb, scope, target, patternKey: `cua:${verb}:${scope}` },
+  });
+  const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+
+  it("heads the action, says the delivery mode, and words each grant by it", () => {
+    const html = renderToStaticMarkup(<ApprovalCard item={card(cua("background"))} offline={false} app="xfce4-panel" onAnswer={() => {}} />);
+    expect(html).toContain("Hermes wants to click at (619, 777)");
+    expect(text(html)).toContain("in xfce4-panel");
+    expect(text(html)).toContain("Background input");
+    expect(text(html)).toContain("the window keeps its place and its focus");
+    expect(labels(html)).toEqual(["Approve once", "Allow background clicks for this chat…", "Always allow background clicks…", "Deny"]);
+    expect(html).not.toContain("computer_use:");
+    expect(html).not.toContain("Allow computer_use to perform");
+  });
+
+  it("says a foreground input raises the window, and names it in each grant", () => {
+    const html = renderToStaticMarkup(<ApprovalCard item={card(cua("foreground", "key", "key 'return'"))} offline={false} onAnswer={() => {}} />);
+    expect(text(html)).toContain("Foreground input");
+    expect(text(html)).toContain("raises the window and moves the focus");
+    expect(labels(html)).toEqual(["Approve once", "Allow foreground key presses for this chat…", "Always allow foreground key presses…", "Deny"]);
+  });
+
+  it("keeps the action on the card once it is answered", () => {
+    const html = renderToStaticMarkup(<ApprovalCard item={card({ ...cua("foreground", "type", "type 'ls'"), answer: "session" })} offline={false} onAnswer={() => {}} />);
+    expect(text(html)).toContain("Allowed for this chat");
+    expect(text(html)).toContain("type &#x27;ls&#x27;");
+    expect(text(html)).toContain("Foreground input");
+    expect(labels(html)).toEqual([]);
+  });
+
+  it("confirms a grant with what it covers and that the other delivery mode still asks", () => {
+    const item = card(cua("background"));
+    const session = renderToStaticMarkup(<ConfirmGrant item={item} choice="session" offline={false} onConfirm={() => {}} onBack={() => {}} />);
+    expect(text(session)).toContain("Allow background clicks for the rest of this chat?");
+    expect(text(session)).toContain("The foreground version still asks.");
+    const always = renderToStaticMarkup(<ConfirmGrant item={card(cua("foreground", "scroll", "scroll down x3"))} choice="always" offline={false} onConfirm={() => {}} onBack={() => {}} />);
+    expect(text(always)).toContain("Always allow foreground scrolling?");
+    expect(text(always)).toContain("in any chat");
+    expect(text(always)).toContain("The background version still asks.");
+    expect(labels(always)).toEqual(["Yes, always allow", "Back"]);
+  });
+});
+

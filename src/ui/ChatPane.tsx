@@ -15,6 +15,8 @@ import type { AttachmentDesk } from "../hermes/attachmentDesk";
 import type { Reference, ReferenceDesk } from "../hermes/chatReferences";
 import { ReferenceChips } from "./ReferenceChips";
 import { ApprovalCard } from "./ApprovalCard";
+import { ComputerUseCard, HumanHasControlBanner } from "./ComputerUseCard";
+import { foldRuns, type CuRun } from "../hermes/computerUse";
 import { QuestionCard } from "./QuestionCard";
 import { Menu, PinItem, type ChatPin } from "./ChatMenu";
 import { agentSend, type AgentSend } from "../hermes/agentMessages";
@@ -91,20 +93,28 @@ const toldWhy = new Set<string>();
 type ToolItem = Extract<Item, { kind: "tool" }>;
 type ThinkingItem = Extract<Item, { kind: "thinking" }>;
 type SentBlock = { kind: "sent"; id: string; tool: ToolItem; send: AgentSend };
-type Block = { kind: "tools"; id: string; tools: ToolItem[] } | SentBlock | Exclude<Item, ToolItem>;
-const isItem = (b: Block): b is Exclude<Item, ToolItem> => b.kind !== "tools" && b.kind !== "sent";
+type Block = { kind: "tools"; id: string; tools: ToolItem[] } | SentBlock | CuRun | Exclude<Item, ToolItem>;
+const isItem = (b: Block): b is Exclude<Item, ToolItem> => b.kind !== "tools" && b.kind !== "sent" && b.kind !== "cu-run";
+/** A block with a Question still waiting in it: a Question's card, or a computer-use run with an Approval under a step. */
+const waitsIn = (b: Block) => (isItem(b) && isWaiting(b)) || (b.kind === "cu-run" && b.state === "asking");
 type SideBlock = { kind: "side"; id: string; question: SideQuestion };
 
-// Consecutive tool calls collapse into one group so a long run doesn't dominate the transcript. Each side question
-// goes after the item it was asked after (ADR 0086), so one asked during a run of tool calls splits it.
+// Consecutive tool calls collapse into one group so a long run doesn't dominate the transcript, and a computer-use run
+// is one card (ADR 0216). Each side question goes after the item it was asked after (ADR 0086), so one asked during a
+// run of tool calls splits it; one asked during a computer-use run goes after its card.
 function toBlocks(items: Item[], side: SideQuestion[] = []): (Block | SideBlock)[] {
   const out: (Block | SideBlock)[] = [];
   const sideAfter = (id?: string) => {
     for (const q of side) if (q.after === id) out.push({ kind: "side", id: q.id, question: q });
   };
   sideAfter(undefined);
-  for (const it of items) {
+  for (const it of foldRuns(items)) {
     const last = out[out.length - 1];
+    if (it.kind === "cu-run") {
+      out.push(it);
+      for (const src of it.items) sideAfter(src.id);
+      continue;
+    }
     if (it.kind === "tool") {
       const send = agentSend(it);
       if (send) out.push({ kind: "sent", id: it.id, tool: it, send });
@@ -126,6 +136,7 @@ function mayMatch(block: Block, finds: RegExp) {
     return finds.test(block.text) || finds.test(decodeString(block.text)) || block.text.includes("[^");
   if (block.kind === "returned") return finds.test(`${block.title ?? ""}\n${block.body}`) || finds.test(decodeString(block.body));
   if (block.kind === "sent") return finds.test(block.send.text) || finds.test(decodeString(block.send.text));
+  if (block.kind === "cu-run") return block.lines.some((l) => l.kind === "step" && finds.test(l.step.action.line));
   return (block.kind === "user" || block.kind === "thinking") && finds.test(block.text);
 }
 
@@ -133,7 +144,8 @@ function mayMatch(block: Block, finds: RegExp) {
 const sameBlock = (a: Block, b: Block) =>
   a === b ||
   (a.kind === "tools" && b.kind === "tools" && a.tools.length === b.tools.length && a.tools.every((t, i) => t === b.tools[i])) ||
-  (a.kind === "sent" && b.kind === "sent" && a.tool === b.tool);
+  (a.kind === "sent" && b.kind === "sent" && a.tool === b.tool) ||
+  (a.kind === "cu-run" && b.kind === "cu-run" && a.items.length === b.items.length && a.items.every((x, i) => x === b.items[i]));
 // A side question's block is rebuilt too, so it counts as unchanged when it holds the same question.
 const sameChunkBlock = (a: Block | SideBlock, b: Block | SideBlock) =>
   a.kind === "side" ? b.kind === "side" && a.question === b.question : b.kind !== "side" && sameBlock(a, b);
@@ -890,7 +902,10 @@ export function ChatPane({
     let has: (b: Block | SideBlock) => boolean;
     if (jumping.callId !== undefined) {
       const callId = jumping.callId;
-      has = (b) => (b.kind === "tools" && b.tools.some((t) => t.callId === callId)) || (b.kind === "sent" && b.tool.callId === callId);
+      has = (b) =>
+        (b.kind === "tools" && b.tools.some((t) => t.callId === callId)) ||
+        (b.kind === "sent" && b.tool.callId === callId) ||
+        (b.kind === "cu-run" && b.items.some((i) => i.kind === "tool" && i.callId === callId));
     } else {
       const { rowId, turn } = jumping;
       const id =
@@ -1121,7 +1136,7 @@ export function ChatPane({
               q={q}
               finds={finds}
               offline={status !== "connected" || !!chat.loading}
-              movedAt={waiting && c.some((b) => b.kind !== "side" && isItem(b) && isWaiting(b)) ? movedAt : 0}
+              movedAt={waiting && c.some((b) => b.kind !== "side" && waitsIn(b)) ? movedAt : 0}
               onAnswer={answer}
               onQuestion={question}
               listen={listen}
@@ -1162,7 +1177,7 @@ export function ChatPane({
         approvalWaiting={waiting?.kind}
         onGoToApproval={() => {
           const id = chat.items.find(isWaiting)?.id;
-          shown.reveal(chunks.findIndex((c) => c.some((b) => b.id === id)));
+          shown.reveal(chunks.findIndex((c) => c.some((b) => b.id === id || (b.kind === "cu-run" && b.items.some((i) => i.id === id)))));
           const card = id && rootRef.current?.querySelector<HTMLElement>(`.approval[data-item="${CSS.escape(id)}"]`);
           if (!card) return;
           card.scrollIntoView({ block: "center" });
@@ -1171,6 +1186,7 @@ export function ChatPane({
       />
       {goalBar}
       {queueApi && <QueuePanel chat={chat} queue={queue} status={status} api={queueApi} />}
+      <HumanHasControlBanner chat={chat} />
       {policy.readOnly === "imported" ? (
         // ADR 0031: an imported transcript is a record, not a session Hermes can carry on as it was.
         <div className="composer-wrap read-only-note" role="note">
@@ -1420,6 +1436,7 @@ const BlockView = memo(
     if (block.kind === "clarify" || block.kind === "sudo" || block.kind === "secret")
       return <QuestionCard item={block} offline={offline} movedAt={movedAt} onAnswer={(a) => onQuestion(block.id, a)} />;
     if (block.kind === "sent") return <SentCard block={block} query={query} />;
+    if (block.kind === "cu-run") return <ComputerUseCard run={block} offline={offline} movedAt={movedAt} onAnswer={onAnswer} />;
     return <ToolGroup tools={block.tools} />;
   },
   (a, b) =>
@@ -1519,7 +1536,7 @@ const TranscriptChunk = memo(
                   live={b.id === live}
                   query={finds && mayMatch(b, finds) ? q : ""}
                   offline={offline}
-                  movedAt={isItem(b) && isWaiting(b) ? movedAt : 0}
+                  movedAt={waitsIn(b) ? movedAt : 0}
                   onAnswer={onAnswer}
                   onQuestion={onQuestion}
                   listen={b.kind === "assistant" ? listen : undefined}

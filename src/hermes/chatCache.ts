@@ -216,12 +216,13 @@ function toItem(v: unknown): Item | undefined {
       const name = optionalText(i.name);
       if (name === undefined || (i.status !== "done" && i.status !== "stopped")) return undefined;
       const args = i.args && typeof i.args === "object" && !Array.isArray(i.args) ? (i.args as Record<string, unknown>) : undefined;
-      const [preview, result, summary, durationS] = [optionalText(i.preview), optionalText(i.result), optionalText(i.summary), num(i.durationS)];
+      const [preview, result, summary, durationS, at] = [optionalText(i.preview), optionalText(i.result), optionalText(i.summary), num(i.durationS), num(i.at)];
       return {
         kind: "tool",
         id,
         name,
         status: i.status,
+        ...(at !== undefined && { at }),
         ...(args && { args }),
         ...(preview !== undefined && { preview }),
         ...(result !== undefined && { result }),

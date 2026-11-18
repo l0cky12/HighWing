@@ -26,6 +26,11 @@ export const seatLook = (seat: Seat, bots: readonly Bot[], pictures: Readonly<Re
 
 export const seatName = (seat: Seat | undefined, bots: readonly Bot[], fallback: string): string => (seat ? (bots.find((b) => b.profile === seat.profile)?.name ?? seat.name) : fallback);
 
+export type SeatShown = Seat & { readonly look: BotLookShown; readonly description: string };
+
+export const seatsShown = (seats: readonly Seat[], bots: readonly Bot[], pictures: Readonly<Record<string, string>>): readonly SeatShown[] =>
+  seats.map((seat) => ({ ...seat, name: seatName(seat, bots, seat.name), look: seatLook(seat, bots, pictures), description: bots.find((b) => b.profile === seat.profile)?.description ?? "" }));
+
 export function floorWords(l: Locale, floor: Floor | undefined, bots: readonly Bot[]): string {
   const w = l.groupRooms.floor;
   const name = (seat?: Seat) => seatName(seat, bots, w.aBot);

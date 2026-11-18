@@ -3,6 +3,7 @@
 // Bot Desktop, every step. The chat would keep it as text nobody can read, pretty-printed, and its Saved copy would
 // outgrow the local limit. So inline data is swapped for a short note saying what it was, as Hermes's own history does
 // with `inline_images=false`; everything else in the result is kept as it came.
+import { COMPUTER_USE, keptResult } from "./computerUse";
 import { formatBytes } from "./values";
 
 /** Data shorter than this is left alone: it costs nothing and may be what the owner wants to read. */
@@ -34,9 +35,12 @@ export function withoutInlineData(value: unknown): unknown {
   return value;
 }
 
-/** A `tool.complete` result as the chat shows and keeps it: text as it came, anything else as indented JSON. */
-export function toolResultText(result: unknown): string | undefined {
+/**
+ * A `tool.complete` result as the chat shows and keeps it: text as it came, anything else as indented JSON. A
+ * `computer_use` result is trimmed first (`keptResult`).
+ */
+export function toolResultText(result: unknown, tool?: string): string | undefined {
   if (result == null) return undefined;
-  const kept = withoutInlineData(result);
+  const kept = withoutInlineData(tool === COMPUTER_USE ? keptResult(result) : result);
   return typeof kept === "string" ? kept : JSON.stringify(kept, null, 2);
 }

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { BOT_CHAT_TITLE } from "../hermes/bots";
@@ -29,16 +29,23 @@ const BOTS = ["ada", "bram", "cleo", "dov", "eve", "finn"];
 const TRIO = BOTS.slice(0, 3).map((profile) => ({ profile, name: profile[0].toUpperCase() + profile.slice(1) }));
 const pingpong = (t: TurnContext): FakeTurn => ({ say: `${t.name} here, pingpong. @${t.handles[t.index === 0 ? 1 : 0]} your turn.` });
 const POLL = { timeout: 5_000 };
+const LOOKS: Record<string, { color: string; about: string }> = {
+  ada: { color: "#d08b6e", about: "Plans the work" },
+  bram: { color: "#7cc49a", about: "Reviews code" },
+  cleo: { color: "#8db8e0", about: "Writes the docs" },
+};
 
 let launches = 0;
-async function launch({ build = GROUPS_BUILDS.ae2a81cc, script, room = false }: { build?: GroupsBuild; script?: (t: TurnContext) => FakeTurn; room?: boolean } = {}) {
+async function launch({ build = GROUPS_BUILDS.ae2a81cc, script, room = false, titles = {} }: { build?: GroupsBuild; script?: (t: TurnContext) => FakeTurn; room?: boolean; titles?: Record<string, string> } = {}) {
   const server = new FakeHermes();
   server.sessions = [row("disk", 0.5, { pinned: true, title: "Disk usage" })];
   server.otherProfiles = Object.fromEntries(BOTS.map((p, i) => [p, [row(`${p}-bot`, i + 1, { title: BOT_CHAT_TITLE, hidden: true })]]));
-  server.profileMeta = Object.fromEntries(BOTS.map((p) => [p, { ui_meta: { "hermes-bots": { title: p[0].toUpperCase() + p.slice(1) } } }]));
+  server.profileMeta = Object.fromEntries(
+    BOTS.map((p) => [p, { description: LOOKS[p]?.about, ui_meta: { "hermes-bots": { title: titles[p] ?? p[0].toUpperCase() + p.slice(1), color: LOOKS[p]?.color } } }]),
+  );
   server.groups.build = { ...build };
   if (script) server.groups.script = script;
-  if (room) server.groups.seed({ id: "crew", name: "Crew", members: TRIO });
+  if (room) server.groups.seed({ id: "crew", name: "Crew", members: TRIO.map((m) => ({ ...m, name: titles[m.profile] ?? m.name })) });
   const hermes = await connect(server.openPipe, undefined, memoryCache());
   running.push(hermes);
   const tray = new FakeTray();
@@ -171,7 +178,7 @@ describe("Watching a Group room", () => {
     const { server, user } = await launch({ room: true });
     await user.type(composer(), "@c");
     const handles = within(pane()).getByRole("listbox", { name: "Bots to mention" });
-    expect(within(handles).getAllByRole("option").map((o) => o.textContent)).toEqual(["@cleo"]);
+    expect(within(handles).getAllByRole("option").map((o) => o.querySelector(".room-handle-at")!.textContent)).toEqual(["@cleo"]);
     await user.keyboard("{Enter}");
     expect(composer().value).toBe("@cleo ");
     await user.type(composer(), "just you{Enter}");
@@ -316,6 +323,249 @@ describe("An approval in a Group room", () => {
     await user.click(await screen.findByRole("button", { name: /^Needs approval: Crew, a Group room on .*Bram is waiting for your approval\./ }));
     await waitFor(() => expect(pane()?.dataset.roomPane).toBe("crew"));
     expect(floor().dataset.floor).toBe("approval");
+  });
+});
+
+describe("Choosing who a room message goes to", () => {
+  const options = () => within(pane()).queryAllByRole("option");
+  const line = () => pane().querySelector<HTMLElement>(".room-goes-to")!;
+  const live = () => within(line()).getByRole("status");
+  const describedBy = () => (composer().getAttribute("aria-describedby") ?? "").split(" ").filter(Boolean).map((id) => document.getElementById(id));
+  const spoken = (el: Element) => {
+    const copy = el.cloneNode(true) as Element;
+    copy.querySelectorAll("[aria-hidden]").forEach((n) => n.remove());
+    return copy.textContent;
+  };
+  const textNodes = (el: Element) => {
+    const found: Node[] = [];
+    const walk = (n: Node) => (n.nodeType === Node.TEXT_NODE ? found.push(n) : n.childNodes.forEach(walk));
+    walk(el);
+    return found;
+  };
+  const paste = async (user: ReturnType<typeof userEvent.setup>, text: string) => {
+    await user.click(composer());
+    await user.paste(text);
+  };
+
+  it("lists each bot with its colour, name, handle and what it does, then Everyone, and no @everyone or @user", async () => {
+    const { user } = await launch({ room: true });
+    await user.type(composer(), "@");
+    const rows = options();
+    expect(rows.map((o) => spoken(o))).toEqual(["Ada@adaPlans the work", "Bram@bramReviews code", "Cleo@cleoWrites the docs", "Everyone@allEvery bot answers"]);
+    expect(rows.slice(0, 3).map((o) => o.querySelector<HTMLElement>(".bots-face")!.style.background)).toEqual(["rgb(208, 139, 110)", "rgb(124, 196, 154)", "rgb(141, 184, 224)"]);
+    expect(rows[3].querySelector(".bots-face")).toBeNull();
+    expect(rows.map((o) => o.textContent).join(" ")).not.toMatch(/@everyone|@user/);
+  });
+
+  it("matches the start of the handle or of a word of the name, in any case, and never folds accents", async () => {
+    const { user } = await launch({ room: true, titles: { cleo: "Cleo \u00c5ngstr\u00f6m" } });
+    await user.type(composer(), "@AN");
+    expect(options()).toHaveLength(0);
+    await user.clear(composer());
+    await user.type(composer(), "@\u00e5n");
+    expect(options().map((o) => o.querySelector(".room-handle-at")?.textContent)).toEqual(["@cleo"]);
+    await user.clear(composer());
+    await user.type(composer(), "@\u00c5");
+    expect(options().map((o) => o.querySelector(".room-handle-at")?.textContent), "an accented capital finds the accented name, not Ada").toEqual(["@cleo"]);
+  });
+
+  it("points aria-activedescendant at the selected row, which moves and wraps with the arrows, and drops it when the list closes", async () => {
+    const { user } = await launch({ room: true });
+    const active = () => {
+      const id = composer().getAttribute("aria-activedescendant");
+      return id ? document.getElementById(id)?.querySelector(".room-handle-at")?.textContent : null;
+    };
+    expect([composer().getAttribute("aria-expanded"), composer().getAttribute("aria-controls"), active()]).toEqual(["false", null, null]);
+    await user.type(composer(), "@");
+    const list = within(pane()).getByRole("listbox", { name: "Bots to mention" });
+    expect([composer().getAttribute("aria-expanded"), composer().getAttribute("aria-controls"), active()]).toEqual(["true", list.id, "@ada"]);
+    expect(options().map((o) => o.getAttribute("aria-selected"))).toEqual(["true", "false", "false", "false"]);
+    const seen: (string | null | undefined)[] = [];
+    for (let i = 0; i < 4; i++) {
+      await user.keyboard("{ArrowDown}");
+      seen.push(active());
+    }
+    expect(seen, "Everyone, then round to the first").toEqual(["@bram", "@cleo", "@all", "@ada"]);
+    await user.keyboard("{ArrowUp}");
+    expect(active()).toBe("@all");
+    expect(options().map((o) => o.getAttribute("aria-selected"))).toEqual(["false", "false", "false", "true"]);
+    await user.keyboard("{Escape}");
+    expect([composer().getAttribute("aria-expanded"), composer().getAttribute("aria-controls"), active()]).toEqual(["false", null, null]);
+  });
+
+  it("completes with Enter or Tab without sending, and Escape closes the list so the next Enter sends", async () => {
+    const { server, user } = await launch({ room: true });
+    await user.type(composer(), "@b{Enter}");
+    expect(composer().value).toBe("@bram ");
+    expect(sent(server, "groups.send")).toHaveLength(0);
+    await user.clear(composer());
+    await user.type(composer(), "@c{Tab}");
+    expect(composer().value).toBe("@cleo ");
+    expect(document.activeElement, "Tab stays in the composer").toBe(composer());
+    await user.clear(composer());
+    await user.type(composer(), "@a{Escape}");
+    expect(options()).toHaveLength(0);
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(sent(server, "groups.send")).toHaveLength(1));
+    expect(sent(server, "groups.send")[0]).toMatchObject({ payload: { text: "@a" } });
+  });
+
+  it("completes on a mouse press without taking focus from the composer", async () => {
+    const { server, user } = await launch({ room: true });
+    await user.type(composer(), "@");
+    await user.click(options()[1]);
+    expect(composer().value).toBe("@bram ");
+    expect(document.activeElement).toBe(composer());
+    expect(sent(server, "groups.send")).toHaveLength(0);
+  });
+
+  it("sends on Enter when nothing in the list matches, and says nobody is named that before it does", async () => {
+    const { server, user } = await launch({ room: true });
+    await user.type(composer(), "@quill");
+    expect(options()).toHaveLength(0);
+    expect(spoken(line())).toBe("Goes to everyone (no bot named)No one in this room is @quill");
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(sent(server, "groups.send")).toHaveLength(1));
+    expect(sent(server, "groups.send")[0]).toMatchObject({ payload: { thread_id: "main", text: "@quill" } });
+  });
+
+  it("leaves Enter to the input method while it composes, with the list open and closed", async () => {
+    const { server, user } = await launch({ room: true });
+    await user.type(composer(), "@c");
+    for (const key of [{ isComposing: true }, { keyCode: 229 }]) {
+      fireEvent.keyDown(composer(), { key: "Enter", ...key });
+      fireEvent.keyDown(composer(), { key: "Tab", ...key });
+      fireEvent.keyDown(composer(), { key: "ArrowDown", ...key });
+      fireEvent.keyDown(composer(), { key: "Escape", ...key });
+      expect(composer().value).toBe("@c");
+      expect(options()).toHaveLength(1);
+    }
+    await user.clear(composer());
+    await user.type(composer(), "hello");
+    for (const key of [{ isComposing: true }, { keyCode: 229 }]) fireEvent.keyDown(composer(), { key: "Enter", ...key });
+    expect(composer().value).toBe("hello");
+    expect(sent(server, "groups.send")).toHaveLength(0);
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(sent(server, "groups.send")).toHaveLength(1));
+  });
+
+  it("shows nothing for an empty draft, then who a message goes to, as soon as there is text", async () => {
+    const { user } = await launch({ room: true });
+    expect(spoken(line())).toBe("");
+    expect(composer().getAttribute("aria-describedby")).toBeNull();
+    await user.type(composer(), "hello team");
+    expect(spoken(line())).toBe("Goes to everyone (no bot named)");
+    await user.clear(composer());
+    expect(spoken(line())).toBe("");
+  });
+
+  it("names the bots a message goes to in roster order, and everyone for @all even beside a bot", async () => {
+    const { user } = await launch({ room: true });
+    await user.type(composer(), "@cleo and @ada, compare");
+    expect(spoken(line())).toBe("Goes to Ada, Cleo");
+    expect(line().querySelectorAll(".bots-face")).toHaveLength(2);
+    await user.clear(composer());
+    await user.type(composer(), "@all and @ada please");
+    expect(spoken(line())).toBe("Goes to everyone");
+  });
+
+  it("says who it goes to in a status, and the composer is described by that and the notes, once there is text", async () => {
+    const { user } = await launch({ room: true });
+    expect(live().getAttribute("aria-atomic")).toBe("true");
+    await user.type(composer(), "@quill hi");
+    expect(spoken(live())).toBe("Goes to everyone (no bot named)");
+    const described = describedBy();
+    expect(described[0]).toBe(live());
+    expect(described.map((el) => spoken(el!)).join(" ")).toBe("Goes to everyone (no bot named) No one in this room is @quill");
+  });
+
+  it("keeps the status still while an unknown name is typed, and shows the note beside it", async () => {
+    const { user } = await launch({ room: true });
+    await user.type(composer(), "hi @");
+    const changes: MutationRecord[] = [];
+    const watcher = new MutationObserver((records) => changes.push(...records));
+    watcher.observe(live(), { subtree: true, childList: true, characterData: true, attributes: true });
+    await user.type(composer(), "quil");
+    expect(options()).toHaveLength(0);
+    expect(spoken(line())).toBe("Goes to everyone (no bot named)No one in this room is @quil");
+    expect([...changes, ...watcher.takeRecords()], "typing the unknown name changed nothing a screen reader announces").toEqual([]);
+    watcher.disconnect();
+  });
+
+  it("changes the line's text only when who it goes to changes, so a screen reader hears it once", async () => {
+    const { user } = await launch({ room: true });
+    await user.type(composer(), "hello");
+    const before = textNodes(live());
+    const changes: MutationRecord[] = [];
+    const watcher = new MutationObserver((records) => changes.push(...records));
+    watcher.observe(live(), { subtree: true, childList: true, characterData: true, attributes: true });
+    const changed = () => [...changes.splice(0), ...watcher.takeRecords()];
+    await user.type(composer(), " there, team");
+    expect(changed(), "typing more words changed nothing in the line").toEqual([]);
+    expect(textNodes(live()), "and it has the same number of text nodes").toHaveLength(before.length);
+    for (const [i, node] of before.entries()) expect(textNodes(live())[i]).toBe(node);
+    await user.type(composer(), " @bram ok");
+    expect(changed().length, "naming a bot did").toBeGreaterThan(0);
+    watcher.disconnect();
+    expect(spoken(line())).toBe("Goes to Bram");
+  });
+
+  it("holds back a note about the word the list is offering rows for, while the line still says everyone", async () => {
+    const { user } = await launch({ room: true });
+    await user.type(composer(), "@b");
+    expect(options()).toHaveLength(1);
+    expect(spoken(line())).toBe("Goes to everyone (no bot named)");
+    await user.type(composer(), "z");
+    expect(options()).toHaveLength(0);
+    expect(spoken(line())).toBe("Goes to everyone (no bot named)No one in this room is @bz");
+  });
+
+  const warned: [string, string, string][] = [
+    ["a trailing mark, which Hermes reads as part of the name", "Thanks @bram. Can you look?", "Goes to everyone (no bot named)\u201c@bram.\u201d won't reach Bram: Hermes reads the trailing \u201c.\u201d as part of the name"],
+    ["a trailing colon", "@bram: can you look?", "Goes to everyone (no bot named)\u201c@bram:\u201d won't reach Bram: Hermes reads the trailing \u201c:\u201d as part of the name"],
+    ["a mention stuck to a word", "mail x@ada please", "Goes to Adax@ada looks like an e-mail, but Hermes reads @ada"],
+    ["a mention in inline code", "what is `@ada` here", "Goes to Ada@ada is inside code but Hermes still sends it to Ada"],
+    ["a handle nobody has", "@quill hello", "Goes to everyone (no bot named)No one in this room is @quill"],
+    ["@all in code", "run `@all` now", "Goes to everyone@all is inside code but Hermes still sends it to everyone"],
+    ["a trailing mark on @all", "ok @all. go", "Goes to everyone (no bot named)\u201c@all.\u201d won't reach everyone: Hermes reads the trailing \u201c.\u201d as part of the name"],
+  ];
+  it.each(warned)("warns about %s before Enter, and sends the text unchanged", async (_, text, said) => {
+    const { server, user } = await launch({ room: true });
+    await user.type(composer(), text);
+    expect(spoken(line())).toBe(said);
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(sent(server, "groups.send")).toHaveLength(1));
+    expect((sent(server, "groups.send")[0] as { payload: { text: string } }).payload.text).toBe(text);
+  });
+
+  it("warns about a mention in a fenced block, and sends the whole block as typed", async () => {
+    const { server, user } = await launch({ room: true });
+    const text = "Look:\n```\n@ada\n```\nthanks";
+    await paste(user, text);
+    expect(spoken(line())).toBe("Goes to Ada@ada is inside code but Hermes still sends it to Ada");
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(sent(server, "groups.send")).toHaveLength(1));
+    expect((sent(server, "groups.send")[0] as { payload: { text: string } }).payload.text).toBe(text);
+  });
+
+  it("lists three notes and then how many more", async () => {
+    const { user } = await launch({ room: true });
+    await user.type(composer(), "@q1 @q2 @q3 @q4 @q5 end");
+    expect(spoken(line())).toBe("Goes to everyone (no bot named)No one in this room is @q1No one in this room is @q2No one in this room is @q3and 2 more");
+  });
+
+  it("says one note for the same word typed twice", async () => {
+    const { user } = await launch({ room: true });
+    await user.type(composer(), "@quill and @quill again");
+    expect(spoken(line())).toBe("Goes to everyone (no bot named)No one in this room is @quill");
+  });
+
+  it("sends a message that names a bot to that bot alone, and everyone else stays quiet", async () => {
+    const { server, user } = await launch({ room: true });
+    await user.type(composer(), "@bram only you{Enter}");
+    await step(server, 5);
+    await waitFor(() => expect(floor().dataset.floor).toBe("yours"));
+    expect(replies()).toEqual(["bram: Bram here."]);
   });
 });
 

@@ -15,6 +15,12 @@
 //   refuses, then a write of a.txt and a patch of b.txt, with a checkpoint before them, so the reply gets the
 //   "2 files changed" chip. Checkpoints are on unless HV_CHECKPOINTS=off, which gives the chip's "checkpoints are off".
 //   a prompt with "approval" in it asks the owner to approve a command, and its reply waits for the answer.
+//   a prompt that starts with `computer use` runs FakeHermes.computerUseTurn (ADR 0216): 20 computer_use calls on the
+//   Bot Desktop, about half a second each, with screenshots in the results as Hermes sends them. A background click and
+//   a foreground type each ask a cua Approval in Hermes's shape until allowed for the chat; a foreground key is already
+//   allowed always, as the recorded profile's was. Stop ends it between calls. `computer use takeover` instead hands
+//   the screen to someone else first, so its one capture is refused `human_has_control` and the screen stays held until
+//   `POST /__lease?holder=agent`. The first such prompt gives the stand-in a stopped Bot Desktop (`display.*`).
 //   a prompt that starts with "fail" ends its reply with an error, as a provider failure does.
 //   a prompt that starts with "math" gets a reply with inline and display math and a Mermaid diagram (#350), and one
 //   that starts with "badmath" the same with a diagram Mermaid can't parse.
@@ -38,6 +44,8 @@
 //   `POST /__ask?chat=<chat id>&method=<method>` with a JSON body of params asks the app something, as a Hermes tool's
 //   server request does (`preview.act`, `preview.read`), in that chat's live session (a test's control). It answers
 //   the request's id; the app's answer shows in `/__state` under `answers`.
+//   `POST /__lease?holder=agent|human` sets who holds the Bot Desktop and broadcasts `display.lease`, as Hermes does
+//   when a viewer takes or hands back the screen; `human` is another client's viewer (a test's control).
 //   `POST /__changed[?n=<count>&gap=<ms>]` broadcasts `sessions.changed` n times (default 1), gap ms apart, as Hermes's
 //   change watcher does when another process writes the session store (a test's control).
 //   `POST /__gone?id=<chat id>` deletes the chat, as another client would, and drops the app's WebSocket, so the app
@@ -108,6 +116,7 @@ import { join } from "node:path";
 import { createServer } from "node:http";
 import type { Socket } from "node:net";
 import { GROUPS_BUILDS, standInScript } from "../../../../src/hermes/fakeGroups";
+import { CU } from "../../../../src/hermes/fakeComputerUse";
 import { DOCTOR_NO_DISPLAY, FakeHermes, row } from "../../../../src/hermes/fakeHermes";
 import { HONCHO, RETAINDB } from "../../../../src/hermes/fakeMemoryProviders";
 import type { Pipe } from "../../../../src/hermes/pipe";
@@ -251,16 +260,16 @@ if (personaReply) {
   server.oneshotAnswer = (call) => (call.input.includes("<persona>") ? readFileSync(personaReply, "utf8") : typeof plain === "string" ? plain : plain(call));
 }
 
-const computerUse = process.env.HV_COMPUTER_USE;
-if (computerUse) {
+const cuSeed = process.env.HV_COMPUTER_USE;
+if (cuSeed) {
   server.display = {
     status: { supported: true, installed: true, missing: [], running: true, geometry: "1280x800", placement: "gateway", memory_available_mb: 19039, memory_limit_mb: 32000, browser: "/usr/bin/chromium" },
-    lease: { holder: computerUse === "human" ? "human" : "agent", viewer_hash: null, since: 1, epoch: 0 },
+    lease: { holder: cuSeed === "human" ? "human" : "agent", viewer_hash: null, since: 1, epoch: 0 },
     minted: new Set(),
   };
   server.machine = { programs: new Set(), files: new Set(), pmInstall: { code: 0, output: "" }, browser: "/usr/bin/chromium" };
-  if (computerUse === "degraded") server.machine.computerUse = { doctor: DOCTOR_NO_DISPLAY };
-  if (computerUse !== "toolset-off") server.toolsetsOn.default = new Set([...server.enabledToolsets("default"), "computer_use"]);
+  if (cuSeed === "degraded") server.machine.computerUse = { doctor: DOCTOR_NO_DISPLAY };
+  if (cuSeed !== "toolset-off") server.toolsetsOn.default = new Set([...server.enabledToolsets("default"), "computer_use"]);
 }
 
 if (process.env.HV_SETTLING !== undefined) server.profileSettlementPending = process.env.HV_SETTLING;
@@ -399,6 +408,55 @@ function delegate(sid: string, queue: boolean) {
   server.event(sid, "subagent.spawn_requested", payload);
 }
 
+/** The sessions running a computer-use turn, which ends itself on Stop. */
+const cuTurns = new Set<string>();
+
+function setLease(holder: "agent" | "human") {
+  const d = (server.display ??= { status: { supported: true, installed: true, missing: [], running: false, geometry: "1280x800" }, lease: { holder: "agent", viewer_hash: null, since: 1, epoch: 0 }, minted: new Set() });
+  if (d.lease.holder === holder) return;
+  d.lease = { holder, viewer_hash: holder === "human" ? "0123456789ab" : null, since: Date.now() / 1000, epoch: d.lease.epoch + 1 };
+  server.broadcast("display.lease", { profile_key: "/home/lena/.hermes", lease: { ...d.lease, viewer_id: null, reason: holder === "human" ? "taking over" : "" } });
+}
+
+const DESK_RUN = [
+  CU.capture(),
+  CU.click([620, 780], "background"),
+  CU.capture("xfce4-panel", "Xfce4-panel", "xfce4-panel"),
+  CU.click([22, 21], "background", "xfce4-panel"),
+  CU.capture("xfce4-terminal", "Xfce4-terminal", "Terminal - lena@hermes: ~"),
+  CU.type("df -h /srv"),
+  CU.key("return"),
+  CU.wait(1),
+  CU.capture("xfce4-terminal", "Xfce4-terminal", "Terminal - lena@hermes: ~"),
+  CU.key("ctrl+l"),
+  CU.type("du -sh /srv/backup"),
+  CU.key("return"),
+  CU.wait(1),
+  CU.capture("xfce4-terminal", "Xfce4-terminal", "Terminal - lena@hermes: ~"),
+  CU.click([400, 300], "background", "xfce4-terminal"),
+  CU.key("ctrl+shift+c"),
+  CU.capture("xfce4-terminal", "Xfce4-terminal", "Terminal - lena@hermes: ~"),
+  CU.key("alt+f4"),
+  CU.wait(1),
+  CU.capture(),
+];
+
+function computerUse(sid: string, prompt: string) {
+  setLease(/takeover/i.test(prompt) ? "human" : (server.display?.lease.holder ?? "agent"));
+  server.cuGrants.always.add("cua:key:foreground");
+  cuTurns.add(sid);
+  const sleep = (seconds: number) => new Promise<void>((done) => setTimeout(done, Math.min(seconds, 1) * 600));
+  const turn = /takeover/i.test(prompt)
+    ? { steps: [CU.capture()], reply: "Someone has taken over the Bot Desktop, so I stopped. Hand it back and I'll carry on." }
+    : /deny/i.test(prompt)
+      ? { steps: [CU.capture(), CU.doubleClick([640, 400], "foreground")], reply: "You said no, so I left the desktop alone." }
+      : { steps: DESK_RUN, reply: "/srv is 92% full, and /srv/backup holds 212 GiB of it." };
+  void server
+    .computerUseTurn(sid, turn, sleep)
+    .finally(() => cuTurns.delete(sid))
+    .then(save);
+}
+
 function askApproval(sid: string) {
   server.event(sid, "message.start");
   server.askApproval(sid);
@@ -533,6 +591,12 @@ const http = createServer(async (req, res) => {
     save();
     return moved ? json(200, { ok: true, task: server.kanban.find(id) }) : json(404, { detail: `No stand-in task ${id}` });
   }
+  if (url.pathname === "/__lease" && req.method === "POST") {
+    const holder = url.searchParams.get("holder");
+    if (holder !== "agent" && holder !== "human") return json(400, { detail: "holder must be agent or human" });
+    setLease(holder);
+    return json(200, { ok: true, lease: server.display!.lease });
+  }
   if (url.pathname === "/__changed" && req.method === "POST") {
     const n = Number(url.searchParams.get("n") ?? 1);
     const gap = Number(url.searchParams.get("gap") ?? 0);
@@ -618,14 +682,16 @@ http.on("upgrade", async (req, sock: Socket) => {
   closeSocket = () => sock.destroy();
   readFrames(sock, (t) => {
     try {
-      const msg = JSON.parse(t) as { method?: string; params?: { session_id?: string; text?: string; subagent_id?: string } };
-      if (msg.method && msg.method !== "gateway.ping") console.log(new Date().toISOString(), "WS", msg.method, msg.params?.session_id ?? "");
+      const msg = JSON.parse(t) as { method?: string; params?: { session_id?: string; text?: string; subagent_id?: string; choice?: string; request_id?: string } };
+      const answer = msg.method === "approval.respond" ? JSON.stringify({ choice: msg.params?.choice, request_id: msg.params?.request_id }) : "";
+      if (msg.method && msg.method !== "gateway.ping") console.log(new Date().toISOString(), "WS", msg.method, msg.params?.session_id ?? "", answer);
       if (msg.method === "prompt.submit" && msg.params?.session_id) {
         const { session_id, text } = msg.params;
         const prompt = String(text ?? "");
         setTimeout(() => {
           save();
-          if (/delegate/i.test(prompt)) delegate(session_id, /queue/i.test(prompt));
+          if (/^computer use/i.test(prompt)) computerUse(session_id, prompt);
+          else if (/delegate/i.test(prompt)) delegate(session_id, /queue/i.test(prompt));
           else if (/approval/i.test(prompt)) askApproval(session_id);
           else if (/^fail/i.test(prompt)) failReply(session_id);
           else if (/^tools/i.test(prompt)) void toolsReply(session_id);
@@ -635,7 +701,7 @@ http.on("upgrade", async (req, sock: Socket) => {
       }
       const stop = msg.method === "subagent.interrupt" ? delegated.get(String(msg.params?.subagent_id)) : undefined;
       if (stop && stop.sid === msg.params?.session_id) setTimeout(() => endSubagent(String(msg.params!.subagent_id), "interrupted"), 50);
-      if (msg.method === "session.interrupt" && server.runtime.has(String(msg.params?.session_id)))
+      if (msg.method === "session.interrupt" && server.runtime.has(String(msg.params?.session_id)) && !cuTurns.has(String(msg.params?.session_id)))
         setTimeout(() => server.event(String(msg.params!.session_id), "message.complete", { status: "interrupted", text: "" }), 50);
     } catch {
       // Not JSON: FakeHermes answers it as it would.

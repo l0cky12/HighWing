@@ -409,6 +409,17 @@ sudo apt install ./hermes-chat_<version>_amd64.deb
 
 It is built on Ubuntu 24.04, so it needs Ubuntu 24.04, Debian 13 or newer, on x86_64. The `.sha256` file beside it holds its checksum (`sha256sum -c`). The package is called `highwing` (`sudo apt remove highwing` removes it). The command, icon and [chat links](#chat-links-and-the-desktop) are the Arch package's, but the launcher file is `Highwing.desktop`, so that is the name to give `xdg-mime default`. The app doesn't update a .deb install: to update, install a newer .deb the same way. Pushing a `v<version>` tag builds the package and attaches it to that release (ADR 0183).
 
+## Install the AppImage
+
+On a Linux system that isn't Debian or Ubuntu, or if you'd rather not install a package, download `hermes-chat_<version>_amd64.AppImage` from the latest [release](https://github.com/l0cky12/Highwing/releases), make it executable and run it:
+
+```sh
+chmod +x hermes-chat_<version>_amd64.AppImage
+./hermes-chat_<version>_amd64.AppImage
+```
+
+It is built on Ubuntu 24.04, so it needs a system at least that new, on x86_64. It needs FUSE with a `fusermount` command (the `fuse3` package on Debian and Ubuntu, `fuse2` on Arch). Without FUSE, run it with `--appimage-extract-and-run`. The `.sha256` file beside it holds its checksum (`sha256sum -c`). It registers no launcher or [chat links](#chat-links-and-the-desktop). The app doesn't update it, and Settings says so: to update, download a newer AppImage. Pushing a `v<version>` tag builds the AppImage, checks that it opens a window under a virtual display, and attaches it to that release (ADR 0213).
+
 ## Install on Windows
 
 Download `hermes-chat_<version>_x64-setup.exe` from the latest [release](https://github.com/l0cky12/hermes-chat/releases) and run it. It installs for your Windows user only, with no admin rights, and registers [chat links](#chat-links). The installer isn't code-signed, so Windows SmartScreen warns on first run: choose **More info**, then **Run anyway**. The `.sha256` file beside it holds its checksum (`Get-FileHash` in PowerShell).
@@ -433,7 +444,7 @@ An AppImage that a package installed counts as the package's: the app asks pacma
 
 What has been tested for real: on Arch Linux, the documented `git pull && packaging/aur/build.sh -si` upgraded `hermes-chat-git` under a running app. The real pacman worked on a copy of the real package database, inside an unprivileged namespace made by `tools/arch-update/sandbox.sh`, which runs it without root and without touching the system. Refocusing the app found the new version, and Restart now brought up the new binary with the drafts back. A `pacman -U` on the system itself, as root, hasn't been tested by the app's developers. Standalone AppImage updates have only been tested against a local update server.
 
-The repo ships no AppImage, update server or signing key yet, so standalone updates are off. [docs/releases.md](releases.md) says how a release is built, signed, staged and checked, what the update endpoint must serve, the version rules, and how to rotate or recover the key. The `release-dry-run` workflow rehearses all of it with a throwaway key and uploads the result as a workflow artifact, without publishing anything. Creating the production key and secret, and publishing, are left to the owner (ADR 0075).
+The repo ships no signed AppImage, update server or signing key yet (the plain AppImage on a release has no updater), so standalone updates are off. [docs/releases.md](releases.md) says how a release is built, signed, staged and checked, what the update endpoint must serve, the version rules, and how to rotate or recover the key. The `release-dry-run` workflow rehearses all of it with a throwaway key and uploads the result as a workflow artifact, without publishing anything. Creating the production key and secret, and publishing, are left to the owner (ADR 0075).
 
 ## Project defaults
 

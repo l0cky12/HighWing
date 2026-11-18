@@ -273,7 +273,8 @@ export function McpSettings({
       restart.unmark(p, `mcp:${was}`);
       return;
     }
-    // Unknown leaves an earlier edit's mark as it was.
+    // A marked server's new save outlives a restart already running; an unknown read leaves the mark as it is.
+    if (restart.marksOf(p).has(`mcp:${name}`)) restart.mark(p, `mcp:${name}`);
     const running = await restart.status(p).then(
       (s) => s.running,
       () => undefined,

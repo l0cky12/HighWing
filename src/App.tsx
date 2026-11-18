@@ -3649,6 +3649,7 @@ export function Main({
             toolsets={hermes.toolsets}
             mcp={hermes.mcp}
             gateways={hermes.gateways}
+            gatewayRestart={hermes.gatewayRestart}
             providers={hermes}
             accounts={hermes.accounts}
             openUrl={(url) => webPages.openInBrowser(url).then(() => undefined)}

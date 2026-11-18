@@ -82,6 +82,7 @@ import { ProfilePicker } from "./ProfilePicker";
 import type { McpApi } from "../hermes/mcp";
 import { McpSettings } from "./McpSettings";
 import type { GatewaysApi } from "../hermes/gateways";
+import type { GatewayRestartApi } from "../hermes/gatewayRestart";
 import { GatewaySettings } from "./GatewaySettings";
 import { ProviderSettings, type ProviderKeysApi } from "./ProviderSettings";
 import { SignInSettings, type SignInApi } from "./SignInSettings";
@@ -247,6 +248,7 @@ export function SettingsScreen({
   toolsets,
   mcp,
   gateways,
+  gatewayRestart,
   providers,
   accounts,
   openUrl = () => {},
@@ -326,6 +328,8 @@ export function SettingsScreen({
   mcp?: McpApi;
   /** Each profile's Telegram and Discord gateways on Hermes (ADR 0073); without it there is no Gateways tab. */
   gateways?: GatewaysApi;
+  /** Restarts a profile's gateway, beside a change it picks up only then (ADR 0203); without it there is no Restart gateway button. */
+  gatewayRestart?: GatewayRestartApi;
   /** The shown profile's provider API keys on Hermes (ADR 0095); without it there is no Providers tab. */
   providers?: ProviderKeysApi;
   /** The shown profile's subscription sign-ins and custom endpoints on Hermes, in the Providers tab (ADR 0133). */
@@ -1048,6 +1052,7 @@ export function SettingsScreen({
             <McpSettings
               key={tabProfile.mcp}
               api={mcp}
+              restart={gatewayRestart}
               profile={tabProfile.mcp}
               connected={status === "connected"}
               picker={picker("mcp", "Profile whose MCP servers are shown")}
@@ -1064,6 +1069,7 @@ export function SettingsScreen({
             <GatewaySettings
               key={tabProfile.gateways}
               api={gateways}
+              restart={gatewayRestart}
               profile={tabProfile.gateways}
               shown={profile}
               connected={status === "connected"}

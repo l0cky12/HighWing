@@ -3,12 +3,15 @@
 // on, what its last Test found, and whether a plugin provides it. Servers are added from a blank form or Hermes's
 // catalog, edited in a dialog, removed after asking, tested and signed in to (OAuth) on the server. Env values and
 // bearer tokens are write-only: nothing fills them from Hermes, and a blank one keeps what Hermes has. Each change is
-// called saved only once Hermes's list, read again, shows it (mcp.ts).
+// called saved only once Hermes's list, read again, shows it (mcp.ts). The profile's running gateway keeps a server
+// edited in place on its old connection, so Restart gateway shows beside it then (ADR 0203).
 import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 import { AlertTriangle, BookOpen, CheckCircle2, CircleAlert, Info, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { SettingNote, SettingRow, SettingsSection } from "./SettingRows";
 import { AppliesBox, AppliesPart, EditingProfile, HeadPart, MetaChip, useInPage } from "./SettingsPage";
 import { Spinner } from "./bits";
+import { RestartGateway } from "./RestartGateway";
+import type { GatewayRestartApi } from "../hermes/gatewayRestart";
 import { useModal } from "./modal";
 import {
   type Auth,
@@ -56,6 +59,7 @@ const AUTH_TEXT: Record<Auth, string> = { none: "No sign-in", header: "Bearer to
 
 export function McpSettings({
   api,
+  restart,
   profile,
   connected,
   picker,
@@ -64,6 +68,8 @@ export function McpSettings({
   shown: inUse,
 }: {
   api: McpApi;
+  /** Restarts the profile's gateway; without it there is no Restart gateway button. */
+  restart?: GatewayRestartApi;
   /** The profile the app uses; the header marks a picked profile that isn't it. */
   shown?: string;
   /** The profile shown; every read and write names it, and answers for another are dropped. */
@@ -88,6 +94,15 @@ export function McpSettings({
   const [confirmRemove, setConfirmRemove] = useState<string>();
   const [dialog, setDialog] = useState<Dialog>();
   const [listNote, setListNote] = useState<Note>();
+  // Servers edited in place whose old settings the running gateway still holds.
+  const [unapplied, setUnapplied] = useState<Set<string>>(new Set());
+  const setUnappliedOne = (name: string, on: boolean) =>
+    setUnapplied((all) => {
+      const next = new Set(all);
+      if (on) next.add(name);
+      else next.delete(name);
+      return next;
+    });
   const live = useRef(true);
   // Every answer is for the profile asked; one that comes back after a switch is dropped.
   const shown = useRef(profile);
@@ -151,6 +166,7 @@ export function McpSettings({
     setOne(setBusy, name, kind);
     setOne(setNotes, name, undefined);
     setListNote(undefined);
+    setUnappliedOne(name, false);
     try {
       settle(p, name, await go(), what);
     } finally {
@@ -249,6 +265,21 @@ export function McpSettings({
     void api.cancelSignIn(s.flow.flowId);
     setOne(setSignIns, name, undefined);
     setOne(setNotes, name, { tone: "warn", text: "Sign-in stopped." });
+  };
+
+  /**
+   * After a saved edit. Hermes's gateway reconciles MCP servers by name only, within a minute, so it picks up an added,
+   * removed, switched or renamed server by itself, but keeps a server edited under the same name on its old settings.
+   */
+  const editedInPlace = async (was: string, name: string, l: McpList | undefined) => {
+    const p = profile;
+    setUnappliedOne(was, false);
+    if (!restart || was !== name || !l?.servers.find((s) => s.name === name)?.enabled) return;
+    const running = await restart.status(p).then(
+      (s) => s.running,
+      () => false,
+    );
+    if (mine(p) && running) setUnappliedOne(name, true);
   };
 
   const names = list?.servers.map((s) => s.name) ?? [];
@@ -358,6 +389,16 @@ export function McpSettings({
           <div className={`mcp-note ${note.tone}`} role={note.tone === "bad" ? "alert" : "status"}>
             {note.text}
           </div>
+        )}
+        {restart && (
+          <RestartGateway
+            api={restart}
+            profile={profile}
+            needed={unapplied.has(s.name)}
+            connected={connected}
+            why={`Chats on Telegram and Discord keep ${s.name}'s old settings until the gateway restarts.`}
+            onRestarted={() => setUnappliedOne(s.name, false)}
+          />
         )}
         {confirmRemove === s.name ? (
           <div className="mcp-confirm" role="group" aria-label={`Remove ${s.name}?`}>
@@ -520,6 +561,7 @@ export function McpSettings({
           onDone={(form, r) => {
             setDialog(undefined);
             settle(profile, form.name, r, dialog.kind === "edit" ? "Saved" : `Added ${form.name}`);
+            if (dialog.kind === "edit" && r.kind === "saved") void editedInPlace(dialog.server.name, form.name, r.list);
           }}
           onClose={() => setDialog(undefined)}
         />
@@ -976,7 +1018,12 @@ const effectRows = (
     <SettingRow
       name="Adding, editing, removing or switching"
       hint="Chats started from now on get the change. A chat already going keeps the tools it started with."
-      more={<p>Hermes builds a chat's tools once. A server turned off stays in the config, so turning it on again needs nothing retyped.</p>}
+      more={
+        <p>
+          Hermes builds a chat's tools once. A server turned off stays in the config, so turning it on again needs nothing retyped. Chats on Telegram and Discord run in the profile's gateway, which keeps a server edited in place on its old
+          settings until it restarts; Restart gateway shows beside that server.
+        </p>
+      }
     />
     <SettingRow
       name="Turned off for a platform"

@@ -278,6 +278,33 @@ describe("The panic Stop", () => {
     expect(interrupts(s.server).map((r) => r.params)).toEqual([{ session_id: s.runtime }]);
   });
 
+  it("leaves hermes-chat --stop waiting while Hermes isn't connected, and takes it once connected", async () => {
+    let waiting = false;
+    let listener: (() => void) | undefined;
+    const take = () => {
+      if (!waiting || !listener) return;
+      waiting = false;
+      listener();
+    };
+    const s = await signedIn(withScreen, (fn) => {
+      listener = fn;
+      take();
+      return () => void (listener === fn && (listener = undefined));
+    });
+    s.server.refuse = "connection refused";
+    await act(async () => s.server.drop());
+    await waitFor(() => expect(s.hermes.getSnapshot().status).not.toBe("connected"));
+    act(() => void ((waiting = true), take()));
+    await settle(s.hermes);
+    expect(waiting).toBe(true);
+    expect(acquires(s.server)).toEqual([]);
+    s.server.refuse = undefined;
+    await act(async () => void (await s.hermes.reconnect().catch(() => {})));
+    await waitFor(() => expect(acquires(s.server)).toHaveLength(1));
+    expect(waiting).toBe(false);
+    expect(s.server.display!.lease.holder).toBe("human");
+  });
+
   it("takes the screen on Ctrl+. without stopping a reply that isn't using it", async () => {
     const s = await replying(withScreen);
     await s.user.keyboard("{Control>}.{/Control}");

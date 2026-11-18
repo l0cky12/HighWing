@@ -1248,7 +1248,10 @@ export function Main({
   localStt?: LocalSttApi;
   /** Tells the window `hermes-chat --show` or `--toggle` brought it forward; none outside the desktop app. */
   summon?: SummonApi;
-  /** Calls its function whenever `hermes-chat --stop` asks to stop computer use (ADR 0219); returns its unsubscribe. */
+  /**
+   * Calls its function whenever `hermes-chat --stop` asks to stop computer use (ADR 0219); returns its unsubscribe.
+   * Main listens only while the composer target is connected.
+   */
   desktopStop?: (fn: () => void) => () => void;
   onSignOut: () => Promise<void>;
   updates?: Updater;
@@ -2028,7 +2031,9 @@ export function Main({
   const panicStopRef = useRef(panicStop);
   panicStopRef.current = panicStop;
   const desktopStopRef = useRef(desktopStop);
-  useEffect(() => desktopStopRef.current(() => panicStopRef.current()), []);
+  // Rust keeps `hermes-chat --stop` while nothing listens, so one asked for before Hermes is connected stops once it is.
+  const connected = status === "connected";
+  useEffect(() => (connected ? desktopStopRef.current(() => panicStopRef.current()) : undefined), [connected]);
 
   // The pane left takes the whole width and becomes the active one.
   const closePane = (key: string) => {

@@ -41,7 +41,7 @@ export function SourceIcon({ source, size = 12 }: { source: Source; size?: numbe
 }
 
 /**
- * Archives a chat, or unarchives one in Archived (snooze.ts `archiveAction`). Icon only, the same either way: hovering
+ * Archives a chat, or unarchives one in Archived (model.ts `archiveAction`). Icon only, the same either way: hovering
  * shows what it does.
  */
 export function ArchiveButton({

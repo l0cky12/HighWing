@@ -234,6 +234,20 @@ describe("Which items make one run", () => {
     expect(found.map((r) => steps(r).map((s) => s.n))).toEqual([[1], [2, 3], [4], [1]]);
   });
 
+  it("says a run was stopped when the reply was interrupted after reasoning that followed its last call", () => {
+    const items: Item[] = [
+      { kind: "user", id: "u", text: "go" },
+      capture("c1"),
+      { kind: "thinking", id: "r1", text: "Now the terminal." },
+      { kind: "assistant", id: "a", text: "", interrupted: true },
+      { kind: "user", id: "u2", text: "again" },
+      capture("c2"),
+      { kind: "thinking", id: "r2", text: "That's it." },
+      { kind: "assistant", id: "a2", text: "Done." },
+    ];
+    expect(runs(items).map((r) => r.state)).toEqual(["stopped", "done"]);
+  });
+
   it("leaves every other tool call as it was", () => {
     const items: Item[] = [
       { kind: "user", id: "u", text: "go" },

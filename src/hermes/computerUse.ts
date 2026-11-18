@@ -202,7 +202,10 @@ export function foldRuns(items: readonly Item[]): (Item | CuRun)[] {
     }
     let end = i;
     for (let k = i + 1; k < items.length && absorbed(items[k]); k++) if (isCu(items[k]) || (isCuAsk(items[k]) && k === end + 1)) end = k;
-    const run = runOf(items.slice(i, end + 1), n, items[end + 1]);
+    // Reasoning after the last call may come before the reply that says how the run ended.
+    let next = end + 1;
+    while (items[next]?.kind === "thinking") next++;
+    const run = runOf(items.slice(i, end + 1), n, items[next]);
     n += run.steps;
     out.push(run);
     i = end;

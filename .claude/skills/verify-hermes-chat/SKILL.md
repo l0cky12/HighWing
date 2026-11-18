@@ -77,6 +77,8 @@ Prefer handles in this order: aria-label or `<label>` text (`input "Dashboard pa
 
 Native GTK windows (file pickers, Save dialogs) are outside the webview, so WebDriver can't reach them. Use `$S/hv x <xdotool args>` on the run's display for those. Press with `mousemove X Y`, a short sleep, `mousedown 1`, about 120 ms, then `mouseup 1`, because a plain `click 1` often doesn't register. Capture the result with `hv shot`.
 
+A flag a desktop key would run (`hermes-chat --stop`, `--toggle`) goes through `$S/hv app <flag>`. It runs the built binary on the run's display and private bus, hands the flag to the app under WebDriver, and exits.
+
 The [feature map](features/README.md) holds a recipe for each feature. Read the matching file before driving, and cover every entry point it lists.
 
 ## 5. Evidence

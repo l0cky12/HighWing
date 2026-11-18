@@ -7,6 +7,7 @@
 #   hv shot <name>       screenshot the whole X screen (window frame, native dialogs) into the run's evidence
 #   hv state             print what the stand-in dashboard holds (sessions and transcripts)
 #   hv x <xdotool args>  xdotool on the run's display, for native GTK dialogs WebDriver can't reach
+#   hv app <args>        run the built app on the run's display and bus, as a desktop key would (`hv app --stop`)
 #   hv down              stop everything this run started and delete its scratch state; evidence stays
 # Every command but bootstrap/build/up reads $HV_RUN, which `hv up` prints.
 set -euo pipefail
@@ -286,6 +287,13 @@ cmd_state() {
 
 cmd_x() { load; xenv; DISPLAY=$DISPLAY_NUM "$(tool xdotool)" "$@"; }
 
+# A second launch hands its request to the running app over the run's private bus and exits (src-tauri/src/remote.rs).
+cmd_app() {
+  load
+  env DISPLAY="$DISPLAY_NUM" DBUS_SESSION_BUS_ADDRESS="$DBUS_ADDR" HOME="$RUN/home" XDG_DATA_HOME="$RUN/data" XDG_CONFIG_HOME="$RUN/config" \
+    XDG_CACHE_HOME="$RUN/cache" XDG_RUNTIME_DIR="$RUN/runtime" timeout 20 "$APP" "$@"
+}
+
 cmd_down() {
   load
   if [ -s "$RUN/session" ]; then curl -s -X DELETE "http://127.0.0.1:$DRIVER_PORT/session/$(cat "$RUN/session")" >/dev/null || true; fi
@@ -311,6 +319,6 @@ cmd_down() {
 }
 
 case "${1:-}" in
-  bootstrap | build | up | doctor | shot | state | x | down) c=$1; shift; "cmd_$c" "$@" ;;
-  *) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  bootstrap | build | up | doctor | shot | state | x | app | down) c=$1; shift; "cmd_$c" "$@" ;;
+  *) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

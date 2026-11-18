@@ -76,6 +76,12 @@ function commandOf(v: unknown): Command {
   };
 }
 
+/**
+ * Hermes answers a restart asked for the same profile within `GATEWAY_RESTART_COOLDOWN_SECONDS` (10) of the last one
+ * with that one's pid, though it has ended (`_spawn_gateway_restart`, `hermes_cli/web_server.py`); plus a margin.
+ */
+const COOLDOWN_MS = 10_500;
+
 const LATE: unique symbol = Symbol("late");
 
 const lastLines = (lines: string[]) =>
@@ -88,6 +94,9 @@ const lastLines = (lines: string[]) =>
   );
 
 export class GatewayRestartApi {
+  /** Each profile's last restart: its pid, and when Hermes answered with it. */
+  private last = new Map<string, { pid: number; at: number }>();
+
   constructor(
     private rest: GatewayRestartRest,
     private timing: RestartTiming = RESTART_TIMING,
@@ -106,16 +115,25 @@ export class GatewayRestartApi {
   async restart(profile: string): Promise<RestartOutcome> {
     const { sleep, now, pollMs } = this.timing;
     const seconds = (ms: number) => Math.round(ms / 1000);
+    const before = this.last.get(profile);
+    if (before) await sleep(Math.max(0, before.at + COOLDOWN_MS - now()));
     let pid: number | undefined;
-    try {
-      const res = await this.within(this.rest("POST", `api/gateway/restart?${q(profile)}`), this.timing.commandLimitMs);
-      if (res === LATE) return { kind: "unconfirmed", why: `Hermes didn't answer the restart request within ${seconds(this.timing.commandLimitMs)} seconds.` };
-      pid = isObj(res) && typeof res.pid === "number" ? res.pid : undefined;
-    } catch (e) {
-      const f = failureOf(e);
-      if (f.status === 405 || (f.status === 404 && f.reason === "Not Found"))
-        return { kind: "failed", why: "This Hermes server has no gateway restart route (/api/gateway/restart). Updating Hermes adds it." };
-      return { kind: "failed", why: clean(f.reason) };
+    // A restart asked inside Hermes's cooldown gets the last one back; it has a new pid only once the cooldown is over.
+    for (let tries = 0; ; tries++) {
+      try {
+        const res = await this.within(this.rest("POST", `api/gateway/restart?${q(profile)}`), this.timing.commandLimitMs);
+        if (res === LATE) return { kind: "unconfirmed", why: `Hermes didn't answer the restart request within ${seconds(this.timing.commandLimitMs)} seconds.` };
+        pid = isObj(res) && typeof res.pid === "number" ? res.pid : undefined;
+      } catch (e) {
+        const f = failureOf(e);
+        if (f.status === 405 || (f.status === 404 && f.reason === "Not Found"))
+          return { kind: "failed", why: "This Hermes server has no gateway restart route (/api/gateway/restart). Updating Hermes adds it." };
+        return { kind: "failed", why: clean(f.reason) };
+      }
+      if (pid !== undefined) this.last.set(profile, { pid, at: now() });
+      if (pid === undefined || pid !== before?.pid) break;
+      if (tries === 1) return { kind: "unconfirmed", why: "Hermes kept answering with the restart before this one, so this change may not be applied yet. Try again in a few seconds." };
+      await sleep(COOLDOWN_MS);
     }
 
     if (pid !== undefined) {

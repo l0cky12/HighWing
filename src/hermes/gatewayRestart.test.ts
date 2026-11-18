@@ -17,6 +17,7 @@ async function setUp() {
   const pipe = await server.openPipe(() => {}, "default");
   const rest = async (m: RestMethod, p: string, b?: unknown) => JSON.parse(await pipe.request(m, p, b === undefined ? undefined : JSON.stringify(b)));
   const clock = fakeClock();
+  fake.now = clock.now;
   const timing: RestartTiming = { ...clock, pollMs: 100, commandLimitMs: 2000, backLimitMs: 500 };
   return { server, fake, rest, clock, timing, api: new GatewayRestartApi(rest, timing) };
 }
@@ -106,6 +107,26 @@ describe("Gateway restart: restart", () => {
     const { fake, api } = await setUp();
     fake.restartPolls = 1000;
     expect(await api.restart("default")).toEqual({ kind: "unconfirmed", why: "The restart was still running after 2 seconds." });
+  });
+
+  it("restarts again for a change made right after a restart, past Hermes's cooldown", async () => {
+    const { fake, clock, api } = await setUp();
+    expect(await api.restart("default")).toEqual({ kind: "restarted" });
+    const first = clock.now();
+    expect(await api.restart("default")).toEqual({ kind: "restarted" });
+    expect(fake.restarts).toEqual({ default: 2 });
+    expect(clock.now() - first).toBeGreaterThanOrEqual(10_000);
+  });
+
+  it("calls it unconfirmed when Hermes keeps answering with the last restart", async () => {
+    const { fake, api } = await setUp();
+    expect(await api.restart("default")).toEqual({ kind: "restarted" });
+    fake.now = () => 0;
+    expect(await api.restart("default")).toEqual({
+      kind: "unconfirmed",
+      why: "Hermes kept answering with the restart before this one, so this change may not be applied yet. Try again in a few seconds.",
+    });
+    expect(fake.restarts).toEqual({ default: 1 });
   });
 
   it("stops waiting on a read Hermes never answers, once the limit has passed", async () => {

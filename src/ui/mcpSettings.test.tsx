@@ -50,6 +50,7 @@ async function quickRestart(s: FakeHermes) {
   const pipe = await s.openPipe(() => {}, "default");
   const rest = async (m: RestMethod, p: string, b?: unknown) => JSON.parse(await pipe.request(m, p, b === undefined ? undefined : JSON.stringify(b)));
   const clock = fakeClock();
+  s.gateways.now = clock.now;
   return new GatewayRestartApi(rest, { ...clock, pollMs: 100, commandLimitMs: 2000, backLimitMs: 500 });
 }
 

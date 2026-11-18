@@ -98,8 +98,10 @@ export class FakeGateways {
   restartPlan: RestartPlan = { exit: 0, comesBack: true };
   /** How many reads of the action record answer `running` before the command ends. */
   restartPolls = 1;
-  /** The one `gateway-restart` action record, shared by every profile as Hermes's is. */
-  private action?: { pid: number; profile: string; plan: RestartPlan; pollsLeft: number; exit?: number };
+  /** The clock the restart's cooldown is measured on, in milliseconds. */
+  now: () => number = () => performance.now();
+  /** The one `gateway-restart` action record, shared by every profile as Hermes's is, and the last spawn. */
+  private action?: { pid: number; profile: string; at: number; plan: RestartPlan; pollsLeft: number; exit?: number };
   private nextPid = 31000;
   /** Every write and status check asked, in order. */
   readonly writes: { profile: string; what: string; body?: unknown }[] = [];
@@ -189,12 +191,12 @@ export class FakeGateways {
       this.refuseRestart = undefined;
       throw answered(r.status, r.detail);
     }
-    // A restart still running is reused for its own profile, as Hermes reuses the live child.
-    if (this.action && this.action.exit === undefined) {
-      if (this.action.profile !== profile) throw answered(500, "Failed to restart gateway: gateway restart already in progress for another profile");
-      return { ok: true, pid: this.action.pid, name: "gateway-restart" };
-    }
-    this.action = { pid: this.nextPid++, profile, plan: this.restartPlan, pollsLeft: this.restartPolls };
+    // A restart still running is reused for its own profile, as Hermes reuses the live child; so is one spawned for it
+    // less than GATEWAY_RESTART_COOLDOWN_SECONDS ago, though it has ended (`_spawn_gateway_restart`).
+    const a = this.action;
+    if (a && a.exit === undefined && a.profile !== profile) throw answered(500, "Failed to restart gateway: gateway restart already in progress for another profile");
+    if (a && a.profile === profile && (a.exit === undefined || this.now() - a.at < 10_000)) return { ok: true, pid: a.pid, name: "gateway-restart" };
+    this.action = { pid: this.nextPid++, profile, at: this.now(), plan: this.restartPlan, pollsLeft: this.restartPolls };
     if (this.action.pollsLeft <= 0) this.finish();
     return { ok: true, pid: this.action.pid, name: "gateway-restart" };
   }

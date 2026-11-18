@@ -89,27 +89,27 @@ export function FileChangesView({ chatId, replyId, host, reloadSeq, connected }:
   return (
     <div className="files-view">
       <h3>{l.heading}</h3>
-      <p className="repo-notice">{l.limits}</p>
-      {chat.running && <p className="repo-notice warn">{l.running}</p>}
+      <p className="changes-notice">{l.limits}</p>
+      {chat.running && <p className="changes-notice warn">{l.running}</p>}
       {report && <Report report={report} />}
       {load.kind === "loading" ? (
         <p className="files-loading">
           <Spinner /> {l.loading}
         </p>
       ) : load.kind === "failed" ? (
-        <p className="repo-notice warn" role="alert">
+        <p className="changes-notice warn" role="alert">
           {l.failed(load.why)}
         </p>
       ) : view?.kind !== "found" ? (
         <>
-          <p className="repo-notice warn">{view?.kind === "off" ? l.offNote : view?.kind === "ambiguous" ? l.ambiguous : l.none}</p>
+          <p className="changes-notice warn">{view?.kind === "off" ? l.offNote : view?.kind === "ambiguous" ? l.ambiguous : l.none}</p>
           {paths}
         </>
       ) : step.kind === "choosing" ? (
         <Choose files={view.files.filter(isUndoable)} checked={step.checked} blocked={blocked} onChecked={(checked) => setStep({ kind: "choosing", checked })} onCancel={() => setStep({ kind: "idle" })} onRestore={(files) => void undo(files)} />
       ) : (
         <>
-          {view.cut && <p className="repo-notice warn">{l.cut}</p>}
+          {view.cut && <p className="changes-notice warn">{l.cut}</p>}
           {view.files.map((f) => (
             <FileRow key={f.path} file={f} blocked={blocked} onUndo={(file) => void undo([file])} />
           ))}
@@ -142,12 +142,12 @@ function FileRow({ file, blocked, onUndo }: { file: FilePlan; blocked: boolean; 
         <span className="mono">{file.path}</span>
         <span className="muted small">{file.state === "undoable" ? l.undoable : file.state === "created" ? l.created : ""}</span>
       </div>
-      {file.state === "unchanged" && <p className="repo-notice">{l.unchanged}</p>}
-      {file.state === "outside" && <p className="repo-notice">{l.outside}</p>}
-      {file.state === "pattern" && <p className="repo-notice">{l.pattern}</p>}
-      {file.state === "created" && <p className="repo-notice">{l.createdNote}</p>}
+      {file.state === "unchanged" && <p className="changes-notice">{l.unchanged}</p>}
+      {file.state === "outside" && <p className="changes-notice">{l.outside}</p>}
+      {file.state === "pattern" && <p className="changes-notice">{l.pattern}</p>}
+      {file.state === "created" && <p className="changes-notice">{l.createdNote}</p>}
       {file.state === "undoable" && <Warnings file={file} />}
-      {(file.state === "undoable" || file.state === "created") && (section ? <div className="repo-review-diff"><PatchFile diff={section} /></div> : <p className="repo-notice">{l.notShown}</p>)}
+      {(file.state === "undoable" || file.state === "created") && (section ? <div className="changes-diff"><PatchFile diff={section} /></div> : <p className="changes-notice">{l.notShown}</p>)}
       {file.state === "undoable" && (
         <button className="btn" disabled={blocked} onClick={() => onUndo(file)}>
           {l.undoFile}
@@ -161,9 +161,9 @@ function Warnings({ file }: { file: UndoableFile }) {
   const l = useLocale().chat.files;
   return (
     <>
-      {file.handEdit === "edited" && <p className="repo-notice warn">{l.handEdited}</p>}
-      {file.handEdit === "unknown" && <p className="repo-notice warn">{l.handUnknown}</p>}
-      {file.laterReply && <p className="repo-notice warn">{l.laterReply}</p>}
+      {file.handEdit === "edited" && <p className="changes-notice warn">{l.handEdited}</p>}
+      {file.handEdit === "unknown" && <p className="changes-notice warn">{l.handUnknown}</p>}
+      {file.laterReply && <p className="changes-notice warn">{l.laterReply}</p>}
     </>
   );
 }
@@ -218,7 +218,7 @@ function Report({ report }: { report: UndoReport }) {
   const o = useLocale().chat.files;
   if (report.kind === "changed")
     return (
-      <p className="repo-notice warn" role="alert">
+      <p className="changes-notice warn" role="alert">
         {o.changedSince}
       </p>
     );

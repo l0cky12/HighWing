@@ -51,7 +51,6 @@ for (const [name, description] of [
   server.skills.add("default", { dir: `/home/lena/.hermes/skills/${name}`, source: "agent" }, skillMd(name, description));
 server.skills.platformDisabled.default = { tui: ["notes"] };
 
-// A chat a Hermes webhook route started on the server: it shows as from another platform.
 server.sessions.push(row("hook-41", 0.05, { source: "webhook", title: "Triage example/fixture#41" }));
 const ago = (min: number) => Date.now() / 1000 - min * 60;
 // The Work page (ADR 0171): a board of bot work in every column the dispatcher and the owner use (synthetic).

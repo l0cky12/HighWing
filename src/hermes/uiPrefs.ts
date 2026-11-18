@@ -149,15 +149,15 @@ export type UIPrefsDoc = Record<string, unknown>;
 /** Turns a document of version `n` into one of version `n + 1`; keyed by `n`. */
 export type UIPrefsMigrations = Readonly<Record<number, (doc: UIPrefsDoc) => UIPrefsDoc>>;
 
+const unchanged = (doc: UIPrefsDoc) => doc;
+
 export const UI_PREFS_MIGRATIONS: UIPrefsMigrations = {
   // Version 0 is a document written without `v`; its fields already have version 1's shape.
   0: (doc) => doc,
   // Pinned is new in version 2 (ADR 0085): a list of shown sections from before it shows Pinned too.
   1: (doc) => (toShown(doc.chatSectionsShown) ? { ...doc, chatSectionsShown: ["pinned", ...(doc.chatSectionsShown as unknown[])] } : doc),
-  // Versions 3 and 4 changed only the agent office's design, and the office is gone (ADR 0202). Their steps stay so a
-  // document from before them still has a way forward.
-  2: (doc) => doc,
-  3: (doc) => doc,
+  2: unchanged,
+  3: unchanged,
   // Launch starts on a new chat in version 5 (ADR 0162). Every document so far held the old default, on, so it can't
   // tell an owner who chose it from one who never looked: everyone starts on a new chat, and Settings turns it back on.
   4: (doc) => (doc.reopenLastChat === true ? { ...doc, reopenLastChat: false } : doc),

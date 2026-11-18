@@ -459,7 +459,6 @@ export const CAPABILITIES: readonly CapabilitySpec[] = [
   {
     id: "automations",
     label: "Automations",
-    // The Automations screen is gone (ADR 0202). The id stays: extensions name capabilities in `needs` (ADR 0126).
     usedBy: "Extensions that list automations in their needs",
     needs: "The webhook routes under /api/webhooks.",
     without: "An extension that needs it shows what is missing instead of running.",

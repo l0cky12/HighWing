@@ -8,12 +8,12 @@ export function PatchFile({ diff }: { diff: string }) {
   const parsed = useMemo(() => parseDiff(diff), [diff]);
   const title = /^diff --git a\/(.*) b\/(.*)$/m.exec(diff);
   return (
-    <div className="repo-review-file">
-      <div className="repo-review-file-head mono">{parsed.rename ? `${parsed.rename.from} → ${parsed.rename.to}` : (title?.[2] ?? "")}</div>
-      {parsed.binary && <p className="repo-notice">Binary file.</p>}
+    <div className="patch-file">
+      <div className="patch-file-head mono">{parsed.rename ? `${parsed.rename.from} → ${parsed.rename.to}` : (title?.[2] ?? "")}</div>
+      {parsed.binary && <p className="changes-notice">Binary file.</p>}
       {parsed.hunks.map((h, i) => (
         <div key={i} className="files-diff-hunk">
-          <div className="files-diff-at mono repo-hunk-head">
+          <div className="files-diff-at mono patch-hunk-head">
             <span>{h.header}</span>
           </div>
           {h.lines.map((l, j) => (

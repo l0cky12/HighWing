@@ -58,7 +58,7 @@ pub enum Kind<'a> {
     /// and the owner answers. Host keys and agent, X11 and port forwarding are the owner's config's, as from any terminal.
     /// `folder`: where the shell starts, in place of the home folder.
     Terminal { folder: Option<Folder<'a>> },
-    /// `remote` run in the background (ADR 0110), forwarding nothing.
+    /// `remote` run in the background, forwarding nothing.
     Command { remote: &'a [&'a str] },
     /// One forward from `local` on this computer to `far_end` (`host:port`) as the server sees it, and no command, in
     /// the background.

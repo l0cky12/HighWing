@@ -54,7 +54,6 @@ export const RENAMES_KEY = "hermes-chat.profile-renames";
 
 /** Where the Outputs screen kept its index, every connection and profile in one document, until ADR 0170 removed it. */
 const RETIRED_OUTPUTS_KEY = "hermes-chat.outputs";
-/** What the Repository screen kept until ADR 0202 removed it: its folders and target, and which chats it started in a worktree. */
 const RETIRED_REPO_KEYS = ["hermes-chat.repo-path", "hermes-chat.repo-recent", "hermes-chat.repo-target", "hermes-chat.worktree-chats"];
 
 /** Documents `{scopes: {[scope]: …}}` with a scope for each connection and profile. */

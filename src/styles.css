@@ -3607,15 +3607,15 @@ p.logs-status { margin: 0 0 8px; line-height: 1.5; }
   .log-row { flex-direction: column; gap: 0; }
 }
 
-/* A reply's file changes and their diffs (FileChanges.tsx, PatchFile.tsx, ADR 0180). The diff lines are Server files'. */
-.repo-notice { margin: 0; font-size: calc(12.5rem / 14); line-height: 1.5; color: var(--text-2); }
-.repo-notice.warn { color: var(--warn); }
-.repo-hunk-head { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
-.repo-hunk-head > span { min-width: 0; overflow-wrap: anywhere; }
-.repo-review-diff { border: 1px solid var(--line); border-radius: 8px; background: var(--raised); font-size: var(--mono-size); margin-top: 6px; }
-.repo-review-file + .repo-review-file { border-top: 1px solid var(--line-2); }
-.repo-review-file-head { padding: 6px 10px; color: var(--text-strong); background: var(--raised-2); font-size: calc(12.5rem / 14); }
-.repo-review-file .repo-notice { padding: 4px 10px; color: var(--muted); }
+/* A reply's file changes and their diffs (FileChanges.tsx, PatchFile.tsx, ADR 0180). */
+.changes-notice { margin: 0; font-size: calc(12.5rem / 14); line-height: 1.5; color: var(--text-2); }
+.changes-notice.warn { color: var(--warn); }
+.patch-hunk-head { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.patch-hunk-head > span { min-width: 0; overflow-wrap: anywhere; }
+.changes-diff { border: 1px solid var(--line); border-radius: 8px; background: var(--raised); font-size: var(--mono-size); margin-top: 6px; }
+.patch-file + .patch-file { border-top: 1px solid var(--line-2); }
+.patch-file-head { padding: 6px 10px; color: var(--text-strong); background: var(--raised-2); font-size: calc(12.5rem / 14); }
+.patch-file .changes-notice { padding: 4px 10px; color: var(--muted); }
 
 /* Connection diagnostics and the note a screen shows when Hermes lacks what it needs (src/ui/Diagnostics.tsx). Sized
    by its own width, so a narrow window or a split pane stacks the table. */
@@ -3942,7 +3942,7 @@ div.export-preview.export-page { height: auto; padding: 10px 12px; background: v
 .files-choose { display: flex; flex-direction: column; gap: 8px; }
 .files-choose p { margin: 0; }
 .files-choice { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; align-items: baseline; }
-.files-choice .repo-notice { grid-column: 2; }
+.files-choice .changes-notice { grid-column: 2; }
 .files-actions { display: flex; gap: 8px; }
 .files-report { margin: 0; padding-left: 18px; font-size: calc(12.5rem / 14); }
 .files-report .warn { color: var(--warn); }

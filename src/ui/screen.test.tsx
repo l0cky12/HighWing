@@ -70,6 +70,7 @@ class FakeScreen implements ScreenApi {
     if (this.state.lease.holder === "human") throw new Error("a human holds this screen; pass force: true to stop it anyway");
     return (this.state = { ...this.state, running: false });
   };
+  doctor = () => Promise.reject(new Error("FakeScreen has no doctor"));
   installBrowser = async () => {
     this.calls.push("installBrowser");
     if (this.pm.code === 0) this.state = { ...this.state, browser: "/home/lena/.hermes/pm/chromium/chrome" };

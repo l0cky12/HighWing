@@ -113,6 +113,11 @@ export class FakeGroups {
     this["groups.create"]({ room_id: room.id, name: room.name, members: room.members.map((m) => ({ member_id: m.profile, profile: m.profile, handle: m.profile, ...(m.name && { display_name: m.name }) })) });
   }
 
+  /** Every room as Hermes holds it: its name, roster and log (the verify stand-in's `/__state`). */
+  dump(): Record<string, { name: string; members: string[]; disbanded: boolean; events: readonly RoomEvent[] }> {
+    return Object.fromEntries([...this.rooms].map(([id, r]) => [id, { name: r.name, members: r.members.map((m) => m.profile), disbanded: r.disbanded_at !== undefined, events: r.events }]));
+  }
+
   /** The room's log as Hermes holds it. */
   log(roomId: string): readonly RoomEvent[] {
     return this.room(roomId, true).events;

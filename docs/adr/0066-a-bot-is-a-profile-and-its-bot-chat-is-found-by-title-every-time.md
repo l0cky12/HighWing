@@ -1,6 +1,6 @@
 # A bot is a profile, and its Bot Chat is found by title every time
 
-> **Partly superseded by [ADR 0203](0203-the-bots-view-folds-into-bots-mode-and-a-bot-opened-there-is-a-visit.md).** The Bots view and the rail's Bots button are gone: the chat list's Bots mode lists the bots, and a bot in another profile opened there is a visit.
+> **Partly superseded by [ADR 0203](0203-the-bots-view-folds-into-bots-mode-and-a-bot-opened-there-is-a-visit.md).** The Bots view and the rail's Bots button are gone: the chat list's Bots mode lists the bots, and a bot in another profile opened there is a visit. **One line changed by [ADR 0205](0205-bots-message-each-other-through-hermess-message-agent-which-the-owner-turns-on-in-bots-mode.md).** Bots talking to each other needs a switch on a Hermes with no desktop app, and its rows are read as cards.
 
 Issue #222 asked for Hermes's Bot Mode, as the official Hermes desktop app has it. Hermes `f0d94882` was read and probed live (research doc, "Bot Mode"). There, each bot is a Hermes profile with a lasting identity: a name, a picture and a description. Each bot has one Bot Chat, the profile's session titled exactly "Bot Chat". Hermes's state database keeps titles unique within a profile, so that title names at most one session. Hermes's own `apps/desktop/src/AGENTS.md` calls one rule settled: the Bot Chat's only identity is its title. The rule came after five rounds of fixes to a stored session id that dangled, or was taken by another session, and lost users' history each time.
 

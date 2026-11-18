@@ -67,3 +67,68 @@ it("says above the composer when Hermes was refused because someone else holds t
   server.broadcast("display.lease", { profile_key: "/home/lena/.hermes", lease: server.display!.lease });
   await expect.element(app.getByText("Hermes's computer use was refused", { exact: false })).not.toBeInTheDocument();
 });
+
+const idle = (ms = ARM_MS + 50) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function askedFor(app: Awaited<ReturnType<typeof computerUseChat>>["app"], action: string) {
+  const ask = app.getByRole("group", { name: `Hermes wants to ${action}` });
+  await expect.element(ask).toBeVisible();
+  await idle();
+  return ask;
+}
+
+it("allows background clicks for the chat, asks again for a foreground one, and says so on each card", async () => {
+  const { app, server, session } = await computerUseChat();
+  const turn = server.computerUseTurn(session, {
+    steps: [CU.click([620, 780], "background"), CU.click([640, 400], "background"), CU.click([100, 100], "foreground")],
+    reply: "Clicked three times.",
+  });
+  const background = await askedFor(app, "click at (620, 780)");
+  await expect.element(background.getByText("Background input")).toBeVisible();
+  await shot("cua background");
+  await background.getByRole("button", { name: "Allow background clicks for this chat…" }).click();
+  await expect.element(background.getByText("The foreground version still asks.", { exact: false })).toBeVisible();
+  expect(server.approvalAnswers).toEqual([]);
+  await shot("cua grant confirm");
+  await idle();
+  await background.getByRole("button", { name: "Yes, allow for this chat" }).click();
+
+  const foreground = await askedFor(app, "click at (100, 100)");
+  await expect.element(foreground.getByText("Foreground input")).toBeVisible();
+  await expect.element(foreground.getByRole("button", { name: "Allow foreground clicks for this chat…" })).toBeVisible();
+  await shot("cua foreground");
+  await foreground.getByRole("button", { name: "Approve once" }).click();
+  await turn;
+  expect(server.approvalAnswers.map((a) => a.choice)).toEqual(["session", "once"]);
+  expect(app.getByRole("group").elements().filter((g) => g.classList.contains("approval"))).toHaveLength(2);
+});
+
+it("always allows foreground typing after the second step, and never asks for it again", async () => {
+  const { app, server, session } = await computerUseChat();
+  const turn = server.computerUseTurn(session, { steps: [CU.type("df -h /srv"), CU.type("du -sh /srv")], reply: "Typed twice." });
+  const ask = await askedFor(app, "type 'df -h /srv'");
+  await ask.getByRole("button", { name: "Always allow foreground typing…" }).click();
+  await expect.element(ask.getByText("Always allow foreground typing?", { exact: false })).toBeVisible();
+  expect(server.approvalAnswers).toEqual([]);
+  await idle();
+  await ask.getByRole("button", { name: "Yes, always allow" }).click();
+  await turn;
+  expect(server.approvalAnswers.map((a) => a.choice)).toEqual(["always"]);
+  expect(server.cuGrants.always.has("cua:type:foreground")).toBe(true);
+  expect(app.getByRole("group").elements().filter((g) => g.classList.contains("approval"))).toHaveLength(1);
+  await expect.element(app.getByText("Typed twice.")).toBeVisible();
+});
+
+it("marks the step denied when the owner denies it", async () => {
+  const { app, server, session } = await computerUseChat();
+  const turn = server.computerUseTurn(session, { steps: [CU.doubleClick([640, 400], "foreground")], reply: "I left it alone." });
+  const ask = await askedFor(app, "double_click at (640, 400)");
+  await ask.getByRole("button", { name: "Deny" }).click();
+  await turn;
+  expect(server.approvalAnswers.map((a) => a.choice)).toEqual(["deny"]);
+  const line = app.getByRole("listitem").elements().find((li) => li.classList.contains("cu-step"))!;
+  expect(line.classList.contains("denied")).toBe(true);
+  expect(line.querySelector(".cu-outcome")?.textContent).toBe("denied");
+  await expect.element(app.getByText("Denied")).toBeVisible();
+  await shot("cua denied");
+});

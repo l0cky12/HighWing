@@ -448,7 +448,9 @@ function computerUse(sid: string, prompt: string) {
   const sleep = (seconds: number) => new Promise<void>((done) => setTimeout(done, Math.min(seconds, 1) * 600));
   const turn = /takeover/i.test(prompt)
     ? { steps: [CU.capture()], reply: "Someone has taken over the Bot Desktop, so I stopped. Hand it back and I'll carry on." }
-    : { steps: DESK_RUN, reply: "/srv is 92% full, and /srv/backup holds 212 GiB of it." };
+    : /deny/i.test(prompt)
+      ? { steps: [CU.capture(), CU.doubleClick([640, 400], "foreground")], reply: "You said no, so I left the desktop alone." }
+      : { steps: DESK_RUN, reply: "/srv is 92% full, and /srv/backup holds 212 GiB of it." };
   void server
     .computerUseTurn(sid, turn, sleep)
     .finally(() => cuTurns.delete(sid))
@@ -680,8 +682,9 @@ http.on("upgrade", async (req, sock: Socket) => {
   closeSocket = () => sock.destroy();
   readFrames(sock, (t) => {
     try {
-      const msg = JSON.parse(t) as { method?: string; params?: { session_id?: string; text?: string; subagent_id?: string } };
-      if (msg.method && msg.method !== "gateway.ping") console.log(new Date().toISOString(), "WS", msg.method, msg.params?.session_id ?? "");
+      const msg = JSON.parse(t) as { method?: string; params?: { session_id?: string; text?: string; subagent_id?: string; choice?: string; request_id?: string } };
+      const answer = msg.method === "approval.respond" ? JSON.stringify({ choice: msg.params?.choice, request_id: msg.params?.request_id }) : "";
+      if (msg.method && msg.method !== "gateway.ping") console.log(new Date().toISOString(), "WS", msg.method, msg.params?.session_id ?? "", answer);
       if (msg.method === "prompt.submit" && msg.params?.session_id) {
         const { session_id, text } = msg.params;
         const prompt = String(text ?? "");

@@ -118,6 +118,61 @@ describe("FakeHermes's computer_use turn, as the app sees it", () => {
     expect(runLines(back).map(([n, line, outcome]) => [n, line, outcome])).toEqual(runLines(chat().items).map(([n, line]) => [n, line, "unrecorded"]));
   });
 
+  async function waitingAsk(chat: () => { items: Item[] }) {
+    let ask: Item | undefined;
+    while (!(ask = chat().items.find((i) => i.kind === "approval" && !i.answer && !i.ended))) await new Promise((r) => setTimeout(r, 2));
+    return ask as Extract<Item, { kind: "approval" }>;
+  }
+
+  it.each([
+    ["once", "done"],
+    ["session", "done"],
+    ["always", "done"],
+    ["deny", "denied"],
+  ] as const)("sends %s to Hermes as approval.respond for the request it asked, and the step reads %s", async (choice, outcome) => {
+    const { server, hermes, id, chat, rid } = await started();
+    const turn = server.computerUseTurn(rid, { steps: [CU.click([10, 20], "background")], reply: "Done." });
+    const ask = await waitingAsk(chat);
+    expect(ask.cua).toEqual({ verb: "click", scope: "background", target: "click at (10, 20)", patternKey: "cua:click:background" });
+    const requestId = (server.openRequests.get(ask.id)!.params as { request_id: string }).request_id;
+    expect(ask.requestId).toBe(requestId);
+    await hermes.answerApproval(id, ask.id, choice, true);
+    await turn;
+    expect(server.approvalAnswers).toEqual([{ id: ask.id, choice, via: "approval.respond" }]);
+    expect(runLines(chat().items).map(([, , kind]) => kind)).toEqual([outcome]);
+  });
+
+  it("holds a session or always grant back until the owner has confirmed it", async () => {
+    const { server, hermes, id, chat, rid } = await started();
+    const turn = server.computerUseTurn(rid, { steps: [CU.click([10, 20], "foreground")], reply: "Done." });
+    const ask = await waitingAsk(chat);
+    await hermes.answerApproval(id, ask.id, "session");
+    await hermes.answerApproval(id, ask.id, "always");
+    expect(server.approvalAnswers).toEqual([]);
+    expect(chat().items.find((i) => i.id === ask.id)).not.toHaveProperty("answer");
+    await hermes.answerApproval(id, ask.id, "always", true);
+    await turn;
+    expect(server.approvalAnswers.map((a) => a.choice)).toEqual(["always"]);
+  });
+
+  it("doesn't ask again for a granted key, and still asks for the other delivery mode", async () => {
+    const { server, hermes, id, chat, rid } = await started();
+    const turn = server.computerUseTurn(rid, {
+      steps: [CU.click([1, 2], "background"), CU.click([3, 4], "background"), CU.scroll("down", 3, "background"), CU.click([5, 6], "foreground")],
+      reply: "Done.",
+    });
+    await hermes.answerApproval(id, (await waitingAsk(chat)).id, "session", true);
+    await hermes.answerApproval(id, (await waitingAsk(chat)).id, "once", true);
+    await hermes.answerApproval(id, (await waitingAsk(chat)).id, "once", true);
+    await turn;
+    expect(chat().items.flatMap((i) => (i.kind === "approval" ? [[i.cua?.patternKey, i.answer]] : []))).toEqual([
+      ["cua:click:background", "session"],
+      ["cua:scroll:background", "once"],
+      ["cua:click:foreground", "once"],
+    ]);
+    expect(server.approvalAnswers).toHaveLength(3);
+  });
+
   it("is refused before any Approval while a person holds the screen", async () => {
     const { server, chat, rid } = await started();
     server.display!.lease = { holder: "human", viewer_hash: "0123456789ab", since: 2, epoch: 1 };

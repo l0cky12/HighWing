@@ -346,6 +346,28 @@ describe("Answering an Approval from the inbox (ADR 0173)", () => {
     expect(server.approvalAnswers).toEqual([{ id: card, choice: "always", via: expect.any(String) }]);
   });
 
+  it("shows a computer-use Approval as the chat does, with the scope in its words, and answers it", async () => {
+    const { server, hermes, card, row, user } = await waiting({
+      command: "computer_use: type 'df -h' [FOREGROUND — briefly raises the window / changes focus]",
+      pattern_key: "cua:type:foreground",
+      description: "Allow computer_use to perform `type`?",
+    });
+    const answers = within(row()!);
+    expect(answers.getByText("Foreground input")).toBeTruthy();
+    expect(answers.getByText("Hermes wants to type 'df -h'")).toBeTruthy();
+    expect(answers.getAllByRole("button").filter((b) => b.closest(".approval")).map((b) => b.textContent)).toEqual([
+      "Approve once",
+      "Allow foreground typing for this chat…",
+      "Always allow foreground typing…",
+      "Deny",
+    ]);
+    await user.click(answers.getByRole("button", { name: "Always allow foreground typing…" }));
+    expect(answers.getByText(/The background version still asks\./)).toBeTruthy();
+    await user.click(answers.getByRole("button", { name: "Yes, always allow" }));
+    await act(async () => void (await hermes.idle()));
+    expect(server.approvalAnswers).toEqual([{ id: card, choice: "always", via: expect.any(String) }]);
+  });
+
   it("denies from the inbox", async () => {
     const { server, hermes, card, row, user } = await waiting({ choices: ["once", "deny"] });
     expect(within(row()!).queryByRole("button", { name: /Allow/ })).toBeNull();

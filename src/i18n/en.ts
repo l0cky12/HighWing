@@ -68,8 +68,40 @@ export const en = {
       capture: (size: string | undefined, app: string | undefined, elements: number | undefined) =>
         [size, app, elements === undefined ? undefined : elements === 1 ? "1 element" : `${elements} elements`].filter(Boolean).join(" · "),
       details: { thought: "Reasoning", hint: "Hermes's advice", args: "Arguments", result: "Result" },
-      /** An Approval's heading under the step it gates: Hermes's own words for the action. */
-      ask: (action: string) => `Hermes wants to ${action}`,
+      /** A cua Approval (ADR 0218): the action in Hermes's words, how it would be delivered, and what each grant covers. */
+      ask: {
+        heading: (action: string) => `Hermes wants to ${action}`,
+        scope: { background: "Background input", foreground: "Foreground input" },
+        scopeTip: {
+          background: "Background input: the window keeps its place and its focus on the Bot Desktop.",
+          foreground: "Foreground input: raises the window and moves the focus on the Bot Desktop.",
+        },
+        in: (app: string) => `in ${app}`,
+        once: "Approve once",
+        session: (what: string) => `Allow ${what} for this chat…`,
+        always: (what: string) => `Always allow ${what}…`,
+        deny: "Deny",
+        noun: {
+          click: "clicks",
+          double_click: "double clicks",
+          right_click: "right clicks",
+          middle_click: "middle clicks",
+          triple_click: "triple clicks",
+          drag: "drags",
+          type: "typing",
+          key: "key presses",
+          scroll: "scrolling",
+          set_value: "value changes",
+          focus_app: "focus changes",
+          bring_to_front: "windows kept in front",
+        },
+        otherNoun: (verb: string) => `${verb} actions`,
+        covers: (scope: "background" | "foreground", noun: string) => `${scope} ${noun}`,
+        confirmSession: (what: string, other: "background" | "foreground") =>
+          `Allow ${what} for the rest of this chat? Hermes won't ask again before doing them here. The ${other} version still asks.`,
+        confirmAlways: (what: string, other: "background" | "foreground") =>
+          `Always allow ${what}? Hermes won't ask again before doing them, in any chat. The ${other} version still asks.`,
+      },
       banner: {
         you: "Hermes's computer use was refused because you hold the Bot Desktop. Hand it back so Hermes can carry on.",
         youBefore: "Hermes's computer use was refused because you still hold the Bot Desktop from before the connection dropped. Take over in the Screen, then hand back.",

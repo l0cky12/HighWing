@@ -25,4 +25,4 @@ When Hermes drives its Bot Desktop, each `computer_use` call came into the chat 
 - A 20-step `computer_use` turn reads as one card with 20 lines. Every recorded turn in `src/hermes/fixtures/computer-use/` is replayed through the real transport and Saved copy in tests, and none leaves a base64 run of 1,024 or more characters, an `image_url` part or a `text_summary` in the Saved copy.
 - A capture's element list past 2,000 characters is not in the transcript. The Screen tab and Hermes's own cache keep the screen.
 - Saved copies written before this change keep their `tool_call` rows as plain tool rows until the chat is opened again and its history is read.
-- Until Approvals carry their computer-use details (phase 3), a computer-use Approval is told apart by its command starting with `computer_use: `.
+- Until Approvals carry their computer-use details, a computer-use Approval is told apart by its command starting with `computer_use: `. [ADR 0218](0218-a-cua-approval-names-its-action-target-and-delivery-scope.md) replaces that with the parsed pattern key.

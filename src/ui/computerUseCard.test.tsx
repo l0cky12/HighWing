@@ -102,7 +102,7 @@ describe("A computer-use run in the chat", () => {
     const asks = Array.from(card.querySelectorAll<HTMLElement>(".cu-step")).filter((s) => s.querySelector(".approval"));
     expect(asks.map((s) => s.querySelector(".cu-n")!.textContent)).toEqual(["3", "5"]);
     expect(asks.map((s) => s.querySelector(".approval-head")!.textContent)).toEqual(["Approved once", "Allowed for this chat"]);
-    expect(asks[0].querySelector(".approval")!.textContent).toContain("computer_use: click at (619, 777)");
+    expect(asks[0].querySelector(".approval")!.textContent).toContain("click at (619, 777)");
     expect(within(card).getByText("Hermes drives the screen")).toBeTruthy();
   });
 
@@ -136,6 +136,26 @@ describe("A computer-use run in the chat", () => {
     expect(card.querySelector(".approval-head")!.textContent).toBe("Hermes wants to click at (619, 777)");
     fireEvent.click(within(card).getByRole("button", { name: "Approve once" }));
     expect(onAnswer).toHaveBeenCalledWith(chat.items.find((i) => i.kind === "approval")!.id, "once", undefined);
+  });
+
+  it("sends each answer from the card, and holds a grant behind its second step", async () => {
+    const onAnswer = vi.fn();
+    const chat = await replayed("10-turn-approve", (f) => f.frame.method === "approval.respond");
+    pane(chat, {}, onAnswer);
+    const id = chat.items.find((i) => i.kind === "approval")!.id;
+    const [card] = cards();
+    const ask = within(card.querySelector<HTMLElement>(".approval")!);
+    expect(card.querySelector(".approval")!.textContent).toContain("Background input");
+    fireEvent.click(ask.getByRole("button", { name: "Deny" }));
+    expect(onAnswer).toHaveBeenCalledExactlyOnceWith(id, "deny", undefined);
+    onAnswer.mockClear();
+    fireEvent.click(ask.getByRole("button", { name: "Allow background clicks for this chat…" }));
+    expect(onAnswer).not.toHaveBeenCalled();
+    expect(card.querySelector(".approval-confirm")!.textContent).toContain("The foreground version still asks.");
+    fireEvent.click(ask.getByRole("button", { name: "Back" }));
+    fireEvent.click(ask.getByRole("button", { name: "Always allow background clicks…" }));
+    fireEvent.click(ask.getByRole("button", { name: "Yes, always allow" }));
+    expect(onAnswer).toHaveBeenCalledExactlyOnceWith(id, "always", true);
   });
 
   it("names a foreground action's Approval without Hermes's note on the window, which the card's tag carries", async () => {

@@ -3,6 +3,8 @@ import { useCallback, useId, useRef, useState, type MouseEvent } from "react";
 import { ShieldAlert } from "lucide-react";
 import type { ApprovalChoice, ApprovalItem } from "../hermes/model";
 import { endedNote, isBroadGrant, offeredChoices } from "../hermes/model";
+import { grantWords, otherScope, type CuAsk } from "../hermes/computerUse";
+import { useLocale } from "../i18n/locale";
 
 const CHOICE_LABEL: Record<ApprovalChoice, string> = {
   once: "Approve once",
@@ -64,6 +66,21 @@ function CommandText({ command }: { command: string }) {
   );
 }
 
+/** A computer_use Approval's body: the action once the heading no longer says it, the window it aims at, and how it is delivered. */
+function CuBody({ ask, app, closed }: { ask: CuAsk; app?: string; closed: boolean }) {
+  const l = useLocale().chat.computerUse.ask;
+  return (
+    <div className="approval-cu">
+      {closed && <code className="approval-target">{visible(ask.target)}</code>}
+      {app && <span className="cu-app">{l.in(visible(app))}</span>}
+      <span className={`cu-scope ${ask.scope}`} title={l.scopeTip[ask.scope]}>
+        {l.scope[ask.scope]}
+      </span>
+      {!closed && <div className="approval-desc">{l.scopeTip[ask.scope]}</div>}
+    </div>
+  );
+}
+
 /** How long buttons ignore clicks after they appear, so a click aimed at what was there before doesn't answer. */
 export const ARM_MS = 400;
 
@@ -89,19 +106,27 @@ export function ApprovalCard({
   item,
   offline,
   movedAt = 0,
-  heading = "Hermes wants to run a command",
+  heading,
+  app,
   onAnswer,
 }: {
   item: ApprovalItem;
   offline: boolean;
   movedAt?: number;
   heading?: string;
+  /** For a computer_use action: the window the gated step aimed at, when it named one. */
+  app?: string;
   onAnswer: (c: ApprovalChoice, confirmed?: boolean) => void;
 }) {
   const [confirming, setConfirming] = useState<ApprovalChoice>();
   const deliberate = useDeliberate(movedAt);
   const closed = item.answer ?? item.ended;
   const choices = offeredChoices(item);
+  const l = useLocale().chat.computerUse.ask;
+  const { cua } = item;
+  const what = cua && grantWords(cua, l);
+  const label = (c: ApprovalChoice) => (!cua || !what ? CHOICE_LABEL[c] : c === "once" ? l.once : c === "session" ? l.session(what) : c === "always" ? l.always(what) : l.deny);
+  heading ??= cua ? l.heading(visible(cua.target)) : "Hermes wants to run a command";
   const card = useRef<HTMLDivElement>(null);
   const headId = useId();
   // The buttons go when the card closes, however it closes, and when a grant's confirmation opens or goes back. If one
@@ -116,10 +141,10 @@ export function ApprovalCard({
         <ShieldAlert size={15} />
         {item.answer ? ANSWERED_LABEL[item.answer] : item.ended ? endedNote(item.ended) : heading}
       </div>
-      <CommandText command={item.command} />
+      {cua ? <CuBody ask={cua} app={app} closed={!!closed} /> : <CommandText command={item.command} />}
       {!closed && (
         <>
-          {item.description && <div className="approval-desc">{visible(item.description)}</div>}
+          {item.description && !cua && <div className="approval-desc">{visible(item.description)}</div>}
           {confirming ? (
             <ConfirmGrant
               item={item}
@@ -139,7 +164,7 @@ export function ApprovalCard({
                   aria-disabled={offline || undefined}
                   onClick={deliberate(() => !offline && (isBroadGrant(c) ? setConfirming(c) : onAnswer(c)))}
                 >
-                  {CHOICE_LABEL[c]}
+                  {label(c)}
                 </button>
               ))}
             </div>
@@ -175,15 +200,18 @@ export function ConfirmGrant({
   onBack: () => void;
 }) {
   const deliberate = useDeliberate(movedAt);
-  const what = item.description ? `commands Hermes flags as “${visible(item.description)}”` : "commands like this";
+  const l = useLocale().chat.computerUse.ask;
+  const { cua } = item;
+  const what = cua ? grantWords(cua, l) : item.description ? `commands Hermes flags as “${visible(item.description)}”` : "commands like this";
   const always = choice === "always";
+  const words = cua
+    ? (always ? l.confirmAlways : l.confirmSession)(what, otherScope(cua.scope))
+    : always
+      ? `Always allow ${what}? Hermes won't ask again before running them, in any chat.`
+      : `Allow ${what} for the rest of this chat? Hermes won't ask again before running them here.`;
   return (
     <div className="approval-confirm">
-      <div className="approval-desc">
-        {always
-          ? `Always allow ${what}? Hermes won't ask again before running them, in any chat.`
-          : `Allow ${what} for the rest of this chat? Hermes won't ask again before running them here.`}
-      </div>
+      <div className="approval-desc">{words}</div>
       <div className="approval-actions" ref={keepFocus}>
         <button className="btn danger" aria-disabled={offline || undefined} onClick={deliberate(() => !offline && onConfirm())}>
           {always ? "Yes, always allow" : "Yes, allow for this chat"}

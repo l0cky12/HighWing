@@ -3733,6 +3733,9 @@ div.export-preview.export-page { height: auto; padding: 10px 12px; background: v
 .gw-line.warn { color: var(--warn); }
 .gw-line.bad, .pk-line.bad, .gw-problem { color: var(--bad); }
 .gw-problem.missing-dependency, .gw-problem.permission { color: var(--warn); }
+/* Restart gateway (RestartGateway.tsx, ADR 0205): what waits for the restart, then the button, on one line. */
+.gw-restart { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.gw-restart-why { color: var(--muted); }
 
 /* Settings → Providers, sign-ins and custom endpoints (ADR 0133). */
 .si-code { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; overflow-wrap: anywhere; }

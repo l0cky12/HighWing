@@ -2,12 +2,15 @@
 // picked in Settings' tree (ADR 0160). Each shows its state as Hermes reports it, its on/off switch, and its settings. A token is write-only: the
 // row shows Hermes's redacted preview, and Replace or Remove changes it only on Save; a row left alone keeps what Hermes
 // has. Save reads the platform first and sends nothing if it changed on the server, then reads it again to confirm.
-// Check status asks Hermes how the connection is; it sends no message (gateways.ts).
+// Check status asks Hermes how the connection is; it sends no message (gateways.ts). When the running gateway hasn't
+// picked a change up, Restart gateway shows under Status (ADR 0205).
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, ExternalLink, Info, KeyRound, RefreshCw, Trash2, Undo2 } from "lucide-react";
 import { SettingNote, SettingRow, SettingsSection } from "./SettingRows";
 import { AppliesBox, EditingProfile, HeadPart, useInPage } from "./SettingsPage";
 import { Spinner } from "./bits";
+import { RestartGateway, useRestartMarks } from "./RestartGateway";
+import type { GatewayRestartApi } from "../hermes/gatewayRestart";
 import {
   type Draft,
   type FieldEdit,
@@ -46,7 +49,7 @@ function stateOf(g: Gateway): { tone: "ok" | "warn" | "bad" | "off"; badge: stri
     case "gateway_stopped":
       return { tone: "warn", badge: "Gateway stopped", text: "The profile's gateway isn't running on the server, so nothing connects until it starts." };
     case "pending_restart":
-      return { tone: "warn", badge: "Restart needed", text: "The gateway is running but hasn't picked this up. Restart it on the server to connect." };
+      return { tone: "warn", badge: "Restart needed", text: "The gateway is running but hasn't picked this up. Restart the gateway to connect." };
     case "connected":
       return { tone: "ok", badge: "Connected", text: "The gateway is connected." };
     case "connecting":
@@ -87,7 +90,7 @@ function ProblemText({ problem, g }: { problem: Problem; g: Gateway }) {
 function saveNote(r: SaveResult, g: Gateway): Note {
   if (r.kind === "saved")
     return r.restart
-      ? { tone: "warn", text: `Saved, and Hermes reads it back that way. The running gateway keeps its old ${g.name} settings until it restarts: restart it on the server to use them.` }
+      ? { tone: "warn", text: `Saved, and Hermes reads it back that way. The running gateway keeps its old ${g.name} settings until it restarts: Restart gateway, under Status, applies them.` }
       : { tone: "ok", text: "Saved, and Hermes reads it back that way." };
   if (r.kind === "conflict") return { tone: "warn", text: `Not saved: ${g.name} changed on the server since this screen read it. This is what Hermes has now; check your changes and save again.` };
   if (r.kind === "refused") return { tone: "bad", text: "Not saved.", problem: r.problem };
@@ -96,6 +99,7 @@ function saveNote(r: SaveResult, g: Gateway): Note {
 
 export function GatewaySettings({
   api,
+  restart,
   profile,
   shown: inUse,
   connected,
@@ -105,6 +109,8 @@ export function GatewaySettings({
   onPlatforms,
 }: {
   api: GatewaysApi;
+  /** Restarts the profile's gateway; without it there is no Restart gateway button. */
+  restart?: GatewayRestartApi;
   profile: string;
   /** The profile the app uses; the header marks a picked profile that isn't it. */
   shown?: string;
@@ -125,6 +131,8 @@ export function GatewaySettings({
   const [notes, setNotes] = useState<Partial<Record<PlatformId, Note>>>({});
   const [checks, setChecks] = useState<Partial<Record<PlatformId, StatusCheck>>>({});
   const [busy, setBusy] = useState<Partial<Record<PlatformId, "save" | "check">>>({});
+  // The platforms saved whose change the running gateway keeps out until it restarts.
+  const marks = useRestartMarks(restart, profile);
   const live = useRef(true);
   // Every answer is for the profile asked; one that comes back after a switch is dropped.
   const shown = useRef(profile);
@@ -179,7 +187,7 @@ export function GatewaySettings({
   );
   const about = (
     <p>
-      Hermes keeps each token in the profile's .env on the server and shows only a redacted preview of it, so this app never has it back. A change applies the next time the profile's gateway starts. Nothing here sends a message, and Check
+      Hermes keeps each token in the profile's .env on the server and shows only a redacted preview of it, so this app never has it back. A change applies the next time the profile's gateway starts; when the running gateway needs a restart to pick one up, Restart gateway shows under Status. Nothing here sends a message, and Check
       status only asks Hermes how the connection is.
     </p>
   );
@@ -270,6 +278,11 @@ export function GatewaySettings({
     setBusy((all) => ({ ...all, [id]: "save" }));
     setNotes((all) => ({ ...all, [id]: undefined }));
     const r = await api.save(p, g, draft);
+    // Kept for the profile saved, though the screen has moved on.
+    if (r.kind === "saved" && restart) {
+      if (r.restart) restart.mark(p, `gateways:${id}`);
+      else restart.unmark(p, `gateways:${id}`);
+    }
     if (!mine(p)) return;
     setBusy((all) => ({ ...all, [id]: undefined }));
     if (r.list) setList(r.list);
@@ -402,6 +415,20 @@ export function GatewaySettings({
                 <div className="gw-line">
                   Start it on the server with <span className="mono">{list.startCommand}</span>.
                 </div>
+              )}
+              {restart && (
+                <RestartGateway
+                  key={g.id}
+                  api={restart}
+                  profile={profile}
+                  needed={g.gatewayRunning && (marks.has(`gateways:${g.id}`) || g.state === "pending_restart")}
+                  connected={connected}
+                  onRestarted={() => {
+                    const id = g.id;
+                    setNotes((all) => ({ ...all, [id]: undefined }));
+                    void load();
+                  }}
+                />
               )}
             </SettingRow>
             <SettingRow

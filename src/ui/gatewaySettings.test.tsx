@@ -2,13 +2,17 @@
 // Settings → Gateways on screen (GatewaySettings.tsx, ADR 0073), against the fake dashboard's messaging routes
 // (fakeGateways.ts): the platform given (picked in Settings' tree, ADR 0160), the state, token rows that keep, replace or
 // remove, the switch, Save with its read back, a change on the server meanwhile, Check status, the three problems in
-// their own words, and answers for another profile dropped. Every token here is synthetic.
+// their own words, answers for another profile dropped, and Restart gateway beside a change the running gateway hasn't
+// picked up (ADR 0205). Every token here is synthetic.
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode, useState } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { FakeHermes } from "../hermes/fakeHermes";
 import { connect, type Hermes } from "../hermes/transport";
+import { GatewayRestartApi } from "../hermes/gatewayRestart";
+import { fakeClock } from "../hermes/fakeGateways";
+import type { RestMethod } from "../hermes/pipe";
 import { appearanceStore } from "./appearance";
 import { GatewaySettings } from "./GatewaySettings";
 import { SettingsScreen } from "./Settings";
@@ -36,17 +40,27 @@ function server() {
   return s;
 }
 
-async function shown({ s = server(), profile = "default" } = {}) {
+/** The restart over the same fake, without the waits between reads. */
+async function quickRestart(s: FakeHermes) {
+  const pipe = await s.openPipe(() => {}, "default");
+  const rest = async (m: RestMethod, p: string, b?: unknown) => JSON.parse(await pipe.request(m, p, b === undefined ? undefined : JSON.stringify(b)));
+  const clock = fakeClock();
+  s.gateways.now = clock.now;
+  return new GatewayRestartApi(rest, { ...clock, pollMs: 100, commandLimitMs: 2000, backLimitMs: 500 });
+}
+
+async function shown({ s = server(), profile = "default", restart = undefined as GatewayRestartApi | undefined } = {}) {
   const hermes = await connect(s.openPipe, "default");
   running.push(hermes);
   const user = userEvent.setup();
+  restart ??= await quickRestart(s);
   const view = render(
     <StrictMode>
-      <GatewaySettings api={hermes.gateways} profile={profile} connected openUrl={vi.fn()} />
+      <GatewaySettings api={hermes.gateways} restart={restart} profile={profile} connected openUrl={vi.fn()} />
     </StrictMode>,
   );
   await screen.findByRole("heading", { name: "Telegram" });
-  return { s, hermes, user, view };
+  return { s, hermes, user, view, restart };
 }
 
 const rowOf = (name: string) => screen.getByText(name, { selector: ".set-name, .set-name *" }).closest(".set-row") as HTMLElement;
@@ -312,5 +326,102 @@ describe("Settings → Gateways", () => {
     expect(within(platforms).getByRole("button", { name: "Discord" }).getAttribute("aria-current")).toBe("page");
     expect(within(document.querySelector("header.page-head") as HTMLElement).getByRole("heading", { level: 2 }).textContent).toBe("Discord");
     await screen.findByText("«redacted:bot-...oken»");
+  });
+});
+
+describe("Settings → Gateways: Restart gateway", () => {
+  /** The default profile's gateway running, with Telegram connected on the token it started with. */
+  function live() {
+    const s = server();
+    s.gateways.gateway.default = { running: true, platforms: { telegram: { state: "connected" } } };
+    return s;
+  }
+  const replaceToken = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole("button", { name: "Replace Telegram bot token" }));
+    await user.click(screen.getByLabelText("Telegram bot token"));
+    await user.paste(NEW_TOKEN);
+    await user.click(save());
+  };
+  const restartButton = () => within(rowOf("Status")).queryByRole("button", { name: "Restart gateway" });
+
+  it("shows it under Status only after a save the running gateway hasn't picked up, and restarts the gateway", async () => {
+    const { s, user } = await shown({ s: live() });
+    expect(restartButton()).toBeNull();
+    await replaceToken(user);
+    await within(commit()).findByText(/keeps its old Telegram settings until it restarts: Restart gateway, under Status, applies them/);
+    await user.click(restartButton()!);
+    await within(rowOf("Status")).findByText("Gateway restarted.");
+    expect(s.gateways.restarts).toEqual({ default: 1 });
+    expect(restartButton()).toBeNull();
+    // The save's note about the old settings goes with the restart.
+    expect(within(commit()).queryByText(/until it restarts/)).toBeNull();
+  });
+
+  it("keeps the button for a saved change after the screen closes and opens again", async () => {
+    const { s, user, view, restart } = await shown({ s: live() });
+    await replaceToken(user);
+    await within(commit()).findByText(/until it restarts/);
+    view.unmount();
+    await shown({ s, restart });
+    // Telegram still reads back connected: only the save says the running gateway has the old token.
+    expect(within(rowOf("Status")).getByText("Connected")).toBeTruthy();
+    expect(restartButton()).toBeTruthy();
+  });
+
+  it("asks first when replies are running, and Cancel restarts nothing", async () => {
+    const s = live();
+    s.gateways.gateway.default.activeAgents = 2;
+    const { user } = await shown({ s });
+    await replaceToken(user);
+    await user.click(await within(rowOf("Status")).findByRole("button", { name: "Restart gateway" }));
+    const ask = await screen.findByRole("alertdialog", { name: "Restart gateway" });
+    expect(ask.textContent).toContain("2 replies running on this profile will be cut off.");
+    await user.click(within(ask).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(s.gateways.writes.filter((w) => w.what === "restart")).toEqual([]);
+    expect(s.gateways.restarts).toEqual({});
+    await user.click(restartButton()!);
+    await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Restart anyway" }));
+    await within(rowOf("Status")).findByText("Gateway restarted.");
+    expect(s.gateways.restarts).toEqual({ default: 1 });
+  });
+
+  it("shows it on opening for a platform the running gateway hasn't picked up, and Restart needed clears", async () => {
+    const s = server();
+    s.gateways.gateway.default = { running: true, platforms: {} };
+    const { user } = await shown({ s });
+    expect(within(rowOf("Status")).getByText("Restart needed")).toBeTruthy();
+    expect(within(rowOf("Status")).getByText("The gateway is running but hasn't picked this up. Restart the gateway to connect.")).toBeTruthy();
+    await user.click(restartButton()!);
+    await within(rowOf("Status")).findByText("Connected");
+    expect(restartButton()).toBeNull();
+  });
+
+  it("shows nothing for a save the gateway picks up by itself, or with no gateway running", async () => {
+    const s = live();
+    s.gateways.hotServed = true;
+    const { user } = await shown({ s });
+    await replaceToken(user);
+    await within(commit()).findByText("Saved, and Hermes reads it back that way.");
+    expect(restartButton()).toBeNull();
+
+    s.gateways.gateway.default.running = false;
+    s.gateways.hotServed = false;
+    await user.click(screen.getByRole("switch", { name: "Turned on" }));
+    await user.click(save());
+    await within(commit()).findByText("Saved, and Hermes reads it back that way.");
+    expect(restartButton()).toBeNull();
+    expect(s.gateways.writes.filter((w) => w.what === "restart")).toEqual([]);
+  });
+
+  it("says why a restart failed, and keeps the button to try again", async () => {
+    const s = live();
+    s.gateways.refuseRestart = { status: 500, detail: "Failed to restart gateway: the system service needs passwordless sudo" };
+    const { user } = await shown({ s });
+    await replaceToken(user);
+    await user.click(await within(rowOf("Status")).findByRole("button", { name: "Restart gateway" }));
+    const alert = await within(rowOf("Status")).findByRole("alert");
+    expect(alert.textContent).toBe("Couldn't restart the gateway: Failed to restart gateway: the system service needs passwordless sudo");
+    expect(restartButton()).toBeTruthy();
   });
 });

@@ -35,7 +35,7 @@ async function launch(setup: (s: FakeHermes) => void = () => {}, shown?: Map<str
   server.otherProfiles = { work: [], research: [] };
   server.profileModel.work = { model: "gpt-6.1", provider: "openai", reasoning_effort: "medium", fast: false };
   server.profileMeta.work = { description: "Writes and reviews code" };
-  server.gatewaysRunning.add("work");
+  server.gateways.gateway.work = { running: true, platforms: {} };
   setup(server);
   const hermes = await connect(server.openPipe, undefined, memoryCache());
   running.push(hermes);

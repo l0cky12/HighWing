@@ -476,6 +476,7 @@ fn stub_routes() -> Router {
         .route("/api/tools/toolsets/{name}/post-setup", post(echo_write))
         .route("/api/messaging/platforms/{id}", put(echo_write).post(echo_write))
         .route("/api/messaging/platforms/{id}/test", post(echo_write).put(echo_write))
+        .route("/api/gateway/restart", post(echo_write).put(echo_write))
         .route("/api/profiles/{name}/soul", put(echo_write).post(echo_write))
         .route("/api/skills", post(echo_write))
         .route("/api/skills/toggle", put(echo_write))
@@ -965,7 +966,12 @@ async fn relays_the_gateway_save_and_status_check() {
         let got: Value = serde_json::from_str(&dashboard.request("PUT", path, Some(body.to_string())).await.unwrap()).unwrap();
         assert_eq!(got, json!({"uri": format!("/{path}"), "content_type": "application/json", "body": body}));
     }
-    for path in ["api/messaging/platforms/telegram/test?profile=work", "api/messaging/platforms/discord/test"] {
+    for path in [
+        "api/messaging/platforms/telegram/test?profile=work",
+        "api/messaging/platforms/discord/test",
+        "api/gateway/restart?profile=work",
+        "api/gateway/restart",
+    ] {
         let got: Value = serde_json::from_str(&dashboard.request("POST", path, None).await.unwrap()).unwrap();
         assert_eq!(got["uri"], json!(format!("/{path}")));
     }
@@ -985,6 +991,12 @@ async fn relays_no_other_gateway_write() {
         ("POST", "api/messaging/platforms/telegram/test", Some("{}")),
         ("POST", "api/messaging/platforms/slack/test", None),
         ("POST", "api/messaging/telegram/onboarding/start", Some("{}")),
+        // The restart takes no body, and the gateway's other lifecycle routes aren't relayed.
+        ("POST", "api/gateway/restart", Some("{}")),
+        ("PUT", "api/gateway/restart", None),
+        ("POST", "api/gateway/restart/x", None),
+        ("POST", "api/gateway/start", None),
+        ("POST", "api/gateway/stop", None),
         // Bodies with anything else, a profile in the body, or nothing to do.
         ("PUT", "api/messaging/platforms/telegram", Some(r#"{"enabled":true,"profile":"other"}"#)),
         ("PUT", "api/messaging/platforms/telegram", Some(r#"{"enabled":"yes"}"#)),

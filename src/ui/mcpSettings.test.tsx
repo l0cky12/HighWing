@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 // Settings → MCP servers on screen (McpSettings.tsx, ADR 0121), against the fake dashboard's MCP routes and Rust's edit
 // (fakeMcp.ts): the list with transport, switch and plugin, adding and editing in a dialog with write-only secrets,
-// removing after asking, Test, OAuth sign-in followed to the end, the catalog, no_mcp, and answers for another profile
-// dropped. Every server here is synthetic.
+// removing after asking, Test, OAuth sign-in followed to the end, the catalog, no_mcp, answers for another profile
+// dropped, and Restart gateway beside a server edited in place (ADR 0205). Every server here is synthetic.
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
@@ -10,6 +10,9 @@ import { StrictMode, useState } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { FakeHermes } from "../hermes/fakeHermes";
 import { connect, type Hermes } from "../hermes/transport";
+import { GatewayRestartApi } from "../hermes/gatewayRestart";
+import { fakeClock } from "../hermes/fakeGateways";
+import { RestError, type RestMethod } from "../hermes/pipe";
 import { appearanceStore } from "./appearance";
 import { McpSettings } from "./McpSettings";
 import { SettingsScreen } from "./Settings";
@@ -42,6 +45,15 @@ function server() {
   return s;
 }
 
+/** The restart over the same fake, without the waits between reads. */
+async function quickRestart(s: FakeHermes) {
+  const pipe = await s.openPipe(() => {}, "default");
+  const rest = async (m: RestMethod, p: string, b?: unknown) => JSON.parse(await pipe.request(m, p, b === undefined ? undefined : JSON.stringify(b)));
+  const clock = fakeClock();
+  s.gateways.now = clock.now;
+  return new GatewayRestartApi(rest, { ...clock, pollMs: 100, commandLimitMs: 2000, backLimitMs: 500 });
+}
+
 async function shown({ s = server(), profile = "default", openUrl = vi.fn() } = {}) {
   const hermes = await connect(s.openPipe, "default");
   running.push(hermes);
@@ -49,7 +61,7 @@ async function shown({ s = server(), profile = "default", openUrl = vi.fn() } = 
   // StrictMode, as the app runs in development: effects set up, clean up and set up again.
   const view = render(
     <StrictMode>
-      <McpSettings api={hermes.mcp} profile={profile} connected openUrl={openUrl} pollMs={20} />
+      <McpSettings api={hermes.mcp} restart={await quickRestart(s)} profile={profile} connected openUrl={openUrl} pollMs={20} />
     </StrictMode>,
   );
   await screen.findByRole("button", { name: "Reload" });
@@ -390,5 +402,110 @@ describe("Settings → MCP servers: the tab", () => {
       sheet.remove();
       document.documentElement.style.fontSize = "";
     }
+  });
+});
+
+describe("Settings → MCP servers: Restart gateway", () => {
+  const editCommand = async (user: ReturnType<typeof userEvent.setup>, name: string, command: string) => {
+    await user.click(within(rowOf(name)).getByRole("button", { name: `Edit ${name}` }));
+    await user.clear(within(dialog()).getByRole("textbox", { name: "Command" }));
+    await user.type(within(dialog()).getByRole("textbox", { name: "Command" }), command);
+    await user.click(within(dialog()).getByRole("button", { name: "Save" }));
+    await within(rowOf(name)).findByText("Saved: Hermes reads it back that way.");
+  };
+  const restartIn = (name: string) => within(rowOf(name)).queryByRole("button", { name: "Restart gateway" });
+
+  it("shows it beside a server edited in place while the gateway runs, and restarts the gateway", async () => {
+    const s = server();
+    s.gateways.gateway.default = { running: true, platforms: {} };
+    const { user } = await shown({ s });
+    expect(screen.queryByRole("button", { name: "Restart gateway" })).toBeNull();
+    await editCommand(user, "fs", "bunx");
+    await waitFor(() => expect(restartIn("fs")).toBeTruthy());
+    expect(within(rowOf("fs")).getByText("Chats on Telegram and Discord keep fs's old settings until the gateway restarts.")).toBeTruthy();
+    expect(restartIn("web")).toBeNull();
+    await user.click(restartIn("fs")!);
+    await within(rowOf("fs")).findByText("Gateway restarted.");
+    expect(s.gateways.restarts).toEqual({ default: 1 });
+    expect(restartIn("fs")).toBeNull();
+  });
+
+  it("clears every edited server's button once a restart from one of them applied them all", async () => {
+    const s = server();
+    s.mcp.servers.default.git = { command: "git-mcp" };
+    s.gateways.gateway.default = { running: true, platforms: {} };
+    const { user } = await shown({ s });
+    await editCommand(user, "fs", "bunx");
+    await editCommand(user, "git", "gitx");
+    await waitFor(() => expect(restartIn("git")).toBeTruthy());
+    await user.click(restartIn("fs")!);
+    await within(rowOf("fs")).findByText("Gateway restarted.");
+    expect(s.gateways.restarts).toEqual({ default: 1 });
+    expect(restartIn("git")).toBeNull();
+  });
+
+  it("shows nothing after an edit saved with nothing changed", async () => {
+    const s = server();
+    s.gateways.gateway.default = { running: true, platforms: {} };
+    const { user } = await shown({ s });
+    await user.click(within(rowOf("fs")).getByRole("button", { name: "Edit fs" }));
+    await user.click(within(dialog()).getByRole("button", { name: "Save" }));
+    await within(rowOf("fs")).findByText("Saved: Hermes reads it back that way.");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(restartIn("fs")).toBeNull();
+  });
+
+  it("keeps an earlier edit's button when the next edit can't read whether the gateway runs", async () => {
+    const s = server();
+    s.gateways.gateway.default = { running: true, platforms: {} };
+    const { user } = await shown({ s });
+    await editCommand(user, "fs", "bunx");
+    await waitFor(() => expect(restartIn("fs")).toBeTruthy());
+    const statusReads = vi.fn(() => {
+      throw new RestError(502, JSON.stringify({ detail: "Bad Gateway" }));
+    });
+    s.rest["GET /api/status"] = statusReads;
+    await editCommand(user, "fs", "uvx");
+    await waitFor(() => expect(statusReads).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(restartIn("fs")).toBeTruthy();
+  });
+
+  it("keeps the button when switching the server off is refused, and drops it once a switch-off is saved", async () => {
+    const s = server();
+    s.gateways.gateway.default = { running: true, platforms: {} };
+    const { user } = await shown({ s });
+    await editCommand(user, "fs", "bunx");
+    await waitFor(() => expect(restartIn("fs")).toBeTruthy());
+    s.mcp.refuse = { status: 400, detail: "config is locked" };
+    await user.click(within(rowOf("fs")).getByRole("switch", { name: "fs" }));
+    await within(rowOf("fs")).findByText(/config is locked/);
+    expect(restartIn("fs")).toBeTruthy();
+    await user.click(within(rowOf("fs")).getByRole("switch", { name: "fs" }));
+    await waitFor(() => expect(within(rowOf("fs")).getByRole("switch", { name: "fs" }).getAttribute("aria-checked")).toBe("false"));
+    expect(restartIn("fs")).toBeNull();
+  });
+
+  it("shows nothing for an added server, which the gateway picks up by itself", async () => {
+    const s = server();
+    s.gateways.gateway.default = { running: true, platforms: {} };
+    const { user } = await shown({ s });
+    await user.click(screen.getByRole("button", { name: "Add server" }));
+    await user.type(within(dialog()).getByRole("textbox", { name: "Name" }), "search");
+    await user.type(within(dialog()).getByRole("textbox", { name: "Command" }), "uvx");
+    await user.click(within(dialog()).getByRole("button", { name: "Add" }));
+    await screen.findByText("Added search: Hermes reads it back that way.");
+    expect(screen.queryByRole("button", { name: "Restart gateway" })).toBeNull();
+  });
+
+  it("shows nothing for an edit when the profile's gateway isn't running", async () => {
+    const s = server();
+    const { user } = await shown({ s });
+    await editCommand(user, "fs", "bunx");
+    // The status read that decides it has answered by now.
+    await waitFor(() => expect(s.restRequests.some((r) => r.path === "/api/status" && r.query.get("profile") === "default")).toBe(true));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(screen.queryByRole("button", { name: "Restart gateway" })).toBeNull();
+    expect(s.gateways.writes.filter((w) => w.what === "restart")).toEqual([]);
   });
 });

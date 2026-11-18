@@ -227,7 +227,7 @@ describe("Removing a connection's local data", () => {
     const two = s.draft({ mode: "url", sshTarget: "", url: "https://b.example.com", username: "owner" }, "Home");
     s.save(one);
     s.save(two);
-    // Settings → Persona's edits, which an earlier version kept (ADR 0205).
+    // Settings → Persona's edits, which an earlier version kept (ADR 0206).
     const personaKey = (c: typeof one) => `hermes-chat.persona.${connectionScope(c, "default")}`;
     for (const c of [one, two]) {
       drafts(localStorage).set(draftKey(c, "default", null), `draft ${c.id}`);

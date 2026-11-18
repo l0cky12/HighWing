@@ -32,7 +32,7 @@ describe("Settings → Profiles' calls", () => {
       s.profileModel.work = { model: "gpt-6.1", provider: "openai", reasoning_effort: "medium", fast: false };
       s.profileMeta.work = { description: "Writes code", description_auto: true };
       s.profileMeta.default = { display_name: "Main" };
-      s.gatewaysRunning.add("work");
+      s.gateways.gateway.work = { running: true, platforms: {} };
       s.distributions.research = "papers";
       s.skills.add("work", { dir: "/home/lena/.hermes/profiles/work/skills/a", source: "agent" }, "---\nname: a\ndescription: A\n---\n");
     });

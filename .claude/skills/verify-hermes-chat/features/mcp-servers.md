@@ -1,6 +1,6 @@
 # MCP servers
 
-Settings → MCP servers lists the MCP servers Hermes connects one profile's agent to, picked in the tab's profile list. The owner adds a server from a blank form or Hermes's catalog, edits it in a dialog whose secrets start empty (a blank one keeps what Hermes has), removes it after a question in its row, turns it on or off, tests it (Hermes connects and lists its tools) and signs in to an OAuth server in the browser. Each change says "Hermes reads it back that way" only once the list read again shows it.
+Settings → MCP servers lists the MCP servers Hermes connects one profile's agent to, picked in the tab's profile list. The owner adds a server from a blank form or Hermes's catalog, edits it in a dialog whose secrets start empty (a blank one keeps what Hermes has), removes it after a question in its row, turns it on or off, tests it (Hermes connects and lists its tools) and signs in to an OAuth server in the browser. Each change says "Hermes reads it back that way" only once the list read again shows it. A server edited under the same name while the profile's gateway runs shows Restart gateway beside it, since the gateway keeps its old settings until it restarts.
 
 ## Sub-features
 
@@ -13,6 +13,7 @@ Settings → MCP servers lists the MCP servers Hermes connects one profile's age
 - `mcp-signin`: Sign in opens the provider's page and follows the flow; Stop cancels it.
 - `mcp-catalog`: From catalog lists Hermes's catalog and installs an entry with the values it asks for.
 - `mcp-profile`: the profile list shows another profile's servers.
+- `mcp-restart`: an edit that keeps the name shows Restart gateway on that server; an add, removal or switch shows none.
 
 ## How to get to it (user POV)
 
@@ -23,7 +24,7 @@ Settings → MCP servers lists the MCP servers Hermes connects one profile's age
 
 Preconditions:
 
-- Signed in to the stand-in ([sign-in.md](sign-in.md)). It seeds `default` with `filesystem` (stdio, Test finds 4 tools), `github` (bearer token, Test fails with a 401), `linear` (OAuth), `weather` (off, with `WEATHER_API_KEY`) and `kanban` (from plugin `kanban-board`); profile `work` has `calendar`. The catalog has `context7` and `brave-search` (asks for `BRAVE_API_KEY`).
+- Signed in to the stand-in ([sign-in.md](sign-in.md)). It seeds `default` with `filesystem` (stdio, Test finds 4 tools), `github` (bearer token, Test fails with a 401), `linear` (OAuth), `weather` (off, with `WEATHER_API_KEY`) and `kanban` (from plugin `kanban-board`); profile `work` has `calendar`. The catalog has `context7` and `brave-search` (asks for `BRAVE_API_KEY`). `default`'s gateway runs; `work`'s doesn't.
 
 - **Open.** `$S/wd.mjs click button Settings`, `$S/wd.mjs click '[role=tab]' "MCP servers"`, `$S/wd.mjs wait .mcp-name filesystem`.
 - **Test.** `$S/wd.mjs click button "Test filesystem"` then `$S/wd.mjs wait .mcp-test "4 tools"`; `$S/wd.mjs click button "Test github"` then `$S/wd.mjs wait .mcp-test "Couldn't connect"`.
@@ -34,6 +35,7 @@ Preconditions:
 - **Sign in.** `$S/wd.mjs click button "Sign in to linear"`, `$S/wd.mjs wait .mcp-signin "Finish signing in"`, then `$S/wd.mjs click '.mcp-signin button' Stop` and `$S/wd.mjs wait .mcp-note "Sign-in stopped"`; `bridge.log` shows `DELETE /api/mcp/oauth/flows/flow-1`.
 - **Catalog.** `$S/wd.mjs click button "From catalog"`, `$S/wd.mjs click '.mcp-catalog-item' brave`, `$S/wd.mjs fill '[role=dialog] input[type=password]' -- key`, `$S/wd.mjs click '[role=dialog] button' Install`, `$S/wd.mjs wait '[role=status]' "Installed brave-search"`.
 - **Another profile.** `$S/wd.mjs select select "Profile whose MCP servers are shown" -- work`, `$S/wd.mjs wait .mcp-name calendar`.
+- **Restart gateway.** On `default`, `$S/wd.mjs click button "Edit filesystem"`, `$S/wd.mjs fill '[role=dialog] input[placeholder=npx]' -- bunx`, `$S/wd.mjs click button Save`, `$S/wd.mjs wait .gw-restart "keep filesystem's old settings"`. `$S/wd.mjs click button "Restart gateway"`, `$S/wd.mjs wait .gw-line "Gateway restarted."`; `$S/hv state` shows `gatewayRestarts: {"default": 1}`. The same edit on `work`'s `calendar` shows no button, as its gateway isn't running.
 
 ## Gotchas
 

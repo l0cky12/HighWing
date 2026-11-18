@@ -1299,7 +1299,7 @@ export function Main({
     skillDirty.current = dirty;
     setSkillUnsaved(dirty);
   }, []);
-  // An unsaved Persona in the profile form (ProfileSettings.tsx, ADR 0205) lives only on screen too, and is guarded the same way.
+  // An unsaved Persona in the profile form (ProfileSettings.tsx, ADR 0206) lives only on screen too, and is guarded the same way.
   const personaDirty = useRef(false);
   const [personaUnsaved, setPersonaUnsaved] = useState<string>();
   const onPersonaDirty = useCallback((dirty: boolean, profile: string) => {
@@ -3196,7 +3196,7 @@ export function Main({
       },
     },
     copyText,
-    // Persona's Write with AI (ADR 0197, 0205): as the profile named, on its Text generation model, only while connected.
+    // Persona's Write with AI (ADR 0197, 0206): as the profile named, on its Text generation model, only while connected.
     rephrase:
       status === "connected"
         ? (p) => ({
@@ -3601,6 +3601,7 @@ export function Main({
             toolsets={hermes.toolsets}
             mcp={hermes.mcp}
             gateways={hermes.gateways}
+            gatewayRestart={hermes.gatewayRestart}
             providers={hermes}
             accounts={hermes.accounts}
             openUrl={(url) => webPages.openInBrowser(url).then(() => undefined)}

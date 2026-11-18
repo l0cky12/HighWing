@@ -1,6 +1,6 @@
 # Settings → Persona edits any profile's SOUL.md, picked on the screen
 
-> **Superseded by [ADR 0205](0205-a-persona-is-edited-only-in-the-profile-form-and-write-with-ai-rewrites-it-in-place.md).** Settings → Persona is gone. Any profile's persona is edited in that profile's Edit form, from Settings → Profiles or a bot's menu in Bots mode.
+> **Superseded by [ADR 0206](0206-a-persona-is-edited-only-in-the-profile-form-and-write-with-ai-rewrites-it-in-place.md).** Settings → Persona is gone. Any profile's persona is edited in that profile's Edit form, from Settings → Profiles or a bot's menu in Bots mode.
 
 Settings → Persona edited only the profile the app was using (ADR 0014). The owner wants to edit the persona of every profile on the server without switching the app to it first. Hermes's persona routes, `GET` and `PUT /api/profiles/{name}/soul`, already take any profile name, and `PersonaApi` already names the profile on every call. So this is a screen change.
 

@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { FakeHermes } from "./fakeHermes";
 import { connect } from "./transport";
-import { editOf, formProblem, matches, type ServerForm } from "./mcp";
+import { connectionChanged, editOf, formProblem, matches, type McpServer, type ServerForm } from "./mcp";
 
 async function setUp() {
   const server = new FakeHermes();
@@ -143,6 +143,29 @@ describe("MCP servers: editing", () => {
     const r = await api.edit("default", "fs", stdio({ name: "fs" }));
     expect(r.kind).toBe("refused");
     expect(r.list?.servers.map((s) => s.name)).toEqual(["kanban", "web"]);
+  });
+});
+
+describe("MCP servers: what an edit changes", () => {
+  const base = { args: [] as string[], envKeys: [] as string[], enabled: true, toolFilter: false, changeable: true };
+  const stdio: McpServer = { ...base, name: "fs", transport: "stdio", command: "npx", args: ["-y", "fs"], envKeys: ["ROOT"], auth: "none" };
+  const http: McpServer = { ...base, name: "gh", transport: "http", url: "https://mcp.example.com/gh", auth: "header" };
+
+  it("counts nothing for a form saved as it opened, its secrets left blank", () => {
+    expect(connectionChanged(stdio, { transport: "stdio", name: "fs", command: "npx", args: ["-y", "fs"], env: [{ key: "ROOT" }] })).toBe(false);
+    expect(connectionChanged(http, { transport: "http", name: "gh", url: "https://mcp.example.com/gh", auth: "header" })).toBe(false);
+  });
+
+  it("counts a new command, argument, variable, typed value, URL, sign-in or token", () => {
+    const form: ServerForm & { transport: "stdio" } = { transport: "stdio", name: "fs", command: "npx", args: ["-y", "fs"], env: [{ key: "ROOT" }] };
+    expect(connectionChanged(stdio, { ...form, command: "bunx" })).toBe(true);
+    expect(connectionChanged(stdio, { ...form, args: ["-y", "fs", "/srv"] })).toBe(true);
+    expect(connectionChanged(stdio, { ...form, env: [{ key: "ROOT" }, { key: "TOKEN", value: "t" }] })).toBe(true);
+    expect(connectionChanged(stdio, { ...form, env: [{ key: "ROOT", value: "/srv" }] })).toBe(true);
+    const page: ServerForm & { transport: "http" } = { transport: "http", name: "gh", url: "https://mcp.example.com/gh", auth: "header" };
+    expect(connectionChanged(http, { ...page, url: "https://mcp.example.com/gh2" })).toBe(true);
+    expect(connectionChanged(http, { ...page, auth: "oauth" })).toBe(true);
+    expect(connectionChanged(http, { ...page, bearerToken: "new" })).toBe(true);
   });
 });
 

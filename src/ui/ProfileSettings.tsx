@@ -82,11 +82,11 @@ export type ProfilesWiring = {
   showTab: (tab: "memory" | "skills", name: string) => void;
   copyText: (text: string) => Promise<void>;
   /**
-   * Write with AI on the form's Persona (ADR 0197, 0205), run as `profile` on its Text generation model: the profile in
+   * Write with AI on the form's Persona (ADR 0197, 0206), run as `profile` on its Text generation model: the profile in
    * use for New, the profile edited for Edit. Given only while connected.
    */
   rephrase?: (profile: string) => RephraseWiring;
-  /** Each profile's SOUL.md, which Edit reads as it opens and saves with the form (ADR 0205); without it Edit has no Persona. */
+  /** Each profile's SOUL.md, which Edit reads as it opens and saves with the form (ADR 0206); without it Edit has no Persona. */
   persona?: PersonaApi;
   /** Told whether the open form holds a persona Hermes doesn't have, and whose, so leaving the screen asks first. */
   onPersonaDirty?: (dirty: boolean, profile: string) => void;
@@ -798,7 +798,7 @@ type SoulRead = { kind: "reading" } | { kind: "read"; base: Soul } | { kind: "fa
  * Bots mode's New bot is this form's New (ADR 0164): `heading` and `createLabel` name what it makes there, and
  * `noEdit` leaves out Set model after a create that didn't set it, since Bots mode has no Edit to go on to.
  * `bot`: Edit bot, which adds the bot's look. Edit's Persona is the profile's SOUL.md, read as the form opens and
- * saved with the other fields, before the name (ADR 0205); `focus` puts focus in it once read.
+ * saved with the other fields, before the name (ADR 0206); `focus` puts focus in it once read.
  */
 export function ProfileForm({
   wiring,

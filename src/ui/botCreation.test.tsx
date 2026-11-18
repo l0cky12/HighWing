@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// The New profile form's Write with AI, Skills, Tools and MCP servers (ADR 0197, 0205), shared by Settings → Profiles
+// The New profile form's Write with AI, Skills, Tools and MCP servers (ADR 0197, 0206), shared by Settings → Profiles
 // and Bots mode's New bot, through the real transport against FakeHermes at `f0d94882`. What the owner sees, and what
 // Hermes received: the rewrite only on a click, in the field with Undo, and each chosen skill and toolset read
 // back from the new profile before any success is said. All data is synthetic.

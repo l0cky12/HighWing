@@ -77,11 +77,15 @@
 // answers as FakeHermes does.
 // HV_SETTLING=<command>: a profile delete answers `settlement_pending` with that `retry_command` (empty: none).
 // HV_MODEL_ERROR=<text>: a profile create makes the profile but not its model, and answers `model_error` with the text.
+// `default`'s messaging gateway runs (FakeGateways), with Telegram and Discord off, so a Telegram token saved with the
+// switch on, or an MCP server edited under the same name, shows Restart gateway (ADR 0205). The restart succeeds and
+// connects the platforms waiting for it. HV_ACTIVE_AGENTS=<n> makes the gateway report n replies running, so the button
+// asks before cutting them off.
 // HV_TURNS=<n> adds the bench's two long chats to `default`'s Inbox, `long1` and `long2`, n turns each (bench/fixture.ts
 // makeChat(n, 1) and (n, 2)), so the app can be timed on the chats `bench/run.mjs` renders (bench/app-split).
 // Read-only check of what the server holds (the side-effect proof): `GET /__state` returns sessions, transcripts, and
 // the app's answers to what the stand-in asked it, and each profile's SOUL.md, skills turned off and toolsets on, with
-// the profile creates and one-off calls it received.
+// the profile creates and one-off calls it received, and each profile's gateway restarts (`gatewayRestarts`).
 // The same JSON is rewritten to <state-file> after every change, so it survives the bridge being stopped.
 import { createHash } from "node:crypto";
 import { isUtf8 } from "node:buffer";
@@ -230,6 +234,8 @@ const honcho = memoryUrl ? { ...HONCHO, docsUrl: memoryUrl, fields: HONCHO.field
 server.memoryProviders.add(honcho, { ...RETAINDB });
 server.memoryProviders.active = { default: "honcho", work: "" };
 
+server.gateways.gateway.default = { running: true, platforms: {}, activeAgents: Number(process.env.HV_ACTIVE_AGENTS ?? 0) };
+
 // MCP servers as each profile's config holds them; the `.env` (tokens) stays out.
 // Each checkpointed folder's files now, and every restore the app asked for (ADR 0180).
 const dump = () =>
@@ -250,6 +256,7 @@ const dump = () =>
       toolsetWrites: server.toolsetWrites,
       profileCreates: server.restRequests.filter((r) => r.method === "POST" && r.path === "/api/profiles").map((r) => r.body),
       oneshots: server.requests.filter((r) => r.method === "llm.oneshot").map((r) => r.params),
+      gatewayRestarts: server.gateways.restarts,
     },
     null,
     2,

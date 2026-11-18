@@ -59,6 +59,8 @@ export const RENAMES_KEY = "hermes-chat.profile-renames";
 
 /** Where the Outputs screen kept its index, every connection and profile in one document, until ADR 0170 removed it. */
 const RETIRED_OUTPUTS_KEY = "hermes-chat.outputs";
+/** Where Group rooms kept how far each room was read, one key per scope after this prefix, until the feature was removed. */
+const RETIRED_ROOM_READ_PREFIX = "hermes-chat.group-rooms-read.";
 const RETIRED_REPO_KEYS = ["hermes-chat.repo-path", "hermes-chat.repo-recent", "hermes-chat.repo-target", "hermes-chat.worktree-chats"];
 
 /** Documents `{scopes: {[scope]: …}}` with a scope for each connection and profile. */
@@ -79,7 +81,7 @@ export const SCOPED_DOCS: readonly string[] = [
  * swapped in files (`files` below); their keys here are their browser stand-ins.
  */
 export const NOT_PER_PROFILE: Record<string, string> = {
-  "hermes-chat.group-rooms-read.": "How far each Group room was read, by room id: a room is the connection's, in no profile",
+  [RETIRED_ROOM_READ_PREFIX]: "Group rooms' read marks, from before the feature was removed: deleted at launch (`dropRetiredData`)",
   "hermes-chat.appearance": "The look of the app, the same for every connection",
   "hermes-chat.connections": "The saved connections themselves",
   "hermes-chat.sign-in": "The single sign-in kept before saved connections, moved into them once",
@@ -96,11 +98,13 @@ export const NOT_PER_PROFILE: Record<string, string> = {
 
 /**
  * Deletes what this computer kept for a screen that is gone, so it isn't kept forever: the Outputs index (ADR 0170),
- * and the Repository screen's folders and worktree chats (ADR 0204).
+ * the Repository screen's folders and worktree chats (ADR 0204), and Group rooms' read marks.
  */
-export function dropRetiredData(storage: Pick<Storage, "removeItem"> = localStorage) {
+export function dropRetiredData(storage: Pick<Storage, "removeItem" | "key" | "length"> = localStorage) {
   try {
     for (const k of [RETIRED_OUTPUTS_KEY, ...RETIRED_REPO_KEYS]) storage.removeItem(k);
+    const marks = Array.from({ length: storage.length }, (_, i) => storage.key(i)).filter((k) => k?.startsWith(RETIRED_ROOM_READ_PREFIX));
+    for (const k of marks) storage.removeItem(k!);
   } catch {
     // Storage that can't be written now is tried again at the next launch.
   }

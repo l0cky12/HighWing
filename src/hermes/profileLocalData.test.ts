@@ -234,6 +234,15 @@ describe("what a removed screen kept", () => {
     expect(Object.keys(localStorage)).toEqual(["hermes-chat.projects"]);
   });
 
+  it("deletes every key Group rooms kept their read marks in, and no other", () => {
+    localStorage.setItem("hermes-chat.group-rooms-read.server", '{"r1":4}');
+    localStorage.setItem("hermes-chat.group-rooms-read.work", '{"r2":9}');
+    localStorage.setItem("hermes-chat.group-rooms-read", "kept: no scope after the prefix");
+    localStorage.setItem("hermes-chat.terminal-target", "lena@hermes");
+    dropRetiredData();
+    expect(Object.keys(localStorage).sort()).toEqual(["hermes-chat.group-rooms-read", "hermes-chat.terminal-target"]);
+  });
+
   it("deletes the Repository screen's folders, target and worktree chats an older version kept", () => {
     localStorage.setItem("hermes-chat.repo-path", "/srv/app");
     localStorage.setItem("hermes-chat.repo-recent", '["/srv/app"]');

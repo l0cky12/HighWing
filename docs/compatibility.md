@@ -235,6 +235,15 @@ The Run view under a reply draws its turn as steps (ADR 0178). It needs nothing 
 
 What it can't show, on any Hermes: no event carries a server time, so every start and end is when the app heard it. Only a tool's `duration_s` is measured by Hermes. A model call has no event, so its edges and tokens are inferred from the events around it and the `session.usage` counters, sent at most once a second. Cost is kept per chat, so a turn's cost is the change across it, and a step's isn't known. A tool call has no failure flag, so failure is judged from its result. A retry that recovered leaves no trace. A stored row has only the time its step ended. Each of these is marked or said in the view.
 
+## Computer use readiness
+
+Settings → Diagnostics → Computer use says whether Hermes's `computer_use` can run for the profile shown (ADR 0212). It needs `GET /api/tools/toolsets` for the toolset, `display.status` for the packages, memory, placement and who holds the screen, and `cli.exec` for `hermes -p <profile> computer-use doctor --json`. Hermes `v0.23.2` has all of them. Each read that fails leaves its rows Unknown with the reason, so an older Hermes shows no red rows it can't know about.
+
+- **`-p` is in argv.** `cli.exec` ignores its `profile` parameter, so doctor without `-p` answers for the profile `default`, whatever is shown.
+- **Doctor's exit code.** 0 is ready, 1 is degraded with the failing checks, 2 is no cua-driver and prints text rather than JSON. A server where `cli.exec` is blocked, or with no `computer-use` command, gives Unknown.
+- **Placement.** `display.status` reports `gateway` or `terminal:<backend>`. A refused placement raises when the agent starts a tool, and `display.status` doesn't say it.
+- **The holder of the screen.** Hermes names it by a hash the Screen tab matches to itself, so Diagnostics says a person holds it, not who.
+
 ## Versions checked
 
 Checked live on 2026-11-04 with throwaway dashboards holding no real data (`src/hermes/capabilities.live.test.ts`):

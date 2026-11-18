@@ -76,6 +76,9 @@
 // HV_DISK=<folder> copies a real folder on this computer, at its own full path, into the server's disk the preview reads
 // and lists (`GET /api/fs/read-text`, `GET /api/fs/list`), so a reply's paths name files a real ssh shell also finds. It
 // also puts them in the managed files (`GET /api/files`) that Server files and a project's Context card read.
+// HV_COMPUTER_USE=ready|toolset-off|degraded|human gives `default` a Bot Desktop and a server machine for Settings →
+// Diagnostics' Computer use rows (ADR 0212). `ready` (or 1) shows every row green. `toolset-off` leaves the computer_use
+// toolset off, `degraded` has doctor fail its X11 checks, and `human` has a person hold the screen.
 // HV_DELAY_MS=<ms> holds each /api/ answer that long, as a distant server's round trip would.
 // HV_FAIL_PATCH=<id>,<id> answers 503 to every edit (PATCH) of those sessions, as a server that fails a write does.
 // HV_MEMORY_URL=<url> is the address `default`'s Honcho gives for its documentation and its API key's "Get one" link.
@@ -103,7 +106,7 @@ import { join } from "node:path";
 import { createServer } from "node:http";
 import type { Socket } from "node:net";
 import { GROUPS_BUILDS, standInScript } from "../../../../src/hermes/fakeGroups";
-import { FakeHermes, row } from "../../../../src/hermes/fakeHermes";
+import { DOCTOR_NO_DISPLAY, FakeHermes, row } from "../../../../src/hermes/fakeHermes";
 import { HONCHO, RETAINDB } from "../../../../src/hermes/fakeMemoryProviders";
 import type { Pipe } from "../../../../src/hermes/pipe";
 import { makeChat } from "../../../../bench/fixture";
@@ -243,6 +246,18 @@ const personaReply = process.env.HV_PERSONA_REPLY;
 if (personaReply) {
   const plain = server.oneshotAnswer;
   server.oneshotAnswer = (call) => (call.input.includes("<persona>") ? readFileSync(personaReply, "utf8") : typeof plain === "string" ? plain : plain(call));
+}
+
+const computerUse = process.env.HV_COMPUTER_USE;
+if (computerUse) {
+  server.display = {
+    status: { supported: true, installed: true, missing: [], running: true, geometry: "1280x800", placement: "gateway", memory_available_mb: 19039, memory_limit_mb: 32000, browser: "/usr/bin/chromium" },
+    lease: { holder: computerUse === "human" ? "human" : "agent", viewer_hash: null, since: 1, epoch: 0 },
+    minted: new Set(),
+  };
+  server.machine = { programs: new Set(), files: new Set(), pmInstall: { code: 0, output: "" }, browser: "/usr/bin/chromium" };
+  if (computerUse === "degraded") server.machine.computerUse = { doctor: DOCTOR_NO_DISPLAY };
+  if (computerUse !== "toolset-off") server.toolsetsOn.default = new Set([...server.enabledToolsets("default"), "computer_use"]);
 }
 
 if (process.env.HV_SETTLING !== undefined) server.profileSettlementPending = process.env.HV_SETTLING;

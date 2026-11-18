@@ -1,6 +1,6 @@
 # The office is a 3D building with a floor per profile and a room per state
 
-> **Superseded by [ADR 0202](0202-the-repository-automations-and-office-screens-are-removed.md)**. The agent office is gone, its 3D building and three.js with it.
+> **Superseded by [ADR 0203](0203-the-repository-automations-and-office-screens-are-removed.md)**. The agent office is gone, its 3D building and three.js with it.
 
 > **Partly superseded by [ADR 0161](0161-the-office-is-a-flat-floor-plan-with-a-design-menu-and-profiles-as-a-filter.md)** (#569). The office opens at a flat floor plan, with a Board and List beside it and this building as a fourth design in a Design menu. Profiles are a filter in the header, not floors, outside the building. `agentOffice` is `plan | board | list | building | off`, default `plan`. The building itself, its tower and its quality setting stay.
 >

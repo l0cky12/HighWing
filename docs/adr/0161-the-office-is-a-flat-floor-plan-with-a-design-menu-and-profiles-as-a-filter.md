@@ -1,6 +1,6 @@
 # The office is a flat floor plan, with a Design menu, and profiles as a filter
 
-> **Superseded by [ADR 0202](0202-the-repository-automations-and-office-screens-are-removed.md)**. The agent office is gone, with its floor plan, board, list and Design menu. A saved `agentOffice` or `officeQuality` is ignored.
+> **Superseded by [ADR 0203](0203-the-repository-automations-and-office-screens-are-removed.md)**. The agent office is gone, with its floor plan, board, list and Design menu. A saved `agentOffice` or `officeQuality` is ignored.
 
 > **Accepted** (#569). The owner picked it from the screenshots, keeping the 3D building as one of its designs. It supersedes, in ADR 0122, the tower (a floor per profile) as the way to tell profiles apart, the building as the default, the people and furniture as the default look, and the `building | list | off` setting; in ADR 0077, the one setting with three values. ADR 0122's rooms by state, its card, its rule that nothing is done from the office, and everything it reads stay. So do ADR 0077's rules on state: the inbox's word for a reply, the tree's for a subagent, Finished only on Hermes's word, and "as last seen" for what the app can't vouch for.
 

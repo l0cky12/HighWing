@@ -1,6 +1,6 @@
 # The agent office is desks drawn from the inbox and the subagent trees, read-only
 
-> **Superseded by [ADR 0202](0202-the-repository-automations-and-office-screens-are-removed.md)**. The agent office is gone, with its rail button and its setting. Nothing in the app draws desks from the inbox and the subagent trees any more.
+> **Superseded by [ADR 0203](0203-the-repository-automations-and-office-screens-are-removed.md)**. The agent office is gone, with its rail button and its setting. Nothing in the app draws desks from the inbox and the subagent trees any more.
 
 > **Partly superseded by [ADR 0161](0161-the-office-is-a-flat-floor-plan-with-a-design-menu-and-profiles-as-a-filter.md)** (#569). `agentOffice` has five values, default `plan`. The rules on state below still hold in every design.
 >

@@ -1,6 +1,6 @@
 # Removing the Repository, Automations and Office screens
 
-The native app after the three screens were removed (ADR 0202).
+The native app after the three screens were removed (ADR 0203).
 
 | File | Shows |
 | --- | --- |

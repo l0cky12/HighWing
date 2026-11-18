@@ -181,11 +181,13 @@ export class ScreenControl {
     else if (viewer && lease.viewer_hash === viewer.hash) holder = { kind: "you", since: lease.since };
     else if (lease.viewer_hash && this.held.has(lease.viewer_hash)) holder = { kind: "you-before", since: lease.since };
     else holder = { kind: "someone", since: lease.since, ...(lease.reason && { reason: lease.reason }) };
-    if (holder.kind === "you" && viewer) this.held.add(viewer.hash);
     return { profileKey: k.profileKey, holder, epoch: lease.epoch };
   }
 
   private publish() {
-    this.deps.publish(this.state());
+    const state = this.state();
+    const viewer = this.current();
+    if (state?.holder.kind === "you" && viewer) this.held.add(viewer.hash);
+    this.deps.publish(state);
   }
 }

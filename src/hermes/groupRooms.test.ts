@@ -195,6 +195,8 @@ describe("what a floor means outside the pane", () => {
     const floor = floorOf(log, state(8), []);
     expect(attentionOf(floor, log, 0)).toMatchObject({ kind: "completed", summary: "The bots are done.", needsOwner: true, at: 1763400024000 });
     expect(attentionOf(floor, log, 8)).toBeUndefined();
+    const untouched = logAfter(1);
+    expect(attentionOf(floorOf(untouched, state(1), []), untouched, 0), "a room nobody has spoken in is not done").toBeUndefined();
   });
 
   it("keeps telling of a pause, an approval and a stuck bot after they were read", () => {

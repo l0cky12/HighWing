@@ -2527,6 +2527,7 @@ export class Hermes {
    */
   setFocused(focused: boolean) {
     this.focused = focused;
+    this.groupRooms.setFocused(focused);
     if (!focused) return;
     const back = [...this.readWhenBack];
     this.readWhenBack.clear();

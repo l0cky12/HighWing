@@ -1921,6 +1921,7 @@ export function Main({
     hermes.reveal(found);
     patchPane(active.key, { chatId: found.chatId, picked: { found, at: Date.now() }, jump: undefined });
     setReopening(undefined);
+    setOpenRoom(undefined);
     rememberChat(found.chatId);
     setSearchOpen(false);
     setSettingsOpen(false);

@@ -291,6 +291,19 @@ describe("An approval in a Group room", () => {
     expect(hermes.profile).toBe("default");
   });
 
+  it("leaves the room for a chat picked in search", async () => {
+    const { user } = await launch({ room: true });
+    await user.keyboard("{Control>}k{/Control}");
+    await user.type(screen.getByPlaceholderText("Search all chats, including Archived"), "Disk");
+    const hit = await waitFor(() => {
+      const found = [...document.querySelectorAll<HTMLElement>(".hit-row")].find((r) => r.querySelector(".hit-name")?.textContent === "Disk usage");
+      expect(found, "the search lists the chat").toBeTruthy();
+      return found!;
+    });
+    await user.click(hit);
+    await waitFor(() => expect(document.querySelector("[data-room-pane]")).toBeNull());
+  });
+
   it("opens the room from its inbox entry", async () => {
     const { server, user, tray } = await launch({ room: true, script: asks });
     await say(user, "Bram approve-me please");

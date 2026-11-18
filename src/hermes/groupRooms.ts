@@ -348,6 +348,7 @@ export function attentionOf(floor: Floor, log: RoomLog, readSeq: number): Attent
     case "paused":
       return { ...base, mark: `${log.discussion?.id ?? ""} ${log.discussion?.continues ?? 0}`, summary: asked(floor.asked) ?? `The bots paused after ${floor.rounds} ${floor.rounds === 1 ? "round" : "rounds"}.` };
     case "yours":
+      if (floor.after === "nothing") return undefined;
       return { ...base, mark: "", summary: asked(floor.asked) ?? (floor.after === "failed" ? "A bot's reply failed." : "The bots are done.") };
     case "gone":
       return undefined;

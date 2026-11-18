@@ -115,6 +115,7 @@ export class GroupRoomsStore {
   private gen = 0;
   private awake = false;
   private unsupported = false;
+  private focused = true;
   private pushProven = false;
   private listDueAt?: number;
   private listRead?: Promise<void>;
@@ -261,7 +262,7 @@ export class GroupRoomsStore {
 
   private follow() {
     void this.readList();
-    for (const room of this.rooms.values()) if (room.watchers) void this.tick(room);
+    for (const room of this.rooms.values()) if (room.watchers || (room.view && FLOOR_SURFACE[room.view.floor.kind].busy)) void this.tick(room);
   }
 
   private unfollow() {
@@ -463,8 +464,19 @@ export class GroupRoomsStore {
     } catch {}
   }
 
+  setFocused(focused: boolean): void {
+    this.focused = focused;
+    if (!focused) return;
+    for (const room of this.rooms.values()) {
+      if (!room.watchers) continue;
+      this.markRead(room);
+      this.rebuild(room);
+    }
+    this.emit();
+  }
+
   private markRead(room: Tracked) {
-    if (!room.watchers || !room.live || (this.marks[room.id] ?? 0) >= room.log.seq) return;
+    if (!this.focused || !room.watchers || !room.live || (this.marks[room.id] ?? 0) >= room.log.seq) return;
     this.marks = { ...this.marks, [room.id]: room.log.seq };
     this.kept?.save(this.marks);
   }

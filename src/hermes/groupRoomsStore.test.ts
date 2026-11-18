@@ -215,6 +215,36 @@ describe("the rooms store following a room with no push", () => {
     expect(store.list()![0].attention).toMatchObject({ kind: "approval", needsOwner: true });
   });
 
+  it("goes on reading a busy room off screen after a reconnect, though its log hasn't moved", async () => {
+    const asks = (t: TurnContext): FakeTurn => (t.member === "ada" ? { approval: { command: "rm -rf /srv/tmp", description: "delete" }, then: "Done." } : { say: "ok" });
+    const { groups, store, count } = await withRoom(GROUPS_BUILDS.bf0203a, asks);
+    groups.handle("groups.send", { room_id: "r1", event_id: "elsewhere", payload: { thread_id: "main", text: "@ada run it" } });
+    await vi.advanceTimersByTimeAsync(FOLLOW_MS.list);
+    groups.step("r1");
+    await vi.advanceTimersByTimeAsync(FOLLOW_MS.unwatchedBusy);
+    expect(store.list()![0].attention?.kind).toBe("approval");
+    store.sleep();
+    store.wake();
+    const at = groups.calls.length;
+    await vi.advanceTimersByTimeAsync(FOLLOW_MS.unwatchedBusy * 2);
+    expect(count("groups.state", at), "the approval is still read after the reconnect").toBeGreaterThanOrEqual(2);
+    expect(store.list()![0]).toMatchObject({ stale: false, attention: { kind: "approval" } });
+  });
+
+  it("keeps a reply unread while the window isn't focused, and marks it read once it is", async () => {
+    const { groups, store } = await withRoom();
+    const unwatch = store.watch("r1");
+    store.setFocused(false);
+    store.say("r1", "hi");
+    await flush();
+    groups.settle("r1");
+    await vi.advanceTimersByTimeAsync(FOLLOW_MS.watchedBusy * 2);
+    expect(store.list()![0].attention, "unseen while hidden").toMatchObject({ kind: "completed", needsOwner: true });
+    store.setFocused(true);
+    expect(store.list()![0].attention, "seen once focused").toBeUndefined();
+    unwatch();
+  });
+
   it("keeps the fast rate when Hermes only says it pushes, and slows down once a push arrives", async () => {
     const { groups, store, count } = await withRoom({ ...GROUPS_BUILDS.f0d9488, saysPush: true });
     const unwatch = store.watch("r1");

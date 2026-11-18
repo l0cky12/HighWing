@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Settings → Diagnostics' Computer use section (ADR 0212), as the owner sees it, against FakeHermes's `display.status`,
+// Settings → Diagnostics' Computer use section (ADR 0215), as the owner sees it, against FakeHermes's `display.status`,
 // `-p`-sensitive `computer-use doctor` and toolsets.
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";

@@ -77,7 +77,7 @@
 // and lists (`GET /api/fs/read-text`, `GET /api/fs/list`), so a reply's paths name files a real ssh shell also finds. It
 // also puts them in the managed files (`GET /api/files`) that Server files and a project's Context card read.
 // HV_COMPUTER_USE=ready|toolset-off|degraded|human gives `default` a Bot Desktop and a server machine for Settings →
-// Diagnostics' Computer use rows (ADR 0212). `ready` (or 1) shows every row green. `toolset-off` leaves the computer_use
+// Diagnostics' Computer use rows (ADR 0215). `ready` (or 1) shows every row green. `toolset-off` leaves the computer_use
 // toolset off, `degraded` has doctor fail its X11 checks, and `human` has a person hold the screen.
 // HV_DELAY_MS=<ms> holds each /api/ answer that long, as a distant server's round trip would.
 // HV_FAIL_PATCH=<id>,<id> answers 503 to every edit (PATCH) of those sessions, as a server that fails a write does.

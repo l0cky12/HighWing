@@ -1,4 +1,4 @@
-// Whether Hermes's `computer_use` can run for the shown profile, prerequisite by prerequisite (ADR 0212). Each verdict
+// Whether Hermes's `computer_use` can run for the shown profile, prerequisite by prerequisite (ADR 0215). Each verdict
 // is Hermes's own words where it has them (doctor's check messages and hints, `display.status`'s blocker), and a coded
 // sentence of this app's where it doesn't, so the screen writes it in the owner's language.
 import { isUnavailable, type DisplayStatus, type DoctorAnswer, type ScreenApi } from "./screen";

@@ -67,7 +67,7 @@ function VerdictRow({ id, verdict, openToolsets }: { id: keyof Locale["computerU
 }
 
 /**
- * Settings → Diagnostics' Computer use section (ADR 0212): each prerequisite of Hermes's computer_use for the shown
+ * Settings → Diagnostics' Computer use section (ADR 0215): each prerequisite of Hermes's computer_use for the shown
  * profile, green or red with Hermes's own reason. Read when the connection opens or the profile changes, and on Check
  * again, which reads all of it. An answer for an earlier profile is dropped.
  */

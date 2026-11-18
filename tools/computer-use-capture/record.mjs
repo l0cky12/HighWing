@@ -1,6 +1,18 @@
 #!/usr/bin/env node
-// Records every /api/ws frame of one real Hermes turn to JSONL, so the app's computer-use parser is tested against
-// what Hermes sends rather than what its docs say. Usage: see README.md beside this file.
+// Records every /api/ws frame of one real Hermes turn to JSONL ({t, dir: in|out|note, frame} per line), so the app's
+// computer-use parser is tested against what Hermes sends rather than what its docs say (ADR 0213). fixtures.mjs then
+// cuts the recordings into src/hermes/fixtures/computer-use/. Keep recordings outside the repo: they hold full screenshots.
+//
+//   node tools/computer-use-capture/record.mjs --base http://<host>:<port> --user <name> --password-file <file> \
+//     --profile <profile> --out <recordings>/10-turn-approve.jsonl --answers once,session,deny --prompt "Use your computer_use tool ..."
+//
+//   --answers a,b,c        answers the Nth approval with the Nth choice (the last repeats), as approval.respond
+//   --take-over-after N    after the Nth computer_use result, display.observe + display.lease.acquire, as Take over does
+//   --interrupt-after N    after the Nth computer_use result, session.interrupt
+//   --cli "argv; argv"     runs each argv through cli.exec first; put -p <profile> in it, cli.exec ignores `profile`
+//   --resume <stored id>   resumes a stored session and records its history
+//   --hold-s N             takes the lease with no stream open, as Stop does, reading display.status every 15 s
+//   --timeout-s N          interrupts the turn after N seconds (default 600)
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 

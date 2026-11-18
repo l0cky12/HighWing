@@ -1,4 +1,4 @@
-// What Diagnostics' Computer use rows say (ADR 0212): `readinessOf` over the answers Hermes recorded
+// What Diagnostics' Computer use rows say (ADR 0215): `readinessOf` over the answers Hermes recorded
 // (src/hermes/fixtures/computer-use/00-readiness, 01-readiness-p) and over the answers a broken setup gives.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";

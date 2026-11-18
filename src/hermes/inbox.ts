@@ -6,6 +6,7 @@
 import { policyOf } from "./chatKind";
 import { type ScopeSource, connectionScope } from "./connections";
 import type { Handoff } from "./dispatched";
+import type { RoomSummary } from "./groupRooms";
 import type { Chat, Item, LiveSessions, OtherProfiles, Source } from "./model";
 import { isOutgoing, isQuestion, isWaiting } from "./model";
 
@@ -13,15 +14,18 @@ import { isOutgoing, isQuestion, isWaiting } from "./model";
  * `running`: a reply is being written, or the chat waits on work it handed off (`waiting`). `approval`: Hermes waits
  * for the owner's answer, or did until it stopped waiting (`ended`), or a task the chat dispatched needs the owner.
  * `failed`: a reply failed, or a message didn't go. `uncertain`: a message Hermes may not have. `completed`: a chat
- * with something new in it the owner hasn't read.
+ * with something new in it the owner hasn't read. `paused`: a Group room's bots stopped at their cap of rounds or
+ * messages, and go on only when the owner says so.
  */
-export type InboxKind = "running" | "approval" | "failed" | "uncertain" | "completed";
+export type InboxKind = "running" | "approval" | "paused" | "failed" | "uncertain" | "completed";
 
 export type InboxEntry = {
   key: string;
   kind: InboxKind;
   profile: string;
   chatId: string;
+  /** The Group room the entry is about (groupRooms.ts). A room is no chat and in no profile: both are "" then. */
+  roomId?: string;
   title: string;
   /** When it happened, Unix ms; 0 when that isn't known. A dismissed entry shows again only once this is later. */
   at: number;
@@ -70,13 +74,15 @@ export type InboxSources = {
   seen?: Map<string, number>;
   /** Each chat's dispatched work (dispatched.ts `handoffs`). */
   handoffs?: ReadonlyMap<string, Handoff>;
+  /** The connection's Group rooms, each with what its floor asks of the owner (groupRooms.ts `attentionOf`). */
+  rooms?: readonly RoomSummary[];
 };
 
 /** What a filter shows, in the order the inbox lists the kinds. */
 export const INBOX_FILTERS = {
-  all: ["approval", "failed", "uncertain", "completed", "running"],
+  all: ["approval", "paused", "failed", "uncertain", "completed", "running"],
   running: ["running"],
-  approval: ["approval"],
+  approval: ["approval", "paused"],
   failed: ["failed", "uncertain"],
   completed: ["completed"],
 } as const satisfies Record<string, readonly InboxKind[]>;
@@ -91,7 +97,7 @@ export const isFailure = (i: Item): boolean => (i.kind === "error" && i.id !== L
  * The inbox's entries, newest first within each kind, and how many live sessions couldn't be put with one chat: ones
  * outside the chats the checks read, or whose id more than one profile has.
  */
-export function inboxEntries({ profile, chats, connected, others, live, seen, handoffs }: InboxSources): { entries: InboxEntry[]; unmatched: number } {
+export function inboxEntries({ profile, chats, connected, others, live, seen, handoffs, rooms }: InboxSources): { entries: InboxEntry[]; unmatched: number } {
   const entries = new Map<string, InboxEntry>();
   const add = (e: InboxEntry) => entries.has(e.key) || entries.set(e.key, e);
 
@@ -174,6 +180,11 @@ export function inboxEntries({ profile, chats, connected, others, live, seen, ha
     }
   }
 
+  for (const r of rooms ?? []) {
+    const a = r.attention;
+    if (a) add({ key: `room ${r.id} ${a.kind} ${a.mark}`.trimEnd(), kind: a.kind, profile: "", chatId: "", roomId: r.id, title: r.name, at: a.at, summary: a.summary, stale: r.stale || !connected });
+  }
+
   const order: readonly InboxKind[] = INBOX_FILTERS.all;
   if (seen) {
     const now = Date.now();
@@ -220,9 +231,10 @@ export const needsOwner = (e: InboxEntry) => e.kind !== "running" && !e.ended;
 
 /**
  * Whether the entry is a reply or an Approval a restore must wait for. Work a chat handed off, and a dispatched task
- * that needs the owner, can last days on Hermes, and a restore doesn't touch either.
+ * that needs the owner, can last days on Hermes, and a restore doesn't touch either. Nor a Group room: Hermes runs it
+ * whether this app is open or not.
  */
-export const blocksRestore = (e: InboxEntry) => (e.kind === "running" && !e.waiting) || (e.kind === "approval" && !e.ended && !e.taskId);
+export const blocksRestore = (e: InboxEntry) => !e.roomId && ((e.kind === "running" && !e.waiting) || (e.kind === "approval" && !e.ended && !e.taskId));
 
 /** Whether the owner can dismiss the entry. Running work leaves the inbox on its own once it ends. */
 export const dismissable = (e: InboxEntry) => e.kind !== "running";

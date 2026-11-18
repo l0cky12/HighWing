@@ -39,6 +39,9 @@ import { CheckTimesStore, noOthers, OtherProfilesCheck } from "./otherProfiles";
 import { failureMark } from "./inbox";
 // Projects are Hermes's own, read and written with legacy `projects.*` (projects.ts, research doc "Projects").
 import { projectsApi, type ProjectsApi } from "./projects";
+// Group rooms are the connection's, not a profile's, so they are kept beside the snapshot, never in it (ADR 0205).
+import { memberSessionRoom } from "./groupRooms";
+import { GroupRoomsStore } from "./groupRoomsStore";
 import { STEER, askSideQuestion, listServerCommands, runServerCommand, sideAnswer, type CommandDef, type CommandResult, type ServerCommandList } from "./commands";
 import { GoalBoard, GoalWriteError, controlOf, goalAction, maxTurnsOf, readControl, setGoal, type Control, type GoalAction, type GoalDraft } from "./goals";
 import { callText, offeredSkills, runSkill, skillInvocationText, type SkillCall, type SkillCommands } from "./skillCommands";
@@ -859,6 +862,11 @@ export class Hermes {
     rpc: (method, params) => this.request(method, params),
     get: (pathAndQuery) => this.rest("GET", pathAndQuery),
   });
+  /** The connection's Group rooms (groupRoomsStore.ts, ADR 0205). Only the composer target reads them. */
+  readonly groupRooms = new GroupRoomsStore({
+    rpc: (method, params) => this.request(method, params),
+    ready: () => this.snapshot.status === "connected" && this.role === "target" && this.capabilities.get("groupRooms").state !== "unsupported",
+  });
   /** The titles chats had when the owner switched away from their profile, by `profile chatId`, for the inbox. */
   private titlesSeen = new Map<string, string>();
   /**
@@ -1319,7 +1327,10 @@ export class Hermes {
   setRole(role: Role) {
     if (this.role === role) return;
     this.role = role;
-    if (role === "target") this.pumpSoon();
+    if (role === "target") {
+      this.pumpSoon();
+      this.groupRooms.wake();
+    } else this.groupRooms.sleep();
     this.tellListeners();
   }
 
@@ -1422,6 +1433,7 @@ export class Hermes {
     this.track(told);
     // Checks start a little later, once the chat list has loaded (capabilities.ts).
     this.capabilities.connected(gen, profile, readyPayload, told);
+    this.groupRooms.wake();
   }
 
   /** Tries to connect again now, after a drop or from Offline, and keeps retrying on its own if that fails. */
@@ -1829,6 +1841,7 @@ export class Hermes {
       this.pipeProfile = undefined;
       // Nothing checked for the old profile's connection lands now; the new one checks again.
       this.capabilities.disconnected();
+      this.groupRooms.sleep();
       // Nor is any more of its running turns heard, until the owner comes back and they are resumed.
       this.recorder.drop(Date.now());
     }
@@ -1900,6 +1913,9 @@ export class Hermes {
         this.closeUnwaited(shown, Array.isArray(res?.sessions) ? res.sessions : []);
         const sessions = (Array.isArray(res?.sessions) ? res.sessions : []).flatMap((r): (LiveSession & { key: string })[] => {
           const row = obj(r);
+          // A Group room's seat answers in a hidden session of its own. The room shows that work, not a chat.
+          const room = memberSessionRoom(row?.title);
+          if (room !== undefined && this.groupRooms.has(room)) return [];
           const status = row?.status === "waiting" ? "waiting" : row?.status === "working" || row?.status === "starting" ? "working" : undefined;
           const chatId = typeof row?.session_key === "string" ? row.session_key : "";
           // A session this app started or resumed is known by its runtime id, which names its profile for sure.
@@ -4454,6 +4470,7 @@ export class Hermes {
     this.abortDial?.(new Error("Closed by the app."));
     this.generation++;
     this.capabilities.disconnected();
+    this.groupRooms.sleep();
     this.kanbanWatch.stop();
     clearTimeout(this.rosterTimer);
     clearTimeout(this.retryTimer);
@@ -4511,6 +4528,11 @@ export class Hermes {
     // Broadcast when any process changes the session store (tui_gateway/change_watcher.py).
     if (type === "sessions.changed") {
       void this.sync();
+      return;
+    }
+    // A Group room moved. The frame names no session, and only brings the store's next read forward.
+    if (type === "groups.changed") {
+      this.groupRooms.changed(payload);
       return;
     }
     if (type === "status.update") {
@@ -4961,6 +4983,7 @@ export class Hermes {
     this.heldScreen = undefined;
     this.generation++;
     this.capabilities.disconnected();
+    this.groupRooms.sleep();
     this.kanbanWatch.stop();
     clearTimeout(this.rosterTimer);
     clearInterval(this.heartbeat);

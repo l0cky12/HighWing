@@ -39,6 +39,7 @@ const NEW: Record<string, unknown> = {
   "RPC subagent.roster": { sessions: [] },
   "RPC learning.detail": { ok: false, message: "skill '__hermes_chat_probe__' not found" },
   "RPC profiles.list": { profiles: [{ name: "default", is_default: true, canonical_session: null }], bot_mode_protocol: true },
+  "RPC groups.list": { rooms: [], next_offset: null },
   "GET api/tools/toolsets": [],
   "GET api/profiles/default/soul": { content: "", exists: false },
   "GET api/profiles": { profiles: [{ name: "default", is_default: true }] },
@@ -68,6 +69,7 @@ const OLD: Record<string, unknown> = {
   "RPC projects.list": noMethod("projects.list"),
   "RPC learning.detail": noMethod("learning.detail"),
   "RPC profiles.list": noMethod("profiles.list"),
+  "RPC groups.list": noMethod("groups.list"),
   "RPC subagent.roster": noMethod("subagent.roster"),
   "RPC session.control.read": noMethod("session.control.read"),
   "GET api/files": noRoute(),
@@ -130,7 +132,7 @@ describe("the capability contract", () => {
   });
 
   it("checks only by reading: a GET, or a JSON-RPC method that only reads", () => {
-    const reads = new Set(["projects.list", "commands.catalog", "session.control.read", "session.active_list", "learning.detail", "profiles.list", "subagent.roster", "rollback.list"]);
+    const reads = new Set(["projects.list", "commands.catalog", "session.control.read", "session.active_list", "learning.detail", "profiles.list", "groups.list", "subagent.roster", "rollback.list"]);
     for (const c of CAPABILITIES) {
       if (!c.probe) continue;
       if (c.probe.kind === "rpc") expect(reads.has(c.probe.method), c.id).toBe(true);
@@ -173,6 +175,7 @@ describe("a check of a new Hermes (upstream 74b2ed6)", () => {
       workReclaim: "unknown",
       workReassign: "unknown",
       botMode: "supported",
+      groupRooms: "supported",
       // Only a chat's own subagent.list can learn this.
       subagents: "unknown",
       subagentRoster: "supported",
@@ -202,7 +205,7 @@ describe("a check of a new Hermes (upstream 74b2ed6)", () => {
   it("sends nothing that writes", async () => {
     const t = store(NEW);
     await connectAndCheck(t);
-    expect(t.calls.every((c) => c.startsWith("GET ") || /^RPC (gateway\.capabilities|projects\.list|commands\.catalog|session\.control\.read|session\.active_list|learning\.detail|profiles\.list|subagent\.roster|rollback\.list)$/.test(c))).toBe(true);
+    expect(t.calls.every((c) => c.startsWith("GET ") || /^RPC (gateway\.capabilities|projects\.list|commands\.catalog|session\.control\.read|session\.active_list|learning\.detail|profiles\.list|groups\.list|subagent\.roster|rollback\.list)$/.test(c))).toBe(true);
   });
 });
 
@@ -223,6 +226,7 @@ describe("a check of an old Hermes (0.16.0)", () => {
       serverFiles: "unsupported",
       outputs: "unsupported",
       botMode: "unsupported",
+      groupRooms: "unsupported",
       subagentRoster: "unsupported",
       standingMissions: "unsupported",
       toolsets: "supported",

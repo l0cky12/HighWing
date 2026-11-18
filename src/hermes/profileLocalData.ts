@@ -79,6 +79,7 @@ export const SCOPED_DOCS: readonly string[] = [
  * swapped in files (`files` below); their keys here are their browser stand-ins.
  */
 export const NOT_PER_PROFILE: Record<string, string> = {
+  "hermes-chat.group-rooms-read.": "How far each Group room was read, by room id: a room is the connection's, in no profile",
   "hermes-chat.appearance": "The look of the app, the same for every connection",
   "hermes-chat.connections": "The saved connections themselves",
   "hermes-chat.sign-in": "The single sign-in kept before saved connections, moved into them once",

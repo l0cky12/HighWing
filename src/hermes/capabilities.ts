@@ -25,6 +25,7 @@ import { errorText, isObj } from "./values";
 import type { AppMethod } from "./canonicalVerbs";
 import type { PlainMethod } from "./sessionProtocol";
 import { listServerCommands } from "./commands";
+import { isRoomList } from "./groupRooms";
 
 /** The features whose server support is tracked. */
 export type CapabilityId =
@@ -54,6 +55,7 @@ export type CapabilityId =
   | "workReclaim"
   | "workReassign"
   | "botMode"
+  | "groupRooms"
   | "subagents"
   | "subagentRoster"
   | "modelUsage"
@@ -603,6 +605,18 @@ export const CAPABILITIES: readonly CapabilitySpec[] = [
     // Only a roster whose rows report their Bot Chat counts: an older profiles.list has no Bot Mode.
     probe: { kind: "rpc", method: "profiles.list", params: () => ({}), shape: botRoster, lacks: rosterWithoutBotChats },
     methods: ["profiles.list"],
+  },
+  {
+    id: "groupRooms",
+    label: "Group rooms",
+    usedBy: "Group rooms in the chat list's Bots mode",
+    needs: "The groups.* methods on /api/ws, and Hermes's room worker running in the dashboard.",
+    without: "Bots mode has no Group rooms section.",
+    anchor: "group-rooms",
+    // Never `groups.capabilities`: its first call writes a secret file on the server (ADR 0044, ADR 0205).
+    probe: { kind: "rpc", method: "groups.list", params: () => ({ limit: 1 }), shape: isRoomList },
+    methods: ["groups.list"],
+    writeMethods: /^groups\.(?!list$|state$|log$)/,
   },
   {
     id: "subagents",

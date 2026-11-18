@@ -1076,14 +1076,14 @@ type CompareSide = { pane: string; chatId: string | null; model?: ModelPick };
 type Compare = readonly [CompareSide, CompareSide];
 
 /**
- * A bot visit (ADR 0203): a bot in another profile opened from Bots mode. The owner's chats stay on `home`, where the
+ * A bot visit (ADR 0204): a bot in another profile opened from Bots mode. The owner's chats stay on `home`, where the
  * active pane showed `before`.
  */
 type BotVisit = { home: string; before: string | null };
 
 /**
  * What opens once the profile switched to has listed its chats, unless the owner goes elsewhere first (`nav`): a bot's
- * Bot Chat (ADR 0066), the New chat pane, or the chat a bot visit left (ADR 0203).
+ * Bot Chat (ADR 0066), the New chat pane, or the chat a bot visit left (ADR 0204).
  */
 type Arrival = { profile: string; nav: number } & ({ open: "bot"; bot: Bot; opening?: boolean } | { open: "new" } | { open: "chat"; chatId: string });
 
@@ -2168,7 +2168,7 @@ export function Main({
   };
 
   // The other profile's chats replace the list, so one pane stays, on a fresh draft. The profile left keeps its last
-  // open chat for the next launch. A switch is a bot visit only when `visit` says so; any other ends one (ADR 0203).
+  // open chat for the next launch. A switch is a bot visit only when `visit` says so; any other ends one (ADR 0204).
   const switchProfileNow = (name: string, { keepSettings = false, visit: visiting }: { keepSettings?: boolean; visit?: BotVisit } = {}) => {
     navGen.current++;
     const keep = activeKeyRef.current;
@@ -2327,7 +2327,7 @@ export function Main({
     beforeBotChat.current = null;
   }, [profile]);
   const onBotChat = !!shownChat && isBotChat(shownChat);
-  /** `visiting`: what becomes of a bot visit (ADR 0203); none ends it, here or with the switch to the bot's profile. */
+  /** `visiting`: what becomes of a bot visit (ADR 0204); none ends it, here or with the switch to the bot's profile. */
   const openBot = (b: Bot, then: "open" | "new", visiting?: BotVisit) => {
     guard(() => {
       if (then === "open" && b.profile === profile && !onBotChat) beforeBotChat.current = active.chatId;
@@ -2360,7 +2360,7 @@ export function Main({
   // eslint-disable-next-line react-hooks/exhaustive-deps -- run when the pick, profile or list changes; `newChat` and `openChat` are new functions each render and would run it on every render
   }, [arrival, profile, switching, chats]);
 
-  // A bot visit (ADR 0203). A bot row in Bots mode whose profile isn't shown starts one, or carries one on, and the
+  // A bot visit (ADR 0204). A bot row in Bots mode whose profile isn't shown starts one, or carries one on, and the
   // owner's own bot ends it there. Chats and New chat go back to `home`; an ordinary chat of the bot's profile on screen
   // makes that profile the owner's, and so does All N chats. The next launch opens on `home` while a visit lasts.
   const visitBot = (b: Bot) =>
@@ -3225,7 +3225,7 @@ export function Main({
       setToast({ text, ...(copy && { action: copy }), lasting: n.tone === "bad", at: Date.now() });
     },
   };
-  // Bots mode's New bot, Reload and row menu (ADR 0194, ADR 0203): the dialogs are drawn outside the list panel, so a
+  // Bots mode's New bot, Reload and row menu (ADR 0194, ADR 0204): the dialogs are drawn outside the list panel, so a
   // delete that switches away from the open bot's profile finishes.
   const botActions = useBotActions({
     profiles: profilesWiring,

@@ -1,4 +1,4 @@
-// Settings → Model → Writing model (ADR 0203): the model that writes personas and project instructions for every bot
+// Settings → Model → Writing model (ADR 0204): the model that writes personas and project instructions for every bot
 // with no model pinned on the server, kept on this computer for the connection, and which model each bot writes with.
 // Picking one writes nothing to Hermes; a bot's config gets its copy at that bot's next writing call (writingModel.ts).
 import { useEffect, useId, useState, useSyncExternalStore } from "react";

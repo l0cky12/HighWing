@@ -27,7 +27,7 @@ export const TEXT_TASK = "title_generation";
 export const INSTRUCTIONS_TASK = "project_instructions";
 /**
  * The helper task this app owns in every profile's config: a mirror of the app's Writing model (writingModel.ts,
- * ADR 0203), never read as a setting. Hermes has no slot for it either.
+ * ADR 0204), never read as a setting. Hermes has no slot for it either.
  */
 export const WRITING_TASK = "highwing_writing";
 

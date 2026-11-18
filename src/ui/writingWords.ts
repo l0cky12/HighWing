@@ -1,5 +1,5 @@
 // The words for which model writes a persona or project instructions, and why it failed, from the route it took
-// (writingModel.ts, ADR 0203).
+// (writingModel.ts, ADR 0204).
 import { shortName } from "../hermes/models";
 import { hermesCommand, missingSignIn } from "../hermes/transport";
 import type { WritingFailed, WritingRoute } from "../hermes/writingModel";

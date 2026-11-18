@@ -86,7 +86,7 @@ export type UIPrefs = {
   keybindings: Record<string, string[]>;
   /**
    * The Writing model per connection, keyed by `connectionScope` (provider and model slugs are a server's own). No
-   * entry: not set, so a bot with no model pinned on the server writes with its own main model (ADR 0203).
+   * entry: not set, so a bot with no model pinned on the server writes with its own main model (ADR 0204).
    */
   writingModels: Record<string, WritingPick>;
 };

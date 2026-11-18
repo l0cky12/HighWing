@@ -4364,7 +4364,7 @@ export class Hermes {
   }
 
   /**
-   * The owner's own profile while a bot visit (ADR 0203) shows another one, or none: the next launch opens on `home`,
+   * The owner's own profile while a bot visit (ADR 0204) shows another one, or none: the next launch opens on `home`,
    * not on the profile shown. With none, the profile shown is the one remembered again, once it has listed.
    */
   setVisitHome(home: string | undefined): void {

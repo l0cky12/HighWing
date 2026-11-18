@@ -129,8 +129,8 @@ Removing a profile's folder from the server, from Settings → Profiles, after i
 _Avoid_: remove (removing a connection keeps the server's profiles), archive
 
 **Bot Mode**:
-Hermes's way of treating each profile as a bot with a lasting identity, each with one Bot Chat. The chat list's Bots mode shows it. A Hermes without Bot Mode has no Bots tab, and Connection diagnostics says why (ADR 0066, ADR 0203).
-_Avoid_: agents mode, roster (Hermes's desktop calls its list that, but here it is Bots mode), Bots view (the screen Bots mode replaced, ADR 0203)
+Hermes's way of treating each profile as a bot with a lasting identity, each with one Bot Chat. The chat list's Bots mode shows it. A Hermes without Bot Mode has no Bots tab, and Connection diagnostics says why (ADR 0066, ADR 0204).
+_Avoid_: agents mode, roster (Hermes's desktop calls its list that, but here it is Bots mode), Bots view (the screen Bots mode replaced, ADR 0204)
 
 **Bot**:
 A profile as the chat list's Bots mode shows it: its name, picture and description, from Hermes. The profile switcher, a Bot Chat's header and the message box name a profile by its bot (ADR 0195). Its row shows its Bot Chat's last message, and whether it is Replying or Needs you; its name's tip is its description. Clicking the row opens its Bot Chat, a Bot visit when the bot is in another profile; the pen beside it starts an ordinary chat in that profile. New bot (+) above the bots makes one: a new profile, through the New profile form (ADR 0164, ADR 0203). That form can rewrite a rough persona with AI and choose the built-in skills and toolsets the bot starts with, each read back after the create (ADR 0197). The row's menu (a right-click, Shift+F10 or the Menu key) has Chat, Settings (Edit bot), Edit persona… (Edit bot with focus in Persona, ADR 0206), Clone, Pin, Hide and Delete (ADR 0189, ADR 0194, ADR 0203).
@@ -157,11 +157,11 @@ A bot's one chat that always continues: the profile's chat titled exactly "Bot C
 _Avoid_: forever chat, canonical chat, DM, main chat
 
 **Chats mode** / **Bots mode** (of the chat list):
-What the chat list panel shows, picked with the switch at its top: the shown profile's chats, or the bots. The owner picks the mode and it is kept across restarts; opening a chat, New chat and a profile switch leave it as it is. Ctrl+Shift+B flips it. The tab that isn't shown says what waits there: the Inbox's count, or how many bots in other profiles need the owner. Chats mode names a bot in another profile that needs the owner. Bots mode keeps New chat and Search above the bots, then New bot and Reload, and lists the shown profile's chats under its bot (ADR 0195, ADR 0203). A right-click on a bot there opens its menu (ADR 0194). A Hermes without Bot Mode has no switch.
+What the chat list panel shows, picked with the switch at its top: the shown profile's chats, or the bots. The owner picks the mode and it is kept across restarts; opening a chat, New chat and a profile switch leave it as it is. Ctrl+Shift+B flips it. The tab that isn't shown says what waits there: the Inbox's count, or how many bots in other profiles need the owner. Chats mode names a bot in another profile that needs the owner. Bots mode keeps New chat and Search above the bots, then New bot and Reload, and lists the shown profile's chats under its bot (ADR 0195, ADR 0204). A right-click on a bot there opens its menu (ADR 0194). A Hermes without Bot Mode has no switch.
 _Avoid_: Bot Mode (that is Hermes's feature), bot mode (its name while it followed the open chat, ADR 0066), bots sidebar
 
 **Bot visit**:
-A bot in another profile opened from Bots mode. The app switches to the bot's profile, since its Bot Chat opens only there, and keeps the profile the owner's chats are on and the chat they were in. Picking Chats or New chat goes back there, and the next launch opens there. Any other way to another profile, an ordinary chat of the bot's profile, or All N chats under the bot makes the bot's profile the owner's, and the visit ends (ADR 0203).
+A bot in another profile opened from Bots mode. The app switches to the bot's profile, since its Bot Chat opens only there, and keeps the profile the owner's chats are on and the chat they were in. Picking Chats or New chat goes back there, and the next launch opens there. Any other way to another profile, an ordinary chat of the bot's profile, or All N chats under the bot makes the bot's profile the owner's, and the visit ends (ADR 0204).
 _Avoid_: peek, temporary switch
 
 **Connection**:
@@ -441,7 +441,7 @@ A model the owner starred in the model picker. Favorites are listed first, and a
 _Avoid_: pinned model (pinning is how Hermes stores Active, ADR 0002)
 
 **Writing model**:
-The model that writes a bot's persona (Write and Improve with AI on Settings → Persona, Generate with AI in New bot) and its project instructions, picked in Settings → Model and kept on this computer for one connection. For each call the bot's own pin on the server wins: its Text generation model when one is picked, and for project instructions its Project instructions model first. Only a bot with neither uses the Writing model; with no Writing model set, it writes with its own main model. Highwing copies the Writing model into a bot's config (`auxiliary.highwing_writing`) the first time it writes for that bot, and again after it changes; it never changes the bot's Text generation model, so chat titles don't move. Profile descriptions (Write for me) are outside it: the server's Profile descriptions model on the default profile writes them (ADR 0203).
+The model that writes a bot's persona (Write and Improve with AI on Settings → Persona, Generate with AI in New bot) and its project instructions, picked in Settings → Model and kept on this computer for one connection. For each call the bot's own pin on the server wins: its Text generation model when one is picked, and for project instructions its Project instructions model first. Only a bot with neither uses the Writing model; with no Writing model set, it writes with its own main model. Highwing copies the Writing model into a bot's config (`auxiliary.highwing_writing`) the first time it writes for that bot, and again after it changes; it never changes the bot's Text generation model, so chat titles don't move. Profile descriptions (Write for me) are outside it: the server's Profile descriptions model on the default profile writes them (ADR 0204).
 _Avoid_: text model, title model (that is Text generation, which names chats), default model
 
 **Setup**:

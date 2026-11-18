@@ -601,7 +601,7 @@ export const en = {
     },
   },
   /**
-   * Which model writes a persona or project instructions, and why it failed (writingModel.ts, ADR 0203). `model` is
+   * Which model writes a persona or project instructions, and why it failed (writingModel.ts, ADR 0204). `model` is
    * "provider · model".
    */
   writing: {

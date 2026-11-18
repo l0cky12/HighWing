@@ -369,7 +369,7 @@ export function SettingsScreen({
   /** Set, each time anew, to show the Model tab at the Text generation model: from a title that couldn't be regenerated. */
   showTextGeneration?: object;
   /**
-   * The Writing model (ADR 0203): the connection's writing desk while connected, where its pick is kept, and, set anew
+   * The Writing model (ADR 0204): the connection's writing desk while connected, where its pick is kept, and, set anew
    * each time, `show` opens the Model tab at it, from a writing call that failed on it.
    */
   writing?: { desk?: WritingDesk; scope: string; show?: object };

@@ -326,6 +326,20 @@ describe("Stop during a computer-use turn", () => {
     expect(server.display!.lease.holder).toBe("human");
   });
 
+  it("takes no screen when Send now stops the reply to send a queued message", async () => {
+    const { server, hermes, id, chat, rid } = await started();
+    const { turn, next } = paused(server, rid);
+    await until(() => chat().items.some((i) => i.kind === "tool"));
+    expect(hermes.enqueue(id, "Open the browser instead")).toBeUndefined();
+    await hermes.sendQueuedNow(id, hermes.getSnapshot().queues[id].items[0].id, "the agent is busy");
+    await until(() => interrupts(server).length > 0);
+    next();
+    await turn;
+    expect(interrupts(server)).toEqual([{ session_id: rid }]);
+    expect(screenAsks(server)).toEqual([]);
+    expect(server.display!.lease.holder).toBe("agent");
+  });
+
   it("the panic Stop takes the screen with no reply running, and says when there is no screen to take", async () => {
     const { server, hermes } = await started();
     expect(await hermes.stopScreen()).toEqual({ stopped: [], hold: { kind: "held" } });

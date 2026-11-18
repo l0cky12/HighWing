@@ -3725,9 +3725,10 @@ export class Hermes {
     }
     if (!chat?.runtimeId || route !== "steer") {
       this.rushNext(chatId, id);
-      // A chat not loaded yet is loaded first, since only loading finds out whether a reply runs there to stop.
+      // A chat not loaded yet is loaded first, since only loading finds out whether a reply runs there to stop. The
+      // screen stays Hermes's: the message sent next may need it.
       void this.resume(chatId).then(
-        () => (this.snapshot.queues[chatId]?.rush?.id === id ? this.stop(chatId) : undefined),
+        () => (this.snapshot.queues[chatId]?.rush?.id === id ? this.interrupt(chatId) : undefined),
         (e) => this.profile === profile && this.pauseQueueFor(chatId, notLoaded(e)),
       );
       return undefined;

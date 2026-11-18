@@ -1,7 +1,7 @@
 // Transcript, thinking, tool-call groups, Approval cards, find bar and composer, ported from the prototype.
 // Dictation and Read aloud come from Voice.tsx.
-import { createContext, Fragment, memo, type ReactNode, type RefObject, useCallback, startTransition, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
-import { Archive, ArchiveRestore, ArrowUp, AtSign, Brain, CalendarClock, PackageCheck, SquareTerminal, Camera, ChevronDown, ChevronRight, ChevronUp, CircleAlert, CloudOff, Columns2, CornerDownRight, FileDown, FileInput, Globe, HardDrive, Link2, ListPlus, Ellipsis, Paperclip, RotateCcw, Search, Server, Share2, Square, Trash2, Wrench, X } from "lucide-react";
+import { createContext, Fragment, memo, type HTMLAttributes, type ReactNode, type RefObject, useCallback, startTransition, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
+import { Archive, ArchiveRestore, ArrowUp, AtSign, Bot, Brain, CalendarClock, PackageCheck, Reply, Send, SquareTerminal, Camera, ChevronDown, ChevronRight, ChevronUp, CircleAlert, CloudOff, Columns2, CornerDownRight, FileDown, FileInput, Globe, HardDrive, Link2, ListPlus, Ellipsis, Paperclip, RotateCcw, Search, Server, Share2, Square, Trash2, Wrench, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { decodeString } from "micromark-util-decode-string";
@@ -18,6 +18,7 @@ import { ApprovalCard } from "./ApprovalCard";
 import { QuestionCard } from "./QuestionCard";
 import { Menu, PinItem, type ChatPin } from "./ChatMenu";
 import { isBotChat } from "../hermes/bots";
+import { agentSend, type AgentSend } from "../hermes/agentMessages";
 import { policyOf } from "../hermes/chatKind";
 import { DeleteChatDialog } from "./DeleteChat";
 import { ExportChatDialog, type ExportMode } from "./ExportChat";
@@ -89,7 +90,10 @@ const toldWhy = new Set<string>();
 
 type ToolItem = Extract<Item, { kind: "tool" }>;
 type ThinkingItem = Extract<Item, { kind: "thinking" }>;
-type Block = { kind: "tools"; id: string; tools: ToolItem[] } | Exclude<Item, ToolItem>;
+/** A `message_agent` call (ADR 0205): out of the tool group, where the owner reads what the bot told its teammate. */
+type SentBlock = { kind: "sent"; id: string; tool: ToolItem; send: AgentSend };
+type Block = { kind: "tools"; id: string; tools: ToolItem[] } | SentBlock | Exclude<Item, ToolItem>;
+const isItem = (b: Block): b is Exclude<Item, ToolItem> => b.kind !== "tools" && b.kind !== "sent";
 type SideBlock = { kind: "side"; id: string; question: SideQuestion };
 
 // Consecutive tool calls collapse into one group so a long run doesn't dominate the transcript. Each side question
@@ -103,7 +107,10 @@ function toBlocks(items: Item[], side: SideQuestion[] = []): (Block | SideBlock)
   for (const it of items) {
     const last = out[out.length - 1];
     if (it.kind === "tool") {
-      if (last?.kind === "tools") last.tools.push(it);
+      // A call stopped before Hermes answered it may have sent nothing, so it stays a tool row.
+      const send = it.status === "stopped" ? undefined : agentSend(it);
+      if (send) out.push({ kind: "sent", id: it.id, tool: it, send });
+      else if (last?.kind === "tools") last.tools.push(it);
       else out.push({ kind: "tools", id: `g-${it.id}`, tools: [it] });
     } else out.push(it);
     sideAfter(it.id);
@@ -120,12 +127,15 @@ function mayMatch(block: Block, finds: RegExp) {
   if (block.kind === "assistant")
     return finds.test(block.text) || finds.test(decodeString(block.text)) || block.text.includes("[^");
   if (block.kind === "returned") return finds.test(`${block.title ?? ""}\n${block.body}`) || finds.test(decodeString(block.body));
+  if (block.kind === "sent") return finds.test(block.send.text) || finds.test(decodeString(block.send.text));
   return (block.kind === "user" || block.kind === "thinking") && finds.test(block.text);
 }
 
 // A group is rebuilt on every render, so it counts as unchanged when it holds the same tool calls.
 const sameBlock = (a: Block, b: Block) =>
-  a === b || (a.kind === "tools" && b.kind === "tools" && a.tools.length === b.tools.length && a.tools.every((t, i) => t === b.tools[i]));
+  a === b ||
+  (a.kind === "tools" && b.kind === "tools" && a.tools.length === b.tools.length && a.tools.every((t, i) => t === b.tools[i])) ||
+  (a.kind === "sent" && b.kind === "sent" && a.tool === b.tool);
 // A side question's block is rebuilt too, so it counts as unchanged when it holds the same question.
 const sameChunkBlock = (a: Block | SideBlock, b: Block | SideBlock) =>
   a.kind === "side" ? b.kind === "side" && a.question === b.question : b.kind !== "side" && sameBlock(a, b);
@@ -878,7 +888,7 @@ export function ChatPane({
     let has: (b: Block | SideBlock) => boolean;
     if (jumping.callId !== undefined) {
       const callId = jumping.callId;
-      has = (b) => b.kind === "tools" && b.tools.some((t) => t.callId === callId);
+      has = (b) => (b.kind === "tools" && b.tools.some((t) => t.callId === callId)) || (b.kind === "sent" && b.tool.callId === callId);
     } else {
       const { rowId, turn } = jumping;
       const id =
@@ -1095,7 +1105,7 @@ export function ChatPane({
               q={q}
               finds={finds}
               offline={status !== "connected" || !!chat.loading}
-              movedAt={waiting && c.some((b) => b.kind !== "side" && b.kind !== "tools" && isWaiting(b)) ? movedAt : 0}
+              movedAt={waiting && c.some((b) => b.kind !== "side" && isItem(b) && isWaiting(b)) ? movedAt : 0}
               onAnswer={answer}
               onQuestion={question}
               listen={listen}
@@ -1389,6 +1399,7 @@ const BlockView = memo(
       return <ApprovalCard item={block} offline={offline} movedAt={movedAt} onAnswer={(c, confirmed) => onAnswer(block.id, c, confirmed)} />;
     if (block.kind === "clarify" || block.kind === "sudo" || block.kind === "secret")
       return <QuestionCard item={block} offline={offline} movedAt={movedAt} onAnswer={(a) => onQuestion(block.id, a)} />;
+    if (block.kind === "sent") return <SentCard block={block} query={query} />;
     return <ToolGroup tools={block.tools} />;
   },
   (a, b) =>
@@ -1485,7 +1496,7 @@ const TranscriptChunk = memo(
                   live={b.id === live}
                   query={finds && mayMatch(b, finds) ? q : ""}
                   offline={offline}
-                  movedAt={b.kind !== "tools" && isWaiting(b) ? movedAt : 0}
+                  movedAt={isItem(b) && isWaiting(b) ? movedAt : 0}
                   onAnswer={onAnswer}
                   onQuestion={onQuestion}
                   listen={b.kind === "assistant" ? listen : undefined}
@@ -1605,30 +1616,93 @@ function Thought({ item, live, query }: { item: ThinkingItem; live: boolean; que
 }
 
 /**
- * A Returned result (ADR 0175): open from the start, so the owner sees what came back, and closed or opened again by its
- * header. A subagent's answer shows as a reply does; a process's output as a log.
+ * A card on Hermes's side of the transcript: open from the start, so the owner sees what it holds, and closed or opened
+ * again by its header. `tips`: the header's tooltip, open and closed. `note`: a few words beside the title.
  */
-function ReturnedCard({ item, query, date }: { item: Extract<Item, { kind: "returned" }>; query: string; date: boolean }) {
-  const l = useLocale().chat.returned;
+function TurnCard({
+  kind = "",
+  icon,
+  heading,
+  note,
+  tips,
+  children,
+  ...rest
+}: { kind?: string; icon: ReactNode; heading: ReactNode; note?: string; tips: { hide: string; show: string }; children: ReactNode } & HTMLAttributes<HTMLDivElement>) {
   const [open, setOpen] = useState(true);
-  const Icon = item.process ? SquareTerminal : PackageCheck;
   return (
-    <div className={`msg returned${item.process ? " process" : ""}`} data-item={item.id} data-at={item.at}>
-      <button className="returned-head" aria-expanded={open} title={open ? l.hide : l.show} onClick={() => setOpen((o) => !o)}>
-        <Icon size={14} aria-hidden />
-        <span className="returned-title">{highlight(item.title ?? (item.process ? l.process : l.work), query)}</span>
+    <div className={`msg returned ${kind}`.trimEnd()} {...rest}>
+      <button className="returned-head" aria-expanded={open} title={open ? tips.hide : tips.show} onClick={() => setOpen((o) => !o)}>
+        {icon}
+        <span className="returned-title">{heading}</span>
+        {note && <span className="returned-note">{note}</span>}
         <ChevronRight size={13} className={`chev ${open ? "open" : ""}`} aria-hidden />
       </button>
-      {open &&
-        (item.process ? (
-          <pre className="returned-body returned-log">{highlight(item.body, query)}</pre>
-        ) : (
-          <div className="returned-body msg assistant">
-            <Markdown text={item.body} query={query} />
-          </div>
-        ))}
-      {date && <StoredTime at={item.at} />}
+      {open && children}
     </div>
+  );
+}
+
+/**
+ * A Returned result (ADR 0175). A subagent's answer shows as a reply does; a process's output as a log. With Bot
+ * messaging (ADR 0205) it is a teammate's message to this bot, or the answer to one this bot sent: who it is from,
+ * or Hermes's own sentence for how the delivery ended, leads the card. Names and Hermes's sentences are data.
+ */
+function ReturnedCard({ item, query, date }: { item: Extract<Item, { kind: "returned" }>; query: string; date: boolean }) {
+  const l = useLocale().chat;
+  const { agent } = item;
+  const from = agent?.kind === "from" ? agent.teammate : undefined;
+  const Icon = agent?.kind === "from" ? Bot : agent ? (agent.status === "settled" ? Reply : CircleAlert) : item.process ? SquareTerminal : PackageCheck;
+  const fallback = agent?.kind === "from" ? l.agent.fromHermes : agent ? l.agent.noAnswer : item.process ? l.returned.process : l.returned.work;
+  return (
+    <TurnCard
+      kind={item.process ? "process" : ""}
+      icon={<Icon size={14} aria-hidden />}
+      heading={from ? l.agent.from(from.name, from.handle) : item.title ? <span translate="no">{highlight(item.title, query)}</span> : fallback}
+      tips={agent?.kind === "from" ? l.agent : l.returned}
+      data-item={item.id}
+      data-at={item.at}
+    >
+      {item.process ? (
+        <pre className="returned-body returned-log">{highlight(item.body, query)}</pre>
+      ) : (
+        <div className="returned-body msg assistant" translate={agent ? "no" : undefined}>
+          <Markdown text={item.body} query={query} />
+        </div>
+      )}
+      {date && <StoredTime at={item.at} />}
+    </TurnCard>
+  );
+}
+
+/**
+ * A message this bot sent a teammate with Hermes's `message_agent` (ADR 0205), as a card with the message in it.
+ * It carries the call's id, so Jump to call lands on it as on a tool row.
+ */
+function SentCard({ block, query }: { block: SentBlock; query: string }) {
+  const l = useLocale().chat.agent;
+  const { tool, send } = block;
+  const refused = send.ack?.kind === "refused" ? send.ack.why : undefined;
+  const running = tool.status === "running";
+  return (
+    <TurnCard
+      kind="sent"
+      icon={running ? <Spinner /> : refused ? <CircleAlert size={14} aria-hidden /> : <Send size={14} aria-hidden />}
+      heading={running ? l.sending(send.to) : refused ? l.notSent(send.to) : l.sent(send.to)}
+      note={send.ack?.kind === "queued" ? l.queued : undefined}
+      tips={l}
+      data-item={tool.id}
+      data-call={tool.callId}
+      tabIndex={tool.callId ? -1 : undefined}
+    >
+      {refused && (
+        <p className="returned-why" translate="no">
+          {refused}
+        </p>
+      )}
+      <div className="returned-body msg assistant" translate="no">
+        <Markdown text={send.text} query={query} />
+      </div>
+    </TurnCard>
   );
 }
 

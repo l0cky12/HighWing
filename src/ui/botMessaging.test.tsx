@@ -1,13 +1,16 @@
 // @vitest-environment jsdom
 // Bot messaging (ADR 0205) in the real app against FakeHermes as Hermes 0.23.2 on a headless gateway: the switch above
-// the bots turns Hermes's `message_agent` on, shown only as read back. All data is synthetic.
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+// the bots turns Hermes's `message_agent` on, shown only as read back, and each Bot Chat shows its side of a message
+// between two bots as a card on Hermes's side. Every new word comes from the catalogue. All data is synthetic.
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { BOT_CHAT_TITLE } from "../hermes/bots";
 import { FakeHermes, row } from "../hermes/fakeHermes";
 import { memoryCache } from "../hermes/memoryCache";
 import { connect, type Hermes } from "../hermes/transport";
+import { LocaleContext, type Locale } from "../i18n/locale";
+import { pseudoLocale, untranslated } from "../i18n/pseudo";
 import { Main } from "../App";
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }));
@@ -26,10 +29,12 @@ afterEach(async () => {
   for (const server of servers.splice(0)) expect(server.uncheckedConfigures()).toEqual([]);
 });
 
+const ASK = "What is the **backup window**?";
+const REPLIES = { recipient: "The window is 02:00 to 03:00.", sender: "Quill says 02:00 to 03:00." };
 let launches = 0;
 
 /** Signed in to a headless Hermes 0.23.2: the default profile and Quill, each with a Bot Chat, and no Bot Mode block. */
-async function launch(setup: (server: FakeHermes) => void = () => {}) {
+async function launch(setup: (server: FakeHermes) => void = () => {}, locale?: Locale) {
   const server = new FakeHermes();
   server.health = { ...server.health, version: "0.23.2", displayVersion: "0.23.2" };
   server.sessions = [row("hermes-bot", 1, { title: BOT_CHAT_TITLE, hidden: true })];
@@ -39,7 +44,8 @@ async function launch(setup: (server: FakeHermes) => void = () => {}) {
   servers.push(server);
   const hermes = await connect(server.openPipe, undefined, memoryCache());
   running.push(hermes);
-  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: `lena@messaging-${++launches}`, url: "", username: "lena" }} onSignOut={async () => {}} />);
+  const app = <Main hermes={hermes} connection={{ mode: "ssh", sshTarget: `lena@messaging-${++launches}`, url: "", username: "lena" }} onSignOut={async () => {}} />;
+  render(locale ? <LocaleContext value={locale}>{app}</LocaleContext> : app);
   await waitFor(() => expect(hermes.hasListed()).toBe(true));
   await act(async () => void (await hermes.idle()));
   await act(async () => void (await hermes.checkOtherProfiles()));
@@ -53,6 +59,10 @@ const toggle = () => document.querySelector<HTMLButtonElement>(".sb-bots [role=s
 const tip = () => toggle().closest<HTMLElement>("[title]")!.title;
 const toast = () => document.querySelector<HTMLElement>(".toast")?.textContent;
 const configures = (server: FakeHermes) => server.requests.filter((r) => r.method === "profiles.configure");
+const botRow = (profile: string) => document.querySelector<HTMLElement>(`.sb-bots .bots-row[data-profile="${profile}"] .bots-open`)!;
+const cards = () => Array.from(document.querySelectorAll<HTMLElement>(".msg.returned"));
+/** A card's header and what it holds. The stored time under it is drawn by the pane, which isn't converted yet. */
+const said = (card: HTMLElement) => Array.from(card.querySelectorAll(".returned-head, .returned-why, .returned-body")).flatMap(untranslated);
 const pinned = (s: FakeHermes) => void (s.profileMeta.quill = { ui_meta: { "hermes-bots": { title: "Quill", pinned: true } } });
 
 describe("Bot messaging's switch", () => {
@@ -116,5 +126,68 @@ describe("Bot messaging's switch", () => {
     await waitFor(() => expect(toggle().disabled).toBe(true));
     expect(tip()).toBe(why);
     expect(toggle().getAttribute("aria-checked")).toBe("false");
+  });
+});
+
+/** Switches it on, opens the default bot's Bot Chat, has it message Quill, and waits for the answer's reply. */
+async function delivered(locale?: Locale) {
+  const launched = await launch(undefined, locale);
+  const { server, hermes, user } = launched;
+  await user.click(toggle());
+  await waitFor(() => expect(toggle().getAttribute("aria-checked")).toBe("true"));
+  await user.click(botRow("default"));
+  await waitFor(() => expect(server.runtimeIdOf("hermes-bot")).toBeTruthy());
+  await act(async () => void (await server.messageAgent("default", "quill", ASK, REPLIES)));
+  await act(async () => void (await hermes.idle()));
+  await waitFor(() => expect(cards()).toHaveLength(2));
+  return launched;
+}
+
+describe("A message between two bots, in their Bot Chats", () => {
+  it("shows the sender what it sent and the answer, and the recipient who it is from, none of it as the owner's", { timeout: 30_000 }, async () => {
+    const { hermes, user } = await delivered();
+    const [sent, answer] = cards();
+    expect(sent.querySelector(".returned-title")?.textContent).toBe("Messaged @quill");
+    expect(sent.querySelector(".returned-note")?.textContent).toBe("Queued");
+    expect(sent.querySelector(".returned-body strong")?.textContent).toBe("backup window");
+    expect(sent.closest(".tools")).toBeNull();
+    expect(document.querySelector(".tools")).toBeNull();
+    expect(answer.querySelector(".returned-title")?.textContent).toBe("@quill answered.");
+    expect(answer.querySelector(".returned-body")?.textContent).toContain(REPLIES.recipient);
+    expect(answer.matches(".process")).toBe(false);
+    expect(document.body.textContent).not.toContain("bot_mode_dm.py");
+    expect(Array.from(document.querySelectorAll(".msg.user")).map((m) => m.textContent)).toEqual([expect.stringContaining("Ask Quill what the backup window is.")]);
+    // The card folds by its header, as a Returned result does.
+    const head = within(sent).getByRole("button", { name: /Messaged @quill/ });
+    await user.click(head);
+    expect(sent.querySelector(".returned-body")).toBeNull();
+
+    await user.click(botRow("quill"));
+    await waitFor(() => expect(hermes.profile).toBe("quill"));
+    await waitFor(() => expect(cards()).toHaveLength(1));
+    const [from] = cards();
+    expect(from.querySelector(".returned-title")?.textContent).toBe("Message from hermes (@hermes)");
+    expect(from.querySelector(".returned-body strong")?.textContent).toBe("backup window");
+    expect(document.querySelectorAll(".msg.user")).toHaveLength(0);
+    expect(document.body.textContent).not.toContain("Message from 🤖");
+  });
+
+  it("says only catalogue words in the switch and in each card", { timeout: 30_000 }, async () => {
+    const p = pseudoLocale();
+    const { hermes, user } = await delivered(p);
+    const head = document.querySelector<HTMLElement>(".sb-bots .bots-head")!;
+    expect(untranslated(head)).toEqual([]);
+    expect(tip()).toBe(p.bots.messaging.tipOn);
+    expect(toast()).toBe(p.bots.messaging.turnedOn);
+    const [sent, answer] = cards();
+    expect(sent.querySelector(".returned-title")?.textContent).toBe(p.chat.agent.sent("@quill"));
+    expect(cards().flatMap(said)).toEqual([]);
+    expect(answer.querySelector(".returned-head")?.getAttribute("title")).toBe(p.chat.returned.hide);
+
+    await user.click(botRow("quill"));
+    await waitFor(() => expect(hermes.profile).toBe("quill"));
+    await waitFor(() => expect(cards()).toHaveLength(1));
+    expect(cards()[0].querySelector(".returned-title")?.textContent).toBe(p.chat.agent.from("hermes", "hermes"));
+    expect(cards().flatMap(said)).toEqual([]);
   });
 });

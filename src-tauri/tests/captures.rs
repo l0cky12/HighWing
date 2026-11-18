@@ -1,7 +1,9 @@
 use hermes_chat::captures::{self, CaptureError, Captures};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+#[cfg(unix)]
+use std::path::Path;
+use std::path::PathBuf;
 
 #[test]
 fn errors_reach_the_webview_as_kind_and_message() {
@@ -41,6 +43,7 @@ fn mode(p: &Path) -> u32 {
 
 #[test]
 fn writes_an_image_the_app_made_into_a_private_slot_of_its_own() {
+    #[cfg_attr(not(unix), allow(unused_variables))]
     let (root, captures) = fresh_root("write");
     let a = captures.write("annotation-1", PNG).unwrap();
     assert_eq!(a.file_name().unwrap(), "annotation-1.png");

@@ -594,9 +594,9 @@ export const es: Catalogue = {
     signInNous: (command) => `Inicia sesión allí con ${command}`,
     signInKey: "Añade allí una clave de API o una sesión para él",
     pinTextSignIn: (profile, provider, fix) =>
-      `El modelo de Generación de texto de ${profile} está fijado en el servidor a ${provider}, y Hermes no tiene sesión para él. ${fix}, o cambia ese modelo en Ajustes → Modelo.`,
+      `El modelo de Generación de texto de ${profile} está fijado en el servidor a ${provider}, y Hermes no tiene sesión para él. ${fix}, o cambia ese modelo en Ajustes → Modelo mientras Highwing usa ${profile}.`,
     pinInstructionsSignIn: (profile, provider, fix) =>
-      `El modelo de Instrucciones de proyecto de ${profile} está fijado en el servidor a ${provider}, y Hermes no tiene sesión para él. ${fix}, o cambia ese modelo en Ajustes → Modelo.`,
+      `El modelo de Instrucciones de proyecto de ${profile} está fijado en el servidor a ${provider}, y Hermes no tiene sesión para él. ${fix}, o cambia ese modelo en Ajustes → Modelo mientras Highwing usa ${profile}.`,
     appSignIn: (profile, provider, fix) =>
       `Tu modelo de escritura funciona con ${provider}, y Hermes no tiene sesión para él en el bot ${profile}. ${fix}, o elige otro modelo de escritura en Ajustes → Modelo.`,
     mainSignIn: (profile, model) => `${profile} escribe con su propio modelo, ${model}, y Hermes no pudo usarlo para escribir. Elige un modelo de escritura en Ajustes → Modelo.`,

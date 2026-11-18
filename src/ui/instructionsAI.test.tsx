@@ -188,7 +188,7 @@ describe("Write with AI, when the box is empty", () => {
     await user.click(within(d).getByRole("button", { name: "Write instructions" }));
     expect((await within(d).findByRole("alert")).textContent).toContain(
       "Hermes couldn't write the instructions: default's Text generation model is pinned on the server to openrouter, and Hermes has no sign-in for it. " +
-        "Add an API key or sign-in for it there, or change that model in Settings → Model.",
+        "Add an API key or sign-in for it there, or change that model in Settings → Model while Highwing uses default.",
     );
     expect((within(d).getByRole("textbox", { name: "About the project" }) as HTMLTextAreaElement).value).toBe("A Rust CLI. Always run cargo test.");
     expect(box.value).toBe("");
@@ -382,7 +382,7 @@ describe("The Project instructions model (ADR 0177)", () => {
     const d = await dialog(/Improve/);
     expect((await within(d).findByRole("alert")).textContent).toBe(
       " Hermes couldn't write the instructions: default's Project instructions model is pinned on the server to nous, and Hermes has no sign-in for it. " +
-        "Sign it in there with hermes auth add nous, or change that model in Settings → Model. The box keeps what it had.",
+        "Sign it in there with hermes auth add nous, or change that model in Settings → Model while Highwing uses default. The box keeps what it had.",
     );
   });
 

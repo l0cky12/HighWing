@@ -620,9 +620,9 @@ export const en = {
     signInNous: (command: string) => `Sign it in there with ${command}`,
     signInKey: "Add an API key or sign-in for it there",
     pinTextSignIn: (profile: string, provider: string, fix: string) =>
-      `${profile}'s Text generation model is pinned on the server to ${provider}, and Hermes has no sign-in for it. ${fix}, or change that model in Settings → Model.`,
+      `${profile}'s Text generation model is pinned on the server to ${provider}, and Hermes has no sign-in for it. ${fix}, or change that model in Settings → Model while Highwing uses ${profile}.`,
     pinInstructionsSignIn: (profile: string, provider: string, fix: string) =>
-      `${profile}'s Project instructions model is pinned on the server to ${provider}, and Hermes has no sign-in for it. ${fix}, or change that model in Settings → Model.`,
+      `${profile}'s Project instructions model is pinned on the server to ${provider}, and Hermes has no sign-in for it. ${fix}, or change that model in Settings → Model while Highwing uses ${profile}.`,
     appSignIn: (profile: string, provider: string, fix: string) =>
       `Your Writing model runs on ${provider}, and Hermes has no sign-in for it on the ${profile} bot. ${fix}, or pick another Writing model in Settings → Model.`,
     mainSignIn: (profile: string, model: string) =>

@@ -312,7 +312,7 @@ describe("New bot in Bots mode", () => {
       copyText: async () => {},
       notify: () => {},
     };
-    const botEdit = { look: async () => undefined, edit: (name: string, edits: Parameters<Hermes["editBot"]>[1]) => hermes.editBot(name, edits) };
+    const botEdit = { look: async () => undefined, edit: (name: string, edits: Parameters<Hermes["editBot"]>[1]) => hermes.editBot(name, edits), messaging: (on: boolean) => hermes.setAgentMessaging(on) };
     function Head({ roster }: { roster?: Bot[] }) {
       const actions = useBotActions({ profiles, botEdit, roster, load, shown: true, onRefresh: () => {}, onNote: () => {} });
       return (

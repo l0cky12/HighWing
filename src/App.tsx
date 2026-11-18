@@ -2335,7 +2335,7 @@ export function Main({
   // A bot's row opens its Bot Chat, in the bot's own profile (ADR 0066): another profile is switched to first, as the
   // switcher does, and once its list has loaded the Bot Chat is looked up by title and opened in the active pane. It isn't
   // remembered for the next launch: what reopens a Bot Chat is its bot's row. The pen starts an ordinary chat there.
-  const botEdit = useMemo<BotEditWiring>(() => ({ look: (name) => hermes.botLook(name), edit: (name, edits) => hermes.editBot(name, edits) }), [hermes]);
+  const botEdit = useMemo<BotEditWiring>(() => ({ look: (name) => hermes.botLook(name), edit: (name, edits) => hermes.editBot(name, edits), messaging: (on) => hermes.setAgentMessaging(on) }), [hermes]);
   const loadBots = useCallback(() => hermes.bots(), [hermes]);
   const activityOf = (b: Bot, roster: readonly Bot[]) => {
     const ids = b.botChat ? [b.botChat.id, b.botChat.resolvedId] : [];

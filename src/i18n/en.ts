@@ -27,6 +27,18 @@ export const en = {
       hide: "Hide the result",
       show: "Show the result",
     },
+    /** Bot messaging's cards in a Bot Chat (ADR 0205): a message this bot sent a teammate, one it got, and an answer. */
+    agent: {
+      sending: (to: string) => `Messaging ${to}…`,
+      sent: (to: string) => `Messaged ${to}`,
+      notSent: (to: string) => `Not sent to ${to}`,
+      queued: "Queued",
+      from: (name: string, handle: string) => `Message from ${name} (@${handle})`,
+      fromHermes: "From Hermes",
+      noAnswer: "No answer came back",
+      hide: "Hide the message",
+      show: "Show the message",
+    },
     /** The chip under a reply that edited files on the server, and the Preview it opens (ADR 0180). */
     files: {
       changed: (n: number) => (n === 1 ? "1 file changed" : `${n} files changed`),
@@ -273,6 +285,18 @@ export const en = {
       hide: "Hide",
       show: "Show",
       delete: "Delete",
+    },
+    /** Bot messaging's switch above the bots (ADR 0205). */
+    messaging: {
+      label: "Bots message each other",
+      tipOff: "Let bots message each other from their Bot Chats, with Hermes's message_agent tool. Turning it on adds Hermes's instructions for it to every Bot Chat's prompt.",
+      tipOn: "Bots can message each other from their Bot Chats, and Hermes's instructions for it are in every Bot Chat's prompt.",
+      and: (names: string[]) => (names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names.join("")),
+      kept: (names: string, n: number) => `Stays on while ${names} ${n === 1 ? "has" : "have"} bot settings saved in Hermes, such as a name, a color or a pin. Turning it off would remove them.`,
+      turnedOn: "Bots can now message each other from their Bot Chats.",
+      turnedOff: "Bots can no longer message each other.",
+      failed: (why: string) => `Bot messaging wasn't changed. ${why}`,
+      tooOld: "This Hermes is older than 0.23, which is the first with a way for bots to message each other.",
     },
     editTitle: (name: string) => `Edit bot: ${name}`,
     openFailed: (name: string, why: string) => `Couldn't open ${name}: ${why}`,

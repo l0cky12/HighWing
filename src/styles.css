@@ -508,6 +508,8 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
 .returned-head svg { flex: none; color: var(--accent); }
 .returned-head .chev { color: var(--muted); }
 .returned-title { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.returned-note { flex: none; color: var(--muted); font-size: calc(12rem / 14); }
+.returned-why { margin: 6px 0 0; color: var(--text-2); font-size: calc(13rem / 14); overflow-wrap: anywhere; }
 .returned-body { margin-top: 6px; max-height: 420px; overflow: auto; }
 .returned-body.msg.assistant { clip-path: none; }
 .returned-log {
@@ -2861,6 +2863,10 @@ label.memory-pick { cursor: pointer; }
 .inbox-empty { padding: 12px 16px; }
 .bots-head { display: flex; justify-content: flex-end; gap: 2px; margin: 0 0 2px; }
 .bots-head .icon-btn { width: 26px; height: 24px; border-radius: 6px; }
+/* Bot messaging's switch (ADR 0205): at the row's start, away from New bot and Reload. */
+.bots-messaging { margin-right: auto; display: flex; align-items: center; gap: 8px; min-width: 0; padding-left: 6px; color: var(--text-2); font-size: calc(12.5rem / 14); }
+.bots-messaging > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bots-messaging .switch:disabled { opacity: 0.5; }
 .bots-note { margin: 0 6px 8px; color: var(--warn); font-size: calc(12rem / 14); line-height: 1.4; }
 .bots-row { align-items: center; }
 .bots-open { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 10px; text-align: left; padding: 8px; border-radius: 8px; }

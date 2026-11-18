@@ -2,13 +2,15 @@
 // with its picture, its name, its Bot Chat's last message and what it is doing. The name's tip is the bot's description.
 // A row opens the bot's Bot Chat, found by title every time (bots.ts); the pen beside it starts an ordinary chat in the
 // bot's profile. Above the rows, New bot makes a profile through Settings → Profiles' New profile form, and the new
-// bot's row is shown once the roster is read again (ADR 0164); Reload reads the roster now. A right-click on a row
+// bot's row is shown once the roster is read again (ADR 0164); Reload reads the roster now. Beside them, a switch turns
+// Bot messaging on or off for the whole install (ADR 0205). A right-click on a row
 // opens its menu (ADR 0194): Chat, Settings, Clone, Pin, Hide and Delete, through Settings → Profiles' own dialogs and
 // `Hermes.editBot`, which never writes over a change made elsewhere (ADR 0189). Every word comes from the catalogue
 // (ADR 0100).
 import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from "react";
 import { ArrowRight, ChevronDown, ChevronRight, Copy, EyeOff, Eye, Loader, MessageSquare, Pin, PinOff, Plus, RefreshCw, Settings2, ShieldAlert, SquarePen, Trash2 } from "lucide-react";
-import type { Bot, BotActivity, BotLook } from "../hermes/bots";
+import { agentMessaging, type Bot, type BotActivity, type BotLook, type MessagingSave } from "../hermes/bots";
+import { predatesBotMessaging } from "../hermes/capabilities";
 import type { EditResult, Edits } from "../hermes/fieldMerge";
 import { PROFILE_ROUTES, profileFailure, type ProfileAction, type ProfileRow } from "../hermes/profiles";
 import { Age, Spinner, composing } from "./bits";
@@ -25,11 +27,44 @@ export const BOTS_REFRESH_MS = 15_000;
 const NO_SUBSCRIBE = () => () => {};
 const NO_SNAPSHOT = () => undefined;
 
-/** What Edit bot, Pin and Hide need to change a bot's look: `Hermes.botLook` to open Edit bot on, and `Hermes.editBot`. */
+/**
+ * What Edit bot, Pin and Hide need to change a bot's look: `Hermes.botLook` to open Edit bot on, and `Hermes.editBot`.
+ * `messaging`: `Hermes.setAgentMessaging`, for Bot messaging's switch.
+ */
 export type BotEditWiring = {
   look: (profile: string) => Promise<BotLook | undefined>;
   edit: (profile: string, edits: Edits<BotLook>) => Promise<EditResult<BotLook>>;
+  messaging: (on: boolean) => Promise<MessagingSave>;
 };
+
+/**
+ * Bot messaging's switch (ADR 0205): whether Hermes offers its bots `message_agent`, for the whole install. It shows
+ * what the roster says and nothing else, so it changes only once a save's read-back has landed. While a bot's block
+ * holds something it can't be turned off without deleting that, so its tip names those bots, and a click says so.
+ * `why`: why it can't be changed now.
+ */
+function MessagingSwitch({ roster, why, save, onNote }: { roster: readonly Bot[]; why?: string; save: BotEditWiring["messaging"]; onNote: (text: string) => void }) {
+  const l = useLocale();
+  const w = l.bots.messaging;
+  const [busy, setBusy] = useState(false);
+  const now = agentMessaging(roster);
+  const kept = (profiles: readonly string[]) => w.kept(w.and(profiles.map((p) => roster.find((b) => b.profile === p)?.name ?? p)), profiles.length);
+  const tip = why ?? (now.on && now.keptOnBy.length ? kept(now.keptOnBy.map((b) => b.profile)) : now.on ? w.tipOn : w.tipOff);
+  const flip = async () => {
+    setBusy(true);
+    const saved = await save(!now.on);
+    setBusy(false);
+    onNote(saved.kind === "kept" ? kept(saved.by) : saved.kind === "failed" ? w.failed(failureText(l, saved.failure, "default")) : saved.now.on ? w.turnedOn : w.turnedOff);
+  };
+  return (
+    <div className="bots-messaging" title={tip}>
+      <span id="bots-messaging-label">{w.label}</span>
+      <button className="switch" role="switch" aria-checked={now.on} aria-labelledby="bots-messaging-label" aria-busy={busy || undefined} disabled={!!why || busy} onClick={() => void flip()}>
+        <span className="switch-knob" />
+      </button>
+    </div>
+  );
+}
 
 /** A dialog a bot's menu opened, on the profile's row as `GET /api/profiles` listed it just before. */
 type BotDialog =
@@ -182,9 +217,11 @@ export function useBotActions({
 
   const newWhy = !connected ? w.notConnected : lacking("create") ? w.noCreateRoute(PROFILE_ROUTES.create) : undefined;
   const lookWhy = blocked(l, connected, lacking, "botLook");
+  const messagingWhy = lookWhy ?? (store && predatesBotMessaging(store.getSnapshot().facts) ? w.messaging.tooOld : undefined);
   const head = (
     <>
       <div className="bots-head">
+        {roster && <MessagingSwitch roster={roster} why={messagingWhy} save={botEdit.messaging} onNote={onNote} />}
         <button ref={newBtn} className="icon-btn" title={newWhy ?? w.newBot} aria-label={w.newBot} disabled={!!newWhy} onClick={() => setMaking(true)}>
           <Plus size={15} />
         </button>

@@ -40,6 +40,7 @@ import type { ModelSettingsApi } from "../hermes/modelSettings";
 import { ModelSettings } from "./ModelSettings";
 import { IdleCompactSettings } from "./IdleCompactSettings";
 import { WritingModelSettings } from "./WritingModelSettings";
+import { checkReadiness } from "../hermes/computerUseReadiness";
 import type { ToolsetsApi } from "../hermes/toolsets";
 import { ToolsetSettings, type OpenChat } from "./ToolsetSettings";
 import type { MemoryApi } from "../hermes/memory";
@@ -381,7 +382,7 @@ export function SettingsScreen({
   /** Set, each time anew, to show the Diagnostics tab, at a capability if it names one: from a screen's note. */
   showDiagnostics?: { id?: CapabilityId };
   /** The profile's Bot Desktop, for Diagnostics' browser check. */
-  screen?: Pick<ScreenApi, "status">;
+  screen?: Pick<ScreenApi, "status" | "doctor">;
   /** Reads the profile's `display.tool_progress`, for Diagnostics' flight recorder rows (ADR 0178). */
   toolProgress?: () => Promise<ToolProgress>;
   /** The kanban plugin, for Diagnostics' Work dispatch settings. */
@@ -1053,6 +1054,9 @@ export function SettingsScreen({
               openGuide={openGuide}
               focus={diagFocus}
               screen={screen}
+              computerUse={
+                screen && toolsets ? { check: () => checkReadiness({ screen, toolsets: () => toolsets.list(profile) }), openToolsets: () => setTab("toolsets") } : undefined
+              }
               toolProgress={toolProgress}
               work={work}
             />

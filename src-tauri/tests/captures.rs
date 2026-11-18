@@ -1,5 +1,5 @@
-// The private folder pasted files and annotation stills wait in until they are sent or removed (src/screenshot.rs).
-use hermes_chat::screenshot::{self, CaptureError, Captures};
+// The private folder pasted files and annotation stills wait in until they are sent or removed (src/captures.rs).
+use hermes_chat::captures::{self, CaptureError, Captures};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -11,14 +11,14 @@ fn errors_reach_the_webview_as_kind_and_message() {
 
 #[test]
 fn names_captures_plainly() {
-    assert_eq!(screenshot::capture_stem("screenshot-2026-11-02-153417"), "screenshot-2026-11-02-153417");
-    assert_eq!(screenshot::capture_stem("screenshot.png"), "screenshot");
+    assert_eq!(captures::capture_stem("screenshot-2026-11-02-153417"), "screenshot-2026-11-02-153417");
+    assert_eq!(captures::capture_stem("screenshot.png"), "screenshot");
     for odd in ["", "../../etc/passwd", ".hidden", "a b", "name\n", &"x".repeat(101)] {
-        assert_eq!(screenshot::capture_stem(odd), "screenshot", "{odd:?}");
+        assert_eq!(captures::capture_stem(odd), "screenshot", "{odd:?}");
     }
-    assert_eq!(screenshot::image_ext(b"\x89PNG\r\n\x1a\nrest"), Some("png"));
-    assert_eq!(screenshot::image_ext(b"\xff\xd8\xff\xe0"), Some("jpg"));
-    assert_eq!(screenshot::image_ext(b"GIF89a"), None);
+    assert_eq!(captures::image_ext(b"\x89PNG\r\n\x1a\nrest"), Some("png"));
+    assert_eq!(captures::image_ext(b"\xff\xd8\xff\xe0"), Some("jpg"));
+    assert_eq!(captures::image_ext(b"GIF89a"), None);
 }
 
 /// A captures folder under a fresh private temp root, removed when the test ends.
@@ -112,11 +112,11 @@ fn sweeps_captures_left_by_a_process_that_is_gone() {
 #[test]
 fn counts_only_a_running_hermes_chat_as_alive() {
     // This test binary is running, under its own name.
-    assert!(screenshot::instance_alive(std::process::id()));
+    assert!(captures::instance_alive(std::process::id()));
     // pid 1 runs, but isn't this program: a reused pid doesn't keep a crashed run's captures.
-    assert!(!screenshot::instance_alive(1));
+    assert!(!captures::instance_alive(1));
     // pid_max is at most 2^22 on Linux, so no process has this one.
-    assert!(!screenshot::instance_alive(4_194_999));
+    assert!(!captures::instance_alive(4_194_999));
     // A child that has exited but isn't reaped yet is a zombie: gone.
     let mut child = std::process::Command::new(std::env::current_exe().unwrap()).arg("--list").stdout(std::process::Stdio::null()).spawn().unwrap();
     let pid = child.id();
@@ -127,7 +127,7 @@ fn counts_only_a_running_hermes_chat_as_alive() {
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
-    assert!(!screenshot::instance_alive(pid));
+    assert!(!captures::instance_alive(pid));
     child.wait().unwrap();
 }
 
@@ -152,13 +152,13 @@ fn refuses_a_captures_folder_someone_else_could_open() {
 #[cfg(windows)]
 #[test]
 fn counts_only_a_running_hermes_chat_as_alive_on_windows() {
-    assert!(screenshot::instance_alive(std::process::id()));
+    assert!(captures::instance_alive(std::process::id()));
     // The System process runs, but isn't this program.
-    assert!(!screenshot::instance_alive(4));
+    assert!(!captures::instance_alive(4));
     let mut child = std::process::Command::new(std::env::current_exe().unwrap()).arg("--list").stdout(std::process::Stdio::null()).spawn().unwrap();
     let pid = child.id();
     child.wait().unwrap();
-    assert!(!screenshot::instance_alive(pid));
+    assert!(!captures::instance_alive(pid));
 }
 
 #[test]

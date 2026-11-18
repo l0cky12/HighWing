@@ -2119,7 +2119,7 @@ fn refuses_extra_headers_that_are_malformed_reserved_or_set_twice() {
     }
 }
 
-struct PasteRoot(std::path::PathBuf, hermes_chat::screenshot::Captures);
+struct PasteRoot(std::path::PathBuf, hermes_chat::captures::Captures);
 impl Drop for PasteRoot {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
@@ -2128,12 +2128,12 @@ impl Drop for PasteRoot {
 fn paste_root(tag: &str) -> PasteRoot {
     let base = std::env::temp_dir().join(format!("hermes-chat-paste-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&base);
-    let captures = hermes_chat::screenshot::Captures::open(base.join("captures")).unwrap();
+    let captures = hermes_chat::captures::Captures::open(base.join("captures")).unwrap();
     PasteRoot(base, captures)
 }
 
 #[test]
-fn stages_a_pasted_file_privately_with_the_screenshots() {
+fn stages_a_pasted_file_privately() {
     let root = paste_root("stage");
     let png = b"\x89PNG\r\n\x1a\npasted";
     let a = transport::stage_clipboard_file(&root.1, "clipboard-2026-11-02T153000.png", png).unwrap();

@@ -91,7 +91,7 @@ mod private {
 
 /// Makes `dir` if needed, and checks it is a real folder (not a link) that only this user can open.
 fn private_dir(dir: &Path) -> Result<(), CaptureError> {
-    let io = |e: std::io::Error| failed("Couldn't make a private folder for screenshots", e);
+    let io = |e: std::io::Error| failed("Couldn't make a private folder for attachments", e);
     match private::create_dir(dir) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
@@ -99,12 +99,12 @@ fn private_dir(dir: &Path) -> Result<(), CaptureError> {
     }
     let meta = std::fs::symlink_metadata(dir).map_err(io)?;
     if !meta.is_dir() || !private::closed(&meta).map_err(io)? {
-        return Err(CaptureError::Failed(format!("Couldn't save the screenshot: {} isn't a private folder.", dir.display())));
+        return Err(CaptureError::Failed(format!("Couldn't save the file: {} isn't a private folder.", dir.display())));
     }
     Ok(())
 }
 
-/// A private cache folder, durable across app restarts so a failed message can still be retried with its screenshot.
+/// A private cache folder, durable across app restarts so a failed message can still be retried with its attachments.
 pub fn default_root() -> Result<PathBuf, CaptureError> {
     #[cfg(unix)]
     let cache = std::env::var_os("XDG_CACHE_HOME")
@@ -113,12 +113,13 @@ pub fn default_root() -> Result<PathBuf, CaptureError> {
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")));
     #[cfg(windows)]
     let cache = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).filter(|p| p.is_absolute());
-    let cache = cache.ok_or_else(|| CaptureError::Failed("Couldn't find a folder for screenshots.".into()))?;
-    std::fs::create_dir_all(&cache).map_err(|e| failed("Couldn't open the screenshot cache", e))?;
+    let cache = cache.ok_or_else(|| CaptureError::Failed("Couldn't find a folder for attachments.".into()))?;
+    std::fs::create_dir_all(&cache).map_err(|e| failed("Couldn't open the cache folder", e))?;
     Ok(cache.join("hermes-chat").join("captures"))
 }
 
-/// A capture's file name without its extension: the webview's `screenshot-<local time>`, if it is plain enough.
+/// A staged image's file name without its extension: the name the app gave it (`still`, `annotation-<n>`), if it is
+/// plain enough.
 pub fn capture_stem(name: &str) -> String {
     let ok = !name.is_empty() && name.len() <= 100 && !name.starts_with('.') && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'));
     if ok {
@@ -160,11 +161,11 @@ impl Captures {
         private_dir(&self.mine)?;
         loop {
             let dir = self.mine.join(self.next.fetch_add(1, Ordering::Relaxed).to_string());
-            // A reused pid may still own a screenshot in a persisted outbox. Never overwrite an existing slot.
+            // A reused pid may still own a file in a persisted outbox. Never overwrite an existing slot.
             match private::create_dir(&dir) {
                 Ok(()) => return Ok(dir.join(file_name)),
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-                Err(e) => return Err(failed("Couldn't save the screenshot", e)),
+                Err(e) => return Err(failed("Couldn't save the file", e)),
             }
         }
     }
@@ -172,7 +173,7 @@ impl Captures {
     /// Writes an image the app made into a slot, as `<name>.png` (or `.jpg`), readable only by this user.
     pub fn write(&self, name: &str, bytes: &[u8]) -> Result<PathBuf, CaptureError> {
         use std::io::Write;
-        let ext = image_ext(bytes).ok_or_else(|| CaptureError::Failed("The screenshot isn't a PNG or JPEG image.".into()))?;
+        let ext = image_ext(bytes).ok_or_else(|| CaptureError::Failed("The image isn't a PNG or JPEG.".into()))?;
         let path = self.slot(&format!("{}.{ext}", capture_stem(name)))?;
         let written = (|| -> std::io::Result<()> {
             let mut to = private::create_file(&path)?;
@@ -181,7 +182,7 @@ impl Captures {
         })();
         if let Err(e) = written {
             self.discard(&path);
-            return Err(failed("Couldn't save the screenshot", e));
+            return Err(failed("Couldn't save the file", e));
         }
         Ok(path)
     }

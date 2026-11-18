@@ -3,6 +3,7 @@ mod backlog;
 pub mod backup;
 #[cfg(target_os = "linux")]
 pub mod browser;
+pub mod captures;
 #[cfg(target_os = "linux")]
 mod clipboard_text;
 pub mod connect_steps;
@@ -33,7 +34,6 @@ pub mod project_context;
 pub mod remote;
 pub mod saved_password;
 mod screen_apps;
-pub mod screenshot;
 #[cfg(target_os = "linux")]
 pub mod selection;
 pub mod server_page;
@@ -233,19 +233,19 @@ const fn reach_within(quick: bool) -> std::time::Duration {
     }
 }
 
-/// Private screenshot storage.
+/// The private folder pasted files and annotation stills wait in (captures.rs), opened on first use.
 #[derive(Default)]
-struct Screenshots {
-    captures: std::sync::Mutex<Option<Arc<screenshot::Captures>>>,
+struct Staging {
+    captures: std::sync::Mutex<Option<Arc<captures::Captures>>>,
 }
 
-impl Screenshots {
-    fn captures(&self) -> Result<Arc<screenshot::Captures>, screenshot::CaptureError> {
+impl Staging {
+    fn captures(&self) -> Result<Arc<captures::Captures>, captures::CaptureError> {
         let mut slot = self.captures.locked();
         if let Some(c) = &*slot {
             return Ok(c.clone());
         }
-        let c = Arc::new(screenshot::Captures::open(screenshot::default_root()?)?);
+        let c = Arc::new(captures::Captures::open(captures::default_root()?)?);
         *slot = Some(c.clone());
         Ok(c)
     }
@@ -698,12 +698,12 @@ async fn attach_copied_files(app: tauri::AppHandle, attachable: State<'_, Attach
     Ok(paths)
 }
 
-/// Deletes a staged screenshot: removed from the composer, or its message sent. Paths that aren't one are ignored. The
+/// Deletes a staged file: removed from the composer, or its message sent. Paths that aren't one are ignored. The
 /// folder is deleted off the main thread.
 #[tauri::command]
-async fn screenshot_discard(app: tauri::AppHandle, path: String) {
+async fn capture_discard(app: tauri::AppHandle, path: String) {
     let _ = tokio::task::spawn_blocking(move || {
-        if let Some(c) = &*app.state::<Screenshots>().captures.locked() {
+        if let Some(c) = &*app.state::<Staging>().captures.locked() {
             c.discard(std::path::Path::new(&path));
         }
     })
@@ -713,14 +713,14 @@ async fn screenshot_discard(app: tauri::AppHandle, path: String) {
 /// The renderer supplies all persisted outboxes at startup and whenever they change, before cleanup. The folders are
 /// swept off the main thread.
 #[tauri::command]
-async fn screenshot_sync_outbox(app: tauri::AppHandle, paths: Vec<String>) -> Result<(), screenshot::CaptureError> {
+async fn capture_sync_outbox(app: tauri::AppHandle, paths: Vec<String>) -> Result<(), captures::CaptureError> {
     let sync = move || {
         // Also those of drafts an update's restart couldn't put back (update.rs).
         let saved = update::saved_attachment_paths(&app);
-        app.state::<Screenshots>().captures()?.retain_outbox(paths.into_iter().map(std::path::PathBuf::from).chain(saved));
+        app.state::<Staging>().captures()?.retain_outbox(paths.into_iter().map(std::path::PathBuf::from).chain(saved));
         Ok(())
     };
-    tokio::task::spawn_blocking(sync).await.map_err(|e| screenshot::CaptureError::Failed(e.to_string()))?
+    tokio::task::spawn_blocking(sync).await.map_err(|e| captures::CaptureError::Failed(e.to_string()))?
 }
 
 /// The chat link waiting for the window, from the command line or a later launch (links.rs); handed out once.
@@ -729,21 +729,17 @@ fn chat_link_take(links: State<'_, links::Links>) -> Option<String> {
     links.take()
 }
 
-/// Stages a file pasted into the composer with the screenshots and returns its path. Its bytes come as the raw body,
-/// not JSON, so a big screenshot isn't sent as a list of numbers; its name comes URI-encoded in the `x-name` header.
+/// Stages a file pasted into the composer and returns its path. Its bytes come as the raw body, not JSON, so a big
+/// screenshot isn't sent as a list of numbers; its name comes URI-encoded in the `x-name` header.
 #[tauri::command]
-async fn stage_clipboard_file(
-    screenshots: State<'_, Screenshots>,
-    attachable: State<'_, Attachable>,
-    request: tauri::ipc::Request<'_>,
-) -> Result<String, String> {
+async fn stage_clipboard_file(staging: State<'_, Staging>, attachable: State<'_, Attachable>, request: tauri::ipc::Request<'_>) -> Result<String, String> {
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
         return Err("The pasted file didn't arrive as bytes.".into());
     };
     let header = request.headers().get("x-name").and_then(|v| v.to_str().ok()).unwrap_or_default();
     // encodeURIComponent never writes `+`, `&` or `=` bare, so one form-decoded key is exactly the name.
     let name = url::form_urlencoded::parse(header.as_bytes()).next().map(|(k, _)| k.into_owned()).unwrap_or_default();
-    let captures = screenshots.captures().map_err(|e| e.to_string())?;
+    let captures = staging.captures().map_err(|e| e.to_string())?;
     let path = transport::stage_clipboard_file(&captures, &name, bytes).map_err(|e| e.to_string())?.to_string_lossy().into_owned();
     attachable.add([path.clone()]);
     Ok(path)
@@ -1668,11 +1664,11 @@ fn preview_page_close(app: tauri::AppHandle, key: String) {
 }
 
 /// Takes a still of the page in the Preview to annotate (ADR 0094), kept in the captures folder until it is staged or
-/// discarded (`screenshot_discard`).
+/// discarded (`capture_discard`).
 #[tauri::command]
 async fn preview_annotate_still(
     app: tauri::AppHandle,
-    state: State<'_, Screenshots>,
+    state: State<'_, Staging>,
     source: annotate::StillSource,
 ) -> Result<annotate::Still, annotate::AnnotateError> {
     let captures = state.captures().map_err(|e| annotate::AnnotateError::Failed(e.to_string()))?;
@@ -1687,7 +1683,7 @@ async fn preview_annotate_still(
 
 /// A still's PNG, for the Preview to show while the owner marks it. Only a still the app took is read.
 #[tauri::command]
-async fn preview_annotate_read(state: State<'_, Screenshots>, path: String) -> Result<tauri::ipc::Response, String> {
+async fn preview_annotate_read(state: State<'_, Staging>, path: String) -> Result<tauri::ipc::Response, String> {
     let captures = state.captures().map_err(|e| e.to_string())?;
     let png = tokio::task::spawn_blocking(move || annotate::read_still(&captures, std::path::Path::new(&path))).await.map_err(|e| e.to_string())?;
     png.map(tauri::ipc::Response::new).map_err(|e| e.to_string())
@@ -1712,23 +1708,23 @@ async fn preview_annotate_pick(app: tauri::AppHandle, key: String, still: u64, x
     page_view::annotate_pick(&app, key, still, x, y, up).await
 }
 
-/// Stages a still as annotation `n`, marked at `rect`, as a Screenshot the composer can send, and deletes the still.
+/// Stages a still as annotation `n`, marked at `rect`, as an image the composer can send, and deletes the still.
 #[tauri::command]
 async fn preview_annotate_stage(
-    state: State<'_, Screenshots>,
+    state: State<'_, Staging>,
     attachable: State<'_, Attachable>,
     still_path: String,
     n: u32,
     rect: annotate::Rect,
     scale: f64,
-) -> Result<screenshot::Capture, screenshot::CaptureError> {
+) -> Result<captures::Capture, captures::CaptureError> {
     let captures = state.captures()?;
     let staged = tokio::task::spawn_blocking(move || annotate::stage(&captures, std::path::Path::new(&still_path), n, rect, scale))
         .await
-        .map_err(|e| screenshot::CaptureError::Failed(e.to_string()))??;
+        .map_err(|e| captures::CaptureError::Failed(e.to_string()))??;
     let path = staged.to_string_lossy().into_owned();
     attachable.add([path.clone()]);
-    Ok(screenshot::Capture { path })
+    Ok(captures::Capture { path })
 }
 
 /// `tag`: the webview's name for a notification about a waiting card; `deny`: it offers Deny (ADR 0173).
@@ -1887,7 +1883,7 @@ pub fn run(link: Option<String>) {
     builder
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
-        .manage(Screenshots::default())
+        .manage(Staging::default())
         .manage(links::Links::new(link))
         .manage(update::Updates::default())
         .manage(tray::Tray::default())
@@ -1919,8 +1915,8 @@ pub fn run(link: Option<String>) {
                 })?;
             }
             // Open storage at startup. The renderer supplies outbox references and triggers the startup sweep.
-            if let Err(e) = app.state::<Screenshots>().captures() {
-                eprintln!("hermes-chat: couldn't clean up old screenshots: {e}");
+            if let Err(e) = app.state::<Staging>().captures() {
+                eprintln!("hermes-chat: couldn't clean up old staged files: {e}");
             }
             // Which package the binary came from, read before anything can upgrade it.
             let handle = app.handle().clone();
@@ -2053,8 +2049,8 @@ pub fn run(link: Option<String>) {
             preview_dev_servers,
             notify_desktop,
             system_fonts,
-            screenshot_discard,
-            screenshot_sync_outbox,
+            capture_discard,
+            capture_sync_outbox,
             chat_link_take,
             terminal_open,
             screen_apps_install,

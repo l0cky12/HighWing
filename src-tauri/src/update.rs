@@ -346,7 +346,7 @@ fn set_aside(from: &std::path::Path, secs: u64) -> Result<PathBuf, String> {
 }
 
 /// The staged files that drafts saved for a restart and not put back yet (`restart-drafts*.json`) attach, for staging
-/// cleanup to keep (lib.rs `screenshot_sync_outbox`) until the owner moves or deletes the file.
+/// cleanup to keep (lib.rs `capture_sync_outbox`) until the owner moves or deletes the file.
 // ponytail: reads every such file on each outbox sync; they exist only after a restore failed, so there is rarely one.
 pub fn saved_attachment_paths(app: &AppHandle) -> Vec<PathBuf> {
     let mut paths = vec![];
@@ -499,7 +499,7 @@ mod tests {
     }
 
     #[test]
-    fn finds_the_screenshots_saved_outboxes_attach() {
+    fn finds_the_files_saved_outboxes_attach() {
         let outbox = r#"[{"kind":"user","text":"look","outgoing":{"state":"unsent","attachments":[{"name":"a.png","path":"/c/1/a.png"}]}}]"#;
         let saved = serde_json::json!({ "hermes-chat.outbox.x": outbox, "hermes-chat.draft.y": "[not json" }).to_string();
         let mut paths = vec![];

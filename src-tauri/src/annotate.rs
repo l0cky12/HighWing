@@ -3,7 +3,7 @@
 //! from the answer's shape alone. A form field's value has no place in these types, and a raw answer that carries any
 //! key the query doesn't send is refused whole.
 
-use crate::screenshot::{CaptureError, Captures};
+use crate::captures::{CaptureError, Captures};
 use image::{imageops, ImageFormat, Rgba, RgbaImage};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

@@ -2,7 +2,7 @@
 //! (ADR 0007), so WebView2 captures the whole webview and the frame's box is cut from it (`annotate::frame_still`).
 
 use crate::annotate::{self, AnnotateError, Rect, Still, Viewport};
-use crate::screenshot::Captures;
+use crate::captures::Captures;
 use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::Arc;

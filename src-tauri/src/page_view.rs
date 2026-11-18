@@ -11,7 +11,7 @@
 //! The webview names the page and where it shows; Rust checks the address as the pane does (`web_page::web_url`).
 
 use crate::annotate::{AnnotateError, Answer, Pick, Still, Viewport};
-use crate::screenshot::Captures;
+use crate::captures::Captures;
 use crate::server_page::Jar;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

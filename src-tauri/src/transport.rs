@@ -1013,7 +1013,7 @@ impl PickedFiles {
 const ATTACHABLE_KEPT: usize = 1000;
 
 /// The local files the owner chose to attach: dropped on the window, picked in the composer's Open dialog, pasted or
-/// captured as a screenshot. Only Rust adds to it, so a script in the webview can't send, stat or preview any other
+/// marked in the Preview. Only Rust adds to it, so a script in the webview can't send, stat or preview any other
 /// file (ADR 0129). It is kept on disk, because queued and unsent messages keep their attachments across restarts.
 #[derive(Default)]
 pub struct Attachable {
@@ -1068,7 +1068,7 @@ fn write_json(path: &std::path::Path, value: &impl Serialize) -> std::io::Result
 
 /// Stages a file pasted into the composer in a slot of `captures` and returns its path. `name` is cut down to a safe
 /// basename.
-pub fn stage_clipboard_file(captures: &crate::screenshot::Captures, name: &str, bytes: &[u8]) -> Result<std::path::PathBuf, TransportError> {
+pub fn stage_clipboard_file(captures: &crate::captures::Captures, name: &str, bytes: &[u8]) -> Result<std::path::PathBuf, TransportError> {
     let failed = |e: &dyn std::fmt::Display| TransportError::File(format!("couldn't save the pasted file: {e}"));
     let path = captures.slot(&safe_name(name)).map_err(|e| failed(&e))?;
     if let Err(e) = std::fs::write(&path, bytes) {

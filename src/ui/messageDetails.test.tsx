@@ -6,14 +6,13 @@ import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Chat, Item } from "../hermes/model";
-import { ScreenshotDesk, type ScreenshotApi } from "../hermes/screenshots";
+import { AttachmentDesk } from "../hermes/attachmentDesk";
 import { getUIPrefs, setUIPrefs, type MessageDetails } from "../hermes/uiPrefs";
 import { appearanceStore } from "./appearance";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { storedTime } from "./bits";
 import { ChatPane } from "./ChatPane";
 
-const noScreenshots: ScreenshotApi = { capture: () => Promise.reject(new Error("no screenshots in this test")), discard: async () => {} };
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }));
 
@@ -40,7 +39,7 @@ function pane() {
     <ChatPane
       chat={chat}
       status="connected"
-      draft="" draftKey="draft" screenshots={new ScreenshotDesk(noScreenshots)}
+      draft="" draftKey="draft" desk={new AttachmentDesk({ discard: async () => {} })}
       onDraft={() => {}}
       onDraftStep={() => undefined}
       onRetry={() => {}}

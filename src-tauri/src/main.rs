@@ -8,13 +8,10 @@ fn main() {
     std::env::remove_var(remote::NEW_INSTANCE);
     // The desktop's activation token for this launch, handed on so the running window may take focus.
     let token = ["XDG_ACTIVATION_TOKEN", "DESKTOP_STARTUP_ID"].iter().find_map(|v| std::env::var(v).ok().filter(|t| !t.is_empty()));
-    // `hermes-chat --screenshot`, `--show` or `--toggle` from a desktop shortcut, a chat link the desktop opened
-    // (`hermes-chat %u`), or a plain launch: the Hermes Chat already running does it, so there is only one.
-    let screenshot = remote::asked(std::env::args());
     // Kept for this app's own window if it is the one that starts (links.rs).
     let link = hermes_chat::links::from_args(std::env::args());
     if remote::hand_over(remote::request_of(std::env::args(), token, new_instance)) {
         return;
     }
-    hermes_chat::run(screenshot, link)
+    hermes_chat::run(link)
 }

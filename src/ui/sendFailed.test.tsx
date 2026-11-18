@@ -8,9 +8,8 @@ import { FakeHermes, row } from "../hermes/fakeHermes";
 import type { Chat, ConnectionStatus, Item, OutgoingItem } from "../hermes/model";
 import { connect } from "../hermes/transport";
 import { ChatPane } from "./ChatPane";
-import { ScreenshotDesk, type ScreenshotApi } from "../hermes/screenshots";
+import { AttachmentDesk } from "../hermes/attachmentDesk";
 
-const noScreenshots: ScreenshotApi = { capture: () => Promise.reject(new Error("no screenshots in this test")), discard: async () => {} };
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }));
 
@@ -33,7 +32,7 @@ function pane(items: Item[], { status = "connected" as ConnectionStatus, over = 
     <ChatPane
       chat={{ id: "c1", runtimeId: "rt", title: "Logs", source: "app", settled: false, updatedAt: 0, items, ...over }}
       status={status}
-      draft="" draftKey="draft" screenshots={new ScreenshotDesk(noScreenshots)}
+      draft="" draftKey="draft" desk={new AttachmentDesk({ discard: async () => {} })}
       onDraft={() => {}}
       onDraftStep={() => undefined}
       onRetry={on.retry}

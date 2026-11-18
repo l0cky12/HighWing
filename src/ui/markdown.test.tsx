@@ -42,7 +42,6 @@ describe("Markdown", () => {
 
   it("highlights tagged code, and guesses the language of untagged code, on every render", () => {
     const untagged = "```\nfn parse(line: &str) -> Option<u32> {\n    let n: u32 = line.trim().parse().ok()?;\n    Some(n)\n}\n```";
-    // The highlighter is shared between renders, so the second must come out the same as the first.
     for (let i = 0; i < 2; i++) {
       expect(render(untagged)).toMatch(/<code class="hljs language-rust">.*<span class="hljs-keyword">fn<\/span>/s);
       expect(render("```python\ndef f():\n    return 1\n```")).toContain('<span class="hljs-keyword">def</span>');
@@ -163,7 +162,6 @@ describe("A link's tooltip (#471)", () => {
 });
 
 describe("A path in a reply (ADR 0167)", () => {
-  /** A reply in a chat that works in `/srv/app`, with `open` standing in for what opens a path. */
   function reply(text: string, { open = vi.fn(async (_: PathOpen) => {}), folder = "/srv/app" as string | null, query = "" } = {}) {
     const onToast = vi.fn();
     const { container } = renderDom(
@@ -220,7 +218,6 @@ describe("A path in a reply (ADR 0167)", () => {
   it("stays text where nothing opens paths, and in Markdown that isn't about the Hermes server", () => {
     const text = "See /etc/hosts.conf and `src/ui`.";
     expect(render(text)).toBe("<p>See /etc/hosts.conf and <code>src/ui</code>.</p>");
-    // A Local file, say: its `/etc/hosts.conf` is this computer's.
     const { container } = renderDom(
       <LinksProvider preview={vi.fn()} path={async () => {}} web={{ openInBrowser: vi.fn() }} onToast={vi.fn()}>
         <Markdown text={text} />
@@ -351,7 +348,6 @@ describe("Math in a reply", () => {
 describe("A mermaid diagram in a reply", () => {
   const LONG = 30_000;
   const fenced = (source: string) => "```mermaid\n" + source + "\n```";
-  // An svg in a code block other than its header's icons.
   const diagram = (container: Element) => [...container.querySelectorAll(".code svg")].find((svg) => !svg.closest(".code-head")) ?? null;
   const drawn = (container: HTMLElement) => waitFor(() => expect(diagram(container)).not.toBeNull(), { timeout: LONG });
 
@@ -425,10 +421,8 @@ describe("A mermaid diagram in a reply", () => {
     expect(html).toContain("```mermaid\nflowchart TD\n  A--&gt;B\n```");
   });
 
-  // A reply can carry text an attacker wrote (a web page, a file), so a diagram must never make the app fetch anything.
   it("keeps config, links and labels from reaching off the app", { timeout: LONG }, async () => {
     for (const source of [
-      // Settings a diagram can't change. With `url(…)` in them they aren't drawn at all (below).
       '%%{init: {"themeCSS": ".evil{fill:red}", "fontFamily": "evil"}}%%\nflowchart TD\n  A-->B',
       "---\nconfig:\n  themeCSS: .evil{fill:red}\n  fontFamily: evil\n---\nflowchart TD\n  A-->B",
       'flowchart TD\n  A-->B\n  click A href "https://evil.test/k"',
@@ -439,7 +433,6 @@ describe("A mermaid diagram in a reply", () => {
       const { container, unmount } = renderDom(<Markdown text={fenced(source)} />);
       await drawn(container);
       const svg = diagram(container)!;
-      // An attacker's text may show as a label; it must never be an attribute or styling.
       const outbound = [svg, ...svg.querySelectorAll("*")].flatMap((el) => [
         ...[...el.attributes].map((a) => a.value),
         ...(el.tagName.toLowerCase() === "style" ? [el.textContent ?? ""] : []),
@@ -450,7 +443,6 @@ describe("A mermaid diagram in a reply", () => {
     }
   });
 
-  /** The code blocks of `sources`, in one reply ahead of a diagram drawn only once each of them has had its turn. */
   async function drawnAfter(sources: string[]) {
     const { container } = renderDom(<Markdown text={[...sources, "flowchart TD\n  After-->It"].map(fenced).join("\n\n")} />);
     await waitFor(() => expect(diagram(container.querySelectorAll(".code")[sources.length])).not.toBeNull(), { timeout: LONG });
@@ -500,7 +492,6 @@ describe("A mermaid diagram in a reply", () => {
   });
 
   // Mermaid puts each drawing in the page while it lays it out, before `contained` cleans it; an `<img>` there loads.
-  // Each source that wrongly drew HTML labels would hang jsdom until mermaid.ts gives up on it, 15 s apiece.
   it("never puts anything that loads into the page while it draws, whatever settings the diagram asks for", { timeout: 100_000 }, async () => {
     const added: string[] = [];
     const watch = new MutationObserver((records) =>

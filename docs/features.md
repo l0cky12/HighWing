@@ -70,10 +70,9 @@ A screen whose feature the server doesn't have shows a note in its place instead
 - **Failed messages.** A message that Hermes didn't take, or might not have taken, stays in the chat with **Retry**, **Edit**, and **Dismiss**. Nothing resends it automatically.
 - **Attachments.** Drag files into the composer or paste them. Hermes accepts images up to 25 MB and other files up to 256 MB.
 - **One window.** Launching Highwing again, `hermes-chat --show` or `hermes-chat --toggle` brings the window already open forward. Bind a key to `hermes-chat --toggle` in your desktop to show it from any app. See [Show Highwing from any app](#show-highwing-from-any-app).
-- **Screenshots.** Press Ctrl+Shift+S, or click the camera button, to attach a region or window. See [Screenshots](#screenshots).
 - **Voice.** Use **Dictation** to speak a message into the composer, and **Read aloud** to have Hermes speak a reply. **Start voice conversation** talks with Hermes hands-free until you end it. Hermes does the transcription and speech on the server. See [Voice conversations](#voice-conversations).
 - **Two panes.** Ctrl+\\ opens a second chat beside the first.
-- **Preview pane.** A resizable pane shows web links from replies, files on the Hermes server, local files you choose, and tool output. Web pages load in a view of their own on Linux, and in a sandboxed frame on Windows. HTML files load in sandboxed frames. The row under the address lays a web page out at a phone's or a tablet's size, or at a width and height you type, scaled down to fit when it is bigger than the pane. Only the size changes. See [ADR 0198](adr/0198-the-preview-lays-a-web-page-out-at-a-size-the-owner-picks.md).
+- **Preview pane.** A resizable pane shows web links from replies, files on the Hermes server, local files you choose, and tool output. Web pages load in a view of their own on Linux, and in a sandboxed frame on Windows. HTML files load in sandboxed frames.
 - **Paths in replies.** A file's or a folder's path in a reply is a link: a full path, one relative to the folder the chat works in, in running text, in a code span or as a Markdown link. Click a file to open it in the Preview. Click a folder to open a shell started in it in the side panel's Terminal, as an ssh of its own beside your own shell, which is never typed into. Right-click a path for **Open in the Preview**, **Open in the Terminal** and **Copy path**. Paths in code blocks aren't links. See [ADR 0167](adr/0167-a-path-in-a-reply-opens-its-file-in-the-preview-or-a-shell-in-its-folder.md).
 - **Server files.** The folder button on the rail opens a browser for the disk of the machine the dashboard runs on. It shows folders with a path trail, sizes, modified times, types, and symbolic links, and previews text files up to 1 MiB and images up to 10 MiB. It shows what the dashboard's OS user can read, starting in that user's home folder, and Hermes never lists credential files such as `.env` or `auth.json`. **Download…** in a file's preview saves a copy on this computer, up to 100 MB. You pick where in the Save dialog, which asks before replacing a file. The Transfers list shows the server path, the local path, progress and Cancel. A cancelled or failed download leaves nothing behind, and the file already there stays as it was. **Upload…** sends a file you pick into the folder on screen. First it shows where the file goes. If the name is taken, it offers Keep both (as `name (2).ext`) or Replace, and Hermes is asked not to replace anything unless you choose that (it checks just before writing, not atomically). Once Hermes answers, the folder is listed again to check it has the file. Credential files such as `.env` are never uploaded over. **Edit** in a text file's preview opens it in an editor, for UTF-8 files up to 1 MB with one kind of line end, and it keeps CRLF and a byte order mark. Save shows a diff first. It writes only if the server still has the version you opened (checked by SHA-256), and says saved only once Hermes, read back, has your text. If the file changed on the server, nothing is written: you see what changed there, and can Merge (conflicting lines are marked), Reload theirs, or Save mine as a copy. See [ADR 0024](adr/0024-server-file-edits-check-the-revision-first-and-read-back.md) and [ADR 0023](adr/0023-server-file-transfers-stream-through-rust-and-stop-with-the-connection.md).
 - **Screen.** The side panel's Screen tab shows Hermes's own screen on the server (its Bot Desktop), where the agent's computer use and its browser run. Watch it live, take over for a sign-in or a CAPTCHA, and hand back. The first time the tab is shown, it adds what the screen's dock lacks of a web browser, a terminal and a text editor, with no install step: Hermes installs its own Chromium, and the terminal (`xfce4-terminal`) and the text editor (`mousepad`) go in through your ssh. If sudo on the server needs a password, the tab asks for it in a masked field; it goes only to sudo and isn't kept. With no SSH target, the tab shows the command to run instead. A stopped screen gets the new apps in its dock when it next starts; a running one offers **Restart the screen**, which the app never does by itself. While you hold the screen, copy and paste work both ways: text you copied on this computer is on the screen's clipboard once the pointer or the focus enters the screen (press Ctrl+V there), and text copied on the screen is on this computer's clipboard once the pointer or the focus leaves. **Paste here** and **Copy out** do the same on a press. Copying out needs `xclip` on the server, which the tab adds with the other apps. See [ADR 0039](adr/0039-the-side-panel-holds-preview-terminals-files-and-hermess-screen.md) and [ADR 0193](adr/0193-the-screen-adds-a-browser-a-terminal-and-a-text-editor-itself.md).
@@ -129,7 +128,6 @@ These are the defaults. Settings → **Keyboard Shortcuts** lists every command 
 | Alt+B | Open the profile's Bot Chat, or go back to the chat before it |
 | Ctrl+\\ | Open a second pane, or close the inactive one |
 | Ctrl+1, Ctrl+2 | Focus the left or right composer |
-| Ctrl+Shift+S | Take a screenshot (configurable in Settings → General) |
 | Your choice, such as Ctrl+Alt+H | Bring Highwing forward from any app (Settings → General, off by default) |
 
 ### Slash commands
@@ -220,21 +218,6 @@ Click the status bar's context meter to see what fills the chat's context window
 
 See [ADR 0025](adr/0025-the-context-inspector-shows-hermess-own-accounting.md).
 
-### Screenshots
-
-Ctrl+Shift+S, or the camera button in the composer, attaches a screenshot of a region or window to your message. You can review it before you send.
-
-- **Hyprland, Sway, and other wlroots compositors:** install `slurp` and `grim`. If they're missing, the app says what to install and captures nothing.
-- **GNOME and KDE Plasma:** the desktop's screenshot portal shows its own picker. It needs `xdg-desktop-portal` with `xdg-desktop-portal-gnome` or `xdg-desktop-portal-kde`.
-
-The in-app shortcut works only while Highwing has focus. For a shortcut that works anywhere, bind a desktop key to `hermes-chat --screenshot`. On Hyprland, for example:
-
-```ini
-bind = SUPER SHIFT, S, exec, env WEBKIT_DISABLE_DMABUF_RENDERER=1 hermes-chat --screenshot
-```
-
-If Highwing is running, the screenshot goes to the chat on screen. If it isn't running, or is on the sign-in screen, the screenshot is taken once you sign in, if you sign in within two minutes.
-
 ### Annotations
 
 The crosshair button in the Preview's toolbar annotates the web page shown there, whether it is on the web, on the Hermes server or on this computer. It is offered once the page has loaded. The app takes a still of the page and lays it over the page, which stays loaded behind it. Point at an element and click it, or drag a region. The Up and Down arrows step to the element's parent and back. Then a card shows everything that would be added to your message: the image with your mark, the page's address and time, and what the page says the element is (its tag, its text, a selector, its box and a few computed styles). Add a note, and **Add to message** stages `annotation-N.png` in the chat you were last in, with the words at the composer's cursor. You can edit or delete the words before you send. Cancel or Esc deletes the still and adds nothing. Nothing is sent until you send the message.
@@ -242,8 +225,8 @@ The crosshair button in the Preview's toolbar annotates the web page shown there
 - **What is never collected.** Form values, password and hidden fields beyond "a password field", cookies, storage, the page's HTML, and attributes other than the tag, role, label, id and two classes. Ids, classes and labels that look like secrets are left out. So are style values that hold an address, and query or fragment values in the page's address whose names look like secrets (`?token=`, `#access_token=`). The image shows what was visible on the page, so the card shows it before anything is staged.
 - **Regions.** A part of the page from another site, a page that changed under your pick, and every page on Windows give a region: the box with the reason, and no element details. On Windows the page is a sandboxed frame the app can't read, so the still is WebView2's image of the window, cut to the frame (ADR 0153).
 - **After the page moves.** A staged annotation's chip says "page changed" once the Preview's page loads again or changes its address. It still sends as it is, with the address and time it was taken.
-- **Storage.** The still and the staged image live in the private captures folder with Screenshots. The still is deleted on Cancel, when the page moves, when the Preview shows something else or goes out of sight, and on sign-out; the staged image is deleted as any Screenshot is. Nothing else is written.
-- **Server versions.** Annotations need only what a Screenshot needs (`image.attach_bytes` and `prompt.submit`), so every Hermes this app signs in to takes them. Whether the model looks at the image depends on its vision support; the words say what was picked either way.
+- **Storage.** The still and the staged image live in the private captures folder with pasted files. The still is deleted on Cancel, when the page moves, when the Preview shows something else or goes out of sight, and on sign-out; the staged image is deleted as any staged file is. Nothing else is written.
+- **Server versions.** Annotations need only what a pasted image needs (`image.attach_bytes` and `prompt.submit`), so every Hermes this app signs in to takes them. Whether the model looks at the image depends on its vision support; the words say what was picked either way.
 
 ### Chat links
 
@@ -351,7 +334,7 @@ A backup holds only what Highwing keeps on this computer. Your chats, projects, 
 
 | Category | What it holds | Kept for |
 |---|---|---|
-| Settings | Theme, appearance and custom themes, startup and display choices, the model pick and starred models, status bar, screenshot shortcut, terminal target | This computer |
+| Settings | Theme, appearance and custom themes, startup and display choices, the model pick and starred models, status bar, terminal target | This computer |
 | Templates | Every template; a project-scoped one comes back only with its profile | This computer |
 | Drafts | Each chat's unsent text, and the New chat pane's | Each connection and profile |
 | Queued messages | Their text, not their files. They come back paused | Each connection and profile |
@@ -390,8 +373,6 @@ Optional dependencies:
 | --- | --- |
 | `openssh` | Signing in through an SSH tunnel |
 | A Secret Service provider (`gnome-keyring` or `kwallet`) | Remembering the password and extra request headers |
-| `slurp` and `grim` | Screenshots on Hyprland and Sway |
-| `xdg-desktop-portal` and the desktop's backend | Screenshots on GNOME and KDE Plasma |
 | `desktop-file-utils` | Other apps finding Highwing for `hermes-chat://` links. Its pacman hook updates the desktop's handler list when the package is installed or removed. |
 | A hunspell dictionary (`hunspell-en_us`, or your language's) | Underlining misspelled words as you write a message. Without one, nothing is underlined. |
 
@@ -403,7 +384,7 @@ WEBKIT_DISABLE_DMABUF_RENDERER=1 hermes-chat
 
 ### Chat links and the desktop
 
-The launcher registers Highwing as the handler for `hermes-chat://` links. The desktop runs `hermes-chat <link>`. If Highwing is already running, the new process hands the link to it over the session bus (the `net.l0cky12.HermesChat` name that `--screenshot`, `--show` and `--toggle` use, method `OpenLink`) and exits, so one window opens it. Otherwise the new process starts and opens it once you're signed in.
+The launcher registers Highwing as the handler for `hermes-chat://` links. The desktop runs `hermes-chat <link>`. If Highwing is already running, the new process hands the link to it over the session bus (the `net.l0cky12.HermesChat` name that `--show` and `--toggle` use, method `OpenLink`) and exits, so one window opens it. Otherwise the new process starts and opens it once you're signed in.
 
 To check the registration:
 
@@ -440,7 +421,7 @@ When the touch keyboard docks over the window, the window keeps its size, so the
 
 Settings → General → **Updates** shows the installed version, what's newer, and what changed. It checks once at launch unless you turn that off. Nothing installs or restarts without you. Updating the app doesn't involve your Hermes server: any server version the app works with stays supported, and after a restart the app signs in to the same connection again.
 
-A restart keeps your drafts, unsent and uncertain messages, and queued messages, for every connection, profile and chat, in every pane and tab. They're written whole to `~/.local/share/net.l0cky12.hermes-chat/restart-drafts.json` (readable only by you) first, and the app doesn't restart if that fails. The next launch puts them back and deletes the file. A queue comes back paused, and an uncertain message is checked against the chat's history as usual, so nothing goes twice. The app opens again with one pane. Files attached in a composer aren't kept, and the restart section names them so you can send them first. If the app's storage is too full to put the drafts back, it clears its cached chat lists and Saved copies to make room. If that isn't enough, or the file can't be read (cut short, say), the app renames it to `restart-drafts-<time>.json`, never puts it back, and Settings says where it is. The screenshots it refers to are kept until you move or delete it (ADR 0060).
+A restart keeps your drafts, unsent and uncertain messages, and queued messages, for every connection, profile and chat, in every pane and tab. They're written whole to `~/.local/share/net.l0cky12.hermes-chat/restart-drafts.json` (readable only by you) first, and the app doesn't restart if that fails. The next launch puts them back and deletes the file. A queue comes back paused, and an uncertain message is checked against the chat's history as usual, so nothing goes twice. The app opens again with one pane. Files attached in a composer aren't kept, and the restart section names them so you can send them first. If the app's storage is too full to put the drafts back, it clears its cached chat lists and Saved copies to make room. If that isn't enough, or the file can't be read (cut short, say), the app renames it to `restart-drafts-<time>.json`, never puts it back, and Settings says where it is. The staged files it refers to are kept until you move or delete it (ADR 0060).
 
 How an update installs depends on how the app was installed:
 
@@ -619,7 +600,7 @@ Hermes stores the chats and their history, imported chats included, titles, Arch
 | The Snapshot host: endpoint, region, bucket, prefix, access key id and secret key, in one entry. Only Rust reads the secret; the webview sees the rest. One for this computer, for every connection and profile. | System keyring, account `snapshot-host` | **Remove** in Settings → Snapshots |
 | Each snapshot: the page, and its title, created and expiry times and SHA-256 as object metadata. Nothing about a snapshot is kept on this computer. | Your bucket, `<prefix><id>.html` | **Revoke**, the list deleting it after it expires, or you |
 | Drafts, Failed messages and Queued messages saved for an update's restart | `$XDG_DATA_HOME/net.l0cky12.hermes-chat/restart-drafts.json`, readable only by you | Putting them back at the next launch. A copy that couldn't be put back is renamed `restart-drafts-<time>.json` and stays until you move or delete it; Settings says where. |
-| Screenshots waiting to send | `$XDG_CACHE_HOME/hermes-chat/captures/`, readable only by you | Confirmed delivery, removing them from the composer, or leaving the composer without sending. A queued message keeps its screenshots until it goes or you remove it. A Failed message keeps its screenshots until delivery is confirmed, history reconciles it, or you Dismiss it. Startup cleanup removes only leftovers that no message needs. |
+| Files waiting to send | `$XDG_CACHE_HOME/hermes-chat/captures/`, readable only by you | Confirmed delivery, removing them from the composer, or leaving the composer without sending. A queued message keeps its files until it goes or you remove it. A Failed message keeps its files until delivery is confirmed, history reconciles it, or you Dismiss it. Startup cleanup removes only leftovers that no message needs. |
 | Pasted files | A private folder under `$TMPDIR/hermes-chat/` (usually `/tmp/hermes-chat/`) | Not removed by the app |
 | Exported chats | The file you chose in the Save dialog | You |
 | Imports you started: each file's SHA-256, name, format, time, and the ids it gave its chats, per connection and profile. No chat text. | Webview local storage (`hermes-chat.imports`), at most 200 files per profile | The oldest going first. Clear local cache keeps them. |
@@ -646,7 +627,6 @@ Everything kept per connection in local storage, and in `project-defaults.json`,
 | The connection is labelled Unsecure | Use `https://`, SSH, or a Tailscale address. Plain `http://` to a public or LAN address isn't encrypted. |
 | A page in the preview pane stays blank | On Windows, the site may forbid framing (`X-Frame-Options` or `frame-ancestors`); the Preview then says so. Open it in a browser instead. On Linux such sites show, and a page that can't load says why. |
 | A key bound to `hermes-chat --toggle` does nothing | Run the command in a terminal to see its error. If Highwing might not be open yet, run it as `env WEBKIT_DISABLE_DMABUF_RENDERER=1 hermes-chat --toggle`, as the launcher does. |
-| Screenshots do nothing on Hyprland or Sway | Install `slurp` and `grim`. |
 | A `hermes-chat://` link does nothing, or opens another app | Run `xdg-mime query default x-scheme-handler/hermes-chat`. It should print `hermes-chat.desktop`; if not, run `xdg-mime default hermes-chat.desktop x-scheme-handler/hermes-chat`. |
 | A chat link says the connection isn't known | The link was copied on another computer, or before this computer's local storage was cleared. Choose Open it here if the chat is on the server signed in now. |
 | Dictation can't record | Check the microphone and the PipeWire or PulseAudio sound server. Settings → General → Voice shows which providers the profile uses. |
@@ -695,5 +675,5 @@ Everything kept per connection in local storage, and in `project-defaults.json`,
 - Logs can read only what Hermes's `/api/logs` gives: the last 500 lines of a file, with no position. More than 500 lines between two reads (250 lines a second), or a rotation between reads, means lines are missed; the list says so but can't get them back. Lines are matched by their text, so a run of identical lines can hide a repeat. Only the log on screen is read, and only while connected. Redaction covers known shapes and can miss a secret written another way. Logs was checked live against Hermes at `f0d9488` (whose `/api/logs` is the same as `bf0203a`'s) on a throwaway home, through a browser harness that stands in for the Rust relay (`tools/shots/logs-live.mjs`), not the Tauri window. Other versions weren't tested.
 - The tray needs a desktop that shows tray icons; GNOME needs the AppIndicator extension. Clicking the icon opens its menu rather than toggling the window, since libayatana-appindicator reports no clicks. With no session bus, launching it again starts a second copy instead of bringing the first one back.
 - Connection diagnostics can check a route only by reading it. Toolset switches have no read to check them by, so they show as Unknown until Settings → Toolsets opens. Hermes has no single list of its routes and methods, so the app checks each one; ADR 0044 proposes one. A note that a feature is missing stays until the next reconnect, Check again, or a read that finds the route.
-- The automated tests use a fake Hermes. Native Wayland screenshot pickers and real audio devices aren't covered.
+- The automated tests use a fake Hermes. Real audio devices aren't covered.
 - Voice conversations are half-duplex: you interrupt Hermes's speech with Stop speaking or Esc, not by talking over it. Replies are spoken once complete, not while they stream. The turn settings are Hermes's, but the webview applies its own gain control and noise suppression first, so a threshold can behave differently here than in Hermes's CLI. The automated tests use a stand-in microphone and audio element. The running app was checked opening, using and releasing a real built-in microphone and audio output, but with the card muted, so speech recognition and room echo through real speakers weren't verified. See ADR 0111, "Gaps", and `docs/screenshots/voice-conversation/README.md`.

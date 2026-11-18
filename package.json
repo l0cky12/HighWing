@@ -14,7 +14,7 @@
     "test:local": "vitest run --maxWorkers=2",
     "e2e": "node scripts/e2e.mjs",
     "frames-diff": "node scripts/frames-diff.mjs",
-    "check": "node scripts/check-adrs.mjs && cargo fmt --manifest-path src-tauri/Cargo.toml --check && npm run build && npm run test:local && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
+    "check": "node scripts/check-adrs.mjs && node scripts/check-markdown.mjs && cargo fmt --manifest-path src-tauri/Cargo.toml --check && npm run build && npm run test:local && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
     "bump": "node scripts/release/version.mjs bump",
     "tauri": "tauri"
   },

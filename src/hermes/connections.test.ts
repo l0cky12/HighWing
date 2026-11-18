@@ -288,7 +288,7 @@ describe("Removing a connection's local data", () => {
     expect(branchKeys.some((k) => k.includes(two.id))).toBe(true);
   });
 
-  it("forgets failed writes, screenshots and unopened legacy Failed messages before a restart", async () => {
+  it("forgets failed writes, staged files and unopened legacy Failed messages before a restart", async () => {
     localStorage.setItem(LEGACY_SIGN_IN_KEY, JSON.stringify(legacy));
     const one = store().current()!;
     const other = store().draft({ ...legacy, sshTarget: "lena@other" });

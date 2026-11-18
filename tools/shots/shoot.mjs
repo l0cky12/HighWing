@@ -217,7 +217,6 @@ const scenes = {
   // Settings → General (#174), at 1920 × 1080 and at the window's 760 × 500 minimum.
   "general-connection": { query: "", ...hd, steps: [openSettings] },
   "general-launch": { query: "", ...hd, steps: [openSettings, click(".subnav-item", "Launch")] },
-  "general-screenshots": { query: "", ...hd, steps: [openSettings, click(".subnav-item", "Screenshots")] },
   "general-chats": { query: "", ...hd, steps: [openSettings, click(".subnav-item", "Chats")] },
   "general-storage": { query: "", ...hd, steps: [openSettings, click(".subnav-item", "Storage")] },
   "general-search": { query: "", ...hd, steps: [openSettings, typeSearch("cache")] },
@@ -317,7 +316,6 @@ const narrow = { width: 760, height: 600 };
 Object.assign(scenes, {
   "settings-general-chats": { query: "?profiles=1", ...hd, steps: [openSettings, sub("Chats")] },
   "settings-general-launch": { query: "?profiles=1", ...hd, steps: [openSettings, sub("Launch")] },
-  "settings-general-screenshots": { query: "?profiles=1", ...hd, steps: [openSettings, sub("Screenshots")] },
   "settings-general-storage": { query: "?profiles=1", ...hd, steps: [openSettings, sub("Storage")] },
   "settings-memory-user": { query: "?profiles=1", ...hd, steps: [openSettings, tab("Memory"), sub("User profile")] },
   "settings-memory-external": { query: "?profiles=1", ...hd, steps: [openSettings, tab("Memory"), sub("External memory")] },

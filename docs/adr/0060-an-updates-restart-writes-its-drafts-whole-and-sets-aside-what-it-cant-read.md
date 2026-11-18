@@ -1,5 +1,7 @@
 # An update's restart writes its drafts whole and sets aside what it can't read
 
+> **Amended by [ADR 0212](0212-screenshot-capture-is-removed-and-its-staging-folder-stays-for-pasted-files-and-annotations.md).** `--screenshot` is gone, so the restart drops only `--show`, `--toggle` and a chat link. The restart's saved drafts keep their staged files through `capture_sync_outbox`, the renamed `screenshot_sync_outbox`.
+
 PR #61 added the update workflow: Settings checks for a newer version, pacman (or, for a standalone AppImage, Tauri's updater) installs it, and **Restart now** saves every draft, outbox and queue to `restart-drafts.json` in the app data folder before restarting. The next launch puts them back before the app first renders. Issue #102 verified that on a real pacman upgrade and asked to close what was left in recovery, stale requests and D-Bus ownership. This ADR records the rules that came out of it.
 
 ## The saved copy is written whole

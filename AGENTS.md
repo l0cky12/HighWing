@@ -33,6 +33,13 @@ The suite runs here as `npm run test:local`, which is `vitest run` with two work
 
 Turn on the pre-commit hook once per clone (all worktrees share it): `git config core.hooksPath .githooks`. It refuses a commit that stages Rust when `cargo fmt --check` fails.
 
+### Rules and what enforces them
+
+| Rule | Enforced by |
+| --- | --- |
+| Add a Markdown file only when the owner asks for it. Notes on how a PR was made or verified go in the PR description. An ADR or a skill file needs no ask. | `scripts/check-markdown.mjs`, in `npm run check`, CI and the pre-commit hook |
+| Every ADR has a number of its own. | `scripts/check-adrs.mjs`, in `npm run check` and CI |
+
 ### Releases
 
 A release is a `v<version>` tag on `main` plus its GitHub release (`docs/releases.md`). Attach every installer and package built for that version (`.exe`, `.deb`, `.rpm`, `.AppImage`, …) to that one release, each with a `.sha256` beside it. Today `installers.yml` builds the Windows `.exe` and the `.deb` and attaches both, on the tag, through `scripts/release/attach-release.sh`. A change that adds a bundle format also adds the step that attaches it to the tagged release.

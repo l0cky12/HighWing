@@ -24,6 +24,8 @@ jobs:
           cache: npm
       - name: Every ADR has a number of its own
         run: node scripts/check-adrs.mjs
+      - name: Every Markdown file is one the owner asked for
+        run: node scripts/check-markdown.mjs
       - run: npm ci
       - run: npm test
       - run: npm test

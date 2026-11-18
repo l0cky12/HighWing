@@ -61,6 +61,7 @@ import type { Restored, RollbackIO } from "./fileUndo";
 import { ConnectionLostError, FILE_MARK, LIMITS, LegacyProtocol, PromptUnconfirmedError, ProtocolMismatchError, RpcError, negotiate, type Admitted, type AnswerOutcome, type BranchAnswer, type GoingOut, type Inbound, type PlainMethod, type Port, type RpcFrame, type ServerRequest, type SessionProtocol } from "./sessionProtocol";
 import type { AppMethod } from "./canonicalVerbs";
 import { policyOf } from "./chatKind";
+import { THREAD_PREFIX, Threads, freeTitle, isThreadTitle, threadTitle, threadTopic, titleInUse, type BotThread, type ThreadShelf, type ThreadTitle } from "./threads";
 import { projectStored, type TranscriptMessage } from "./storedTranscript";
 import {
   BOT_BLOCK_FIELDS,
@@ -72,7 +73,6 @@ import {
   blockOf,
   agentMessaging,
   configureParams,
-  isBotChat,
   isBotChatTitle,
   lacksPictureKeys,
   lookOf,
@@ -143,7 +143,11 @@ export const APP_SOURCE = "gui";
 
 /** Why a Bot Chat can't be renamed here (ADR 0066). */
 const BOT_CHAT_RENAME = "A Bot Chat's name is how Hermes finds it, so it can't be renamed.";
+const THREAD_RETITLE = "A thread is named for its topic, so Hermes doesn't write a title for it. Rename it instead.";
 /** Hermes runs only the job in a Job run's session, and stores a refusal in the run's history if it is sent a message. */
+const FREE_TITLE_ROUNDS = 5;
+const SHELF_READS_AT_ONCE = 3;
+const SHELF_READ_TRIES = 3;
 const JOB_RUN_NO_SESSION = "A scheduled job's run can't be continued here.";
 const JOB_RUN_READ_ONLY = "This chat is a run of a scheduled job, so it's read-only here.";
 const HERMES_MESSAGES_PAGE_MAX = 500;
@@ -572,6 +576,7 @@ export type Snapshot = {
   bots?: { roster: Bot[]; at: number };
   /** Each bot's picture as a data URL, by profile, read once per connection for a bot that has one. */
   botPictures: Record<string, string>;
+  threads: Record<string, ThreadShelf>;
   /** The switch to `profile` from `from`, until the new profile's list has been read. `error`: why it hasn't yet. */
   switching?: { from: string; error?: string };
   /** The display name Hermes keeps for its built-in `default` profile, as last listed; none when it has none. */
@@ -756,6 +761,10 @@ export class Hermes {
   private botChats = new BotChats((method, params) => this.request(method, params), () => this.protocol, APP_SOURCE);
   /** The Bot Chats the latest roster named, by profile: registry rows and lineage tips, which search leaves out. */
   private botChatIds = new Map<string, Set<string>>();
+  private threads = new Threads((method, params) => this.request(method, params), () => this.protocol, APP_SOURCE);
+  private threadEdits = new Map<string, number>();
+  private shelfReads = new Map<string, Promise<void>>();
+  private straysHidden?: { gen: number; ids: Set<string> };
   /** See `setVisitHome`. */
   private visitHome?: string;
   /** The roster read for the Bot Chats' ids on a connection (`knownBotChats`). */
@@ -1090,6 +1099,7 @@ export class Hermes {
       queues: loadQueues(cache, profile),
       branches: cache.loadBranches(profile),
       botPictures: {},
+      threads: {},
     };
   }
 
@@ -2140,7 +2150,7 @@ export class Hermes {
   }
 
   private leftOut(profile: string, r: SearchRow, archived: boolean): boolean {
-    return (!archived && this.isArchived(profile, r)) || this.deleted.has(profile, r.id) || this.isBotChatRow(profile, r);
+    return (!archived && this.isArchived(profile, r)) || this.deleted.has(profile, r.id) || this.apart(profile, r) !== undefined;
   }
 
   /**
@@ -2466,6 +2476,157 @@ export class Hermes {
       this.update({ chats: [...this.snapshot.chats, { id: openId, title: BOT_CHAT_TITLE, source: "app", settled: true, bot: true, updatedAt, items: [] }] });
     }
     return openId;
+  }
+
+  async readThreads(profiles: readonly string[], olderThan = 0): Promise<void> {
+    const now = Date.now();
+    const due = [...new Set(profiles)].filter((p) => now - (this.snapshot.threads[p]?.at ?? 0) >= olderThan || this.snapshot.threads[p]?.error !== undefined);
+    const next = async (): Promise<void> => {
+      const profile = due.shift();
+      if (profile === undefined) return;
+      await this.readShelf(profile);
+      return next();
+    };
+    await Promise.all(Array.from({ length: SHELF_READS_AT_ONCE }, next));
+  }
+
+  private readShelf(profile: string): Promise<void> {
+    const flight = this.shelfReads.get(profile);
+    if (flight) return flight;
+    const run = this.listShelf(profile).finally(() => {
+      if (this.shelfReads.get(profile) === run) this.shelfReads.delete(profile);
+    });
+    this.shelfReads.set(profile, run);
+    return run;
+  }
+
+  private async listShelf(profile: string): Promise<void> {
+    for (let tries = 0; tries < SHELF_READ_TRIES; tries++) {
+      const edits = this.threadEdits.get(profile) ?? 0;
+      let shelf: ThreadShelf;
+      try {
+        shelf = await this.threads.list(profile);
+        if (shelf.capped) shelf = await this.withOlderThreads(profile, shelf);
+      } catch (e) {
+        const last = this.snapshot.threads[profile];
+        return this.setShelf(profile, { threads: last?.threads ?? [], at: last?.at ?? 0, capped: last?.capped ?? false, error: errorText(e) });
+      }
+      if ((this.threadEdits.get(profile) ?? 0) === edits) return this.setShelf(profile, shelf);
+    }
+  }
+
+  private async withOlderThreads(profile: string, shelf: ThreadShelf): Promise<ThreadShelf> {
+    const listed = new Set(shelf.threads.map((t) => t.title));
+    const older: BotThread[] = [];
+    for (const was of this.snapshot.threads[profile]?.threads ?? []) {
+      if (listed.has(was.title)) continue;
+      const found = await this.threads.find(profile, was.title);
+      if (found) older.push({ ...was, openId: found.openId, messageCount: found.messageCount });
+    }
+    return { ...shelf, threads: [...shelf.threads, ...older] };
+  }
+
+  private setShelf(profile: string, shelf: ThreadShelf) {
+    this.update({ threads: { ...this.snapshot.threads, [profile]: shelf } });
+  }
+
+  private threadEdited(profile: string, change: (threads: BotThread[]) => BotThread[] = (t) => t) {
+    this.threadEdits.set(profile, (this.threadEdits.get(profile) ?? 0) + 1);
+    const shelf = this.snapshot.threads[profile];
+    if (shelf) this.setShelf(profile, { ...shelf, threads: change(shelf.threads) });
+    this.track(this.readShelf(profile));
+  }
+
+  private showThread(thread: { openId: string; title: ThreadTitle; lastActive?: number }): string {
+    const { openId, title } = thread;
+    if (this.snapshot.chats.some((c) => c.id === openId)) this.patchChat(openId, (c) => (c.title === title ? c : { ...c, title }));
+    else {
+      this.revealed.add(openId);
+      this.update({ chats: [...this.snapshot.chats, { id: openId, title, source: "app", settled: true, updatedAt: thread.lastActive || Date.now(), items: [] }] });
+    }
+    return openId;
+  }
+
+  async openThread(bot: Bot, title: ThreadTitle): Promise<string> {
+    const profile = this.profile;
+    if (bot.profile !== profile) throw new Error(`Switch to ${bot.profile} first.`);
+    const found = await this.threads.find(profile, title);
+    if (!found) {
+      this.threadEdited(profile, (threads) => threads.filter((t) => t.title !== title));
+      throw new Error(`Hermes no longer has ${bot.name}'s thread “${threadTopic(title)}”.`);
+    }
+    if (this.profile !== profile) throw new Error(`Switched to the ${this.profile} profile before the thread opened.`);
+    return this.showThread(found);
+  }
+
+  async newThread(bot: Bot, topic: string): Promise<string> {
+    const profile = this.profile;
+    if (bot.profile !== profile) throw new Error(`Switch to ${bot.profile} first.`);
+    const inUse = (this.snapshot.threads[profile]?.threads ?? []).filter((t) => t.messageCount > 0).map((t) => t.title);
+    const started = await this.threads.start(profile, topic, inUse);
+    this.threadEdited(profile);
+    if (this.profile !== profile) throw new Error(`Switched to the ${this.profile} profile before the thread opened.`);
+    return this.showThread(started);
+  }
+
+  async renameThread(thread: Pick<BotThread, "profile" | "title">, topic: string): Promise<ThreadTitle> {
+    const { profile } = thread;
+    const title = threadTitle(threadTopic(topic) ?? topic);
+    if (title === thread.title) return title;
+    const found = await this.threads.find(profile, thread.title);
+    if (!found) {
+      this.threadEdited(profile, (threads) => threads.filter((t) => t.title !== thread.title));
+      throw new Error(`Hermes no longer has the thread “${threadTopic(thread.title)}”.`);
+    }
+    const revision = await this.revision(found.titleId, profile);
+    if ((await this.readTitle(found.titleId, profile)) !== thread.title) {
+      this.threadEdited(profile);
+      throw new Error(`The thread “${threadTopic(thread.title)}” was renamed in another Hermes client. Look at its new name and rename it again.`);
+    }
+    try {
+      await this.fencedPatch(found.titleId, profile, { title }, revision);
+    } catch (e) {
+      if (titleInUse(e)) throw new Error(`This bot already has a thread on “${threadTopic(title)}”.`);
+      throw e;
+    }
+    this.threadEdited(profile, (threads) => threads.map((t) => (t.title === thread.title ? { ...t, title, topic: threadTopic(title)! } : t)));
+    if (profile === this.profile) for (const c of this.snapshot.chats) if (c.title === thread.title) this.retitled(c.id, title);
+    return title;
+  }
+
+  async deleteThread(thread: Pick<BotThread, "profile" | "title">): Promise<boolean> {
+    const { profile, title } = thread;
+    const open = profile === this.profile ? this.snapshot.chats.filter((c) => c.title === title) : [];
+    if (open.some((c) => c.running)) return false;
+    const found = await this.threads.find(profile, title);
+    const gone = (threads: BotThread[]) => threads.filter((t) => t.title !== title);
+    if (!found) {
+      this.threadEdited(profile, gone);
+      return true;
+    }
+    const here = open.find((c) => c.id === found.openId);
+    // Hermes deletes a compacted thread's earlier sessions with its newest one (`include_compression_chain`).
+    const deleted = here ? await this.delete(here.id) : await this.fencedDelete(found.openId, profile).then(() => true);
+    if (!deleted) return false;
+    if (profile === this.profile && this.snapshot.chats.some((c) => c.title === title)) this.update({ chats: this.snapshot.chats.filter((c) => c.title !== title) });
+    if (!here) this.threadEdited(profile, gone);
+    return true;
+  }
+
+  /**
+   * The thread title is read first: a thread branched from the Bot Chat may be reported with the Bot Chat as its
+   * lineage root, and is a thread all the same.
+   */
+  private apart(profile: string, r: { id: string; title?: string | null; lineage_root?: string; _lineage_root_id?: string | null }): "thread" | "botChat" | undefined {
+    return isThreadTitle(r.title) ? "thread" : this.isBotChatRow(profile, r) ? "botChat" : undefined;
+  }
+
+  private hideStray(profile: string, id: string) {
+    if (this.straysHidden?.gen !== this.generation) this.straysHidden = { gen: this.generation, ids: new Set() };
+    const key = `${profile} ${id}`;
+    if (this.straysHidden.ids.has(key)) return;
+    this.straysHidden.ids.add(key);
+    this.track(this.patchSession(id, profile, { hidden: true }));
   }
 
   /**
@@ -2855,8 +3016,24 @@ export class Hermes {
     return this.branchNow(preview, title, variant, whole);
   }
 
+  async threadFromHere(preview: BranchPreview, topic: string): Promise<{ chatId: string; warnings: string[] }> {
+    this.foreground();
+    return this.branchNow(preview, undefined, undefined, undefined, topic);
+  }
+
+  private async freeThreadTitle(profile: string, topic: string): Promise<ThreadTitle> {
+    const base = threadTitle(topic);
+    const taken = (this.snapshot.threads[profile]?.threads ?? []).map((t) => t.title as string);
+    for (let round = 0; round < FREE_TITLE_ROUNDS; round++) {
+      const title = freeTitle(base, taken);
+      if (!(await this.threads.find(profile, title))) return title;
+      taken.push(title);
+    }
+    throw new Error(`Hermes already has several threads on “${threadTopic(base)}”. Pick another topic.`);
+  }
+
   /** `branch` once the owner started it: it finishes even if the connection goes to the background meanwhile. */
-  private async branchNow(preview: BranchPreview, title?: string, variant?: BranchVariant, whole?: string): Promise<{ chatId: string; warnings: string[] }> {
+  private async branchNow(preview: BranchPreview, title?: string, variant?: BranchVariant, whole?: string, threadOn?: string): Promise<{ chatId: string; warnings: string[] }> {
     const profile = this.profile;
     const { chat, spine, index } = await this.branchBoundary(preview.chatId, preview.itemId, profile);
     const count = index + 1;
@@ -2870,15 +3047,29 @@ export class Hermes {
     // from other messages of the chat are left as they are.
     // An Edit or Regenerate is told apart from a plain branch from the same message, and from another edit of it.
     const earlier = this.snapshot.branches.attempts.find(
-      (a) => a.parentId === chat.id && a.count === count && a.fingerprint === preview.fingerprint && a.variant?.kind === variant?.kind && a.variant?.pending?.text === variant?.pending?.text,
+      (a) =>
+        a.parentId === chat.id &&
+        a.count === count &&
+        a.fingerprint === preview.fingerprint &&
+        a.variant?.kind === variant?.kind &&
+        a.variant?.pending?.text === variant?.pending?.text &&
+        (a.thread === undefined) === (threadOn === undefined),
     );
     if (earlier) {
       const { found } = await this.findBranch(earlier, profile);
-      if (found) return { chatId: await this.adoptListed(found, earlier, profile), warnings: ["Hermes had made the branch asked for before the connection dropped, so that one is open now."] };
+      if (found)
+        return {
+          chatId: await this.adoptListed(found, earlier, profile),
+          warnings: [`Hermes had made the ${earlier.thread ? "thread" : "branch"} asked for before the connection dropped, so that one is open now.`],
+        };
     }
+    // Chosen before Hermes is asked: a name another session holds fails the branch, after Hermes may have stored a row.
+    // A lost attempt goes again under the title it went with, which Hermes answers with the branch it made, if it did.
+    const thread = threadOn === undefined ? undefined : (earlier?.thread ?? (await this.freeThreadTitle(profile, threadOn)));
     const sid = await this.resume(chat.id);
     const generation = this.generation;
-    const before = earlier ? earlier.before : (await this.listedSince(profile)).rows.filter((r) => r.parent_session_id === chat.id).map((r) => r.id);
+    // No chat list shows a hidden session, so a thread attempt is found by its title, not among the parent's branches.
+    const before = earlier ? earlier.before : thread ? [] : (await this.listedSince(profile)).rows.filter((r) => r.parent_session_id === chat.id).map((r) => r.id);
     const attempt: BranchAttempt = {
       // The same key as the lost attempt from this point: Hermes answers it with the branch it made, if it did.
       key: earlier ? earlier.key : `branch-${newKey()}`,
@@ -2892,6 +3083,7 @@ export class Hermes {
       ...(title?.trim() && { title: title.trim() }),
       ...(chat.model && { model: chat.model }),
       ...(variant && { variant }),
+      ...(thread && { thread }),
     };
     // Checked again just as the call goes: a reply may have started, or the connection or profile changed, while the
     // list was read. A runtime id means nothing on another connection.
@@ -2909,7 +3101,7 @@ export class Hermes {
     this.updateBranches(profile, (b) => ({ ...b, attempts: [...b.attempts.filter((a) => a.key !== attempt.key), attempt] }));
     let res: BranchAnswer;
     try {
-      res = await this.protocol.edit(sid, { op: "branch", count, key: attempt.key });
+      res = await this.protocol.edit(sid, { op: "branch", count, key: attempt.key, ...(thread && { name: thread }) });
     } catch (e) {
       if (e instanceof ConnectionLostError) throw new BranchUnconfirmed();
       // Refused before Hermes stored anything: no such method, or nothing to branch.
@@ -2920,17 +3112,19 @@ export class Hermes {
       }
       // Other failures can come after Hermes stored the branch, as `agent init failed on branch` does.
       const why = (e as Error).message;
-      let result: { found?: SessionRow; sure: boolean } = { sure: false };
+      let result: Awaited<ReturnType<typeof this.findBranch>> = { sure: false };
       if (this.profile === profile) result = await this.findBranch(attempt, profile).catch(() => ({ sure: false }));
       if (result.found) return { chatId: await this.adoptListed(result.found, attempt, profile), warnings: [`Hermes made the branch but said: ${why}`] };
       if (result.sure) {
         this.dropAttempt(profile, attempt.key);
+        if (thread && titleInUse(e)) throw new Error(`Another session took the name of the thread “${threadTopic(thread)}” first. Nothing was made; try again.`);
         throw e;
       }
       // Kept, so the chat list settles it later, and branching from here again asks with the same key.
       throw new Error(`Hermes said: ${why}. Highwing couldn't tell whether it made the branch anyway; it checks the chat list again, and branching from here again won't make a second one.`);
     }
     const generation2 = this.generation;
+    const unhidden = thread ? await this.patchSession(res.stored_session_id, profile, { hidden: true }).then(() => undefined, errorText) : undefined;
     // Read back as stored, the same way the parent was read: the branch must hold exactly the rows the preview showed.
     let check: SpineRow[] | Error;
     try {
@@ -2940,6 +3134,10 @@ export class Hermes {
     }
     if (this.profile !== profile) {
       // Kept with its profile; listed as made here once the owner is back.
+      if (thread) {
+        this.dropAttempt(profile, attempt.key);
+        throw new Error("The profile changed before Hermes answered. The thread is under that profile's bot.");
+      }
       if (!(check instanceof Error) && check.length === count && spineKey(check) === attempt.fingerprint) this.keepElsewhere(res.stored_session_id, attempt, profile);
       throw new Error("The profile changed before Hermes answered. The branch is in that profile's list.");
     }
@@ -2951,10 +3149,12 @@ export class Hermes {
         () => true,
         () => false,
       );
+      const what = thread ? "thread" : "branch";
+      if (thread) this.threadEdited(profile);
       throw new Error(
         gone
-          ? "Hermes copied a different part of this chat than the preview showed, so Highwing deleted that branch again. Nothing else changed."
-          : `Hermes copied a different part of this chat than the preview showed, and the branch it made, "${res.title}", couldn't be deleted. Delete it from the list.`,
+          ? `Hermes copied a different part of this chat than the preview showed, so Highwing deleted that ${what} again. Nothing else changed.`
+          : `Hermes copied a different part of this chat than the preview showed, and the ${what} it made, "${res.title}", couldn't be deleted. Delete it from ${thread ? "under its bot" : "the list"}.`,
       );
     }
     // The connection changed while the branch was read back: its runtime id means nothing now, so it opens afresh.
@@ -2962,7 +3162,8 @@ export class Hermes {
       this.generation !== generation2 || this.snapshot.status !== "connected"
         ? { chatId: await this.adoptListed({ id: res.stored_session_id, title: res.title }, attempt, profile), warnings: [] as string[] }
         : await this.adopt(res, attempt, profile);
-    if (check instanceof Error) made.warnings.unshift(`Highwing couldn't read the branch back to check what it holds (${check.message}).`);
+    if (check instanceof Error) made.warnings.unshift(`Highwing couldn't read the ${thread ? "thread" : "branch"} back to check what it holds (${check.message}).`);
+    if (unhidden !== undefined) made.warnings.push(`Other Hermes clients list it among their chats for now: hiding it failed (${unhidden}). Highwing hides it when it next reads the chat list.`);
     return made;
   }
 
@@ -3230,7 +3431,14 @@ export class Hermes {
    * rows are the ones the preview showed. Another client's branch of the same chat from elsewhere doesn't match. `sure`:
    * the list was read far enough back, and no more than one matched, so none found means none was made.
    */
-  private async findBranch(a: BranchAttempt, profile: string): Promise<{ found?: SessionRow; sure: boolean }> {
+  private async findBranch(a: BranchAttempt, profile: string): Promise<{ found?: Pick<SessionRow, "id" | "title">; sure: boolean }> {
+    if (a.thread) {
+      // A thread's title is its own in the profile, and the lookup sees hidden sessions and has no window.
+      const thread = await this.threads.find(profile, a.thread);
+      if (!thread || this.deleted.has(profile, thread.openId)) return { sure: true };
+      const spine = spineOf(await this.storedRows(thread.openId, profile));
+      return spine.length === a.count && spineKey(spine) === a.fingerprint ? { found: { id: thread.openId, title: a.thread }, sure: true } : { sure: true };
+    }
     const links = this.profile === profile ? this.snapshot.branches.links : this.cache.loadBranches(profile).links;
     const { rows, complete } = await this.listedSince(profile, a.startedAt);
     const fresh = [...new Map(rows.map((r) => [r.id, r])).values()].filter(
@@ -3257,7 +3465,8 @@ export class Hermes {
    */
   private async checkBranchAttempts(profile: string) {
     for (const a of this.snapshot.branches.attempts) {
-      let result: { found?: SessionRow; sure: boolean };
+      const what = a.thread ? `the thread “${threadTopic(a.thread)}”` : `the branch of "${a.parentTitle}"`;
+      let result: Awaited<ReturnType<typeof this.findBranch>>;
       try {
         result = await this.findBranch(a, profile);
       } catch {
@@ -3266,14 +3475,14 @@ export class Hermes {
       if (this.profile !== profile) return;
       if (result.found) {
         const chatId = await this.adoptListed(result.found, a, profile);
-        this.update({ branchNews: { text: `Hermes made the branch of "${a.parentTitle}" before the connection dropped. It's in the list.`, chatId, at: Date.now() } });
+        this.update({ branchNews: { text: `Hermes made ${what} before the connection dropped. It's ${a.thread ? "under its bot" : "in the list"}.`, chatId, at: Date.now() } });
       } else if (Date.now() - a.startedAt > BRANCH_KEY_TTL_MS) {
         this.dropAttempt(profile, a.key);
         this.update({
           branchNews: {
             text: result.sure
-              ? `Hermes didn't make the branch of "${a.parentTitle}". Nothing changed; branch again to try.`
-              : `Highwing couldn't tell whether Hermes made the branch of "${a.parentTitle}". Look for it in the list before branching again.`,
+              ? `Hermes didn't make ${what}. Nothing changed; ${a.thread ? "start it" : "branch"} again to try.`
+              : `Highwing couldn't tell whether Hermes made ${what}. Look for it ${a.thread ? "under its bot before starting it" : "in the list before branching"} again.`,
             at: Date.now(),
           },
         });
@@ -3301,7 +3510,7 @@ export class Hermes {
   }
 
   /** Keeps a branch found in the chat list, made by an attempt whose answer was lost. */
-  private async adoptListed(row: Pick<SessionRow, "id" | "title" | "preview">, a: BranchAttempt, profile: string): Promise<string> {
+  private async adoptListed(row: Pick<SessionRow, "id" | "title">, a: BranchAttempt, profile: string): Promise<string> {
     const chat: Chat = { id: row.id, title: listTitle(row), source: "app", settled: false, updatedAt: Date.now(), items: [] };
     await this.keepBranch(chat, a, profile);
     return chat.id;
@@ -3309,6 +3518,7 @@ export class Hermes {
 
   /** Lists a branch as made here and Active, then gives it the attempt's model and title. Resolves to what failed. */
   private async keepBranch(chat: Chat, a: BranchAttempt, profile: string): Promise<string[]> {
+    if (a.thread) return this.keepThread({ ...chat, title: a.thread, settled: true }, a, profile);
     const link: BranchLink = { parentId: a.parentId, parentTitle: a.parentTitle, point: a.point, at: Date.now(), ...(a.variant && { variant: a.variant }) };
     // The owner switched profile meanwhile: the branch is kept as made here, Active, and listed when they're back.
     if (this.profile !== profile) {
@@ -3323,10 +3533,7 @@ export class Hermes {
     // Both are fenced edits of the same session: the rename goes after the pin, or it would name a stale revision.
     const pinned = this.writePin(chat.id, profile);
     this.track(pinned);
-    const warnings: string[] = [];
-    // Hermes starts a branch on the profile's model, not the parent's.
-    if (a.model && (a.model.model !== chat.model?.model || a.model.provider !== chat.model?.provider || (a.model.effort && a.model.effort !== chat.model?.effort) || (a.model.fast !== undefined && a.model.fast !== chat.model?.fast)))
-      await this.setModel(chat.id, a.model).catch((e) => warnings.push(`It runs on the profile's model: Hermes didn't switch it to ${a.model!.model} (${(e as Error).message})`));
+    const warnings = await this.matchModel(chat, a);
     if (a.title && a.title !== chat.title) await pinned;
     if (a.title && a.title !== chat.title)
       await this.rename(chat.id, a.title, this.snapshot.chats.find((c) => c.id === chat.id)?.title ?? chat.title).catch((e) =>
@@ -3335,6 +3542,23 @@ export class Hermes {
     // An Edit or Regenerate shows what its answer runs on: the model Hermes reports for the branch now.
     const model = this.snapshot.chats.find((c) => c.id === chat.id)?.model;
     if (a.variant && model && this.profile === profile) this.setVariant(profile, chat.id, (v) => ({ ...v, model }));
+    return warnings;
+  }
+
+  private async keepThread(chat: Chat, a: BranchAttempt, profile: string): Promise<string[]> {
+    this.dropAttempt(profile, a.key);
+    this.threadEdited(profile);
+    if (this.profile !== profile) return [];
+    this.revealed.add(chat.id);
+    this.update({ chats: [chat, ...this.snapshot.chats.filter((c) => c.id !== chat.id)] });
+    return this.matchModel(chat, a);
+  }
+
+  /** Hermes starts a branch on the profile's model, not the parent's. */
+  private async matchModel(chat: Chat, a: BranchAttempt): Promise<string[]> {
+    const warnings: string[] = [];
+    if (a.model && (a.model.model !== chat.model?.model || a.model.provider !== chat.model?.provider || (a.model.effort && a.model.effort !== chat.model?.effort) || (a.model.fast !== undefined && a.model.fast !== chat.model?.fast)))
+      await this.setModel(chat.id, a.model).catch((e) => warnings.push(`It runs on the profile's model: Hermes didn't switch it to ${a.model!.model} (${(e as Error).message})`));
     return warnings;
   }
 
@@ -3705,7 +3929,7 @@ export class Hermes {
       running: true,
       updatedAt: Date.now(),
       // A new chat is named by its first message until Hermes titles it; a Bot Chat keeps its title, its identity.
-      title: c.items.length === 0 && c.runtimeId && !isBotChat(c) ? (text || attachments[0]?.name || c.title).slice(0, 48) : c.title,
+      title: c.items.length === 0 && c.runtimeId && !policyOf(c).ofBot ? (text || attachments[0]?.name || c.title).slice(0, 48) : c.title,
       items: [...c.items, user],
     }));
     // A chat's first message names it, and the chat goes in the saved list then, as Hermes has no row for it yet: a
@@ -3848,7 +4072,7 @@ export class Hermes {
    */
   async delete(chatId: string): Promise<boolean> {
     const chat = this.snapshot.chats.find((c) => c.id === chatId);
-    if (!chat || chat.running || policyOf(chat).session === "stored") return false;
+    if (!chat || chat.running || !policyOf(chat).remove) return false;
     const profile = this.profile;
     this.deleted.set(profile, chatId, true);
     this.recorder.forget(profile, chatId);
@@ -3880,6 +4104,7 @@ export class Hermes {
       // Its queue had nowhere left to go.
       if (this.profile === profile && this.snapshot.queues[chatId]) this.setQueue(chatId, { items: [] });
       else this.cache.saveQueue(profile, chatId, undefined);
+      if (isThreadTitle(chat.title)) this.threadEdited(profile, (threads) => threads.filter((t) => t.title !== chat.title));
       return true;
     } catch (e) {
       this.deleted.delete(profile, chatId);
@@ -3904,9 +4129,12 @@ export class Hermes {
     if (title === from) return from;
     // A Bot Chat's title is how Hermes finds it, and a chat renamed to the title would become a bot's one chat (ADR 0066).
     const chat = this.snapshot.chats.find((c) => c.id === chatId);
-    if (chat && isBotChat(chat)) throw new Error(BOT_CHAT_RENAME);
     if (this.isStored(chatId)) throw new Error(JOB_RUN_READ_ONLY);
+    const renamed = chat ? policyOf(chat).rename : "title";
+    if (renamed === "none") throw new Error(BOT_CHAT_RENAME);
+    if (renamed === "topic" && isThreadTitle(chat?.title)) return this.renameThread({ profile: this.profile, title: chat.title }, title);
     if (isBotChatTitle(title)) throw new Error(`“${BOT_CHAT_TITLE}” is the name Hermes gives each bot's one chat. Pick another name.`);
+    if (isThreadTitle(title)) throw new Error(`“${THREAD_PREFIX.trim()}” is how a bot's threads are named. Pick another name.`);
     const profile = this.profile;
     // Read in this order, a rename elsewhere either shows in the title or makes the revision stale.
     const revision = await this.revision(chatId, profile);
@@ -3945,8 +4173,8 @@ export class Hermes {
   async regenerateTitle(chatId: string): Promise<string> {
     const chat = this.snapshot.chats.find((c) => c.id === chatId);
     if (!chat) throw new Error("This chat isn't in the list.");
-    if (isBotChat(chat)) throw new Error(BOT_CHAT_RENAME);
     if (policyOf(chat).session === "stored") throw new Error(JOB_RUN_READ_ONLY);
+    if (policyOf(chat).rename !== "title") throw new Error(policyOf(chat).rename === "topic" ? THREAD_RETITLE : BOT_CHAT_RENAME);
     const from = chat.title;
     const profile = this.profile;
     // Tool rows count toward each page, so older pages are read until the last messages are all in.
@@ -5383,10 +5611,12 @@ export class Hermes {
     const archivedListed = this.snapshot.archivedListed;
     const rows = new Map<string, SessionRow>();
     const botChats = new Set<string>();
+    const threads = new Map<string, string>();
     try {
       const recent = await this.readList(profile, "exclude", cutoff);
       for (const r of recent.rows) rows.set(r.id, r);
       for (const id of recent.botChats) botChats.add(id);
+      for (const [id, title] of recent.threads) threads.set(id, title);
       // Every page also carries the pinned chats that aren't archived; the list has them already.
       if (archivedListed) {
         const old = await this.readList(profile, "only", -Infinity);
@@ -5452,7 +5682,11 @@ export class Hermes {
     // of the list from now on, and is marked so every Bot Chat rule applies to it (ADR 0066).
     const onThisConnection = this.snapshot.chats
       .filter((c) => (c.runtimeId || this.revealed.has(c.id) || this.archiveWanted.has(profile, c.id) || holdsUnsent(c)) && !listedIds.has(c.id))
-      .map((c) => (botChats.has(c.id) && !c.bot ? { ...c, bot: true, title: BOT_CHAT_TITLE } : c));
+      .map((c) => {
+        const thread = threads.get(c.id);
+        if (thread !== undefined) return c.title === thread ? c : { ...c, title: thread };
+        return botChats.has(c.id) && !c.bot ? { ...c, bot: true, title: BOT_CHAT_TITLE } : c;
+      });
     const chats = [...onThisConnection, ...listed];
     const wasUnlisted = !this.hasListed();
     this.listedAt = Date.now();
@@ -5481,9 +5715,14 @@ export class Hermes {
    * the list passes `cutoff`. Every page also carries all pinned rows, archived or not, out of order; the unpinned
    * ones follow recency. `sources`: only chats from these. `more`: the list goes on past the most pages read.
    */
-  private async readList(profile: string, archived: "exclude" | "only" | "include", cutoff: number, sources?: Source[]): Promise<{ rows: SessionRow[]; more: boolean; botChats: Set<string> }> {
+  private async readList(
+    profile: string,
+    archived: "exclude" | "only" | "include",
+    cutoff: number,
+    sources?: Source[],
+  ): Promise<{ rows: SessionRow[]; more: boolean; botChats: Set<string>; threads: Map<string, string> }> {
     const rows: SessionRow[] = [];
-    /** The Bot Chats the pages held, which the list leaves out (`isBotChatRow`). */
+    const threads = new Map<string, string>();
     const botChats = new Set<string>();
     for (let page = 0; page < MAX_PAGES; page++) {
       const offset = page * PAGE_SIZE;
@@ -5498,11 +5737,20 @@ export class Hermes {
       const res = (await this.rest("GET", `api/sessions?${query}`)) as SessionPage;
       // A Bot Chat is opened from its bot's row only, never from the list (ADR 0066). Hermes lists them hidden, except
       // in the archived view, and one born visible elsewhere is still named "Bot Chat".
-      for (const r of res.sessions) (this.isBotChatRow(profile, r) ? botChats.add(r.id) : rows.push(r));
+      // Only the archived view lists hidden sessions, so a thread any other view lists isn't hidden.
+      for (const r of res.sessions) {
+        const kind = this.apart(profile, r);
+        if (kind === "botChat") botChats.add(r.id);
+        else if (kind === undefined) rows.push(r);
+        else {
+          threads.set(r.id, r.title ?? "");
+          if (archived !== "only") this.hideStray(profile, r.id);
+        }
+      }
       const passedCutoff = res.sessions.some((r) => !r.pinned && lastActive(r) < cutoff);
-      if (passedCutoff || res.sessions.length === 0 || offset + PAGE_SIZE >= res.total) return { rows, more: false, botChats };
+      if (passedCutoff || res.sessions.length === 0 || offset + PAGE_SIZE >= res.total) return { rows, more: false, botChats, threads };
     }
-    return { rows, more: true, botChats };
+    return { rows, more: true, botChats, threads };
   }
 
   /**
@@ -5514,7 +5762,7 @@ export class Hermes {
     const query = new URLSearchParams({ profile, order: "recent", limit: String(OTHER_PAGE_SIZE), offset: "0", ...sourceQuery() });
     const res = (await this.rest("GET", `api/sessions?${query}`)) as SessionPage;
     const chats = res.sessions
-      .filter((r) => !r.archived && !this.deleted.has(profile, r.id) && !this.isBotChatRow(profile, r))
+      .filter((r) => !r.archived && !this.deleted.has(profile, r.id) && !this.apart(profile, r))
       .map((r): ListedChat => ({ id: r.id, title: listTitle(r), at: lastActive(r), unread: !!r.unread && lastActive(r) >= cutoff, source: toSource(r.source) }));
     // As in syncOnce: the page also carries every pinned row, and the unpinned ones follow recency.
     const passedCutoff = res.sessions.some((r) => !r.pinned && lastActive(r) < cutoff);
@@ -5560,7 +5808,7 @@ export class Hermes {
   private async patchSession(
     chatId: string,
     profile: string,
-    flags: { pinned?: boolean; unread?: boolean; archived?: boolean },
+    flags: { pinned?: boolean; unread?: boolean; archived?: boolean; hidden?: boolean },
     retry: () => Promise<boolean> = async () => true,
   ): Promise<void> {
     for (let attempt = 0; ; attempt++) {

@@ -1,5 +1,7 @@
 # The window stays on the app, runs only its own scripts, and sends only files the owner attached
 
+> **Amended by [ADR 0212](0212-screenshot-capture-is-removed-and-its-staging-folder-stays-for-pasted-files-and-annotations.md).** Screenshot capture is gone, so `screenshot_capture` no longer adds to `Attachable`. A dropped, picked or pasted file still does.
+
 No script injection into the app's window is known. But one would have reached everything the app can do, with nothing in its way (#344). The window could be sent to any address, such as a copy of the Sign in screen. Inline script ran. Any app command could be called, and `hermes_send_file` read any local path and sent it to the server, such as `~/.ssh/id_ed25519`. This ADR adds three limits, each in Rust or in the page's own policy, where a script can't change it.
 
 ## Decisions

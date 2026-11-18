@@ -37,6 +37,7 @@ async function launch(live: Live[]) {
   };
   server.transcripts = { "scribe-bot": [{ role: "assistant", text: "Release notes drafted." }], "ops-bot": [{ role: "assistant", text: "Deploy is waiting." }] };
   server.profileMeta = { scribe: { ui_meta: { "hermes-bots": { title: "Scribe" } } }, ops: { ui_meta: { "hermes-bots": { title: "Ops" } } } };
+  server.seedThread("scribe", "Changelog wording", { hours: 5 });
   server.liveSessions = live;
   const hermes = await connect(server.openPipe, undefined, memoryCache());
   running.push(hermes);
@@ -63,13 +64,24 @@ it("shows only catalogue words in Chats mode with one bot that needs the owner",
   expect(untranslated(document.querySelector("textarea[data-composer]")!)).toEqual([]);
 });
 
-it("shows only catalogue words for several bots that need the owner, in Bots mode, and in a Bot Chat's pane", { timeout: 30_000 }, async () => {
+it("shows only catalogue words for several bots that need the owner, in Bots mode with a bot's threads, and in a thread's and a Bot Chat's pane", { timeout: 30_000 }, async () => {
   const user = await launch([waiting("scribe-bot"), waiting("ops-bot")]);
   expect(parts(".sb-mode", ".sb-needs-you-slot")).toEqual([]);
 
   await user.click(panel().querySelector<HTMLElement>('[role=tab][data-mode="bots"]')!);
-  await waitFor(() => expect(panel().querySelector(".bots-chats")).toBeTruthy());
-  expect(parts(".sb-mode", ".bots-chats")).toEqual([]);
+  await waitFor(() => expect(panel().querySelector(".bots-row")).toBeTruthy());
+  expect(parts(".sb-mode")).toEqual([]);
+  const scribes = () => panel().querySelector<HTMLElement>('.bots-threads[data-threads-of="scribe"]')!;
+  await waitFor(() => expect(scribes().querySelector(".bots-threads-toggle")!.textContent).toMatch(/1/));
+  await user.click(scribes().querySelector<HTMLElement>(".bots-threads-toggle")!);
+  expect(scribes().querySelector(".bots-thread")).toBeTruthy();
+  expect(parts(".bots-threads")).toEqual([]);
+  await user.click(scribes().querySelector<HTMLElement>(".bots-thread-new")!);
+  expect(parts(".bots-threads")).toEqual([]);
+  await user.keyboard("{Escape}");
+  await user.click(scribes().querySelector<HTMLElement>(".bots-thread-open")!);
+  await waitFor(() => expect(document.querySelector(".chat-head .chat-title-topic")).toBeTruthy());
+  expect(untranslated(document.querySelector(".chat-head .chat-title")!)).toEqual([]);
 
   await user.click(panel().querySelector<HTMLElement>('.bots-row[data-profile="scribe"] .bots-open')!);
   await waitFor(() => expect(document.querySelector(".chat-head .bots-face")).toBeTruthy());

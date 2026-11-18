@@ -92,7 +92,7 @@ export async function boot(opts: BootOptions = {}) {
       if (typeof bytes !== "string") throw `Couldn't read ${args.path}`;
       return Uint8Array.from(bytes, (c) => c.charCodeAt(0)).buffer;
     },
-    screenshot_discard: (args) => void delete server.files[args.path],
+    capture_discard: (args) => void delete server.files[args.path],
     hermes_disconnect: async (args) => {
       await pipes.get(args.attempt)?.close();
       pipes.delete(args.attempt);
@@ -111,8 +111,7 @@ export async function boot(opts: BootOptions = {}) {
     update_install_kind: () => ({ kind: "unmanaged", version: "0.0.0" }),
     local_stt_state: () => ({ onThisComputer: false }),
     tray_inbox: () => undefined,
-    screenshot_pending_request: () => null,
-    screenshot_sync_outbox: () => undefined,
+    capture_sync_outbox: () => undefined,
     restart_drafts_read: () => ({ kind: "none" }),
     window_hidden: () => false,
     "plugin:window|is_focused": () => true,

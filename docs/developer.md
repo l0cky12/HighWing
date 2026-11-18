@@ -119,7 +119,7 @@ Run these in `src-tauri/`. `tauri::generate_context!` needs `dist/` to exist at 
 | Webview local storage | `$XDG_DATA_HOME/net.l0cky12.hermes-chat/localstorage/` |
 | Project defaults, restart drafts, and recovery backups | `$XDG_DATA_HOME/net.l0cky12.hermes-chat/` |
 | The Close to tray setting | `$XDG_CONFIG_HOME/net.l0cky12.hermes-chat/window.json` |
-| Screenshots waiting to send | `$XDG_CACHE_HOME/hermes-chat/captures/` |
+| Files waiting to send | `$XDG_CACHE_HOME/hermes-chat/captures/` |
 
 The feature guide's [What is stored where](features.md#what-is-stored-where) lists every item and what removes it.
 
@@ -129,7 +129,6 @@ The feature guide's [What is stored where](features.md#what-is-stored-where) lis
 | --- | --- |
 | `--show` | Brings the running window forward. |
 | `--toggle` | Brings the running window forward, or hides it when it is already in front. |
-| `--screenshot` | Takes a screenshot and attaches it to the chat on screen. |
 | `hermes-chat://chat?…` | Opens that chat link. |
 
 Only one copy runs at a time. A second launch hands its arguments to the running copy and exits. On Linux it uses the session bus name `net.l0cky12.HermesChat`. On Windows it uses a named pipe (`src-tauri/src/remote/pipe.rs`). With none of these arguments, it starts the app, or brings the running copy forward.
@@ -147,7 +146,7 @@ src-tauri/
 	src/lib.rs       Tauri setup and the commands the webview can call
 	src/transport.rs the dashboard connection: sign-in, REST relay, and the /api/ws WebSocket
 	src/tunnel.rs    the SSH tunnel
-	src/*.rs         one file per native feature: keyring, tray, screenshots, updates, and others
+	src/*.rs         one file per native feature: keyring, tray, staged attachments, updates, and others
 	tests/           Rust integration tests
 e2e/               the end-to-end suite (features/<name>.e2e.tsx)
 bench/             performance benchmarks

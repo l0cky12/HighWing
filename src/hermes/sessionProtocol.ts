@@ -125,7 +125,7 @@ export type SessionSetting = "reasoning" | "fast" | "yolo" | "approvals.mode";
 export type SessionEdit =
   | { op: "rename"; title: string }
   | { op: "folder"; profile: string; cwd: string }
-  | { op: "branch"; count: number; key: string }
+  | { op: "branch"; count: number; key: string; name?: string }
   | { op: "undo" }
   | { op: "compact" }
   | { op: "model"; profile: string; pick: ModelPick; confirmed: boolean };
@@ -366,7 +366,7 @@ type EditTable = { [K in SessionEdit["op"]]: (port: Port, runtimeId: string, e: 
 const LEGACY_EDITS: EditTable = {
   rename: (port, session_id, { title }) => port.call("session.title", { session_id, title }),
   folder: (port, session_id, { profile, cwd }) => port.call("session.cwd.set", { session_id, profile, cwd }) as Promise<{ cwd?: unknown } | undefined>,
-  branch: (port, session_id, { count, key }) => port.call("session.branch", { session_id, count, idempotency_key: key }) as Promise<BranchAnswer>,
+  branch: (port, session_id, { count, key, name }) => port.call("session.branch", { session_id, count, ...(name && { name }), idempotency_key: key }) as Promise<BranchAnswer>,
   undo: (port, session_id) => port.call("session.undo", { session_id }),
   compact: (port, session_id) => port.call("session.compress", { session_id }),
   // Every write names the chat's session: without one, Hermes writes the key to the profile's config. Given a session

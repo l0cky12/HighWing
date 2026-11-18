@@ -6,9 +6,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import type { Chat, Item } from "../hermes/model";
 import { ChatPane } from "./ChatPane";
-import { ScreenshotDesk, type ScreenshotApi } from "../hermes/screenshots";
+import { AttachmentDesk } from "../hermes/attachmentDesk";
 
-const noScreenshots: ScreenshotApi = { capture: () => Promise.reject(new Error("no screenshots in this test")), discard: async () => {} };
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }));
 
@@ -67,7 +66,7 @@ function Pane() {
       status="connected"
       draft=""
       draftKey="draft"
-      screenshots={new ScreenshotDesk(noScreenshots)}
+      desk={new AttachmentDesk({ discard: async () => {} })}
       onDraft={() => {}}
       onDraftStep={() => undefined}
       onRetry={() => {}}

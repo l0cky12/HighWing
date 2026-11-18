@@ -1,6 +1,4 @@
 // @vitest-environment jsdom
-// A reply streaming in through Markdown (#224): each delta must redo only what it changed, and the finished reply must
-// come out as it always has.
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -14,7 +12,6 @@ import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import rehypeHighlight from "rehype-highlight";
 
-// Each piece of Markdown ReactMarkdown is asked to parse, in order.
 const parsed = vi.hoisted(() => [] as string[]);
 vi.mock("react-markdown", async (original) => {
   const real = (await original()) as typeof import("react-markdown");
@@ -27,13 +24,8 @@ beforeAll(() => Object.assign(SVGElement.prototype, { getBBox: () => ({ x: 0, y:
 afterEach(cleanup);
 
 const fence = (lang: string, code: string) => "```" + lang + "\n" + code + "\n```";
-// An svg in a code block other than its header's icons: a drawn diagram.
 const diagram = (container: HTMLElement) => [...container.querySelectorAll(".code svg")].find((svg) => !svg.closest(".code-head")) ?? null;
 
-/**
- * Finished replies of every shape a block split has to get right. The tests going over every prefix of all of them
- * take about half a second, so they get longer than the default to finish on a loaded machine.
- */
 const REPLIES: Record<string, string> = {
   code: "Here it is:\n\n" + fence("ts", "const a = 1;\n\n\nconst b = 2;") + "\n\nThen run:\n\n" + fence("", "fn main() {\n    let x: u32 = 1;\n}") + "\n\nDone.",
   tildes: "~~~python\ndef f():\n    return 1\n~~~\nAfter, with no blank line.\n````\n```\nnot closed by three\n````",
@@ -63,7 +55,6 @@ const REPLIES: Record<string, string> = {
   mermaid: "Flow:\n\n```mermaid\nflowchart TD\n  Go-->Stop\n```\n\nDone.\n\n```mermaid\nnot a diagram\n```",
 };
 
-/** Replies with math, which highlighting alone leaves as code, and Markdown typesets. */
 const hasMath = (name: string) => name.includes("math");
 
 type Around = (props: { children: ReactNode }) => ReactNode;
@@ -75,10 +66,6 @@ const whole = (text: string, query = "", wrapper?: Around) => {
   return html;
 };
 
-/**
- * `text` streamed in `step` characters at a time, then finished; the HTML each time, and the last, once the languages
- * guessed after a delta are in. `wrapper`: what the reply renders inside.
- */
 async function streamed(text: string, step: number, query = "", wrapper?: Around) {
   const { container, rerender, unmount } = render(<Markdown text="" query={query} streaming />, { wrapper });
   const seen: string[] = [];
@@ -140,7 +127,6 @@ describe("Splitting a reply into blocks", () => {
 
   it("knows code still coming in by the parser's own fences, not lines that look like one", () => {
     const open = (text: string) => splitBlocks(text).blocks.at(-1)!.open;
-    // Still open: a fence-like line that is code content, a closer indented four, a shorter or different fence.
     expect(open("~~~js\nconst x = 1;\n> ~~~")).toBe(true);
     expect(open("~~~js\nx\n    ~~~")).toBe(true);
     expect(open("````\n```\n")).toBe(true);
@@ -150,7 +136,6 @@ describe("Splitting a reply into blocks", () => {
     expect(open("    indented code")).toBe(true);
     expect(open("$$\n\\sum_i x_i\n\n")).toBe(true);
     expect(open("- a\n\n  $$\n  x")).toBe(true);
-    // Finished: closed, closed inside a quote or a list, or followed by something else.
     expect(open("~~~js\nx\n   ~~~")).toBe(false);
     expect(open("```\nx\n```\n\n")).toBe(false);
     expect(open("> ```js\n> x\n> ```")).toBe(false);
@@ -347,7 +332,6 @@ describe("Math and diagrams still coming in", () => {
 
   it("draw an unclosed mermaid fence at the end only once it is finished", { timeout: 30_000 }, async () => {
     const open = "Flow:\n\n```mermaid\nflowchart TD\n  Going-->Gone";
-    // Drawn once already, so a fence taken for finished would show it at once, from the cache.
     const done = render(<Markdown text={open + "\n```"} />);
     await waitFor(() => expect(diagram(done.container)).not.toBeNull(), { timeout: 30_000 });
     done.unmount();

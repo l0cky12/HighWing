@@ -2,7 +2,7 @@
 //! (ADR 0007), so WebView2 captures the whole webview and the frame's box is cut from it (`annotate::frame_still`).
 
 use crate::annotate::{self, AnnotateError, Rect, Still, Viewport};
-use crate::screenshot::Captures;
+use crate::captures::Captures;
 use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -19,14 +19,7 @@ const STILL_WITHIN: Duration = Duration::from_secs(3);
 
 type Sent = tokio::sync::oneshot::Sender<Result<Vec<u8>, AnnotateError>>;
 
-pub async fn take(
-    app: &tauri::AppHandle,
-    url: String,
-    rect: Rect,
-    viewport: Viewport,
-    page: Option<Viewport>,
-    captures: Arc<Captures>,
-) -> Result<Still, AnnotateError> {
+pub async fn take(app: &tauri::AppHandle, url: String, rect: Rect, viewport: Viewport, captures: Arc<Captures>) -> Result<Still, AnnotateError> {
     crate::web_page::web_url(&url).map_err(AnnotateError::Failed)?;
     let window = app.get_webview_window("main").ok_or(AnnotateError::NoPage)?;
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -36,7 +29,7 @@ pub async fn take(
         _ => return Err(AnnotateError::NoAnswer),
     };
     let taken_at_ms = annotate::now_ms();
-    tokio::task::spawn_blocking(move || annotate::frame_still(&captures, &png, url, rect, viewport, page, taken_at_ms))
+    tokio::task::spawn_blocking(move || annotate::frame_still(&captures, &png, url, rect, viewport, taken_at_ms))
         .await
         .map_err(|e| AnnotateError::Failed(e.to_string()))?
 }

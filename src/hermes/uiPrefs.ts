@@ -1,6 +1,6 @@
 // Display preferences for this computer: the theme, whether the last chat reopens at launch and which chat each profile
 // had open, whether reasoning shows, how much shows under each message, the model last picked and the starred models,
-// which items the status bar shows, the screenshot shortcut, the preview pane's and chat list's widths, the app's zoom, which computer the Terminal opens
+// which items the status bar shows, the preview pane's and chat list's widths, the app's zoom, which computer the Terminal opens
 // on, what sending does while a reply runs, whether message boxes check spelling, Idle compaction, which of the chat
 // list's sections show and which are collapsed, and the keyboard shortcuts the owner changed. All preferences live in one
 // versioned localStorage document.
@@ -46,8 +46,6 @@ export type UIPrefs = {
   modelFavorites: string[];
   /** The status bar items shown, in order (StatusBar.tsx). Empty: the bar is hidden. */
   statusBar: string[];
-  /** The in-app shortcut that takes a screenshot for the composer, like `Ctrl+Shift+S` (ui/shortcut.ts); null: off. */
-  screenshotShortcut: string | null;
   /** How wide the owner made the preview pane, in px; null until they resize it. */
   previewWidth: number | null;
   /** How wide the owner dragged the chat list, in CSS px; null until they resize it (ADR 0201). */
@@ -117,9 +115,6 @@ export const IDLE_COMPACT_MINUTES = [5, 10, 15, 30, 60, 120] as const;
 export const ZOOM_LEVELS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2] as const;
 const isZoom = (v: unknown): v is number => (ZOOM_LEVELS as readonly unknown[]).includes(v);
 
-/** The shape of a stored shortcut: modifiers in order, then one key (ui/shortcut.ts writes them). */
-const SHORTCUT = /^(?:Ctrl\+)?(?:Alt\+)?(?:Shift\+)?(?:Super\+)?(?:[A-Z0-9]|F(?:[1-9]|1\d|2[0-4])|PrintScreen|Pause|ScrollLock|Insert)$/;
-export const isShortcut = (s: unknown): s is string => typeof s === "string" && SHORTCUT.test(s);
 /** Every status bar item, in the bar's order; all shown until the owner picks otherwise. */
 export const STATUS_BAR_ITEMS = ["context", "model", "status"] as const;
 
@@ -132,7 +127,6 @@ export const DEFAULT_UI_PREFS: Readonly<UIPrefs> = Object.freeze({
   modelPicks: {},
   modelFavorites: [],
   statusBar: [...STATUS_BAR_ITEMS],
-  screenshotShortcut: "Ctrl+Shift+S",
   previewWidth: null,
   sidebarWidth: null,
   zoom: 1,
@@ -317,7 +311,6 @@ export function readUIPrefs(doc: UIPrefsDoc, d: Readonly<UIPrefs> = DEFAULT_UI_P
     modelPicks: toModelPicks(doc.modelPicks) ?? (pick?.profile ? { ...d.modelPicks, ...toModelPicks({ [pick.profile]: pick }) } : { ...d.modelPicks }),
     modelFavorites: toFavorites(doc.modelFavorites) ?? [...d.modelFavorites],
     statusBar: toStatusBar(doc.statusBar) ?? [...d.statusBar],
-    screenshotShortcut: doc.screenshotShortcut === null || isShortcut(doc.screenshotShortcut) ? doc.screenshotShortcut : d.screenshotShortcut,
     previewWidth: previewWidth === undefined ? d.previewWidth : previewWidth,
     sidebarWidth: sidebarWidth === undefined ? d.sidebarWidth : sidebarWidth,
     zoom: isZoom(doc.zoom) ? doc.zoom : d.zoom,

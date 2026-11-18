@@ -73,7 +73,7 @@ it("switches between Chats and Bots by the tabs and Ctrl+Shift+B, which also sho
 
   await tab("Bots").click();
   await expect.element(tab("Bots")).toHaveAttribute("aria-selected", "true");
-  await expect.element(panel.getByRole("group", { name: "Hermes's chats" })).toBeVisible();
+  await expect.element(panel.getByRole("list", { name: "Bots" })).toBeVisible();
   await expect.element(tab("Chats")).toHaveAccessibleName("Chats, 2 in the Inbox");
   await shot("bots");
 
@@ -116,32 +116,24 @@ it("opens the profile's Bot Chat with Alt+B, and Alt+B goes back to the chat bef
   expect(server.sessions.filter((s) => s.title === BOT_CHAT_TITLE)).toHaveLength(1);
 });
 
-it("lists the shown profile's chats under its bot in Bots mode, and All N chats goes to Chats", async () => {
-  const { app, panel, tab } = await start();
+it("keeps the profile's chats out of Bots mode, and shows a bot's pen on hover", async () => {
+  const { panel, tab } = await start();
   await tab("Bots").click();
-  const under = panel.getByRole("group", { name: "Hermes's chats" });
-  await expect
-    .poll(() => under.getByRole("button").elements().map((e) => e.querySelector(".row-title")?.textContent ?? e.textContent))
-    .toEqual(["Nightly backup failing", "NAS disk usage", "Router firmware notes", "All 6 chats"]);
+  await expect.element(panel.getByRole("button", { name: /^Ops\./ })).toBeVisible();
+  expect(panel.getByRole("button", { name: /Nightly backup failing/ }).elements()).toEqual([]);
   await panel.getByRole("button", { name: /^Ops\./ }).hover();
   await expect.element(panel.getByRole("button", { name: "New chat with Ops" })).toBeVisible();
   await shot("row-hovered");
-
-  await under.getByRole("button", { name: /NAS disk usage/ }).click();
-  await expect.element(under.getByRole("button", { name: /NAS disk usage/ })).toHaveAttribute("aria-current", "true");
-  await under.getByRole("button", { name: "All 6 chats" }).click();
-  await expect.element(tab("Chats")).toHaveAttribute("aria-selected", "true");
-  await expect.element(app.getByPlaceholder("Message Hermes")).toBeVisible();
 });
 
-it("visits a bot from Bots mode, its chats moving under it, and Chats goes back to the profile and chat left", async () => {
+it("visits a bot from Bots mode, and Chats goes back to the profile and chat left", async () => {
   const { app, panel, tab } = await start();
   await panel.getByRole("button", { name: /Nightly backup failing/ }).click();
   await expect.element(app.getByText("Why did last night's backup fail?")).toBeVisible();
   await tab("Bots").click();
   await panel.getByRole("button", { name: /^Quill \(profile writer\)\./ }).click();
   await expect.poll(titleOf(app)).toBe("QQuillBot Chat");
-  await expect.element(panel.getByRole("group", { name: "Quill's chats" })).toBeVisible();
+  await expect.element(panel.getByRole("button", { name: /^Quill \(profile writer\)\./ })).toHaveAttribute("aria-current", "true");
   await expect.element(tab("Bots")).toHaveAttribute("aria-selected", "true");
   await shot("other-profile");
   await tab("Chats").click();
@@ -166,6 +158,6 @@ it("draws both modes in the light theme", async () => {
   const { panel, tab } = await start();
   await shot("light-chats");
   await tab("Bots").click();
-  await expect.element(panel.getByRole("group", { name: "Hermes's chats" })).toBeVisible();
+  await expect.element(panel.getByRole("list", { name: "Bots" })).toBeVisible();
   await shot("light-bots");
 });

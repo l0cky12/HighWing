@@ -4,7 +4,7 @@ Models write formulas (`$E = mc^2$`, `$$…$$`, `\(…\)`, `\[…\]`) and Mermai
 
 ## Decisions
 
-- **The parser reads math, never a regex over the text.** `src/ui/markdownMath.ts` adds micromark constructs, so a formula inside inline code or a code fence stays code, and `*` or `_` inside a formula is never emphasis. The mdast is mdast-util-math's (`inlineMath`, `math`). The splitter (`markdownBlocks.ts`) parses with the same constructs, so a `$$` block with blank lines in it stays one block.
+- **The parser reads math, never a regex over the text.** `src/ui/markdownSyntax.ts` adds micromark constructs, so a formula inside inline code or a code fence stays code, and `*` or `_` inside a formula is never emphasis. The mdast is mdast-util-math's (`inlineMath`, `math`). The splitter (`markdownBlocks.ts`) parses with the same constructs, so a `$$` block with blank lines in it stays one block.
   - `$$…$$` on its own lines is a display block (micromark-extension-math's flow construct).
   - `$…$` follows Pandoc's rule. The opening `$` has no space after it. The closing `$` has no space before it and no digit after it. "It costs $5 and $10" stays prose.
   - `\(…\)` is inline math, and `\[…\]` and `$$…$$` inside a paragraph are display math, as in TeX. These constructs run before Markdown's backslash escapes.

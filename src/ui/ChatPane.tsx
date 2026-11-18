@@ -1,7 +1,7 @@
 // Transcript, thinking, tool-call groups, Approval cards, find bar and composer, ported from the prototype.
 // Dictation and Read aloud come from Voice.tsx.
 import { createContext, Fragment, memo, type HTMLAttributes, type ReactNode, type RefObject, useCallback, startTransition, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
-import { Archive, ArchiveRestore, ArrowUp, AtSign, Bot, Brain, CalendarClock, PackageCheck, Reply, Send, SquareTerminal, Camera, ChevronDown, ChevronRight, ChevronUp, CircleAlert, CloudOff, Columns2, CornerDownRight, FileDown, FileInput, Globe, HardDrive, Link2, ListPlus, Ellipsis, Paperclip, RotateCcw, Search, Server, Share2, Square, Trash2, Wrench, X } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowUp, AtSign, Bot, Brain, CalendarClock, PackageCheck, Reply, Send, SquareTerminal, ChevronDown, ChevronRight, ChevronUp, CircleAlert, CloudOff, Columns2, CornerDownRight, FileDown, FileInput, Globe, HardDrive, Link2, ListPlus, Ellipsis, Paperclip, RotateCcw, Search, Server, Share2, Square, Trash2, Wrench, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { decodeString } from "micromark-util-decode-string";
@@ -11,15 +11,15 @@ import { useLocale } from "../i18n/locale";
 import type { SkillCall } from "../hermes/skillCommands";
 import { BotFace, type BotLookShown } from "./BotFace";
 import { STEER, typedCommand } from "../hermes/commands";
-import type { ScreenshotDesk } from "../hermes/screenshots";
+import type { AttachmentDesk } from "../hermes/attachmentDesk";
 import type { Reference, ReferenceDesk } from "../hermes/chatReferences";
 import { ReferenceChips } from "./ReferenceChips";
 import { ApprovalCard } from "./ApprovalCard";
 import { QuestionCard } from "./QuestionCard";
 import { Menu, PinItem, type ChatPin } from "./ChatMenu";
-import { isBotChat } from "../hermes/bots";
 import { agentSend, type AgentSend } from "../hermes/agentMessages";
-import { policyOf } from "../hermes/chatKind";
+import { CHAT_POLICY, chatKind, policyOf } from "../hermes/chatKind";
+import { threadTopic } from "../hermes/threads";
 import { DeleteChatDialog } from "./DeleteChat";
 import { ExportChatDialog, type ExportMode } from "./ExportChat";
 import { QueuePanel, type QueueApi } from "./Queue";
@@ -54,7 +54,7 @@ import { replyFiles } from "../hermes/fileChanges";
 import { ShowInChatContext, type ShowInChat } from "./showInChat";
 import { linkTarget, previewName, toolTargets, withoutBidi } from "../hermes/preview";
 import { type CommandHost, useSlashCommands } from "./SlashCommands";
-import { BranchButton } from "./Branch";
+import { BranchButton, ThreadButton } from "./Branch";
 import { useWindowHidden } from "./windowState";
 import { EditButton, RegenerateButton, VariantNav } from "./Replay";
 import { RunButton } from "./RunView";
@@ -300,8 +300,8 @@ function MoreMenu({
   const [at, setAt] = useState<{ x: number; y: number }>();
   const close = useCallback(() => setAt(undefined), []);
   const button = useRef<HTMLButtonElement>(null);
-  const { manage, link } = policyOf(chat);
-  const archive = manage ? archiveAction(chat) : undefined;
+  const { organize, remove, link } = policyOf(chat);
+  const archive = organize ? archiveAction(chat) : undefined;
   const [askDelete, setAskDelete] = useState(false);
   const [exporting, setExporting] = useState<ExportMode>();
   const noDelete = !onDelete;
@@ -327,7 +327,7 @@ function MoreMenu({
       <button
         ref={button}
         className={`icon-btn ${at ? "on" : ""}`}
-        title={`More actions: ${["export", "share", link && "copy link", manage && pin && "pin", archive, manage && onDelete && "delete"].filter(Boolean).join(", ")}`}
+        title={`More actions: ${["export", "share", link && "copy link", organize && pin && "pin", archive, remove && onDelete && "delete"].filter(Boolean).join(", ")}`}
         aria-label="More"
         aria-haspopup="menu"
         aria-expanded={!!at}
@@ -350,11 +350,11 @@ function MoreMenu({
           {/* A Bot Chat is opened from its bot's row, found by its title (ADR 0066): no link to it by id, and nothing
               that would retire it, which would leave its bot to start another. */}
           {onCopyLink && link && item("Copy chat link", <Link2 size={15} />, onCopyLink, "Copy a link that opens this chat in Highwing on this computer")}
-          {pin && manage && !inArchived(chat) && <PinItem pin={pin} onClose={close} />}
+          {pin && organize && !inArchived(chat) && <PinItem pin={pin} onClose={close} />}
           {onSettle &&
             archive &&
             (archive === "unarchive" ? item("Unarchive", <ArchiveRestore size={15} />, () => onSettle(false)) : item("Archive", <Archive size={15} />, () => onSettle(true)))}
-          {onDelete && manage && (
+          {onDelete && remove && (
             <>
               <div className="menu-sep" role="separator" />
               {item("Delete chat…", <Trash2 size={15} />, () => setAskDelete(true), "Delete this chat in every Hermes client. This can't be undone.", true)}
@@ -398,7 +398,7 @@ const savedWhen = (at: number) => new Date(at).toLocaleString(undefined, { dateS
  * Hermes is connected. `onRetry`, `onEdit` and `onDismiss` act on failed or unconfirmed messages. `modelControls`
  * contains the model picker; `footer` contains the status bar. Only the active pane answers Ctrl+F and takes focus as
  * it opens. Native drops attach to the pane under the pointer. Export, Copy chat link and Archive are in the header's More menu.
- * `screenshots` takes captures and keeps every chat's staged attachments; `screenshotKeys` names the shortcut.
+ * `desk` keeps every chat's staged attachments.
  * `voice` supplies Dictation and Read aloud. `voiceSend` puts a Voice conversation's turn in the chat as the owner's
  * message; it is left out for a chat not started yet, where a conversation can't start (ADR 0111). `commands` runs the slash commands typed in the composer. `queue` is the
  * chat's queue of messages waiting to go after its reply, and `queueApi` changes it; it is left out for a chat not
@@ -443,8 +443,7 @@ export function ChatPane({
   split = false,
   voice,
   voiceSend,
-  screenshots,
-  screenshotKeys,
+  desk,
   projects,
   server,
   bot,
@@ -516,8 +515,7 @@ export function ChatPane({
   split?: boolean;
   voice?: VoiceApi;
   voiceSend?: (text: string) => Promise<{ delivery: Delivery; itemId?: string }>;
-  screenshots: ScreenshotDesk;
-  screenshotKeys?: string;
+  desk: AttachmentDesk;
   /** The names of the projects the chat is in, or a new chat will be put in. */
   projects?: string[];
   /** The server and profile the chat is on, shown while more than one connection is live (ADR 0125). */
@@ -545,7 +543,7 @@ export function ChatPane({
   /** What sending does while the reply runs: queue or steer (ADR 0057). Without it, it queues. */
   followUp?: FollowUpHost;
   compare?: Comparing;
-  branch?: { blocked?: string; onBranch: (itemId: string) => void };
+  branch?: { blocked?: string; onBranch: (itemId: string) => void; onThread?: (itemId: string) => void };
   /** Opens a reply's Run view (ADR 0178). */
   onRun?: (itemId: string) => void;
   branchedFrom?: ReactNode;
@@ -558,8 +556,11 @@ export function ChatPane({
   onCheckpoints?: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const words = useLocale().chat;
-  const botOfChat = isBotChat(chat) ? bot : undefined;
+  const l = useLocale();
+  const words = l.chat;
+  const kind = chatKind(chat);
+  const botOfChat = CHAT_POLICY[kind].ofBot ? bot : undefined;
+  const topic = botOfChat && kind === "thread" ? threadTopic(chat.title) : undefined;
   const keys = useBindings();
   const labels = (chords: readonly Chord[]) => chords.map(chordLabel).join(" or ");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -610,6 +611,9 @@ export function ChatPane({
   const branchRef = useRef(branch?.onBranch);
   branchRef.current = branch?.onBranch;
   const onBranch = useCallback((itemId: string) => branchRef.current?.(itemId), []);
+  const threadRef = useRef(branch?.onThread);
+  threadRef.current = branch?.onThread;
+  const onThread = useCallback((itemId: string) => threadRef.current?.(itemId), []);
   const runRef = useRef(onRun);
   runRef.current = onRun;
   const openRun = useCallback((itemId: string) => runRef.current?.(itemId), []);
@@ -912,7 +916,7 @@ export function ChatPane({
   const movedAt = useMemo(() => performance.now(), [chat.items, chat.sideQuestions]);
   const last = chat.items[chat.items.length - 1];
   const waiting = chat.items.find(isWaiting);
-  const policy = policyOf(chat);
+  const policy = CHAT_POLICY[kind];
   const { jobId } = chat;
   // The streaming block is the chat's last item, so it is in the last chunk that holds more than side questions.
   let liveChunk = chunks.length - 1;
@@ -929,7 +933,21 @@ export function ChatPane({
           {chat.source !== "app" && <SourceIcon source={chat.source} size={13} />}
           {botOfChat && <BotFace bot={botOfChat} size="sm" />}
           <span translate={botOfChat ? "no" : undefined}>{botOfChat?.name ?? chat.title}</span>
-          {isBotChat(chat) ? (
+          {topic !== undefined && (
+            <>
+              <span className="chat-title-sep" aria-hidden>
+                /
+              </span>
+              <span className="chat-title-topic" translate="no">
+                {topic}
+              </span>
+            </>
+          )}
+          {topic !== undefined ? (
+            <span className="badge" title={l.threads.badgeTip}>
+              {l.threads.badge}
+            </span>
+          ) : kind === "bot" ? (
             <span className="badge" title={words.botChatTip}>
               {words.botChat}
             </span>
@@ -1110,6 +1128,7 @@ export function ChatPane({
               canRetry={canRetry}
               onOutgoing={onOutgoing}
               onBranch={branch && onBranch}
+              onThread={branch?.onThread && onThread}
               branchBlocked={branch?.blocked}
               onRun={onRun && openRun}
               onReplay={replay && onReplay}
@@ -1207,8 +1226,7 @@ export function ChatPane({
         conversation={conversation}
         started={!!voiceSend}
         status={status}
-        screenshots={screenshots}
-        screenshotKeys={screenshotKeys}
+        desk={desk}
         commands={commands}
         references={references}
         followUp={compare ? undefined : followUp}
@@ -1258,6 +1276,7 @@ const BlockView = memo(
     canRetry,
     onOutgoing,
     onBranch,
+    onThread,
     branchBlocked,
     onRun,
     onReplay,
@@ -1280,6 +1299,7 @@ const BlockView = memo(
     canRetry: boolean;
     onOutgoing: (itemId: string, action: OutgoingAction) => void;
     onBranch?: (itemId: string) => void;
+    onThread?: (itemId: string) => void;
     branchBlocked?: string;
     onRun?: (itemId: string) => void;
     onReplay?: (itemId: string, kind: ReplayKind) => void;
@@ -1346,6 +1366,7 @@ const BlockView = memo(
               <CopyButton words={() => block.text} what="message" />
               {onReplay && <EditButton blocked={replayBlocked} onEdit={() => onReplay(block.id, "edit")} />}
               {onBranch && <BranchButton blocked={branchBlocked} onBranch={() => onBranch(block.id)} />}
+              {onThread && <ThreadButton blocked={branchBlocked} onThread={() => onThread(block.id)} />}
             </div>
           )}
           {nav}
@@ -1366,6 +1387,7 @@ const BlockView = memo(
                 <CopyButton words={() => replyMarkdown(block.text)} what="reply" />
                 {onReplay && <RegenerateButton blocked={replayBlocked} onRegenerate={() => onReplay(block.id, "regenerate")} />}
                 {onBranch && <BranchButton blocked={branchBlocked} onBranch={() => onBranch(block.id)} />}
+                {onThread && <ThreadButton blocked={branchBlocked} onThread={() => onThread(block.id)} />}
                 {run && <RunButton onOpen={run} />}
               </div>
             </div>
@@ -1413,6 +1435,7 @@ const BlockView = memo(
     a.canRetry === b.canRetry &&
     a.onOutgoing === b.onOutgoing &&
     a.onBranch === b.onBranch &&
+    a.onThread === b.onThread &&
     a.branchBlocked === b.branchBlocked &&
     a.onRun === b.onRun &&
     a.onReplay === b.onReplay &&
@@ -1444,6 +1467,7 @@ const TranscriptChunk = memo(
     canRetry,
     onOutgoing,
     onBranch,
+    onThread,
     branchBlocked,
     onRun,
     onReplay,
@@ -1468,6 +1492,7 @@ const TranscriptChunk = memo(
     canRetry: boolean;
     onOutgoing: (itemId: string, action: OutgoingAction) => void;
     onBranch?: (itemId: string) => void;
+    onThread?: (itemId: string) => void;
     branchBlocked?: string;
     onRun?: (itemId: string) => void;
     onReplay?: (itemId: string, kind: ReplayKind) => void;
@@ -1501,6 +1526,7 @@ const TranscriptChunk = memo(
                   canRetry={b.kind === "user" && !!b.outgoing && canRetry}
                   onOutgoing={onOutgoing}
                   onBranch={message ? onBranch : undefined}
+                  onThread={message ? onThread : undefined}
                   branchBlocked={onBranch && message ? branchBlocked : undefined}
                   onRun={b.kind === "assistant" || turns.failedOnly.has(b.id) ? onRun : undefined}
                   onReplay={(b.kind === "user" && turns.ofUser.has(b.id)) || (b.kind === "assistant" && turns.regenerable.has(b.id)) ? onReplay : undefined}
@@ -1534,6 +1560,7 @@ const TranscriptChunk = memo(
     a.canRetry === b.canRetry &&
     a.onOutgoing === b.onOutgoing &&
     a.onBranch === b.onBranch &&
+    a.onThread === b.onThread &&
     a.branchBlocked === b.branchBlocked &&
     a.onRun === b.onRun &&
     a.onReplay === b.onReplay &&
@@ -1828,8 +1855,7 @@ function Composer({
   conversation,
   started = false,
   status,
-  screenshots,
-  screenshotKeys,
+  desk,
   commands,
   references,
   followUp,
@@ -1868,9 +1894,7 @@ function Composer({
   conversation?: VoiceConversation;
   started?: boolean;
   status: ConnectionStatus;
-  /** Screenshots come from here, and it keeps the chat's staged attachments. */
-  screenshots: ScreenshotDesk;
-  screenshotKeys?: string;
+  desk: AttachmentDesk;
   commands?: CommandHost;
   /** The chats the message references, kept under `draftKey`. */
   references?: ComposerReferences;
@@ -1880,17 +1904,17 @@ function Composer({
 }) {
   const keys = useBindings();
   // The chat's staged attachments, kept by the desk under its Draft key so they outlive this composer (ADR 0145).
-  const attachments = useSyncExternalStore(screenshots.subscribe, () => screenshots.stagedIn(draftKey));
+  const attachments = useSyncExternalStore(desk.subscribe, () => desk.stagedIn(draftKey));
   // Each staged image's number, which its mark in the words gives (inlineImages.ts, ADR 0200).
-  const numbers = useSyncExternalStore(screenshots.subscribe, () => screenshots.numbersIn(draftKey));
+  const numbers = useSyncExternalStore(desk.subscribe, () => desk.numbersIn(draftKey));
   // A number a mark in the words has given stays taken after the mark goes, since Undo can bring it back.
-  useEffect(() => screenshots.reserve(draftKey, highestMark(text)), [screenshots, draftKey, text]);
+  useEffect(() => desk.reserve(draftKey, highestMark(text)), [desk, draftKey, text]);
   const marks: ComposerMark[] = useMemo(() => {
     const by = new Map(attachments.flatMap((a) => (numbers.has(a.path) ? [[numbers.get(a.path)!, a] as const] : [])));
     return marksIn(text, (n) => by.has(n)).map((m) => ({ ...m, file: by.get(m.n)! }));
   }, [text, attachments, numbers]);
   const spellCheck = useSpellCheck();
-  const annotations = useSyncExternalStore(screenshots.subscribe, screenshots.annotationLabels);
+  const annotations = useSyncExternalStore(desk.subscribe, desk.annotationLabels);
   const refs = useSyncExternalStore(references?.desk.subscribe ?? noDesk, () => references?.desk.in(draftKey) ?? NO_REFERENCES);
   const focused = useRef(autoFocus);
   focused.current = autoFocus;
@@ -1985,7 +2009,7 @@ function Composer({
   // Staged in this composer's chat even if it has closed meanwhile: the chat keeps what was added to it.
   const add = (paths: string[], at = anchorHere()) => busy(async () => {
     const got = await check(paths);
-    screenshots.change({ kind: "added", key: draftKey, attachments: got });
+    desk.change({ kind: "added", key: draftKey, attachments: got });
     place(at, got);
     return got.map((a) => a.path);
   });
@@ -2057,9 +2081,9 @@ function Composer({
   const place = (a: { key: string; at: number }, staged: readonly Attachment[]) => {
     anchors.current.delete(a);
     if (!alive.current || a.key !== draftKeyRef.current || !staged.length) return;
-    const numbered = screenshots.numbersIn(a.key);
+    const numbered = desk.numbersIn(a.key);
     const images = staged.filter((f) => f.kind === "image" && numbered.has(f.path));
-    const before = screenshots.stagedIn(a.key).some((f) => f.kind === "image" && !images.some((i) => i.path === f.path));
+    const before = desk.stagedIn(a.key).some((f) => f.kind === "image" && !images.some((i) => i.path === f.path));
     const marked = before ? images : images.slice(1);
     if (!marked.length) return;
     const now = textRef.current;
@@ -2077,18 +2101,12 @@ function Composer({
   const placeRef = useRef(place);
   placeRef.current = place;
 
-  // Screenshots attach here while this composer is on screen.
-  const shot = useSyncExternalStore(screenshots.subscribe, screenshots.getSnapshot);
-  // A new screenshot replaces the notes about the last thing attached.
-  useEffect(() => {
-    if (shot.capturing) setRefused([]);
-  }, [shot.capturing]);
   useEffect(() => {
     if (!autoFocus) return;
     let current = true;
     const pending = anchors.current;
     const placing = new Map<string, { key: string; at: number }>();
-    const stop = screenshots.attachTo({
+    const stop = desk.attachTo({
       key: draftKey,
       chat: chatTitle,
       check: (paths) =>
@@ -2112,7 +2130,7 @@ function Composer({
       for (const at of placing.values()) pending.delete(at);
       stop();
     };
-  }, [screenshots, autoFocus, draftKey, chatTitle]);
+  }, [desk, autoFocus, draftKey, chatTitle]);
 
   // Tauri's native drop event (off on Windows, below): it gives real file paths, so Rust can read the bytes. Every composer
   // hears every drop; with two panes, the one under the pointer takes it. Tauri gives the point in physical pixels.
@@ -2131,7 +2149,7 @@ function Composer({
     return () => void unlisten.then((stop) => stop());
   }, []);
 
-  // A pasted file, or one dropped on Windows, has no path of its own: Rust stages its bytes with the screenshots. One
+  // A pasted file, or one dropped on Windows, has no path of its own: Rust stages its bytes in the captures folder. One
   // too big for Hermes is refused before its bytes are read into the webview.
   const stageFiles = (incoming: File[] | Promise<File[]>, nameOf = pastedName) => busy(async () => {
     const at = anchorHere();
@@ -2146,14 +2164,14 @@ function Composer({
           ),
       );
       const paths = saved.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
-      screenshots.own(paths);
+      desk.own(paths);
       const failed = saved.find((r): r is PromiseRejectedResult => r.status === "rejected");
       if (failed) {
-        screenshots.release(paths);
+        desk.release(paths);
         throw failed.reason;
       }
       const kept = await add(paths, at);
-      screenshots.release(paths.filter((p) => !kept.includes(p)));
+      desk.release(paths.filter((p) => !kept.includes(p)));
       const notes = tooBig.map((f) => overLimitNote(nameOf(f), f.size, LIMITS.file));
       if (notes.length) setRefused((cur) => (paths.length ? [...cur, ...notes] : notes));
     } catch (e) {
@@ -2323,7 +2341,7 @@ function Composer({
       if (offline || running) return;
       go([...attachments]);
     }
-    screenshots.change({ kind: "sent", key: draftKey, paths: attachments.map((a) => a.path) });
+    desk.change({ kind: "sent", key: draftKey, paths: attachments.map((a) => a.path) });
     setRefused(fellBack ? [fellBack] : []);
   };
   // What Enter, and the button beside the text, do now; Ctrl+Enter does the other while a reply runs.
@@ -2379,11 +2397,6 @@ function Composer({
           }}
         />
       )}
-      {shot.capturing && (
-        <div className="capture-note" role="status">
-          Taking a screenshot: select a region or window, or press Esc to cancel.
-        </div>
-      )}
       {refused.map((r, i) => (
         <div key={i} className="attach-note" role="alert">
           {r}
@@ -2416,7 +2429,7 @@ function Composer({
                 file={f}
                 preview={previews.current?.get(f.path)}
                 annotation={annotations.get(f.path)}
-                onRemove={() => screenshots.change({ kind: "removed", key: draftKey, paths: [f.path] })}
+                onRemove={() => desk.change({ kind: "removed", key: draftKey, paths: [f.path] })}
               />
             ))}
           </div>
@@ -2504,15 +2517,6 @@ function Composer({
               }}
             />
           )}
-          <button
-            className="icon-btn"
-            title={screenshotKeys ? `Attach a screenshot (${screenshotKeys})` : "Attach a screenshot"}
-            aria-label="Attach a screenshot"
-            disabled={shot.capturing}
-            onClick={() => void screenshots.capture()}
-          >
-            <Camera size={16} />
-          </button>
           {modelControls}
           {!dictation.active && (
             <span className="composer-keys" title={steerWhy && `Can't steer now: ${steerWhy}`}>

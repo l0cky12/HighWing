@@ -104,7 +104,7 @@ const externalPicker = () => screen.getByRole("combobox", { name: "Profile whose
 describe("Settings → General sections", () => {
   it("shows one section at a time, Connection first, and lists them under General in the tree", async () => {
     await shown();
-    expect(names("General")).toEqual(["Connection", "Chats", "Launch, tray & updates", "Screenshots", "Storage & data"]);
+    expect(names("General")).toEqual(["Connection", "Chats", "Launch, tray & updates", "Storage & data"]);
     expect(current("General")).toEqual(["Connection"]);
     expect(head()).toEqual({ title: "Connection", eyebrow: "General" });
     expect(heading("Connection in use")).toBeTruthy();
@@ -124,14 +124,14 @@ describe("Settings → General sections", () => {
     expect(head()).toEqual({ title: "Storage & data", eyebrow: "General" });
 
     await user.keyboard("{ArrowUp}");
-    expect(document.activeElement).toBe(item("General", "Screenshots"));
+    expect(document.activeElement).toBe(item("General", "Launch, tray & updates"));
     // The focus moved, not the page: Storage & data is still the one shown, and General is still the tab.
     expect(current("General")).toEqual(["Storage & data"]);
     expect(heading("Local cache")).toBeTruthy();
     expect(screen.getByRole("tab", { name: "General" }).getAttribute("aria-selected")).toBe("true");
     await user.keyboard("{Enter}");
-    expect(current("General")).toEqual(["Screenshots"]);
-    expect(head().title).toBe("Screenshots");
+    expect(current("General")).toEqual(["Launch, tray & updates"]);
+    expect(head().title).toBe("Launch, tray & updates");
     expect(heading("Local cache")).toBeNull();
 
     await user.keyboard("{Home}");
@@ -142,9 +142,9 @@ describe("Settings → General sections", () => {
     expect(document.activeElement).toBe(item("General", "Storage & data"));
     await user.keyboard("{ArrowDown}");
     expect(document.activeElement).toBe(item("General", "Storage & data"));
-    await user.keyboard("{ArrowUp}{ArrowUp}{ArrowUp}{ArrowUp}");
+    await user.keyboard("{ArrowUp}{ArrowUp}{ArrowUp}");
     expect(document.activeElement).toBe(item("General", "Connection"));
-    expect(current("General")).toEqual(["Screenshots"]);
+    expect(current("General")).toEqual(["Launch, tray & updates"]);
     await user.keyboard(" ");
     expect(current("General")).toEqual(["Connection"]);
     expect(heading("Connection in use")).toBeTruthy();
@@ -164,8 +164,8 @@ describe("Settings → General sections", () => {
     // Under the bar, the sections are a row of chips with the same names; the tree's list has them too.
     const groups = screen.getAllByRole("group", { name: "General: sections" });
     expect(groups.map((g) => within(g).getAllByRole("button").map((b) => b.textContent))).toEqual([
-      ["Connection", "Chats", "Launch, tray & updates", "Screenshots", "Storage & data"],
-      ["Connection", "Chats", "Launch, tray & updates", "Screenshots", "Storage & data"],
+      ["Connection", "Chats", "Launch, tray & updates", "Storage & data"],
+      ["Connection", "Chats", "Launch, tray & updates", "Storage & data"],
     ]);
     await user.click(within(groups[0]).getByRole("button", { name: "Storage & data" }));
     expect(screen.getByRole("button", { name: "General › Storage & data" })).toBeTruthy();

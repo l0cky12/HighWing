@@ -1,44 +1,37 @@
-// The remark and rehype plugins Markdown renders with, apart from React, so the bench (bench/parse.ts) can time the same
-// work in Node.
-import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import rehypeHighlight from "rehype-highlight";
 import katex from "katex";
 import { fromHtmlIsomorphic } from "hast-util-from-html-isomorphic";
 import { toText } from "hast-util-to-text";
 import { SKIP, visit } from "unist-util-visit";
-import type { Element, ElementContent, Root } from "hast";
+import type { Element, ElementContent, Root, RootContent } from "hast";
 import type { VFile } from "vfile";
 import { escapeRe } from "./bits";
-import { remarkMath } from "./markdownMath";
+import { lru } from "./lru";
+import { remarkTranscriptSyntax } from "./markdownSyntax";
 import { findPaths, hrefPath, type PathMention } from "../hermes/paths";
 
-type HastNode = { type: string; value?: string; tagName?: string; properties?: Record<string, unknown>; children?: HastNode[] };
-
-const classes = (node: { properties?: Record<string, unknown> }) => {
-  const className = node.properties?.className;
+const classes = (node: Element) => {
+  const className = node.properties.className;
   return Array.isArray(className) ? className.map(String) : [];
 };
 
-/**
- * Rehype plugin: wraps each case-insensitive occurrence of `query` in `<mark class="hit">`. It runs after
- * rehype-highlight, so code blocks are marked too, except where a match spans two highlighted tokens. Typeset math is
- * left alone: its text is KaTeX's glyphs and a copy of the TeX for screen readers, not words to find.
- */
+export const languageOf = (code: Element) => classes(code).find((c) => c.startsWith("language-"))?.slice("language-".length);
+
+/** Typeset math is left alone: its text is KaTeX's glyphs and a copy of the TeX for screen readers, not words to find. */
 function rehypeFind(query: string) {
-  return () => (tree: HastNode) => {
+  return () => (tree: Root) => {
     if (!query) return;
     const re = new RegExp(`(${escapeRe(query)})`, "gi");
-    const walk = (node: HastNode) => {
-      if (!node.children) return;
-      node.children = node.children.flatMap((child): HastNode[] => {
+    const walk = (node: Root | Element) => {
+      node.children = node.children.flatMap((child): RootContent[] => {
         if (child.type !== "text" || !child.value) {
-          if (!classes(child).some((c) => c.startsWith("katex"))) walk(child);
+          if (child.type === "element" && !classes(child).some((c) => c.startsWith("katex"))) walk(child);
           return [child];
         }
         return child.value
           .split(re)
-          .flatMap((part, i): HastNode[] =>
+          .flatMap((part, i): ElementContent[] =>
             !part ? [] : i % 2 ? [{ type: "element", tagName: "mark", properties: { className: ["hit"] }, children: [{ type: "text", value: part }] }] : [{ type: "text", value: part }],
           );
       });
@@ -47,35 +40,26 @@ function rehypeFind(query: string) {
   };
 }
 
-/**
- * Rehype plugin (ADR 0167): wraps each path in running text and in a code span in `<a data-path>`, with `data-folder`
- * when it is written as a folder, and makes a link whose address is a path into the same element. The `<a>` has no
- * `href`: a path is never an address the window could follow, and react-markdown's URL policy has nothing of it to
- * read. Code blocks, math and the words of a link are left as they are.
- */
-const rehypePaths = () => (tree: HastNode) => {
+const rehypePaths = () => (tree: Root) => {
   const data = (m: PathMention) => ({ dataPath: m.written, ...(m.folder && { dataFolder: true }) });
   // A word that runs on into what is beside it is only part of a path: `src/__init__.py` is `src/`, then `init` in
-  // bold, then `.py`, and `src/` alone would open the wrong place. Text runs on when the character facing the word
-  // could continue a path; an element other than a line break always does.
-  const runsOn = (n: HastNode | undefined, side: "before" | "after") => {
+  // bold, then `.py`, and `src/` alone would open the wrong place.
+  const runsOn = (n: RootContent | undefined, side: "before" | "after") => {
     if (n?.type === "element") return n.tagName !== "br";
-    const v = n?.type === "text" ? (n.value ?? "") : "";
+    const v = n?.type === "text" ? n.value : "";
     return side === "before" ? /[\p{L}\p{N}_~/.-]$/u.test(v) : /^(?:[\p{L}\p{N}_~/-]|\.[\p{L}\p{N}])/u.test(v);
   };
-  /** `before`, `after`: the element's own text runs on into what is beside the element. */
-  const walk = (node: HastNode, before = false, after = false) => {
-    if (!node.children) return;
-    const where = node.tagName === "code" ? "code" : "prose";
+  const walk = (node: Root | Element, before = false, after = false) => {
+    const where = node.type === "element" && node.tagName === "code" ? "code" : "prose";
     const siblings = node.children;
     const glued = (i: number, side: "before" | "after") =>
       side === "before" ? (i === 0 ? before : runsOn(siblings[i - 1], side)) : i === siblings.length - 1 ? after : runsOn(siblings[i + 1], side);
-    node.children = siblings.flatMap((child, i): HastNode[] => {
+    node.children = siblings.flatMap((child, i): RootContent[] => {
       if (child.type === "text" && child.value) {
         const text = child.value;
         const spans = findPaths(text, where).filter((s) => !(s.start === 0 && glued(i, "before")) && !(s.end === text.length && glued(i, "after")));
         if (!spans.length) return [child];
-        const out: HastNode[] = [];
+        const out: ElementContent[] = [];
         let at = 0;
         for (const s of spans) {
           if (s.start > at) out.push({ type: "text", value: text.slice(at, s.start) });
@@ -85,8 +69,9 @@ const rehypePaths = () => (tree: HastNode) => {
         if (at < text.length) out.push({ type: "text", value: text.slice(at) });
         return out;
       }
+      if (child.type !== "element") return [child];
       if (child.tagName === "a") {
-        const { href, ...rest } = child.properties ?? {};
+        const { href, ...rest } = child.properties;
         const mention = typeof href === "string" ? hrefPath(href) : undefined;
         if (mention) child.properties = { ...rest, ...data(mention) };
       } else if (child.tagName !== "pre" && !classes(child).some((c) => c.startsWith("katex") || c === "language-math")) walk(child, glued(i, "before"), glued(i, "after"));
@@ -96,67 +81,30 @@ const rehypePaths = () => (tree: HastNode) => {
   walk(tree);
 };
 
-/** A cache, least recently used first out once the weights of what it holds pass `limit`. */
-function lru<V>(limit: number) {
-  const held = new Map<string, { value: V; weight: number }>();
-  let weights = 0;
-  return {
-    get(key: string): V | undefined {
-      const hit = held.get(key);
-      if (!hit) return undefined;
-      held.delete(key);
-      held.set(key, hit);
-      return hit.value;
-    },
-    set(key: string, value: V, weight: number) {
-      held.set(key, { value, weight });
-      weights += weight;
-      for (const [old, { weight }] of held) {
-        if (weights <= limit) break;
-        held.delete(old);
-        weights -= weight;
-      }
-    },
-  };
-}
-
 // The highlighter is made once: rehype-highlight builds a fresh highlight.js instance, with every grammar to compile
 // again, each time the plugin is attached, and ReactMarkdown attaches its plugins on every render.
 const highlightCode = rehypeHighlight({ detect: true });
 
-/**
- * Highlighted code, by its classes (so its language) and text: what highlight.js made of it. A block is highlighted
- * once, however often it renders: as a reply streams in, when find-in-chat marks change, in both panes. Least
- * recently used goes first once the code held passes 500,000 characters.
- */
 const highlighted = lru<{ className: unknown; children: ElementContent[] }>(500_000);
 
-/** Code longer than this stays plain: highlighting it would hold up the window (#490). */
 export const HIGHLIGHT_MAX_CHARS = 100_000;
 
 /** An untagged block's language is guessed from this much of its start, since the guess runs every grammar over it. */
 const GUESS_FROM_CHARS = 4_000;
 
-/** Whether highlight.js has to guess `code`'s language, by running every grammar over it. */
 const guessing = (code: Element) => !classes(code).some((c) => /^(lang-|language-|no-?highlight$)/.test(c));
 
-/**
- * Highlights `code`, from the cache when it can. With `guessed`, code whose language has to be guessed, and isn't in
- * the cache, is left plain in this render: the guess runs after it, in a task of its own, then `guessed` is called to
- * render it again from the cache (#451).
- */
 function highlight(code: Element, pre: Element, file: VFile, guessed?: () => void) {
   const text = toText(code, { whitespace: "pre" });
   if (text.length > HIGHLIGHT_MAX_CHARS) return plain(code);
-  // Only this block, on its own; the rest of the tree is not highlight.js's to walk.
   const one = (code: Element) => highlightCode({ type: "root", children: [{ ...pre, children: [code] }] }, file);
   const run = (code: Element) => {
     if (guessing(code) && text.length > GUESS_FROM_CHARS) {
       const start: Element = { ...code, properties: { ...code.properties, className: classes(code) }, children: [{ type: "text", value: text.slice(0, GUESS_FROM_CHARS) }] };
       one(start);
-      const language = classes(start).find((c) => c.startsWith("language-"));
+      const language = languageOf(start);
       if (!language) return plain(code);
-      code.properties.className = [...classes(code), language];
+      code.properties.className = [...classes(code), `language-${language}`];
     }
     one(code);
   };
@@ -176,7 +124,6 @@ function highlight(code: Element, pre: Element, file: VFile, guessed?: () => voi
   }
   if (!hit) {
     run(code);
-    // A copy, since find-in-chat marks are put into the tree, and the tree's copy is the one marked.
     highlighted.set(key, structuredClone({ className: code.properties.className, children: code.children }), key.length);
     return;
   }
@@ -185,17 +132,12 @@ function highlight(code: Element, pre: Element, file: VFile, guessed?: () => voi
   code.children = copy.children;
 }
 
-/** Code left plain for now, with the `hljs` class highlighting would give it, so its colours don't jump when it does. */
 function plain(code: Element) {
   const className = classes(code);
   if (!className.includes("hljs") && !className.includes("no-highlight") && !className.includes("nohighlight"))
     code.properties.className = ["hljs", ...className];
 }
 
-/**
- * Typeset math, by whether it is display math and its TeX: KaTeX's HTML, as hast. Weighed by the HTML, which is many
- * times longer than the TeX, and kept up to 2,000,000 characters of it.
- */
 const typesetMath = lru<ElementContent[]>(2_000_000);
 
 const frozen = <T,>(value: T): T => {
@@ -203,11 +145,7 @@ const frozen = <T,>(value: T): T => {
   return value;
 };
 
-/**
- * `tex` typeset, or undefined for what KaTeX can't take; TeX it can't parse comes back as itself, in red. Unlike
- * highlighted code it goes into the tree uncopied, frozen: find-in-chat leaves typeset math alone, and copying it was
- * most of a streamed delta's work (bench/parse.ts `math`).
- */
+/** `tex` typeset, or undefined for what KaTeX can't take; TeX it can't parse comes back as itself, in red. */
 function typeset(tex: string, display: boolean): ElementContent[] | undefined {
   const key = (display ? "display\n" : "inline\n") + tex;
   let math = typesetMath.get(key);
@@ -226,10 +164,7 @@ function typeset(tex: string, display: boolean): ElementContent[] | undefined {
 
 /**
  * Rehype plugin: highlights each code block, guessing the language of untagged ones, and typesets math (mdast-util-
- * math's `<code class="language-math">`, a block's in a `<pre>`). `source`: the Markdown being rendered, when it ends
- * in code or math still coming in (markdownBlocks.ts says which); the code or math at its very end then stays plain,
- * with `data-growing` on its `<code>`, until it is finished, so a streaming reply isn't highlighted again, and its
- * language guessed again, on every delta (ADR 0068). `guessed`: see `highlight`.
+ * math's `<code class="language-math">`, a block's in a `<pre>`).
  */
 function rehypeCode(source?: string, guessed?: () => void) {
   const growing = (node: Element) => source !== undefined && !source.slice(node.position?.end.offset ?? 0).trim();
@@ -255,15 +190,9 @@ function rehypeCode(source?: string, guessed?: () => void) {
     });
 }
 
-export const remarkPlugins = [remarkGfm, remarkMath, remarkBreaks];
+export const remarkPlugins = [remarkTranscriptSyntax, remarkBreaks];
 
 const highlightOnly = [rehypeCode(), rehypePaths];
 
-/**
- * The rehype plugins for Markdown marking `query`. `growingIn`: the Markdown, when it is the end of a reply still
- * streaming in. `guessed`: when given, a language guess waits until after this render, and `guessed` is called once it
- * is made, to render again. Paths are linked after code is highlighted and before find marks go in, so a mark lands
- * inside a path's link as it does inside any element.
- */
 export const rehypePlugins = (query: string, growingIn?: string, guessed?: () => void) =>
   query || growingIn !== undefined || guessed ? [rehypeCode(growingIn, guessed), rehypePaths, ...(query ? [rehypeFind(query)] : [])] : highlightOnly;

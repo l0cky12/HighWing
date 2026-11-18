@@ -61,7 +61,7 @@ mod tests {
         assert!(candidate(LINK));
         assert!(candidate("HERMES-CHAT://chat"));
         assert!(!candidate("https://example.com"));
-        assert!(!candidate("--screenshot"));
+        assert!(!candidate("--show"));
         assert!(!candidate("hermes-cha"));
         assert!(!candidate(&format!("hermes-chat://chat?{}", "a".repeat(MAX_LEN))));
         // A multi-byte character at the cut doesn't panic.
@@ -70,7 +70,7 @@ mod tests {
 
     #[test]
     fn the_last_link_on_the_command_line_is_taken() {
-        let args = ["hermes-chat", "--screenshot", "hermes-chat://chat?a", "other", "hermes-chat://chat?b"].map(String::from);
+        let args = ["hermes-chat", "--show", "hermes-chat://chat?a", "other", "hermes-chat://chat?b"].map(String::from);
         assert_eq!(from_args(args).as_deref(), Some("hermes-chat://chat?b"));
         assert_eq!(from_args(["hermes-chat", "hermes-chat://x"].map(String::from)).as_deref(), Some("hermes-chat://x"));
         // The program's own name is never a link.

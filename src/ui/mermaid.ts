@@ -1,9 +1,6 @@
 import { errorText } from "../hermes/values";
-// Mermaid diagrams from a reply's ```mermaid fences, drawn as SVG. Mermaid is loaded only when the first diagram is
-// drawn, in its own chunk. A reply carries text from web pages, files and tool output, so a prompt injection can write
-// a diagram, and drawing it must never make the app fetch anything (the same threat as ADR 0099's remote images).
+import { lru } from "./lru";
 
-/** A diagram drawn, or why it isn't. */
 export type Drawing = { svg: string } | { note: string };
 
 /** CSS that fetches: `@import`, and `url(…)` or `image-set(…)` pointing anywhere but into the SVG itself (`#id`). */
@@ -31,10 +28,7 @@ const URL_ATTRIBUTES = new Set(["href", "xlink:href", "src", "srcset", "poster",
 // Escapes could spell `url(` past the pattern; mermaid's own styles have none, so they all go.
 const inert = (css: string) => css.replace(/\\/g, "").replace(CSS_FETCH, "none");
 
-/**
- * `svg` with what would reach off the app taken out: elements that load, links (a click would take the app's window
- * there), and styles that fetch. Parsed in a document that loads nothing.
- */
+/** Parsed in a document that loads nothing. */
 function contained(svg: string): string {
   const doc = new DOMParser().parseFromString(svg, "text/html");
   doc.querySelectorAll(LOADS).forEach((el) => el.remove());
@@ -58,12 +52,10 @@ const firstLine = (error: unknown) =>
 
 /**
  * Settings that have no default, so `defaultConfig` doesn't list them, yet a diagram's `%%{init}%%` or frontmatter
- * could set: `htmlLabels: true` would put a label's `<img>` into the page while mermaid draws. The test checks this list
- * against every key mermaid's `MermaidConfig` type declares.
+ * could set: `htmlLabels: true` would put a label's `<img>` into the page while mermaid draws.
  */
 export const UNDEFAULTED_SETTINGS = ["htmlLabels", "dompurifyConfig", "wrap", "altFontFamily"];
 
-/** How long one drawing may take; one that hangs then shows its source, and the diagrams after it still draw. */
 const DRAW_MS = 15_000;
 
 let drawnSoFar = 0;
@@ -101,41 +93,30 @@ async function draw(source: string, theme: Theme): Promise<Drawing> {
 
 type Held = { drawing: Promise<Drawing>; done?: Drawing };
 
-/** Drawings by theme and source, the last 50. */
-const drawings = new Map<string, Held>();
+const drawings = lru<Held>(50);
 
-/** The mermaid theme for the app's light or dark mode now. */
+const drawingKey = (source: string, theme: Theme) => theme + "\n" + source;
+
 export const themeNow = (): Theme => (document.documentElement.dataset.mode === "dark" ? "dark" : "default");
 
-/** Calls `fn` when the app switches between light and dark. */
 export function subscribeTheme(fn: () => void) {
   const watch = new MutationObserver(fn);
   watch.observe(document.documentElement, { attributes: true, attributeFilter: ["data-mode"] });
   return () => watch.disconnect();
 }
 
-/** `source` drawn in `theme`, if it has been already. */
 export function drawnAlready(source: string, theme: Theme): Drawing | undefined {
-  return drawings.get(theme + "\n" + source)?.done;
+  return drawings.peek(drawingKey(source, theme))?.done;
 }
 
-/** `source` drawn in `theme`. */
 export function drawDiagram(source: string, theme: Theme): Promise<Drawing> {
-  const key = theme + "\n" + source;
+  const key = drawingKey(source, theme);
   const held = drawings.get(key);
-  if (held) {
-    drawings.delete(key);
-    drawings.set(key, held);
-    return held.drawing;
-  }
+  if (held) return held.drawing;
   const drawing = queue.then(() => draw(source, theme));
   queue = drawing;
   const entry: Held = { drawing };
   void drawing.then((done) => (entry.done = done));
-  drawings.set(key, entry);
-  for (const [old] of drawings) {
-    if (drawings.size <= 50) break;
-    drawings.delete(old);
-  }
+  drawings.set(key, entry, 1);
   return entry.drawing;
 }

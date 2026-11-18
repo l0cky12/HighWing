@@ -234,8 +234,6 @@ describe("Interrupting by keyboard", () => {
     await s.user.tab();
     expect(focused()).toBe(button("Start voice conversation"));
     await s.user.tab();
-    expect(focused()).toBe(button("Attach a screenshot"));
-    await s.user.tab();
     expect(focused()).toBe(button(/^Model:/));
     await s.user.tab();
     expect(focused()).toBe(button(/^Reasoning effort:/));

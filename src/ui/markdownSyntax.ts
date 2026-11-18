@@ -1,7 +1,5 @@
-// Math in Markdown, written the ways models write it: `$$…$$` blocks, and in text `$…$`, `$$…$$`, `\(…\)` and `\[…\]`.
-// The parser reads it (micromark constructs), so math in code stays code and `*` or `_` in a formula is never
-// emphasis. Its mdast is mdast-util-math's: `math` for a `$$` block, `inlineMath` in text, which become
-// `<code class="language-math math-inline|math-display">`, a block's in a `<pre>`; markdownPipeline.ts typesets them.
+import { gfm } from "micromark-extension-gfm";
+import { gfmFromMarkdown } from "mdast-util-gfm";
 import { math } from "micromark-extension-math";
 import { mathFromMarkdown } from "mdast-util-math";
 import type { Extension as FromMarkdownExtension } from "mdast-util-from-markdown";
@@ -9,18 +7,16 @@ import type { Parent } from "mdast";
 import type { InlineMath } from "mdast-util-math";
 import type { Code, Construct, Effects, Extension, State, TokenizeContext } from "micromark-util-types";
 import type { Processor } from "unified";
-// Declares the processor data fields remarkMath fills (micromarkExtensions, fromMarkdownExtensions).
+// Declares the processor data fields remarkTranscriptSyntax fills (micromarkExtensions, fromMarkdownExtensions).
 import type {} from "remark-parse";
 
 const DOLLAR = 36;
 const BACKSLASH = 92;
 
-/** End of input, a line ending, a tab or a space. */
 const blank = (code: Code) => code === null || code < 0 || code === 32;
 const lineEnding = (code: Code) => code !== null && code < -2;
 const digit = (code: Code) => code !== null && code >= 48 && code <= 57;
 
-/** The delimiter that ends a formula, consumed in full; `digitAfter`: a digit may follow it. */
 function closing(delimiter: string, digitAfter = true): Construct {
   return {
     partial: true,
@@ -50,15 +46,13 @@ type Close = typeof closeDollar;
 
 /**
  * Per paragraph (micromark tokenizes each one's text in a context of its own), where a formula of each kind first ran
- * to the paragraph's end unclosed. One of that kind starting later scans the same text from the same state, only
- * stricter about closing at once, so it can't close either. Not scanning again keeps `$a $a $a …` linear (#490).
+ * to the paragraph's end unclosed.
  */
 const unclosedFrom = new WeakMap<TokenizeContext, Map<Close, number>>();
 
 /**
  * A formula's source after its opening delimiter, up to `close`: its lines, as `mathTextData` and line endings, which
- * mdast-util-math collects into the node's value. A backslash takes the character after it along, so `\$` in `$…$` and
- * `\\` before a `)` don't end the formula. A formula can't be empty, nor run past the paragraph it starts in.
+ * mdast-util-math collects into the node's value.
  */
 function formula(context: TokenizeContext, effects: Effects, ok: State, nok: State, close: Close): State {
   const from = context.now().offset;
@@ -118,7 +112,6 @@ function formula(context: TokenizeContext, effects: Effects, ok: State, nok: Sta
 /** `$…$` (Pandoc's rule: no space just inside the opening `$`) and `$$…$$`, in text. */
 const dollarMath: Construct = {
   name: "mathText",
-  // Not from the middle of a run of dollars, unless the one before is escaped or ends a formula (`$a$$b$` is two).
   previous(code) {
     return code !== DOLLAR || ["characterEscape", "mathText"].includes(this.events[this.events.length - 1][1].type);
   },
@@ -162,13 +155,11 @@ const backslashMath: Construct = {
   },
 };
 
-/** micromark syntax: `$$` blocks (micromark-extension-math's), and math in text. */
-export const mathSyntax: Extension = { flow: math().flow, text: { [DOLLAR]: dollarMath, [BACKSLASH]: backslashMath } };
+const mathSyntax: Extension = { flow: math().flow, text: { [DOLLAR]: dollarMath, [BACKSLASH]: backslashMath } };
 
 const fromMath = mathFromMarkdown();
 
-/** mdast-util-math's, but `$$…$$` and `\[…\]` in text are display math, as in TeX. */
-export const mathMdast: FromMarkdownExtension = {
+const mathMdast: FromMarkdownExtension = {
   ...fromMath,
   exit: {
     ...fromMath.exit,
@@ -182,9 +173,10 @@ export const mathMdast: FromMarkdownExtension = {
   },
 };
 
-/** Remark plugin: parses math. */
-export function remarkMath(this: Processor) {
+export const transcriptSyntax = { extensions: [gfm(), mathSyntax], mdastExtensions: [gfmFromMarkdown(), mathMdast] };
+
+export function remarkTranscriptSyntax(this: Processor) {
   const data = this.data();
-  (data.micromarkExtensions ??= []).push(mathSyntax);
-  (data.fromMarkdownExtensions ??= []).push(mathMdast);
+  (data.micromarkExtensions ??= []).push(...transcriptSyntax.extensions);
+  (data.fromMarkdownExtensions ??= []).push(...transcriptSyntax.mdastExtensions);
 }

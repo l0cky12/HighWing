@@ -10,11 +10,15 @@ import { savedDefaults } from "../hermes/projectDefaults";
 import { projectScope } from "../hermes/projectLinks";
 import { connect, type Hermes } from "../hermes/transport";
 import { UI_PREFS_KEY } from "../hermes/uiPrefs";
-import { Main, type Screenshots } from "../App";
-import type { Captured } from "../hermes/screenshots";
+import { Main, type DeskWiring } from "../App";
 import { RestError } from "../hermes/pipe";
 
 const drops = vi.hoisted(() => new Set<(e: { payload: unknown }) => void>());
+const staging = vi.hoisted(() => ({ stage: (): string => { throw new Error("nothing is pasted in this test"); } }));
+vi.mock("@tauri-apps/api/core", async (actual) => {
+  const core = await actual<typeof import("@tauri-apps/api/core")>();
+  return { ...core, invoke: async (cmd: string, ...rest: never[]) => (cmd === "stage_clipboard_file" ? staging.stage() : core.invoke(cmd, ...rest)) };
+});
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({
   onDragDropEvent: async (cb: (e: { payload: unknown }) => void) => { drops.add(cb); return () => drops.delete(cb); },
 }) }));
@@ -524,7 +528,7 @@ describe("Compare", () => {
     expect(prompts(s.server).map((p) => p.params.text)).toEqual(["First", "First"]);
   });
 
-  it("says the message went only to the other chat when this one can't start, and keeps no screenshot the other chat took", async () => {
+  it("says the message went only to the other chat when this one can't start, and keeps no pasted image the other chat took", async () => {
     const server = new FakeHermes();
     const conn = { mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" } as const;
     const hermes = await connect(server.openPipe, undefined, localChatCache(conn));
@@ -536,27 +540,19 @@ describe("Compare", () => {
       retained = next;
     };
     const stop = subscribeOutbox(() => queueMicrotask(() => void syncOutbox()));
-    let land!: (c: Captured) => void;
-    const capture = "/run/user/1000/hermes-chat/captures/4242/0/shot.png";
-    const wiring: Screenshots = {
-      api: {
-        capture: () => new Promise((resolve) => (land = resolve)),
-        discard: async (path) => void (retained.has(path) || delete server.files[path]),
-      },
+    const pasted = "/run/user/1000/hermes-chat/captures/4242/0/shot.png";
+    staging.stage = () => ((server.files[pasted] = "\x89PNG\r\n\x1a\nscreen"), pasted);
+    const wiring: DeskWiring = {
+      api: { discard: async (path) => void (retained.has(path) || delete server.files[path]) },
       syncOutbox,
-      onDesktopShortcut: () => () => {},
-      attached: vi.fn(),
-      support: async () => ({ ok: true, summary: "Screenshots use slurp and grim." }),
     };
     try {
       const user = userEvent.setup();
-      render(<Main hermes={hermes} connection={conn} onSignOut={async () => {}} screenshots={wiring} />);
+      render(<Main hermes={hermes} connection={conn} onSignOut={async () => {}} deskWiring={wiring} />);
       await waitFor(() => expect(hermes.hasListed()).toBe(true));
       await compareWith({ user, hermes }, 0, "gpt-5");
-      composerIn(0).focus();
-      await user.click(within(pane(0)).getByRole("button", { name: "Attach a screenshot" }));
-      server.files[capture] = "\x89PNG\r\n\x1a\nscreen";
-      await act(async () => land({ path: capture }));
+      const shot = new File(["\x89PNG"], "shot.png", { type: "image/png" });
+      fireEvent.paste(composerIn(0), { clipboardData: { types: ["Files"], files: [shot], getData: () => "" } });
       await waitFor(() => expect(pane(0).querySelectorAll(".chip")).toHaveLength(1));
       const create = server.handlers["session.create"];
       server.handlers["session.create"] = (r) => (r.params.model === "claude-sonnet-4-5" ? server.fail(r.id, -32000, "claude-sonnet-4-5 is down") : create(r));

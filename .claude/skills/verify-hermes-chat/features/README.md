@@ -39,6 +39,7 @@ Each feature file starts with an H1 and one paragraph describing the behaviour t
 - [Send a message](send-message.md): open a chat, send, watch the streamed reply, and confirm both messages on the server.
 - [New chat](new-chat.md): start a chat from the rail, the list panel or Ctrl+N, and see it created on the server and in the list.
 - [New bot](new-bot.md): rewrite a rough persona with AI in place, edit a bot's persona, choose skills and tools, create, and read each back; the partial and narrow cases.
+- [Bot threads](bot-threads.md): each bot's disclosure, New thread, Thread from here, switching, kept out of Chats, Archived and Search, kept after the Bot Chat is compacted (`HV_COMPRESS=rotate`), and a thread under another profile's bot.
 - [Group rooms](group-rooms.md): Bots mode's New room, bots taking turns, stepping in, the pause with Continue or Carry on, an approval, a bot stuck in `clarify`, and the needs-you signs, with the `HV_ROOMS=1` seed.
 - [MCP servers](mcp-servers.md): Settings → MCP servers: list, test, add, edit with write-only secrets, remove, switch, OAuth sign-in, catalog, another profile, Restart gateway after an edit.
 - [Gateways](gateways.md): Settings → Gateways: Telegram and Discord state, token replace and remove with read-back, the switch, a turned-down token, a missing library, a change on the server meanwhile, Check status, Restart gateway.

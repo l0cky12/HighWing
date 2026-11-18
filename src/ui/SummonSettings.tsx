@@ -18,10 +18,17 @@ export function SummonSettings() {
           </>
         }
         more={
-          <p>
-            Only text that changed since you last left Highwing is used, the selection first and then the clipboard, after anything already in the
-            composer. Text a password manager marks as a password is never used. This works on Linux; on Windows the window only comes forward.
-          </p>
+          <>
+            <p>
+              Only text that changed since you last left Highwing is used, the selection first and then the clipboard, after anything already in the
+              composer. Text a password manager marks as a password is never used. This works on Linux; on Windows the window only comes forward.
+            </p>
+            <p>
+              To bring Highwing forward from any app, bind a key in your desktop's own keyboard settings to <code>hermes-chat --toggle</code> (or{" "}
+              <code>--show</code>, which never hides it), for example <code>bind = SUPER, H, exec, hermes-chat --toggle</code> in{" "}
+              <code>hyprland.conf</code>.
+            </p>
+          </>
         }
         control={
           <button

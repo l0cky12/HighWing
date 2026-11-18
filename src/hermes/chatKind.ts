@@ -1,11 +1,12 @@
 import { isBotChat } from "./bots";
 import type { Chat } from "./model";
+import { isThreadTitle } from "./threads";
 
 /**
  * `imported`: an Imported transcript (ADR 0031). `bot`: a bot's Bot Chat (ADR 0066). `jobRun`: the session Hermes ran
  * a Scheduled job in, which Hermes takes no reply in.
  */
-export type ChatKind = "ordinary" | "imported" | "bot" | "jobRun";
+export type ChatKind = "ordinary" | "imported" | "bot" | "thread" | "jobRun";
 
 export type ChatPolicy = {
   /** In the chat list, the unread counts, the list saved on this computer, and reopened at launch. */
@@ -22,21 +23,29 @@ export type ChatPolicy = {
   /** Edit and Regenerate. */
   replay: boolean;
   branch: boolean;
-  /** Pin, Archive and Delete. */
-  manage: boolean;
-  /** A chat link opens it by its id. A Bot Chat is found by its title each time, so it has none. */
+  threadFrom: boolean;
+  organize: boolean;
+  remove: boolean;
+  rename: "title" | "topic" | "none";
+  ofBot: boolean;
   link: boolean;
 };
 
+const LISTED = { listed: true, inbox: true, session: "live", branch: true, threadFrom: false, organize: true, remove: true, rename: "title", ofBot: false, link: true } as const;
+const OF_BOT = { listed: false, inbox: true, session: "live", replay: true, organize: false, ofBot: true, link: false } as const;
+
 export const CHAT_POLICY: Record<ChatKind, ChatPolicy> = {
-  ordinary: { listed: true, inbox: true, session: "live", replay: true, branch: true, manage: true, link: true },
-  imported: { listed: true, inbox: true, session: "live", readOnly: "imported", replay: false, branch: true, manage: true, link: true },
-  bot: { listed: false, inbox: true, session: "live", replay: true, branch: true, manage: false, link: false },
-  jobRun: { listed: false, inbox: false, session: "stored", readOnly: "jobRun", replay: false, branch: false, manage: false, link: true },
+  ordinary: { ...LISTED, replay: true },
+  imported: { ...LISTED, readOnly: "imported", replay: false },
+  bot: { ...OF_BOT, branch: true, threadFrom: true, remove: false, rename: "none" },
+  thread: { ...OF_BOT, branch: false, threadFrom: false, remove: true, rename: "topic" },
+  jobRun: { listed: false, inbox: false, session: "stored", readOnly: "jobRun", replay: false, branch: false, threadFrom: false, organize: false, remove: false, rename: "none", ofBot: false, link: true },
 };
 
 type Kinded = Pick<Chat, "source" | "bot" | "title">;
 
-export const chatKind = (c: Kinded): ChatKind => (isBotChat(c) ? "bot" : c.source === "cron" ? "jobRun" : c.source === "import" ? "imported" : "ordinary");
+/** The title decides first: a thread is never a Bot Chat, even when Hermes reports the Bot Chat as its lineage root. */
+export const chatKind = (c: Kinded): ChatKind =>
+  isThreadTitle(c.title) ? "thread" : isBotChat(c) ? "bot" : c.source === "cron" ? "jobRun" : c.source === "import" ? "imported" : "ordinary";
 
 export const policyOf = (c: Kinded): ChatPolicy => CHAT_POLICY[chatKind(c)];

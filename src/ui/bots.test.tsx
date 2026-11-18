@@ -75,6 +75,7 @@ const botRows = () => Array.from(document.querySelectorAll<HTMLButtonElement>(".
 const modeTab = (name: "Chats" | "Bots") => within(document.querySelector<HTMLElement>(".sidebar")!).getByRole("tab", { name: new RegExp(`^${name}`) });
 const listTitles = () => [...document.querySelectorAll(".sidebar .row-title")].map((e) => e.textContent);
 const toast = () => document.querySelector<HTMLElement>(".toast")?.textContent;
+const titleLookups = (server: FakeHermes) => server.requests.filter((r) => r.method === "session.list" && r.params.title !== undefined).map((r) => r.params.title);
 
 async function pickProfile(user: ReturnType<typeof userEvent.setup>, profile: string) {
   await user.click(document.querySelector<HTMLElement>(".profile-btn")!);
@@ -126,11 +127,10 @@ describe("A bot's row", () => {
     await waitFor(() => expect(hermes.profile).toBe("scribe"));
     await waitFor(() => expect(screen.getByText("Draft the release notes for 0.9")).toBeTruthy());
     // Looked up by title, not created.
-    expect(server.requests.filter((r) => r.method === "session.list").map((r) => r.params.title)).toEqual([BOT_CHAT_TITLE]);
+    expect(titleLookups(server)).toEqual([BOT_CHAT_TITLE]);
     expect(server.requests.filter((r) => r.method === "session.create")).toEqual([]);
     expect(hermes.getSnapshot().chats.find((c) => c.id === "scribe-bot")?.bot).toBe(true);
-    // The chats under the bot are the side-chat only.
-    await waitFor(() => expect(listTitles()).toEqual(["Changelog wording"]));
+    expect(listTitles()).toEqual([]);
   });
 
   it("marks the open Bot Chat as one, and offers nothing that would rename, retire or link it by id", async () => {
@@ -163,7 +163,7 @@ describe("A bot's row", () => {
     await user.click(screen.getByRole("button", { name: "New chat with Scribe" }));
     await waitFor(() => expect(hermes.profile).toBe("scribe"));
     await waitFor(() => expect(screen.getByText("What should Scribe work on?")).toBeTruthy());
-    expect(server.requests.filter((r) => r.method === "session.list")).toEqual([]);
+    expect(titleLookups(server)).toEqual([]);
   });
 
   it("compacts a Bot Chat for /new instead of starting a new chat", async () => {
@@ -859,9 +859,6 @@ describe("Picking Bots mode", () => {
 
 describe("Bots mode", () => {
   const panel = () => document.querySelector<HTMLElement>(".sidebar")!;
-  const under = () => panel().querySelector<HTMLElement>(".bots-chats");
-  const underTitles = () => [...(under()?.querySelectorAll(".row-title") ?? [])].map((e) => e.textContent);
-  const shownMode = () => within(panel()).getAllByRole("tab").find((t) => t.getAttribute("aria-selected") === "true")?.textContent;
   const ago = (days: number) => nowS() - days * 86_400;
 
   async function launchMany() {
@@ -874,7 +871,7 @@ describe("Bots mode", () => {
       s.transcripts = { ...s.transcripts, s6: [{ role: "user", text: "The oldest settled chat" }] };
     });
     await env.user.click(within(panel()).getByRole("tab", { name: /^Bots/ }));
-    await waitFor(() => expect(under()).toBeTruthy());
+    await waitFor(() => expect(panel().querySelector(".bots-row")).toBeTruthy());
     return env;
   }
 
@@ -885,62 +882,6 @@ describe("Bots mode", () => {
     expect(scribe.querySelector(".bots-preview")?.textContent).toBe("Release notes drafted: three fixes.");
     expect(within(scribe).getByRole("button", { name: "New chat with Scribe" })).toBeTruthy();
     expect(scribe.querySelector(".bots-more")).toBeNull();
-  });
-
-  it("puts the shown profile's chats under its bot: Active first, then the newest Settled up to three", async () => {
-    await launchMany();
-    expect(under()!.closest(".bots-under")!.previousElementSibling?.getAttribute("data-profile")).toBe("default");
-    expect(under()!.getAttribute("aria-label")).toBe("Hermes's chats");
-    expect(underTitles()).toEqual(["Backup failing", "Disk usage", "Settled 1"]);
-    const marked = [...under()!.querySelectorAll(".row")].map((r) => !!r.querySelector('.bots-chat-mark[aria-label="In the Inbox"]'));
-    expect(marked).toEqual([true, true, false]);
-    expect(within(under()!).getByRole("button", { name: "All 8 chats" })).toBeTruthy();
-  });
-
-  it("adds the chat in the pane, marked selected, and opens a chat from under the bot", async () => {
-    const { user } = await launchMany();
-    await user.keyboard("{Control>}k{/Control}");
-    await user.type(screen.getByPlaceholderText("Search all chats, including Archived"), "Settled 6");
-    await waitFor(() => expect(document.querySelector(".hit-row")).toBeTruthy());
-    await user.click(document.querySelector<HTMLElement>(".hit-row")!);
-    await waitFor(() => expect(underTitles()).toEqual(["Backup failing", "Disk usage", "Settled 1", "Settled 6"]));
-    const open = within(under()!).getByRole("button", { name: /Settled 6/ });
-    expect(open.getAttribute("aria-current")).toBe("true");
-    await user.click(within(under()!).getByRole("button", { name: /Disk usage/ }));
-    await waitFor(() => expect(within(under()!).getByRole("button", { name: /Disk usage/ }).getAttribute("aria-current")).toBe("true"));
-    expect(shownMode()).toBe("Bots");
-  });
-
-  it("picks Chats from All N chats", async () => {
-    const { user } = await launchMany();
-    await user.click(within(under()!).getByRole("button", { name: "All 8 chats" }));
-    expect(shownMode()).toBe("Chats");
-    expect(listTitles()).toEqual(["Backup failing", "Disk usage"]);
-  });
-
-  it("walks the bots and the chats under the shown one as one list with Up and Down", async () => {
-    const { user } = await launchMany();
-    const hermesRow = panel().querySelector<HTMLElement>('.bots-row[data-profile="default"] .bots-open')!;
-    hermesRow.focus();
-    const walk: string[] = [];
-    for (let i = 0; i < 5; i++) {
-      await user.keyboard("{ArrowDown}");
-      const at = document.activeElement;
-      walk.push(at?.closest(".bots-row")?.getAttribute("data-profile") ?? at?.querySelector(".row-title")?.textContent ?? at?.textContent ?? "");
-    }
-    expect(walk).toEqual(["Backup failing", "Disk usage", "Settled 1", "All 8 chats", "scribe"]);
-    await user.keyboard("{ArrowUp}");
-    expect(document.activeElement?.textContent).toBe("All 8 chats");
-  });
-
-  it("follows the shown profile: its bot's row holds its chats", async () => {
-    const { hermes, user } = await launchMany();
-    await user.click(panel().querySelector<HTMLElement>('.bots-row[data-profile="scribe"] .bots-open')!);
-    await waitFor(() => expect(hermes.profile).toBe("scribe"));
-    await waitFor(() => expect(under()?.getAttribute("aria-label")).toBe("Scribe's chats"));
-    expect(under()!.closest(".bots-under")!.previousElementSibling?.getAttribute("data-profile")).toBe("scribe");
-    await waitFor(() => expect(underTitles()).toEqual(["Changelog wording"]));
-    expect(within(under()!).getByRole("button", { name: "All 1 chat" })).toBeTruthy();
   });
 });
 
@@ -1221,6 +1162,7 @@ describe("What the owner does while a Bot Chat opens", () => {
     await showBots(user);
     await user.click(botRows()[0]);
     await waitFor(() => expect(server.requests.some((r) => r.method === "session.list")).toBe(true));
+    await user.click(modeTab("Chats"));
     await user.click(screen.getByText("Disk usage"));
     await waitFor(() => expect(screen.getByText("How full is the disk?")).toBeTruthy());
     await act(async () => release());
@@ -1251,7 +1193,7 @@ describe("What the owner does while a Bot Chat opens", () => {
     await waitFor(() => expect(listTitles()).toEqual(["Changelog wording"]));
     await act(async () => void (await hermes.idle()));
     // Coming back is an ordinary switch: no Bot Chat lookup, and the Bot Chat doesn't open.
-    expect(server.requests.filter((r) => r.method === "session.list")).toEqual([]);
+    expect(titleLookups(server)).toEqual([]);
     expect(screen.queryByText("Draft the release notes for 0.9")).toBeNull();
   });
 });
@@ -1276,8 +1218,9 @@ describe("A Bot Chat outside the list", () => {
 
   it("stays out of the list after switching away and back, and isn't the chat reopened at launch", async () => {
     const { hermes, user } = await launch();
-    await showBots(user);
-    await user.click(botRows()[1]);
+    await pickProfile(user, "scribe");
+    await waitFor(() => expect(hermes.profile).toBe("scribe"));
+    await user.keyboard("{Alt>}b{/Alt}");
     await waitFor(() => expect(screen.getByText("Draft the release notes for 0.9")).toBeTruthy());
     expect(getUIPrefs().lastOpenChat.scribe).toBeUndefined();
     await act(async () => void (await hermes.switchProfile("default")));
@@ -1326,7 +1269,7 @@ describe("The chat list panel's two modes", () => {
     expect(shownMode()).toBe("Bots");
     expect(current()).toEqual([null, "true"]);
     expect(within(panelBots()[1]).getByText("Release notes drafted: three fixes.")).toBeTruthy();
-    expect(listTitles()).toEqual(["Changelog wording"]);
+    expect(listTitles()).toEqual([]);
     expect(within(panel()).queryByRole("heading", { name: "Bots" })).toBeNull();
     expect(within(panel()).getByRole("button", { name: "New chat" })).toBeTruthy();
     expect(within(panel()).getByRole("button", { name: "Search chats" })).toBeTruthy();
@@ -1591,6 +1534,14 @@ describe("A bot visit", () => {
     s.liveSessions = [];
   };
 
+  async function openBySearch(user: ReturnType<typeof userEvent.setup>, chatTitle: string) {
+    await user.keyboard("{Control>}k{/Control}");
+    await user.type(screen.getByPlaceholderText("Search all chats, including Archived"), chatTitle);
+    await waitFor(() => expect(document.querySelector(".hit-row")).toBeTruthy());
+    await user.click(document.querySelector<HTMLElement>(".hit-row")!);
+    await waitFor(() => expect(title()).toMatch(new RegExp(`^${chatTitle}`)));
+  }
+
   /** On `default` with Disk usage open, Scribe opened from Bots mode. */
   async function visitScribe(setup?: (s: FakeHermes) => void, count = 2) {
     const env = await launch(setup);
@@ -1644,22 +1595,12 @@ describe("A bot visit", () => {
 
   it("makes the bot's profile the owner's once an ordinary chat of it is open", async () => {
     const { hermes, user } = await visitScribe();
-    await user.click(within(bots()).getByRole("button", { name: /Changelog wording/ }));
-    await waitFor(() => expect(title()).toMatch(/^Changelog wording/));
+    await openBySearch(user, "Changelog wording");
     await user.click(modeTab("Chats"));
     await act(async () => void (await hermes.idle()));
     expect(hermes.profile).toBe("scribe");
     expect(switcher()).toBe("Scribe");
     expect(title()).toMatch(/^Changelog wording/);
-  });
-
-  it("makes the bot's profile the owner's from All N chats", async () => {
-    const { hermes, user } = await visitScribe();
-    await user.click(within(bots()).getByRole("button", { name: "All 1 chat" }));
-    expect(modeTab("Chats").getAttribute("aria-selected")).toBe("true");
-    await act(async () => void (await hermes.idle()));
-    expect(hermes.profile).toBe("scribe");
-    expect(switcher()).toBe("Scribe");
   });
 
   it("makes another bot's profile the owner's from its pen", async () => {
@@ -1685,8 +1626,7 @@ describe("A bot visit", () => {
     const { hermes, cache, user } = await visitScribe();
     await act(async () => void (await hermes.idle()));
     expect(await nextLaunch(cache)).toBe("default");
-    await user.click(within(bots()).getByRole("button", { name: /Changelog wording/ }));
-    await waitFor(() => expect(title()).toMatch(/^Changelog wording/));
+    await openBySearch(user, "Changelog wording");
     expect(await nextLaunch(cache)).toBe("scribe");
   });
 });
@@ -1964,5 +1904,252 @@ describe("A bot's menu in the chat list panel", { timeout: 30_000 }, () => {
     expect(server.otherProfiles.scratch).toBeTruthy();
     await waitFor(() => expect(names()).toEqual(["Hermes", "Scratch"]));
     await waitFor(() => expect(document.activeElement).toBe(screen.getByPlaceholderText(/Message/)));
+  });
+});
+
+describe("Thread from here", () => {
+  async function inScribesBotChat() {
+    const env = await launch((s) => {
+      s.transcripts["scribe-bot"] = [];
+      s.storeMessage("scribe-bot", { role: "user", text: "Draft the release notes for 0.9" });
+      s.storeMessage("scribe-bot", { role: "assistant", text: "## Release notes drafted\nThree fixes." });
+      s.liveSessions = [];
+    });
+    await showBots(env.user);
+    await env.user.click(botRows()[1]);
+    await waitFor(() => expect(screen.getByText("Three fixes.")).toBeTruthy());
+    await act(async () => void (await env.hermes.idle()));
+    return env;
+  }
+
+  it("is offered beside Branch from here under a Bot Chat's messages, and not in an ordinary chat", async () => {
+    const { user } = await inScribesBotChat();
+    expect(screen.getAllByRole("button", { name: "Thread from here" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Branch from here" })).toHaveLength(2);
+    await user.keyboard("{Control>}k{/Control}");
+    await user.type(screen.getByPlaceholderText("Search all chats, including Archived"), "Changelog wording");
+    await waitFor(() => expect(document.querySelector(".hit-row")).toBeTruthy());
+    await user.click(document.querySelector<HTMLElement>(".hit-row")!);
+    await waitFor(() => expect(screen.getByText("Which wording reads better?")).toBeTruthy());
+    expect(screen.queryByRole("button", { name: "Thread from here" })).toBeNull();
+  });
+
+  it("previews the history, offers the message's first words as the topic, and starts a hidden thread named for it", async () => {
+    const { server, user } = await inScribesBotChat();
+    await user.click(screen.getAllByRole("button", { name: "Thread from here" })[1]);
+    const dialog = await screen.findByRole("dialog", { name: "Thread from here" });
+    await within(dialog).findByText(/History it starts with: 2 messages/);
+    expect(dialog.textContent).toContain("starts with the Bot Chat's history up to the bot's reply");
+    const topic = within(dialog).getByRole<HTMLInputElement>("textbox", { name: "Topic" });
+    expect(topic.value).toBe("Release notes drafted Three fixes.");
+    const start = within(dialog).getByRole<HTMLButtonElement>("button", { name: "Start thread" });
+    await user.clear(topic);
+    expect(start.disabled).toBe(true);
+    await user.type(topic, "Release notes");
+    await user.click(start);
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Thread from here" })).toBeNull());
+    const thread = server.otherProfiles.scribe.find((r) => r.parent_session_id === "scribe-bot")!;
+    expect(thread).toMatchObject({ title: "Bot Thread: Release notes", hidden: true, pinned: false });
+    expect(server.transcripts[thread.id].map((m) => m.text)).toEqual(["Draft the release notes for 0.9", "## Release notes drafted\nThree fixes."]);
+    expect(server.transcripts["scribe-bot"]).toHaveLength(2);
+    expect(screen.queryByText(/Branched from/)).toBeNull();
+  });
+});
+
+describe("A bot's threads", () => {
+  const panel = () => document.querySelector<HTMLElement>(".sidebar")!;
+  const head = () => document.querySelector<HTMLElement>(".chat-head .chat-title")?.textContent ?? "";
+  const under = (profile: string) => panel().querySelector<HTMLElement>(`.bots-threads[data-threads-of="${profile}"]`)!;
+  const toggle = (profile: string) => under(profile).querySelector<HTMLButtonElement>(".bots-threads-toggle")!;
+  const topics = (profile: string) => [...under(profile).querySelectorAll(".bots-thread-topic")].map((e) => e.textContent);
+  const threadRow = (profile: string, topic: string) => within(under(profile)).getByRole("button", { name: new RegExp(`^${topic}`) });
+  const threadsOf = (server: FakeHermes, profile: string) => server.store(profile)!.filter((s) => s.title?.startsWith("Bot Thread: ")).map((s) => s.title);
+
+  async function launchThreads(setup: (s: FakeHermes) => void = () => {}) {
+    const env = await launch((s) => {
+      s.sessions.push(row("hermes-bot", 0.02, { title: BOT_CHAT_TITLE, hidden: true, last_read_at: nowS() }));
+      s.transcripts["hermes-bot"] = [{ role: "assistant", text: "Nothing urgent this morning." }];
+      s.seedThread("scribe", "Changelog wording", { hours: 50, messages: [{ role: "user", text: "Shorter verbs, please." }] });
+      s.seedThread("scribe", "Blog post", { hours: 5, messages: [{ role: "assistant", text: "The outline is in the doc." }] });
+      s.liveSessions = [];
+      setup(s);
+    });
+    await showBots(env.user);
+    await waitFor(() => expect(toggle("scribe").textContent).toBe("2 threads"));
+    return env;
+  }
+
+  it("puts a disclosure under every bot, saying how many threads it has, closed until its bot is on screen", async () => {
+    const { user } = await launchThreads();
+    expect(toggle("default").textContent).toBe("No threads");
+    expect(toggle("default").getAttribute("aria-label")).toBe("Hermes: No threads");
+    expect(toggle("scribe").getAttribute("aria-label")).toBe("Scribe: 2 threads");
+    expect([toggle("default"), toggle("scribe")].map((t) => t.getAttribute("aria-expanded"))).toEqual(["false", "false"]);
+    expect(under("scribe").previousElementSibling?.getAttribute("data-profile")).toBe("scribe");
+    expect(botRows()[1].getAttribute("aria-label")).toMatch(/2 threads$/);
+    expect(botRows()[0].getAttribute("aria-label")).toMatch(/No threads\. the profile shown$/);
+
+    await user.click(toggle("scribe"));
+    expect(topics("scribe")).toEqual(["Blog post", "Changelog wording"]);
+    expect(within(under("scribe")).getByRole("group", { name: "Scribe's threads" })).toBeTruthy();
+    expect(within(under("scribe")).getByRole("button", { name: "New thread" })).toBeTruthy();
+
+    await user.click(botRows()[0]);
+    await waitFor(() => expect(head()).toBe("HHermesBot Chat"));
+    expect(toggle("default").getAttribute("aria-expanded")).toBe("true");
+    expect(within(under("default")).getByRole("button", { name: "New thread" })).toBeTruthy();
+    await user.click(toggle("default"));
+    expect(toggle("default").getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("starts a thread from New thread's Topic field with Enter, and opens it headed by its bot and topic", async () => {
+    const { server, hermes, user } = await launchThreads();
+    await user.click(toggle("default"));
+    await user.click(within(under("default")).getByRole("button", { name: "New thread" }));
+    const field = within(under("default")).getByRole("textbox", { name: "Topic of the new thread with Hermes" });
+    expect(document.activeElement).toBe(field);
+    await user.keyboard("{Escape}");
+    expect(within(under("default")).queryByRole("textbox")).toBeNull();
+    expect(document.activeElement).toBe(within(under("default")).getByRole("button", { name: "New thread" }));
+    expect(server.requests.filter((r) => r.method === "session.create")).toEqual([]);
+
+    await user.click(within(under("default")).getByRole("button", { name: "New thread" }));
+    await user.keyboard("VLAN plan{Enter}");
+    await waitFor(() => expect(head()).toBe("HHermes/VLAN planThread"));
+    expect(threadsOf(server, "default")).toEqual(["Bot Thread: VLAN plan"]);
+    expect(server.sessions.find((s) => s.title === "Bot Thread: VLAN plan")).toMatchObject({ hidden: true });
+    await waitFor(() => expect(topics("default")).toEqual(["VLAN plan"]));
+    expect(toggle("default").textContent).toBe("1 thread");
+    expect(threadRow("default", "VLAN plan").getAttribute("aria-current")).toBe("true");
+    expect(botRows()[0].getAttribute("aria-current")).toBeNull();
+    expect(screen.getByPlaceholderText("Message Hermes")).toBeTruthy();
+    expect(within(screen.getByRole("tablist", { name: "Chat tabs" })).getByRole("tab", { selected: true }).textContent).toBe("Hermes / VLAN plan");
+    expect(hermes.getSnapshot().chats.filter((c) => c.title === "Bot Thread: VLAN plan")).toHaveLength(1);
+    expect(listTitles()).toEqual([]);
+  });
+
+  it("goes between the Bot Chat and the bot's threads, and keeps threads out of Chats and Search", async () => {
+    const { user } = await launchThreads((s) => {
+      s.seedThread("default", "Backups", { messages: [{ role: "user", text: "Check last night's backup run" }] });
+      s.seedThread("default", "VLAN plan", { messages: [{ role: "user", text: "Start with the lab VLAN" }] });
+    });
+    await user.click(toggle("default"));
+    await user.click(threadRow("default", "Backups"));
+    await waitFor(() => expect(head()).toBe("HHermes/BackupsThread"));
+    expect(screen.getByText("Check last night's backup run")).toBeTruthy();
+    await user.click(threadRow("default", "VLAN plan"));
+    await waitFor(() => expect(head()).toBe("HHermes/VLAN planThread"));
+    expect(screen.getByText("Start with the lab VLAN")).toBeTruthy();
+    expect(threadRow("default", "Backups").getAttribute("aria-current")).toBeNull();
+    await user.click(botRows()[0]);
+    await waitFor(() => expect(head()).toBe("HHermesBot Chat"));
+    expect(threadRow("default", "VLAN plan").getAttribute("aria-current")).toBeNull();
+
+    await user.click(modeTab("Chats"));
+    expect(listTitles()).toEqual(["Disk usage"]);
+    await user.keyboard("{Control>}k{/Control}");
+    await user.type(screen.getByPlaceholderText("Search all chats, including Archived"), "backup");
+    await act(async () => void (await new Promise((r) => setTimeout(r, 400))));
+    expect(document.querySelector(".hit-row")).toBeNull();
+  });
+
+  it("opens another bot's thread as a visit to its profile, which Chats ends", async () => {
+    const { hermes, user } = await launchThreads();
+    await user.click(screen.getByRole("tab", { name: /^Chats/ }));
+    await user.click(screen.getByText("Disk usage"));
+    await showBots(user);
+    await user.click(toggle("scribe"));
+    await user.click(threadRow("scribe", "Blog post"));
+    await waitFor(() => expect(head()).toBe("SScribe/Blog postThread"));
+    expect(hermes.profile).toBe("scribe");
+    expect(screen.getByText("The outline is in the doc.")).toBeTruthy();
+    expect(modeTab("Bots").getAttribute("aria-selected")).toBe("true");
+    await user.click(threadRow("scribe", "Changelog wording"));
+    await waitFor(() => expect(head()).toBe("SScribe/Changelog wordingThread"));
+
+    await user.click(modeTab("Chats"));
+    await waitFor(() => expect(hermes.profile).toBe("default"));
+    await waitFor(() => expect(head()).toMatch(/^Disk usage/));
+  });
+
+  it("walks the bots, their disclosures and their threads with Up and Down", async () => {
+    const { user } = await launchThreads();
+    await user.click(toggle("scribe"));
+    botRows()[0].focus();
+    const walk: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      await user.keyboard("{ArrowDown}");
+      walk.push(document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.querySelector(".bots-thread-topic")?.textContent ?? document.activeElement?.textContent ?? "");
+    }
+    expect(walk.map((w) => w.replace(/^Scribe\. .*/, "Scribe"))).toEqual(["Hermes: No threads", "Scribe", "Scribe: 2 threads", "Blog post", "Changelog wording", "New thread"]);
+    await user.keyboard("{ArrowUp}");
+    expect(document.activeElement).toBe(threadRow("scribe", "Changelog wording"));
+  });
+
+  it("renames a thread from its menu by topic, and deletes one after asking", async () => {
+    const { server, user } = await launchThreads();
+    await user.click(toggle("scribe"));
+    threadRow("scribe", "Blog post").focus();
+    await user.keyboard("{ContextMenu}");
+    const menu = await screen.findByRole("menu", { name: "More for the thread Blog post" });
+    expect(within(menu).getAllByRole("menuitem").map((m) => m.textContent)).toEqual(["Rename", "Delete"]);
+    await user.click(within(menu).getByRole("menuitem", { name: "Rename" }));
+    const field = within(under("scribe")).getByRole<HTMLInputElement>("textbox", { name: "New topic for the thread Blog post" });
+    expect(field.value).toBe("Blog post");
+    await user.clear(field);
+    await user.type(field, "Self-hosting post{Enter}");
+    await waitFor(() => expect(topics("scribe")).toEqual(["Self-hosting post", "Changelog wording"]));
+    await waitFor(() => expect(threadsOf(server, "scribe")).toEqual(["Bot Thread: Changelog wording", "Bot Thread: Self-hosting post"]));
+
+    fireEvent.contextMenu(threadRow("scribe", "Changelog wording"));
+    await user.click(within(await screen.findByRole("menu", { name: "More for the thread Changelog wording" })).getByRole("menuitem", { name: "Delete" }));
+    const ask = await screen.findByRole("alertdialog", { name: "Delete the thread “Changelog wording”?" });
+    await user.click(within(ask).getByRole("button", { name: "Cancel" }));
+    expect(threadsOf(server, "scribe")).toHaveLength(2);
+    fireEvent.contextMenu(threadRow("scribe", "Changelog wording"));
+    await user.click(within(await screen.findByRole("menu")).getByRole("menuitem", { name: "Delete" }));
+    await user.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Delete thread" }));
+    await waitFor(() => expect(topics("scribe")).toEqual(["Self-hosting post"]));
+    await waitFor(() => expect(threadsOf(server, "scribe")).toEqual(["Bot Thread: Self-hosting post"]));
+    expect(toggle("scribe").textContent).toBe("1 thread");
+  });
+
+  it("says why a bot's threads couldn't be read, and never that it has none", async () => {
+    const { server, user } = await launch((s) => {
+      s.liveSessions = [];
+      const list = s.handlers["session.list"];
+      s.handlers["session.list"] = (r) => (r.params.title === undefined && r.params.profile === "scribe" ? s.fail(r.id, 5006, "database is locked") : list(r));
+    });
+    await showBots(user);
+    await waitFor(() => expect(toggle("default").textContent).toBe("No threads"));
+    await waitFor(() => expect(server.requests.some((r) => r.method === "session.list" && r.params.profile === "scribe")).toBe(true));
+    expect(toggle("scribe").textContent).toBe("Threads");
+    expect(botRows()[1].getAttribute("aria-label")).not.toMatch(/thread/);
+    await user.click(toggle("scribe"));
+    expect(within(under("scribe")).getByRole("alert").textContent).toBe("Couldn't read the threads: database is locked");
+    expect(within(under("scribe")).getByRole("button", { name: "New thread" })).toBeTruthy();
+  });
+
+  it("compacts a thread on /new, as a Bot Chat, and opens a thread made by Thread from here under its bot", async () => {
+    const { server, user } = await launchThreads((s) => {
+      s.transcripts["hermes-bot"] = [];
+      s.storeMessage("hermes-bot", { role: "user", text: "Anything urgent?" });
+      s.storeMessage("hermes-bot", { role: "assistant", text: "Nothing urgent this morning." });
+    });
+    await user.click(botRows()[0]);
+    await waitFor(() => expect(head()).toBe("HHermesBot Chat"));
+    await user.click(screen.getAllByRole("button", { name: "Thread from here" })[1]);
+    const dialog = await screen.findByRole("dialog", { name: "Thread from here" });
+    await user.click(await within(dialog).findByRole("button", { name: "Start thread" }));
+    await waitFor(() => expect(head()).toBe("HHermes/Nothing urgent this morning.Thread"));
+    await waitFor(() => expect(topics("default")).toEqual(["Nothing urgent this morning."]));
+    expect(threadRow("default", "Nothing urgent this morning\\.").getAttribute("aria-current")).toBe("true");
+
+    await user.click(screen.getByPlaceholderText("Message Hermes"));
+    await user.keyboard("/new{Enter}{Enter}");
+    await waitFor(() => expect(server.requests.some((r) => r.method === "session.compress")).toBe(true));
+    await waitFor(() => expect(screen.getByText(/A thread is one continuous conversation, so \/new compacts it instead of starting a new chat\./)).toBeTruthy());
+    expect(head()).toBe("HHermes/Nothing urgent this morning.Thread");
   });
 });

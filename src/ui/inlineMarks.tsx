@@ -1,7 +1,3 @@
-// The composer's image marks drawn as chips over its text (ADR 0200). The words stay one plain textarea, so typing,
-// IME, selection, undo and the slash menu work as they always did. A mirror laid out as the textarea is finds where each
-// mark is, and a chip with the image's thumbnail, name and size covers it there. While the cursor or a selection is in
-// a mark, or the mark wraps onto a second line, its words show instead.
 import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { ImageMark } from "../hermes/inlineImages";
 import type { Attachment } from "../hermes/model";
@@ -12,7 +8,6 @@ export type ComposerMark = ImageMark & { file: Attachment };
 
 type Box = { left: number; top: number; width: number; height: number };
 
-/** What the mirror copies from the textarea, so its text wraps where the textarea's does. */
 const LAYOUT = [
   "boxSizing", "fontFamily", "fontSize", "fontWeight", "fontStyle", "letterSpacing", "lineHeight", "tabSize", "textIndent",
   "textTransform", "whiteSpace", "wordBreak", "overflowWrap", "wordSpacing", "paddingTop", "paddingLeft", "paddingBottom",

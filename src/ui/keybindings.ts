@@ -108,6 +108,9 @@ export function chordOf(e: KeyLike): Chord | undefined {
   return [...MODIFIERS.filter((m) => held[m]), key].join("+") as Chord;
 }
 
+/** Whether a press is only modifiers, so a recorder keeps waiting for the key. */
+export const onlyModifiers = (e: Pick<KeyboardEvent, "key">) => ["Control", "Shift", "Alt", "Meta", "Super", "Hyper", "OS", "AltGraph"].includes(e.key);
+
 /** A stored string as a chord, if it has a chord's shape. */
 export const parseChord = (s: unknown): Chord | undefined => (typeof s === "string" && CHORD.test(s) ? (s as Chord) : undefined);
 
@@ -208,20 +211,11 @@ export const isCustom = (b: Bindings, id: CommandId) => !sameChords(b[id], DEFAU
 
 const EDIT_KEYS: Record<string, string> = { A: "selects all text", C: "copies", V: "pastes", X: "cuts", Z: "undoes", Y: "redoes" };
 
-/** The screenshot shortcut (ui/shortcut.ts, where Super is its own modifier) as a chord, where Super counts as Ctrl. */
-export function screenshotChord(s: string | null | undefined): Chord | undefined {
-  if (!s) return undefined;
-  const parts = s.split("+");
-  const held = new Set(parts.slice(0, -1));
-  const ctrl = held.has("Ctrl") || held.has("Super");
-  return parseChord([ctrl && "Ctrl", held.has("Alt") && "Alt", held.has("Shift") && "Shift", parts[parts.length - 1]].filter(Boolean).join("+"));
-}
-
 /**
  * Why `chord` can't be `id`'s, or undefined when it can. A clash with another command is not a reason: that is saved,
- * and the page warns about it. `screenshot`: the screenshot shortcut now, which the window takes before any command.
+ * and the page warns about it.
  */
-export function checkChord(id: CommandId, chord: Chord, screenshot: string | null): string | undefined {
+export function checkChord(id: CommandId, chord: Chord): string | undefined {
   const { mods, key } = splitChord(chord);
   const held = new Set(mods);
   const label = chordLabel(chord);
@@ -232,7 +226,6 @@ export function checkChord(id: CommandId, chord: Chord, screenshot: string | nul
   if (held.has("Ctrl") && !held.has("Alt") && EDIT_KEYS[key] && (!held.has("Shift") || key === "Z")) return `${label} ${EDIT_KEYS[key]} while you type.`;
   if (held.has("Ctrl") && held.has("Alt") && /^F(?:[1-9]|1[0-2])$/.test(key)) return `${label} switches to a text console on Linux.`;
   if (held.has("Alt") && key === "F4") return `${label} closes the window on most desktops.`;
-  if (chord === screenshotChord(screenshot)) return `${label} is the screenshot shortcut (Settings → General → Screenshots).`;
   return undefined;
 }
 
@@ -241,11 +234,11 @@ export function checkChord(id: CommandId, chord: Chord, screenshot: string | nul
  * left out; of a known one, a string that isn't a chord, or a chord `checkChord` refuses, is dropped, and a command
  * left with none keeps its defaults.
  */
-export function bindingsOf(overrides: Readonly<Record<string, readonly string[]>>, screenshot: string | null): Bindings {
+export function bindingsOf(overrides: Readonly<Record<string, readonly string[]>>): Bindings {
   const out = { ...DEFAULT_BINDINGS } as Record<CommandId, readonly Chord[]>;
   for (const [id, stored] of Object.entries(overrides)) {
     if (!isCommandId(id) || !Array.isArray(stored)) continue;
-    const chords = stored.map(parseChord).filter((c): c is Chord => !!c && !checkChord(id, c, screenshot));
+    const chords = stored.map(parseChord).filter((c): c is Chord => !!c && !checkChord(id, c));
     if (chords.length) out[id] = [...new Set(chords)];
   }
   return out;
@@ -258,7 +251,7 @@ export function getBindings(): Bindings {
   const prefs = getUIPrefs();
   if (prefs !== cachedPrefs) {
     cachedPrefs = prefs;
-    cachedBindings = bindingsOf(prefs.keybindings, prefs.screenshotShortcut);
+    cachedBindings = bindingsOf(prefs.keybindings);
   }
   return cachedBindings;
 }
@@ -300,13 +293,8 @@ export const isZoomKey = (e: KeyboardEvent | ReactKeyboardEvent) => {
   return command === "zoomIn" || command === "zoomOut" || command === "zoomReset";
 };
 
-/**
- * Each command that shares a chord with another it could both fire with (the same scope, or either app-wide), or with
- * the screenshot shortcut, and the titles of what it shares it with.
- */
-export function conflicts(b: Bindings, screenshot: string | null): Map<CommandId, string[]> {
+export function conflicts(b: Bindings): Map<CommandId, string[]> {
   const out = new Map<CommandId, string[]>();
-  const shot = screenshotChord(screenshot);
   for (const id of COMMAND_IDS) {
     const others: string[] = COMMAND_IDS.filter(
       (o) =>
@@ -314,7 +302,6 @@ export function conflicts(b: Bindings, screenshot: string | null): Map<CommandId
         (COMMANDS[o].scope === COMMANDS[id].scope || COMMANDS[o].scope === "app" || COMMANDS[id].scope === "app") &&
         b[o].some((c) => b[id].includes(c)),
     ).map((o) => COMMANDS[o].title);
-    if (shot && b[id].includes(shot)) others.push("the screenshot shortcut");
     if (others.length) out.set(id, others);
   }
   return out;

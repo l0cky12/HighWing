@@ -221,7 +221,7 @@ mod tests {
             let _ = tokio::time::timeout(ANSWER_WITHIN, BufReader::new(squatter).read_line(&mut line)).await;
             line
         });
-        let err = send(&name, &Request::Screenshot, |_| false).await.unwrap_err();
+        let err = send(&name, &Request::Show { token: None }, |_| false).await.unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::PermissionDenied, "{err}");
         assert_eq!(read.await.unwrap(), "");
     }

@@ -10,11 +10,11 @@ import { SOURCE_LABEL, archiveAction, inArchived, isWaiting } from "../hermes/mo
 import { CHECK_EVERY_MS, totalUnread, type CheckTimesStore } from "../hermes/otherProfiles";
 import type { Route } from "../hermes/pipe";
 import { RenameConflict, TitleModelUnavailable, type Snapshot } from "../hermes/transport";
-import { SECTION_LABEL, chatSections, chatsUnderBot, inboxSettle, settleByDrop, wakeFull, wakeLabel, type InboxSettle, type Pins, type SectionKey, type Snoozes } from "../hermes/snooze";
+import { SECTION_LABEL, chatSections, inboxSettle, settleByDrop, wakeFull, wakeLabel, type InboxSettle, type Pins, type SectionKey, type Snoozes } from "../hermes/snooze";
 import { CHAT_LIST_MODES, getUIPrefs, setUIPrefs, subscribe as subscribeUIPrefs, type ChatListMode } from "../hermes/uiPrefs";
 import { namedByProfile, type Bot } from "../hermes/bots";
 import { BotFace, lookShown, type BotLookShown } from "./BotFace";
-import { BotChatsUnder, BotSwitchQuestion } from "./Bots";
+import { BotSwitchQuestion } from "./Bots";
 import { ChatMenu, type ChatPin, type ChatProjects, type ChatSnooze, type ChatTags } from "./ChatMenu";
 import { SnoozeDialog, useSnoozeClock } from "./Snooze";
 import { DeleteChatDialog } from "./DeleteChat";
@@ -989,8 +989,6 @@ export type ListModes = {
   pictures: Readonly<Record<string, string>>;
   leaving?: string;
   onOpenBot: (bot: Bot) => void;
-  /** All N chats under the shown bot: Chats, on the bot's profile. */
-  onAllChats: () => void;
   rooms?: { waiting: number; line: (onShowBots: () => void) => ReactNode };
 };
 
@@ -1127,7 +1125,7 @@ function NeedsYouLine({ waiting, pictures, leaving, onOpenBot, onShowBots }: Pic
  * `projectSwitcher` sits under the profile's name; `chats` are only the shown project's when one is picked there.
  * `projectsOf`: the projects a chat's menu offers to put it in or take it out of.
  * `bots`: Bots mode (ADR 0195, ADR 0203): the bots (Bots.tsx `BotList`) with New bot and Reload above them, under New
- * chat and Search, in place of the project switcher and the chats. `under` goes under the shown profile's bot.
+ * chat and Search, in place of the project switcher and the chats.
  */
 export function ChatList({
   profile,
@@ -1177,7 +1175,7 @@ export function ChatList({
   resize,
 }: {
   profile: string;
-  bots?: (under: ReactNode) => ReactNode;
+  bots?: ReactNode;
   projectSwitcher?: ReactNode;
   /** The profile's Saved filters (Tags.tsx), under the project switcher. */
   savedFilters?: ReactNode;
@@ -1483,20 +1481,7 @@ export function ChatList({
         <div className="sb-scroll sb-bots">
           {switchStatus}
           {syncNote}
-          {bots?.(
-            shownBot && (
-              <BotChatsUnder
-                name={shownBot.bot.name}
-                chats={chatsUnderBot(sections, [selectedId, alsoShownId])}
-                inbox={new Set(sections.inbox.map((c) => c.id))}
-                total={chats.filter((c) => !c.archived).length}
-                selectedId={selectedId}
-                alsoShownId={alsoShownId}
-                onOpen={onOpen}
-                onAll={() => mode?.onAllChats()}
-              />
-            ),
-          )}
+          {bots}
         </div>
       ) : (
         <>

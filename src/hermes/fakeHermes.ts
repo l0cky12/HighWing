@@ -92,6 +92,7 @@ export type SessionRow = {
   chat_id?: string;
   user_id?: string;
   ended_at?: number | null;
+  end_reason?: string | null;
   is_active?: boolean;
 };
 
@@ -833,20 +834,28 @@ export class FakeHermes {
       if (this.botMode === "none") return this.fail(r.id, -32601, "unknown method: profiles.list");
       this.respond(r.id, { profiles: this.profileNames().map((name) => this.profileRow(name)), bot_mode_protocol: true, install_id: "install-1f2e3d4c5b6a" });
     },
-    // `session.list {profile, title?, include_hidden?, limit?}`: with `title`, the exact-title lookup (`resolved_id` the
-    // lineage tip); without, the newest visible rows. Never archived ones.
+    // `session.list {profile, title?, include_hidden?, limit?}` (`tui_gateway/methods_session.py` at `b200f5bc60`). With
+    // `title`: the exact-title lookup, the row that holds the title with `resolved_id` its lineage's tip. Without: the
+    // `limit` rows (200 unless asked) with the latest activity, a compacted lineage as one row under its tip's id with
+    // `_lineage_root_id` its first session, and no `resolved_id` or activity time. Never archived ones.
     "session.list": (r) => {
       const store = this.store(r.params.profile as string | undefined);
       if (!store) return this.fail(r.id, 4064, `profile '${String(r.params.profile)}' not found`);
       this.beforeTitleLookup?.(String(r.params.profile ?? "default"));
       const title = typeof r.params.title === "string" ? r.params.title : undefined;
       if (title && this.titleLookupError) return this.fail(r.id, this.titleLookupError.code, this.titleLookupError.message);
+      const active = (s: SessionRow) => s.listedAs?.last_active ?? s.last_active ?? s.started_at;
       const rows = store
         .filter((s) => !s.archived && !s.unlisted && (r.params.include_hidden === true || !s.hidden) && (title === undefined || s.title === title))
-        .sort((a, b) => b.started_at - a.started_at)
-        .slice(0, typeof r.params.limit === "number" ? r.params.limit : 20);
+        .sort((a, b) => active(b) - active(a))
+        .slice(0, typeof r.params.limit === "number" ? r.params.limit : 200);
+      const common = (s: SessionRow) => ({ preview: s.listedAs?.preview ?? s.preview, started_at: s.started_at, message_count: s.listedAs?.message_count ?? s.message_count, source: s.source });
       this.respond(r.id, {
-        sessions: rows.map((s) => ({ id: s.id, ...(title !== undefined && { resolved_id: s.listedAs?.id ?? s.id }), title: s.title ?? "", preview: s.preview, started_at: s.started_at, message_count: s.message_count, source: s.source })),
+        sessions: rows.map((s) =>
+          title !== undefined
+            ? { id: s.id, resolved_id: s.listedAs?.id ?? s.id, title: s.title ?? "", ...common(s), _lineage_root_id: null }
+            : { id: s.listedAs?.id ?? s.id, title: s.listedAs?.title ?? s.title ?? "", ...common(s), _lineage_root_id: s.listedAs?.id ? s.id : null },
+        ),
       });
     },
     // `session.title {session_id, title}` on a live session: a title another row of the profile holds is refused with
@@ -958,6 +967,10 @@ export class FakeHermes {
       const count = typeof r.params.count === "number" && r.params.count > 0 ? r.params.count : spine.length;
       const store = [this.sessions, ...Object.values(this.otherProfiles)].find((s) => s.some((x) => x.id === parent))!;
       const base = store.find((x) => x.id === parent)!.title ?? "branch";
+      const name = typeof r.params.name === "string" ? r.params.name : "";
+      // `_persist_branch` raises on a title another session of the profile holds, and the handler answers 5008.
+      const holder = name && store.find((x) => x.title === name);
+      if (holder) return this.fail(r.id, 5008, `branch failed: Title '${name}' is already in use by session ${holder.id}`);
       const n = ++this.branched;
       const titles = new Set(store.map((x) => x.title));
       let k = 2;
@@ -965,9 +978,13 @@ export class FakeHermes {
       const stored = `${parent}-b${n}`;
       const runtimeId = `rt-b${n}`;
       const kept = spine.slice(0, count);
-      store.push(row(stored, 0, { source: "tui", title: typeof r.params.name === "string" && r.params.name ? r.params.name : `${base} #${k}`, parent_session_id: parent, message_count: kept.length, preview: kept.find((m) => m.display_kind !== "hidden")?.text ?? "" }));
+      store.push(row(stored, 0, { source: "tui", title: name || `${base} #${k}`, parent_session_id: parent, message_count: kept.length, preview: kept.find((m) => m.display_kind !== "hidden")?.text ?? "" }));
       for (const m of kept) this.storeMessage(stored, { role: m.role, text: m.text, ...(m.display_kind && { display_kind: m.display_kind }), ...(m.reasoning && { reasoning: m.reasoning }) });
       this.runtime.set(runtimeId, stored);
+      // The branch is written to the parent's profile and runs on that profile's model (`_branch_live`).
+      const profile = this.profileOf(parent);
+      this.runtimeProfile.set(runtimeId, profile);
+      this.agentTools.set(runtimeId, this.offeredTools(profile));
       if (key) this.branchKeys.set(key, { stored, runtimeId });
       if (drop === "stored") return this.drop();
       if (this.branchError) return this.fail(r.id, this.branchError.code, this.branchError.message);
@@ -1002,7 +1019,7 @@ export class FakeHermes {
       const created = this.created.get(runtimeId);
       if (created) {
         this.created.delete(runtimeId);
-        const stored = row(this.runtime.get(runtimeId)!, 0, { source: created.source, title: null, preview: String(r.params.text), message_count: 1, ...(created.hidden && { hidden: true }) });
+        const stored = row(this.runtime.get(runtimeId)!, 0, { source: created.source, title: created.title ?? null, preview: String(r.params.text), message_count: 1, ...(created.hidden && { hidden: true }) });
         this.store(created.profile)?.push(stored);
       }
       const stored = this.runtime.get(runtimeId);
@@ -1205,7 +1222,11 @@ export class FakeHermes {
     // `message.complete` whose status is "interrupted"; tests send that themselves.
     "session.context_breakdown": (r) =>
       this.contextBreakdown ? this.respond(r.id, structuredClone(this.contextBreakdown)) : this.fail(r.id, -32601, "method not found: session.context_breakdown"),
-    "session.compress": (r) => (this.compressResult ? this.respond(r.id, structuredClone(this.compressResult)) : this.fail(r.id, -32601, "method not found: session.compress")),
+    "session.compress": (r) => {
+      if (!this.compressResult) return this.fail(r.id, -32601, "method not found: session.compress");
+      if (this.compress === "rotate") this.rotate(String(r.params.session_id));
+      this.respond(r.id, structuredClone(this.compressResult));
+    },
     "session.interrupt": (r) => {
       const sid = String(r.params.session_id);
       if (!this.runtime.has(sid)) return this.fail(r.id, 4001, "session not found");
@@ -2944,7 +2965,47 @@ export class FakeHermes {
   private branchAnswer(stored: string, runtimeId: string, parent: string) {
     const history = this.transcripts[stored] ?? [];
     const title = [this.sessions, ...Object.values(this.otherProfiles)].flat().find((s) => s.id === stored)?.title ?? "";
-    return { session_id: runtimeId, stored_session_id: stored, title, parent, message_count: history.length, messages: shownHistory(history), info: { ...this.sessionInfo, ...this.defaultModel() } };
+    return { session_id: runtimeId, stored_session_id: stored, title, parent, message_count: history.length, messages: shownHistory(history), info: { ...this.sessionInfo, ...this.defaultModel(this.profileOf(parent)) } };
+  }
+
+  private profileOf(stored: string): string {
+    return Object.entries(this.otherProfiles).find(([, rows]) => rows.some((s) => s.id === stored))?.[0] ?? "default";
+  }
+
+  /**
+   * How `session.compress` compacts. `inPlace`: the session keeps its id, and this fake changes nothing. `rotate`: the
+   * chat moves to a new session, as Hermes does when it compacts by rotation (`compress_in_transaction` at
+   * `b200f5bc60`): a child of the old one, which ends with `compression`; the title stays where it was, the lists show
+   * the lineage as one row under the child's id, and the live session goes on in the child.
+   */
+  compress: "inPlace" | "rotate" = "inPlace";
+  private rotated = 0;
+
+  private rotate(runtimeId: string) {
+    const from = this.runtime.get(runtimeId);
+    const store = from === undefined ? undefined : this.store(this.profileOf(from));
+    const root = store?.find((s) => s.listedAs?.id === from) ?? store?.find((s) => s.id === from);
+    if (from === undefined || !store || !root) return;
+    const tip = `${from}-c${++this.rotated}`;
+    const history = this.transcripts[from] ?? [];
+    store.push(row(tip, 0, { source: root.source, title: null, hidden: root.hidden, unlisted: true, parent_session_id: from, message_count: history.length, preview: root.listedAs?.preview ?? root.preview }));
+    this.transcripts[tip] = history.map((m) => ({ ...m }));
+    const ended = store.find((s) => s.id === from)!;
+    ended.ended_at = now();
+    ended.end_reason = "compression";
+    root.listedAs = { ...root.listedAs, id: tip, last_active: now() };
+    const model = this.sessionModel.get(from);
+    if (model) this.sessionModel.set(tip, model);
+    this.runtime.set(runtimeId, tip);
+  }
+
+  seedThread(profile: string, topic: string, { messages = [], hours = 1 }: { messages?: TranscriptMessage[]; hours?: number } = {}): string {
+    const store = this.store(profile) ?? (this.otherProfiles[profile] = []);
+    const id = `thread-${profile}-${store.length}`;
+    const said = messages.filter((m) => m.role === "user" || m.role === "assistant");
+    store.push(row(id, hours / 24, { title: `Bot Thread: ${topic}`, hidden: true, message_count: messages.length, preview: said[0]?.text ?? "" }));
+    this.transcripts[id] = messages;
+    return id;
   }
 
   defaultModel(profile?: string | null): ModelInfo {
@@ -3409,6 +3470,7 @@ export class FakeHermes {
     s.runtime_revision = (s.runtime_revision ?? 0) + 1;
     if (typeof body.pinned === "boolean") s.pinned = body.pinned;
     if (typeof body.archived === "boolean") s.archived = body.archived;
+    if (typeof body.hidden === "boolean") s.hidden = body.hidden;
     if (typeof body.unread === "boolean") s.last_read_at = body.unread ? 0 : now();
     if (typeof body.title === "string") {
       // `set_session_title`: titles are unique in a profile, and a clash is a 400 (`_mutate_session_request`).
@@ -3521,12 +3583,24 @@ export class FakeHermes {
     if (i < 0) return { ok: true, already_absent: true };
     if (Number(revision) !== (store[i].runtime_revision ?? 0)) throw new RestError(409, `{"detail":"revision_conflict"}`);
     if (Number(generation) !== (store[i].runtime_generation ?? 0)) throw new RestError(409, `{"detail":"stale_generation"}`);
-    store.splice(i, 1);
-    delete this.transcripts[id];
+    // The dashboard's delete takes the whole compression chain with the session (`include_compression_chain`).
+    const root = store.find((r) => r.listedAs?.id === id) ?? store[i];
+    const chain = [root.id];
+    for (let next = root; next.end_reason === "compression"; ) {
+      const child = store.find((r) => r.parent_session_id === next.id && r.unlisted);
+      if (!child) break;
+      chain.push(child.id);
+      next = child;
+    }
+    if (!chain.includes(id)) chain.push(id);
+    for (const gone of chain) {
+      store.splice(store.findIndex((r) => r.id === gone), 1);
+      delete this.transcripts[gone];
+    }
     // The contract removes a deleted chat's project links with it.
     const p = profile || "default";
-    if (this.membership[p]) this.membership[p] = this.membership[p].filter((l) => l.session_id !== id);
-    return { ok: true, deleted_ids: [id] };
+    if (this.membership[p]) this.membership[p] = this.membership[p].filter((l) => !chain.includes(l.session_id));
+    return { ok: true, deleted_ids: chain };
   }
 
   /**

@@ -331,8 +331,7 @@ function FloorStrip({
       case "approval":
         return (
           <div className="room-approval">
-            <span>{w.approvalFor(name(floor.seat))}</span>
-            <ApprovalCard item={approvalItem(floor.approval)} offline={offline} onAnswer={(c) => (c === "once" || c === "deny") && onAnswer(floor.approval.key, c)} />
+            <ApprovalCard item={approvalItem(floor.approval)} offline={offline} heading={w.approvalFor(name(floor.seat))} onAnswer={(c) => (c === "once" || c === "deny") && onAnswer(floor.approval.key, c)} />
             {floor.next.length > 0 && <span className="room-behind">{w.behind(floor.next.map((s) => name(s)))}</span>}
           </div>
         );

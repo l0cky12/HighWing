@@ -4172,7 +4172,7 @@ button.budget-chat:hover { text-decoration: underline; }
 .rooms-section { margin: 0 0 8px; padding: 0 0 6px; border-bottom: 1px solid var(--line); }
 .rooms-title { display: flex; align-items: center; gap: 6px; margin: 0; padding: 4px 8px 4px 6px; color: var(--faint); font-size: calc(12rem / 14); font-weight: 500; }
 .rooms-faces { flex: none; display: flex; align-items: center; min-width: 34px; height: 34px; }
-.rooms-faces .bots-face + .bots-face { margin-left: -9px; box-shadow: -2px 0 0 var(--raised); }
+.rooms-faces .bots-face + .bots-face { margin-left: -6px; box-shadow: -2px 0 0 var(--raised); }
 .rooms-floor { -webkit-line-clamp: 1; }
 .rooms-row.is-needs-you .rooms-floor { color: var(--warn); }
 .rooms-row.is-busy .rooms-floor { color: var(--accent); }

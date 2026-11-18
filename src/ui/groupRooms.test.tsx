@@ -256,7 +256,7 @@ describe("An approval in a Group room", () => {
     await say(user, "Bram approve-me please");
     await step(server, 2);
     await waitFor(() => expect(floor().dataset.floor).toBe("approval"));
-    const card = within(floor()).getByRole("group", { name: "Hermes wants to run a command" });
+    const card = within(floor()).getByRole("group", { name: "Bram wants to run a command" });
     expect(card.querySelector(".approval-cmd")!.textContent).toBe("rm -rf /srv/tmp/build");
     expect(within(card).getAllByRole("button").map((b) => b.textContent)).toEqual(["Approve once", "Deny"]);
     expect(floor().textContent).toContain("Bram wants to run a command");

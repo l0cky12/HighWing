@@ -89,11 +89,13 @@ export function ApprovalCard({
   item,
   offline,
   movedAt = 0,
+  heading = "Hermes wants to run a command",
   onAnswer,
 }: {
   item: ApprovalItem;
   offline: boolean;
   movedAt?: number;
+  heading?: string;
   onAnswer: (c: ApprovalChoice, confirmed?: boolean) => void;
 }) {
   const [confirming, setConfirming] = useState<ApprovalChoice>();
@@ -112,7 +114,7 @@ export function ApprovalCard({
     <div ref={card} tabIndex={-1} role="group" aria-labelledby={headId} data-item={item.id} className={`approval ${closed ? "answered" : ""}`}>
       <div className="approval-head" id={headId}>
         <ShieldAlert size={15} />
-        {item.answer ? ANSWERED_LABEL[item.answer] : item.ended ? endedNote(item.ended) : "Hermes wants to run a command"}
+        {item.answer ? ANSWERED_LABEL[item.answer] : item.ended ? endedNote(item.ended) : heading}
       </div>
       <CommandText command={item.command} />
       {!closed && (

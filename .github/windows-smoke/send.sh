@@ -128,7 +128,7 @@ wd click button "Save and connect"
 wd wait '[role=dialog]' "Model providers" 30000 || evidence 03-no-providers-dialog
 wd wait .setup-ok "You're ready to chat" 30000 || evidence 03-providers-not-ready
 wd click button Skip
-wd gone '[role=dialog]' 15000 || evidence 03-dialog-stayed
+wd gone '[role=dialog]' "" 15000 || evidence 03-dialog-stayed
 wd shot 04-signed-in
 wd handles >"$EV/04-handles.txt"
 

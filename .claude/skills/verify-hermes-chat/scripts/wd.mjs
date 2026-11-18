@@ -92,7 +92,10 @@ async function one(css, text) {
   return elId(found[0]);
 }
 // A wait's [ms]: 15 s when omitted. Anything but a whole number of ms is an error, since NaN would never time out.
-function timeoutMs(raw) {
+// A lone number after the css is almost always a timeout put where the text goes, so it is refused.
+function timeoutMs(text, raw) {
+  if (raw === undefined && /^\d+$/.test(text ?? ""))
+    die(`${cmd}: "${text}" would be the text to match, not the timeout. To wait ${text} ms, write \`${cmd} '${css}' "" ${text}\`. To match the text "${text}", give the ms after it.`);
   if (raw === undefined || raw === "") return 15000;
   if (!/^\d+$/.test(raw)) die(`timeout must be a whole number of ms, got "${raw}"`);
   return Number(raw);
@@ -119,11 +122,11 @@ try {
       console.log("closed");
       break;
     case "wait":
-      await waitFor(css, text, timeoutMs(extra));
+      await waitFor(css, text, timeoutMs(text, extra));
       console.log("ok");
       break;
     case "gone":
-      await waitFor(css, text, timeoutMs(extra), false);
+      await waitFor(css, text, timeoutMs(text, extra), false);
       console.log("ok");
       break;
     case "click":

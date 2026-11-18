@@ -19,4 +19,4 @@ $W wait '[role=status]' "At least one route works" 20000
 $W click button "Save and connect"
 $W wait .setup-ok "You're ready to chat" 20000
 $W click button Skip
-$W gone '[role=dialog]' 10000
+$W gone '[role=dialog]' "" 10000

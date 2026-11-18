@@ -4249,5 +4249,5 @@ button.budget-chat:hover { text-decoration: underline; }
 .room-goes-to { min-height: 1.5em; padding: 0 4px; color: var(--muted); font-size: calc(12.5rem / 14); line-height: 1.5; }
 .room-goes-to p { margin: 0; overflow-wrap: anywhere; }
 .room-goes-to b { display: inline-flex; align-items: center; gap: 5px; color: var(--text-2); font-weight: 500; vertical-align: bottom; }
-.room-goes-to .bots-face.is-xs { width: 16px; height: 16px; font-size: calc(10rem / 14); }
+.room-goes-to .bots-face.is-xs { width: 18px; height: 18px; font-size: calc(12rem / 14); }
 .room-goes-to .is-dropped { color: var(--warn); }

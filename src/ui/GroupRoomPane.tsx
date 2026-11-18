@@ -1,16 +1,17 @@
-import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { Fragment, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { ArrowUp, Ellipsis, PenLine, Square, Trash2, UsersRound } from "lucide-react";
 import type { Bot } from "../hermes/bots";
 import type { Floor, Outgoing, RoomApproval, RoomChoice, RoomEntry, Seat } from "../hermes/groupRooms";
 import { ROOM_NAME_MAX } from "../hermes/groupRooms";
 import type { GroupRoomsStore } from "../hermes/groupRoomsStore";
 import type { ApprovalItem } from "../hermes/model";
+import { completeMention, goesTo, keyAction, pickerAt, pickerRows, rowHandle, type GoesTo, type Mention, type MentionNote, type PickerRow, type Recipients, type Target } from "../hermes/roomMentions";
 import { errorText } from "../hermes/values";
-import { useLocale } from "../i18n/locale";
+import { useLocale, type Locale } from "../i18n/locale";
 import { ApprovalCard } from "./ApprovalCard";
 import { BotFace } from "./BotFace";
 import { Menu } from "./ChatMenu";
-import { seatLook, seatName, useGroupRoom } from "./GroupRooms";
+import { seatLook, seatName, seatsShown, useGroupRoom, type SeatShown } from "./GroupRooms";
 import { Markdown } from "./Markdown";
 import { MenuEntry } from "./ProfileSettings";
 import { Spinner, composing } from "./bits";
@@ -25,6 +26,7 @@ export function GroupRoomPane({ store, roomId, bots, pictures, offline }: { stor
   const w = l.groupRooms.pane;
   const view = useGroupRoom(store, roomId);
   const faces = useMemo(() => ({ bots, pictures }), [bots, pictures]);
+  const people = useMemo(() => seatsShown(view?.seats ?? [], bots, pictures), [view?.seats, bots, pictures]);
   const [draft, setDraft] = useState("");
   const [failed, setFailed] = useState<string>();
   const [menu, setMenu] = useState<{ x: number; y: number }>();
@@ -140,7 +142,7 @@ export function GroupRoomPane({ store, roomId, bots, pictures, offline }: { stor
         {!gone && (
           <RoomComposer
             box={box}
-            seats={view.seats}
+            seats={people}
             draft={draft}
             onDraft={setDraft}
             steppingIn={view.floor.kind === "speaking" || view.floor.kind === "starting" || view.floor.kind === "approval" || view.floor.kind === "stuck"}
@@ -387,10 +389,81 @@ function FloorStrip({
   );
 }
 
-function mentionAt(text: string, caret: number): { from: number; typed: string } | undefined {
-  const m = /(^|\s)@([A-Za-z0-9._:-]*)$/.exec(text.slice(0, caret));
-  return m ? { from: caret - m[2].length - 1, typed: m[2].toLowerCase() } : undefined;
+/** What to say under the composer: not a plain mention, not the word the picker is offering rows for, once for each kind and word. */
+function notesShown<S>(mentions: readonly Mention<S>[], pickingAt: number | undefined): readonly MentionNote<S>[] {
+  const seen = new Set<string>();
+  const notes: MentionNote<S>[] = [];
+  for (const m of mentions) {
+    const key = `${m.kind}:${m.raw}`;
+    if (m.kind === "plain" || m.at === pickingAt || seen.has(key)) continue;
+    seen.add(key);
+    notes.push(m);
+  }
+  return notes;
 }
+
+const NOTES_SHOWN = 3;
+
+function noteWords(w: Locale["groupRooms"]["goesTo"], n: MentionNote<SeatShown>): string {
+  const mention = `@${n.raw}`;
+  const who = (t: Target<SeatShown>) => (t.kind === "seat" ? t.seat.name : w.everyone);
+  switch (n.kind) {
+    case "inCode":
+      return w.inCode(mention, who(n.target));
+    case "glued":
+      return w.glued(n.before, mention);
+    case "trailing":
+      return w.trailing(mention, who(n.meant), n.tail);
+    case "unknown":
+      return w.unknown(mention);
+  }
+}
+
+/**
+ * Who the message will go to, worked out the way Hermes will, and what to know about each @ in it. A live region has to
+ * be on the page before its text changes to be announced, so it is always mounted, and its text changes only when the
+ * answer does, so a screen reader doesn't repeat it for each keystroke.
+ */
+function GoesToLine({ id, shown, goes, pickingAt }: { id: string; shown: boolean; goes: GoesTo<SeatShown>; pickingAt: number | undefined }) {
+  const w = useLocale().groupRooms.goesTo;
+  const notes = notesShown(goes.mentions, pickingAt);
+  const named = (to: Recipients<SeatShown>) =>
+    to.kind === "seats" ? (
+      to.seats.map((s, i) => (
+        <Fragment key={s.id}>
+          {i > 0 && ", "}
+          <b translate="no">
+            <BotFace bot={s.look} size="xs" />
+            {s.name}
+          </b>
+        </Fragment>
+      ))
+    ) : (
+      <>
+        <b>{w.everyone}</b>
+        {to.because === "nobodyNamed" && ` ${w.nobodyNamed}`}
+      </>
+    );
+  return (
+    <div id={id} className="room-goes-to" role="status" aria-atomic="true">
+      {shown && (
+        <>
+          <p>
+            {w.label} {named(goes.to)}
+          </p>
+          {notes.slice(0, NOTES_SHOWN).map((n) => (
+            <p key={`${n.kind}:${n.raw}`} className={"target" in n ? "is-routed" : "is-dropped"}>
+              {noteWords(w, n)}
+            </p>
+          ))}
+          {notes.length > NOTES_SHOWN && <p className="is-routed">{w.more(notes.length - NOTES_SHOWN)}</p>}
+        </>
+      )}
+    </div>
+  );
+}
+
+const rowId = (listId: string, row: PickerRow<SeatShown>) => `${listId}-${rowHandle(row)}`;
 
 function RoomComposer({
   box,
@@ -401,7 +474,7 @@ function RoomComposer({
   onSay,
 }: {
   box: RefObject<HTMLTextAreaElement | null>;
-  seats: readonly Seat[];
+  seats: readonly SeatShown[];
   draft: string;
   onDraft: (text: string) => void;
   steppingIn: boolean;
@@ -409,16 +482,14 @@ function RoomComposer({
 }) {
   const w = useLocale().groupRooms.composer;
   const listId = useId();
+  const goesToId = useId();
   const [caret, setCaret] = useState(0);
   const [at, setAt] = useState(0);
   const [closed, setClosed] = useState(false);
-  const mention = closed ? undefined : mentionAt(draft, caret);
-  const options = useMemo(() => {
-    if (!mention) return [];
-    const all = [...seats.map((s) => ({ handle: s.handle, name: s.name })), { handle: "all", name: w.everyone }];
-    return all.filter((o) => o.handle.toLowerCase().startsWith(mention.typed) || o.name.toLowerCase().startsWith(mention.typed));
-  }, [mention, seats, w.everyone]);
-  const picked = Math.min(at, Math.max(0, options.length - 1));
+  const typing = closed ? undefined : pickerAt(draft, caret);
+  const rows = typing ? pickerRows(typing.query, seats, w.everyone) : [];
+  const picked = Math.min(at, Math.max(0, rows.length - 1));
+  const goes = useMemo(() => goesTo(draft, seats), [draft, seats]);
 
   const caretAfter = useRef<number | undefined>(undefined);
   useLayoutEffect(() => {
@@ -429,88 +500,103 @@ function RoomComposer({
     if (caretAfter.current !== undefined) el.setSelectionRange(caretAfter.current, caretAfter.current);
     caretAfter.current = undefined;
   }, [draft, box]);
-  const complete = (handle: string) => {
-    if (!mention) return;
-    const next = `${draft.slice(0, mention.from)}@${handle} ${draft.slice(caret)}`;
-    const to = mention.from + handle.length + 2;
-    caretAfter.current = to;
-    onDraft(next);
-    setCaret(to);
+  const complete = (row: PickerRow<SeatShown>) => {
+    if (!typing) return;
+    const next = completeMention(draft, caret, typing, row);
+    caretAfter.current = next.caret;
+    onDraft(next.text);
+    setCaret(next.caret);
   };
   const send = () => {
     const text = draft.trim();
     if (text) onSay(text);
   };
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (composing(e)) return;
-    if (options.length) {
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        e.preventDefault();
-        return setAt((picked + (e.key === "ArrowDown" ? 1 : options.length - 1)) % options.length);
-      }
-      if (e.key === "Enter" || e.key === "Tab") {
-        e.preventDefault();
-        return complete(options[picked].handle);
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
+    const action = keyAction({ key: e.key, shift: e.shiftKey, composing: composing(e), pickerOpen: rows.length > 0 });
+    if (action === "none") return;
+    e.preventDefault();
+    switch (action) {
+      case "next":
+        return setAt((picked + 1) % rows.length);
+      case "prev":
+        return setAt((picked + rows.length - 1) % rows.length);
+      case "pick":
+        return complete(rows[picked]);
+      case "close":
         return setClosed(true);
-      }
-    }
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      send();
+      case "send":
+        return send();
     }
   };
 
   return (
-    <div className="composer room-composer">
-      {options.length > 0 && (
-        <ul id={listId} className="menu room-handles" role="listbox" aria-label={w.handles}>
-          {options.map((o, i) => (
-            <li
-              key={o.handle}
-              role="option"
-              aria-selected={i === picked}
-              className={`menu-item${i === picked ? " is-on" : ""}`}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                complete(o.handle);
-              }}
-            >
-              <span translate="no">@{o.handle}</span>
-              {o.name.toLowerCase() !== o.handle.toLowerCase() && <span className="muted">{o.name}</span>}
-            </li>
-          ))}
-        </ul>
-      )}
-      <textarea
-        ref={box}
-        rows={1}
-        value={draft}
-        aria-label={w.label}
-        aria-controls={options.length ? listId : undefined}
-        aria-expanded={options.length > 0}
-        role="combobox"
-        aria-autocomplete="list"
-        placeholder={steppingIn ? w.stepIn : w.placeholder}
-        onChange={(e) => {
-          onDraft(e.target.value);
-          setCaret(e.target.selectionStart);
-          setClosed(false);
-          setAt(0);
-        }}
-        onKeyUp={(e) => setCaret(e.currentTarget.selectionStart)}
-        onClick={(e) => setCaret(e.currentTarget.selectionStart)}
-        onKeyDown={onKeyDown}
-      />
-      <div className="composer-bar">
-        <span className="composer-keys" />
-        <button className="send" title={w.send} aria-label={w.send} disabled={!draft.trim()} onClick={send}>
-          <ArrowUp size={16} />
-        </button>
+    <>
+      <div className="composer room-composer">
+        {rows.length > 0 && (
+          <ul id={listId} className="menu room-handles" role="listbox" aria-label={w.handles}>
+            {rows.map((row, i) => (
+              <li
+                key={rowHandle(row)}
+                id={rowId(listId, row)}
+                role="option"
+                aria-selected={i === picked}
+                className={`menu-item${i === picked ? " is-on" : ""}`}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  complete(row);
+                }}
+              >
+                {row.kind === "seat" ? (
+                  <BotFace bot={row.seat.look} size="xs" />
+                ) : (
+                  <span className="room-handle-all" aria-hidden>
+                    <UsersRound size={14} />
+                  </span>
+                )}
+                <span className="room-handle-name" translate={row.kind === "seat" ? "no" : undefined}>
+                  {row.kind === "seat" ? row.seat.name : w.everyone}
+                </span>
+                <span className="room-handle-at muted" translate="no">
+                  @{rowHandle(row)}
+                </span>
+                <span className="room-handle-about" translate={row.kind === "seat" ? "no" : undefined}>
+                  {row.kind === "seat" ? row.seat.description : w.everyoneAbout}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <textarea
+          ref={box}
+          rows={1}
+          value={draft}
+          aria-label={w.label}
+          aria-controls={rows.length ? listId : undefined}
+          aria-expanded={rows.length > 0}
+          aria-activedescendant={rows.length ? rowId(listId, rows[picked]) : undefined}
+          aria-describedby={draft.trim() ? goesToId : undefined}
+          role="combobox"
+          aria-autocomplete="list"
+          placeholder={steppingIn ? w.stepIn : w.placeholder}
+          onChange={(e) => {
+            onDraft(e.target.value);
+            setCaret(e.target.selectionStart);
+            setClosed(false);
+            setAt(0);
+          }}
+          onKeyUp={(e) => setCaret(e.currentTarget.selectionStart)}
+          onClick={(e) => setCaret(e.currentTarget.selectionStart)}
+          onKeyDown={onKeyDown}
+        />
+        <div className="composer-bar">
+          <span className="composer-keys" />
+          <button className="send" title={w.send} aria-label={w.send} disabled={!draft.trim()} onClick={send}>
+            <ArrowUp size={16} />
+          </button>
+        </div>
       </div>
-    </div>
+      <GoesToLine id={goesToId} shown={draft.trim() !== ""} goes={goes} pickingAt={rows.length ? typing?.from : undefined} />
+    </>
   );
 }
 

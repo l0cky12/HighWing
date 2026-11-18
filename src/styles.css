@@ -4238,6 +4238,16 @@ button.budget-chat:hover { text-decoration: underline; }
 .room-approval { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .room-behind { color: var(--muted); font-size: calc(12.5rem / 14); }
 .room-composer { position: relative; }
-.menu.room-handles { position: absolute; left: 10px; bottom: calc(100% + 6px); min-width: 200px; max-height: 240px; overflow-y: auto; list-style: none; margin: 0; }
-.room-handles .menu-item { justify-content: space-between; gap: 16px; cursor: pointer; }
+.menu.room-handles { position: absolute; left: 10px; bottom: calc(100% + 6px); min-width: 300px; max-width: calc(100% - 20px); max-height: 240px; overflow-y: auto; list-style: none; margin: 0; }
+.room-handles .menu-item { gap: 8px; cursor: pointer; }
 .room-handles .menu-item.is-on { background: var(--raised-2); color: var(--text); }
+.room-handles .bots-face, .room-handle-all { flex: none; }
+.room-handle-all { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; color: var(--muted); }
+.room-handle-name { flex: none; color: var(--text); }
+.room-handle-at { flex: none; }
+.room-handle-about { min-width: 0; margin-left: auto; padding-left: 14px; overflow: hidden; color: var(--faint); font-size: calc(12rem / 14); text-overflow: ellipsis; white-space: nowrap; }
+.room-goes-to { min-height: 1.5em; padding: 0 4px; color: var(--muted); font-size: calc(12.5rem / 14); line-height: 1.5; }
+.room-goes-to p { margin: 0; overflow-wrap: anywhere; }
+.room-goes-to b { display: inline-flex; align-items: center; gap: 5px; color: var(--text-2); font-weight: 500; vertical-align: bottom; }
+.room-goes-to .bots-face.is-xs { width: 16px; height: 16px; font-size: calc(10rem / 14); }
+.room-goes-to .is-dropped { color: var(--warn); }

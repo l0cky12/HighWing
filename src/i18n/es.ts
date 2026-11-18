@@ -447,6 +447,17 @@ export const es: Catalogue = {
       send: "Enviar",
       handles: "Bots a mencionar",
       everyone: "Todos",
+      everyoneAbout: "Responden todos los bots",
+    },
+    goesTo: {
+      label: "Va para",
+      everyone: "todos",
+      nobodyNamed: "(ningún bot nombrado)",
+      inCode: (mention: string, who: string) => `${mention} está dentro de código, pero Hermes lo envía igualmente a ${who}`,
+      glued: (before: string, mention: string) => `${before}${mention} parece un correo electrónico, pero Hermes lee ${mention}`,
+      trailing: (mention: string, who: string, tail: string) => `“${mention}” no llegará a ${who}: Hermes lee “${tail}” al final como parte del nombre`,
+      unknown: (mention: string) => `Nadie en esta sala es ${mention}`,
+      more: (n: number) => `y ${n} más`,
     },
   },
   chatList: {

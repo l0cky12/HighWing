@@ -7,13 +7,14 @@ import { ARM_MS } from "../../src/ui/ApprovalCard";
 import { boot, shot } from "../harness";
 
 const BOTS = { ada: "#f59e0b", bram: "#3b82f6", cleo: "#a855f7", dov: "#10b981" };
+const ABOUT: Record<string, string> = { ada: "Plans the work", bram: "Reviews code", cleo: "Writes the docs", dov: "Runs the deploys" };
 const title = (profile: string) => profile[0].toUpperCase() + profile.slice(1);
 const pingpong = (t: TurnContext): FakeTurn => ({ say: `${t.name} here, pingpong. @${t.handles[t.index === 0 ? 1 : 0]} your turn.` });
 
 const seed = (script?: (t: TurnContext) => FakeTurn, room = true) => (s: FakeHermes) => {
   s.sessions = [row("backup", 0.4, { pinned: true, title: "Nightly backup failing" })];
   s.otherProfiles = Object.fromEntries(Object.keys(BOTS).map((p, i) => [p, [row(`${p}-bot`, i + 1, { title: BOT_CHAT_TITLE, hidden: true })]]));
-  s.profileMeta = Object.fromEntries(Object.entries(BOTS).map(([p, color]) => [p, { ui_meta: { "hermes-bots": { title: title(p), color } } }]));
+  s.profileMeta = Object.fromEntries(Object.entries(BOTS).map(([p, color]) => [p, { description: ABOUT[p], ui_meta: { "hermes-bots": { title: title(p), color } } }]));
   if (script) s.groups.script = script;
   if (room) s.groups.seed({ id: "crew", name: "Launch crew", members: ["ada", "bram", "cleo"].map((profile) => ({ profile, name: title(profile) })) });
 };
@@ -35,7 +36,13 @@ async function start(script?: (t: TurnContext) => FakeTurn, room = true) {
     await expect.element(pane).toBeVisible();
   };
   const replies = () => server.groups.log("crew").filter((e) => e.kind === "message.member").length;
-  return { app, server, panel, pane, strip, box, say, open, replies };
+  const goesTo = () => {
+    const copy = pane.element().querySelector(".room-goes-to")!.cloneNode(true) as Element;
+    copy.querySelectorAll("[aria-hidden]").forEach((n) => n.remove());
+    return copy.textContent;
+  };
+  const answered = () => server.groups.log("crew").filter((e) => e.kind === "message.member").map((e) => e.actor.id);
+  return { app, server, panel, pane, strip, box, say, open, replies, goesTo, answered };
 }
 
 it("makes a room of three bots in pick order and opens it", async () => {
@@ -121,4 +128,38 @@ it("asks the owner to approve a bot's command, and the bot goes on once approved
   await card.getByRole("button", { name: "Approve once" }).click();
   await expect.poll(() => server.groups.calls.filter((c) => c.method === "groups.approve").map((c) => c.params.choice), { message: "the answer Hermes got" }).toEqual(["once"]);
   await expect.element(pane.getByText("Bram ran it: the build cache is gone.")).toBeVisible();
+});
+
+it("picks a bot with @, shows who the message goes to before Enter, and only that bot answers", async () => {
+  const { server, pane, box, open, goesTo, answered } = await start();
+  await open();
+  await box.fill("@c");
+  const list = pane.getByRole("listbox", { name: "Bots to mention" });
+  await expect.poll(() => list.getByRole("option").elements().length, { message: "rows for @c" }).toBe(1);
+  await expect.element(list.getByText("Writes the docs")).toBeVisible();
+  await shot("picker");
+  await userEvent.keyboard("{Enter}");
+  await expect.element(box).toHaveValue("@cleo ");
+  await userEvent.keyboard("only you");
+  await expect.poll(goesTo, { message: "what the line says before Enter" }).toBe("Goes to Cleo");
+  await shot("goes-to-cleo");
+  await userEvent.keyboard("{Enter}");
+  await expect.poll(() => server.groups.calls.filter((c) => c.method === "groups.send").map((c) => (c.params.payload as { text: string }).text), { message: "the text Hermes got" }).toEqual(["@cleo only you"]);
+  server.groups.settle("crew");
+  await expect.poll(answered, { message: "who took a turn" }).toEqual(["cleo"]);
+  await expect.element(pane.getByText("Cleo here.")).toBeVisible();
+  await shot("only-cleo-answered");
+});
+
+it("warns that a trailing mark loses the mention, and sends the text as typed to everyone", async () => {
+  const { server, pane, box, open, goesTo, answered } = await start();
+  await open();
+  await box.fill("Thanks @bram. Can you look?");
+  await expect.poll(goesTo).toBe("Goes to everyone (no bot named)\u201c@bram.\u201d won't reach Bram: Hermes reads the trailing \u201c.\u201d as part of the name");
+  await shot("trailing-mark");
+  await userEvent.keyboard("{Enter}");
+  await expect.poll(() => server.groups.calls.filter((c) => c.method === "groups.send").map((c) => (c.params.payload as { text: string }).text)).toEqual(["Thanks @bram. Can you look?"]);
+  server.groups.settle("crew");
+  await expect.poll(answered, { message: "who took a turn" }).toEqual(["ada", "bram", "cleo"]);
+  await expect.element(pane.getByText("Cleo here.")).toBeVisible();
 });

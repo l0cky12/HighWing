@@ -463,6 +463,17 @@ export const en = {
       send: "Send",
       handles: "Bots to mention",
       everyone: "Everyone",
+      everyoneAbout: "Every bot answers",
+    },
+    goesTo: {
+      label: "Goes to",
+      everyone: "everyone",
+      nobodyNamed: "(no bot named)",
+      inCode: (mention: string, who: string) => `${mention} is inside code but Hermes still sends it to ${who}`,
+      glued: (before: string, mention: string) => `${before}${mention} looks like an e-mail, but Hermes reads ${mention}`,
+      trailing: (mention: string, who: string, tail: string) => `“${mention}” won't reach ${who}: Hermes reads the trailing “${tail}” as part of the name`,
+      unknown: (mention: string) => `No one in this room is ${mention}`,
+      more: (n: number) => `and ${n} more`,
     },
   },
   chatList: {

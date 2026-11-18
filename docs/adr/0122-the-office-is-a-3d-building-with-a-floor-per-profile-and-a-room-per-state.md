@@ -1,5 +1,7 @@
 # The office is a 3D building with a floor per profile and a room per state
 
+> **Superseded by [ADR 0202](0202-the-repository-automations-and-office-screens-are-removed.md)**. The agent office is gone, its 3D building and three.js with it.
+
 > **Partly superseded by [ADR 0161](0161-the-office-is-a-flat-floor-plan-with-a-design-menu-and-profiles-as-a-filter.md)** (#569). The office opens at a flat floor plan, with a Board and List beside it and this building as a fourth design in a Design menu. Profiles are a filter in the header, not floors, outside the building. `agentOffice` is `plan | board | list | building | off`, default `plan`. The building itself, its tower and its quality setting stay.
 >
 > **Accepted** (#105). Delivered in three stages, each its own issue under #105. Stage 1 (#281) is built: the building, its four rooms, characters, name tags, the card, the camera, the full view, the `building | list | off` setting and the List fallback, with every agent on one floor. Stage 2 (#282) is built too: walking between rooms, a floor per profile in the tower, live profiles from `session.active_list` every 15 seconds, and going home. Reopened, the office starts from the picture it last drew, so an agent whose entry was dismissed in the inbox meanwhile (opening the inbox closes the office) walks out then. Stage 3 (#283) is built: the Office quality setting, and name tags that show on hover or keyboard focus only.

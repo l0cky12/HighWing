@@ -89,15 +89,6 @@ describe("The inbox", () => {
     }
   });
 
-  it("takes the Office's place when opened from the tray, as the rail's tools replace each other", async () => {
-    const { user, openInbox } = await launch();
-    await user.click(screen.getByRole("button", { name: "Office" }));
-    expect(screen.getByRole("button", { name: "Office" }).getAttribute("aria-expanded")).toBe("true");
-    openInbox();
-    expect(inbox()).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Office" }).getAttribute("aria-expanded")).toBe("false");
-  });
-
   it("filters by kind", async () => {
     const { user, openInbox } = await launch();
     openInbox();

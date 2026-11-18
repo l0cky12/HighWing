@@ -1,7 +1,7 @@
 import { type ReactNode, type RefObject, Suspense, lazy, useCallback, useLayoutEffect, useMemo, useEffect, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { ArrowLeft, ArrowRight, Columns2, FolderCog, PanelBottom, PanelLeft, PanelRight, PanelTop, Target, X } from "lucide-react";
-import { CONNECT_STOPPED, LIVE_MIN_GAP_MS, RenameConflict, TitleModelUnavailable, connect, openSaved, readSaved, toSource, type Delivery, type Hermes, type NoticeCard, type Notify } from "./hermes/transport";
+import { CONNECT_STOPPED, RenameConflict, TitleModelUnavailable, connect, openSaved, readSaved, toSource, type Delivery, type Hermes, type NoticeCard, type Notify } from "./hermes/transport";
 import { TEXT_TASK } from "./hermes/modelSettings";
 import { invoke } from "@tauri-apps/api/core";
 import type { CommandHost } from "./ui/SlashCommands";
@@ -56,10 +56,6 @@ import { desktopLinks, type LinkInbox } from "./hermes/tauriLinks";
 import { ChatLinkNotice, type LinkNoticeView } from "./ui/ChatLinkNotice";
 import { Inbox } from "./ui/Inbox";
 import { BotList, useBotActions, type BotEditWiring } from "./ui/Bots";
-import { Office } from "./ui/Office";
-import { EMPTY_OFFICE_MEMORY } from "./ui/OfficeBuilding";
-import { officeRooms, type Desk, type Room } from "./hermes/office";
-import type { SubagentId } from "./hermes/subagents";
 import { policyOf } from "./hermes/chatKind";
 import { jobRunTitle } from "./hermes/cronJobs";
 import { botActivity, botsWaiting, isBotChat, newInBotChatNote, type Bot } from "./hermes/bots";
@@ -138,7 +134,7 @@ import type { PreviewTarget } from "./hermes/preview";
 import { pathOpener } from "./hermes/paths";
 import type { Route } from "./hermes/pipe";
 import { tauriTray, type TrayWiring } from "./hermes/tauriTray";
-import { usePageHidden, useWindowHidden } from "./ui/windowState";
+import { useWindowHidden } from "./ui/windowState";
 import { getUIPrefs, setUIPrefs, subscribe as subscribeUIPrefs, toggleModelFavorite, type ChatListMode, type StickyModelPick } from "./hermes/uiPrefs";
 import { errorText } from "./hermes/values";
 import { BrandMark } from "./ui/BrandMark";
@@ -1076,8 +1072,6 @@ type Pane = {
   draftError?: string;
   picked?: { found: Found; at: number };
   jump?: JumpTarget;
-  /** A subagent of the chat `chatId` to open in its Subagents panel, from the agent office; `at` tells one request from the next. */
-  subagent?: { chatId: string; id: SubagentId; at: number };
 };
 
 /** Compare (ADR 0101): two panes whose sends go to both. Each side is a pane and the chat it shows; `model` is what a side's New chat pane starts on. */
@@ -1442,7 +1436,7 @@ export function Main({
       guardRef.current(() => {
         setProjectOpen(false);
         setSettingsOpen(false);
-        setJobsOpen(false); setOfficeOpen(false);
+        setJobsOpen(false);
         setWorkOpen(false);
         setUsageTab("budgets");
         setUsageOpen(true);
@@ -1554,8 +1548,6 @@ export function Main({
   const [inboxOpen, setInboxOpen] = useState(false);
   const [arrival, setArrival] = useState<Arrival>();
   const [visit, setVisit] = useState<BotVisit>();
-  /** The agent office (Office.tsx, ADR 0077), unless Settings turns it off. */
-  const [officeOpen, setOfficeOpen] = useState(false);
   const ackScope = inboxScope(connection);
   const acks = useMemo(() => inboxAcks(localStorage, ackScope), [ackScope]);
   const dismissed = useSyncExternalStore(acks.subscribe, acks.getSnapshot);
@@ -1566,12 +1558,8 @@ export function Main({
   // The model pick is sticky: new chats start on it, in this profile, until the owner picks another. It is kept on this
   // computer only and never becomes the profile's default. Picked in another profile, it gives way to this profile's
   // own model. A chat on screen shows the model it runs on, and a pick there switches that chat alone.
-  const { modelPicker, modelPicks, modelFavorites, previewWidth, sidebarWidth, screenshotShortcut, agentOffice, inboxAutoDismissDays, summonSelection, chatListMode } = useSyncExternalStore(subscribeUIPrefs, getUIPrefs);
+  const { modelPicker, modelPicks, modelFavorites, previewWidth, sidebarWidth, screenshotShortcut, inboxAutoDismissDays, summonSelection, chatListMode } = useSyncExternalStore(subscribeUIPrefs, getUIPrefs);
   const keys = useBindings();
-  const officeShown = officeOpen && agentOffice !== "off";
-  // Who sits where in the building. It outlives the building's view, so hidden to the tray, minimized, behind Settings
-  // or switched to List and back, each agent comes back to the desk it had.
-  const officeFloorMemory = useRef(EMPTY_OFFICE_MEMORY);
   const catalog = models?.profile === profile ? models : undefined;
   const sticky: ModelPick | undefined = modelPicks[pref] ?? (modelPicker?.profile === pref ? withoutProfile(modelPicker) : catalog?.defaultPick);
 
@@ -1770,7 +1758,7 @@ export function Main({
   };
   const openSettings = () => {
     setProjectOpen(false);
-    setJobsOpen(false); setOfficeOpen(false);
+    setJobsOpen(false);
     setUsageOpen(false); setWorkOpen(false);
     setShowTextGeneration(undefined);
     setShowMemory(undefined);
@@ -1908,21 +1896,20 @@ export function Main({
       fresh = false,
       keepSettings = false,
       newTab = false,
-      subagent,
       picked,
-    }: { pane?: string; remember?: boolean; fresh?: boolean; keepSettings?: boolean; newTab?: boolean; subagent?: SubagentId; picked?: Found } = {},
+    }: { pane?: string; remember?: boolean; fresh?: boolean; keepSettings?: boolean; newTab?: boolean; picked?: Found } = {},
   ) => {
     const go = () => {
       navGen.current++;
       setPanelHidden(true);
       if (newTab) setPanes((ps) => ps.map((p) => (p.key === pane && !p.tabs.includes(id) ? { ...p, tabs: [...p.tabs, id] } : p)));
-      patchPane(pane, { chatId: id, picked: picked && { found: picked, at: Date.now() }, jump: undefined, subagent: subagent && id ? { chatId: id, id: subagent, at: Date.now() } : undefined, ...(fresh && { draftError: undefined }) });
+      patchPane(pane, { chatId: id, picked: picked && { found: picked, at: Date.now() }, jump: undefined, ...(fresh && { draftError: undefined }) });
       activeKeyRef.current = pane;
       setActiveKey(pane);
       setReopening(undefined);
       if (!keepSettings) setSettingsOpen(false);
       setProjectOpen(false);
-      setJobsOpen(false); setOfficeOpen(false);
+      setJobsOpen(false);
       setUsageOpen(false); setWorkOpen(false);
       if (remember) rememberChat(id);
     };
@@ -1938,8 +1925,6 @@ export function Main({
       setProjectOpen(false);
       setSettingsOpen(false);
       setUsageOpen(false); setWorkOpen(false);
-     
-      setOfficeOpen(false);
       setJobsAt((a) => ({ id, n: (a?.n ?? 0) + 1 }));
       setJobsOpen(true);
     });
@@ -1972,13 +1957,13 @@ export function Main({
     navGen.current++;
     setPanelHidden(true);
     hermes.reveal(found);
-    patchPane(active.key, { chatId: found.chatId, picked: { found, at: Date.now() }, jump: undefined, subagent: undefined });
+    patchPane(active.key, { chatId: found.chatId, picked: { found, at: Date.now() }, jump: undefined });
     setReopening(undefined);
     rememberChat(found.chatId);
     setSearchOpen(false);
     setSettingsOpen(false);
     setProjectOpen(false);
-    setJobsOpen(false); setOfficeOpen(false);
+    setJobsOpen(false);
     setUsageOpen(false); setWorkOpen(false);
   });
 
@@ -1997,7 +1982,7 @@ export function Main({
     setReopening(undefined);
     setSettingsOpen(false);
     setProjectOpen(false);
-    setJobsOpen(false); setOfficeOpen(false);
+    setJobsOpen(false);
     setUsageOpen(false); setWorkOpen(false);
     rememberChat(chatId);
   });
@@ -2010,7 +1995,7 @@ export function Main({
     navGen.current++;
     setPanelHidden(true);
     const partner = panes.find((p) => p.key !== from)?.key ?? newPaneKey();
-    if (split) patchPane(partner, { chatId: null, picked: undefined, jump: undefined, subagent: undefined, draftError: undefined });
+    if (split) patchPane(partner, { chatId: null, picked: undefined, jump: undefined, draftError: undefined });
     else setPanes((ps) => [...ps, { key: partner, view: newView(), chatId: null, tabs: [null] }]);
     setCompare([{ pane: from, chatId: origin.chatId }, { pane: partner, chatId: null, model }]);
     activeKeyRef.current = from;
@@ -2054,7 +2039,7 @@ export function Main({
   );
   const openTextGeneration = () => {
     setProjectOpen(false);
-    setJobsOpen(false); setOfficeOpen(false);
+    setJobsOpen(false);
     setUsageOpen(false); setWorkOpen(false);
     // One destination at a time: an earlier Memory shortcut mustn't switch Settings away from this one.
     setShowMemory(undefined);
@@ -2069,7 +2054,7 @@ export function Main({
     flushSync(() => {
       setSettingsOpen(false);
       setProjectOpen(false);
-      setJobsOpen(false); setOfficeOpen(false);
+      setJobsOpen(false);
       setUsageOpen(false); setWorkOpen(false);
       setSearchOpen(false);
       if (!previewFits) setPanelHidden(true);
@@ -2133,7 +2118,7 @@ export function Main({
     setPanelHidden(true);
     const panesNow = out.panes.map((p) => {
       const was = before.get(p.key);
-      return was && was.chatId !== p.chatId ? { ...p, view: newView(), picked: undefined, jump: undefined, subagent: undefined } : p;
+      return was && was.chatId !== p.chatId ? { ...p, view: newView(), picked: undefined, jump: undefined } : p;
     });
     panesRef.current = panesNow;
     setPanes(panesNow);
@@ -2329,15 +2314,6 @@ export function Main({
     if (e.server || e.ended || e.kind !== "approval" || e.profile !== profile || !e.itemId) return undefined;
     const card = chats.find((c) => c.id === e.chatId)?.items.find((i) => i.id === e.itemId);
     return card?.kind === "approval" && isWaiting(card) ? card : undefined;
-  };
-
-  // A reply's desk goes where its inbox entry goes. A subagent's desk is always in the profile shown (ADR 0077), and
-  // opens in the pane already showing its chat, or else the active one.
-  const openDesk = (room: Room, desk: Desk) => {
-    setOfficeOpen(false);
-    if (desk.agent.kind === "reply" && desk.agent.entry) return openEntry(desk.agent.entry);
-    const pane = panes.find((p) => p.chatId === room.chatId)?.key ?? active.key;
-    openChat(room.chatId, { pane, ...(desk.agent.kind === "subagent" && { subagent: desk.agent.id }) });
   };
 
   useEffect(() => {
@@ -2668,7 +2644,6 @@ export function Main({
   const trayInbox = useRef(() => {});
   trayInbox.current = () => {
     if (trayCovered()) return;
-    setOfficeOpen(false);
     setInboxOpen(true);
   };
   useEffect(() => tray.onNewChat(() => trayNewChat.current()), [tray]);
@@ -2677,9 +2652,6 @@ export function Main({
   useEffect(() => () => tray.reportInbox(0), [tray]);
   // Hidden to the tray, the window shows no chat: replies arriving meanwhile leave their chats Unread.
   const windowHidden = useWindowHidden();
-  const pageHidden = usePageHidden();
-  // The office is drawn, and its rooms worked out, only while it can be seen: hidden to the tray or minimized, it isn't.
-  const officeVisible = officeShown && !windowHidden && !pageHidden;
 
   // The inbox and Bots mode ask for fresh checks as they open, and keep asking while open: they show what is live.
   const liveWatched = inboxOpen || botsInList;
@@ -2689,14 +2661,6 @@ export function Main({
     const timer = setInterval(() => void hermes.checkOtherProfiles(), INBOX_CHECK_EVERY_MS);
     return () => clearInterval(timer);
   }, [hermes, liveWatched]);
-  // The office keeps every profile's floor live from `session.active_list` alone, as often as the transport allows,
-  // while it can be seen (ADR 0122). It leaves the heavier read of the other profiles' chat lists at CHECK_EVERY_MS.
-  useEffect(() => {
-    if (!officeVisible) return;
-    void hermes.checkLive();
-    const timer = setInterval(() => void hermes.checkLive(), LIVE_MIN_GAP_MS);
-    return () => clearInterval(timer);
-  }, [hermes, officeVisible]);
 
   // Unread chats in the other profiles are polled, so the switcher can be up to CHECK_EVERY_MS behind.
   useEffect(() => {
@@ -3016,7 +2980,7 @@ export function Main({
   const paneMax = mainWidth ? mainWidth - CHAT_MIN_WIDTH : 1200;
   const paneWidth = Math.min(Math.max(dragWidth ?? previewWidth ?? PREVIEW_DEFAULT_WIDTH, PANE_MIN_WIDTH), Math.max(PANE_MIN_WIDTH, paneMax));
   // Settings covers the chat, and the side panel with it; so do the project screen, Scheduled jobs and Usage.
-  const covering = settingsOpen || projectScreenOpen || jobsOpen || usageOpen || workOpen || officeVisible;
+  const covering = settingsOpen || projectScreenOpen || jobsOpen || usageOpen || workOpen;
   const previewShown = panelOpen && !covering && (previewFits || !panelHidden);
   const previewCovers = previewShown && !previewFits;
 
@@ -3116,7 +3080,6 @@ export function Main({
           picked={p.picked}
           jump={p.jump}
           focusItem={focusItem?.pane === p.key && focusItem.chatId === p.chatId ? focusItem : undefined}
-          showSubagent={p.subagent?.chatId === p.chatId ? p.subagent : undefined}
           active={!covered && !covering && !previewCovers && (!split || isActive)}
           split={split}
           screenshots={desk}
@@ -3173,7 +3136,7 @@ export function Main({
             hermes.memory
               ? () => {
                   setProjectOpen(false);
-                  setJobsOpen(false); setOfficeOpen(false);
+                  setJobsOpen(false);
                   setUsageOpen(false); setWorkOpen(false);
                   setShowTextGeneration(undefined);
                   setShowDiagnostics(undefined);
@@ -3326,21 +3289,6 @@ export function Main({
         onToggleList={() => setListOpen((o) => !o)}
         onNew={startNewChat}
         onSearch={() => openSearch()}
-        onOffice={
-          agentOffice === "off"
-            ? undefined
-            : () => {
-                setInboxOpen(false);
-                // Over Settings, it opens in Settings' place, as the rail's other screens do; otherwise it toggles.
-                if (settingsOpen)
-                  guard(() => {
-                    setSettingsOpen(false);
-                    setOfficeOpen(true);
-                  });
-                else setOfficeOpen((o) => !o);
-              }
-        }
-        officeOpen={officeShown && !settingsOpen}
         onSettings={openSettings}
         settingsOpen={settingsOpen}
         onJobs={() =>
@@ -3348,7 +3296,6 @@ export function Main({
             setProjectOpen(false);
             setSettingsOpen(false);
             setUsageOpen(false); setWorkOpen(false);
-           
             setJobsAt(undefined);
             setJobsOpen(true);
           })
@@ -3358,7 +3305,7 @@ export function Main({
           guard(() => {
             setProjectOpen(false);
             setSettingsOpen(false);
-            setJobsOpen(false); setOfficeOpen(false);
+            setJobsOpen(false);
             setWorkOpen(false);
             setUsageOpen((o) => !o);
           })
@@ -3372,12 +3319,12 @@ export function Main({
                 guard(() => {
                   setProjectOpen(false);
                   setSettingsOpen(false);
-                  setJobsOpen(false); setOfficeOpen(false);
+                  setJobsOpen(false);
                   setUsageOpen(false);
                   setWorkOpen((o) => !o);
                 })
         }
-        workOpen={workOpen && !settingsOpen && !projectScreenOpen && !jobsOpen && !officeVisible}
+        workOpen={workOpen && !settingsOpen && !projectScreenOpen && !jobsOpen}
         updateWaiting={updateWaiting}
         connectionsMenu={
           onSwitchConnection && (
@@ -3460,7 +3407,7 @@ export function Main({
                   await projects.create(name);
                   guard(() => {
                     setSettingsOpen(false);
-                    setJobsOpen(false); setOfficeOpen(false);
+                    setJobsOpen(false);
                     setUsageOpen(false); setWorkOpen(false);
                     setProjectOpen(true);
                   });
@@ -3468,7 +3415,7 @@ export function Main({
                 onManage={() =>
                   guard(() => {
                     setSettingsOpen(false);
-                    setJobsOpen(false); setOfficeOpen(false);
+                    setJobsOpen(false);
                     setUsageOpen(false); setWorkOpen(false);
                     setProjectOpen(true);
                     void projects.readDefaults();
@@ -3576,24 +3523,7 @@ export function Main({
       )}
       <main className="main" ref={mainRef}>
         <div className="main-chat" inert={previewCovers || undefined}>
-            {officeVisible && !settingsOpen ? (
-              <Office
-                rooms={officeRooms({ entries: inbox.entries, shown: (e) => !acks.isDismissed(e, dismissed), chats, profile, connected: status === "connected" })}
-                floorMemory={officeFloorMemory}
-                view={agentOffice}
-                onView={(view) => setUIPrefs({ agentOffice: view })}
-                server={where ?? "the server"}
-                profile={profile}
-                profiles={Object.keys(others.byName)}
-                connected={status === "connected"}
-                leaving={leavingNote(profile, chats)}
-                onOpen={openDesk}
-                onClose={() => {
-                  flushSync(() => setOfficeOpen(false));
-                  focusPane(active.key);
-                }}
-              />
-            ) : jobsOpen && !settingsOpen ? (
+            {jobsOpen && !settingsOpen ? (
               <CapabilityGate
                 store={hermes.capabilities}
                 id="scheduledJobs"
@@ -4101,7 +4031,6 @@ function ChatView({
   picked,
   jump,
   focusItem,
-  showSubagent,
   active,
   split,
   catalog,
@@ -4158,8 +4087,6 @@ function ChatView({
   jump?: JumpTarget;
   /** The card or message an Inbox entry is about, which Main scrolls to and focuses once the chat shows it. */
   focusItem?: { itemId?: string; approval: boolean };
-  /** A subagent to open in the chat's Subagents panel, from the agent office. */
-  showSubagent?: { id: SubagentId; at: number };
   active: boolean;
   split: boolean;
   catalog?: ModelCatalog;
@@ -4649,7 +4576,6 @@ function ChatView({
       findTarget={findTarget}
       jumpTo={jump}
       reveal={focusItem}
-      showSubagent={showSubagent}
       onJumpMissed={() =>
         onToast(jump?.rowId !== undefined ? "Couldn't find the message this branch was made from in the chat's history." : "Couldn't find the tool call that made this file in the chat's history.")
       }

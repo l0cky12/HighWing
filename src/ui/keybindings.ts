@@ -148,7 +148,7 @@ export const FIXED: readonly FixedKey[] = [
   { title: "Move between a menu's items", keys: [chord("ArrowDown"), chord("ArrowUp"), chord("Home"), chord("End")], when: "menuOpen", group: "navigation" },
   { title: "Close a menu, back to its button", keys: [chord("Escape")], when: "menuOpen", group: "navigation" },
   {
-    title: "Move between the rows of a list: the Inbox, Bots, the model picker, the Office",
+    title: "Move between the rows of a list: the Inbox, Bots, the model picker",
     keys: [chord("ArrowDown"), chord("ArrowUp")],
     when: "listFocus",
     group: "navigation",

@@ -174,8 +174,6 @@ describe("Searching Settings", () => {
     await user.type(box(), "subagents");
     await waitFor(() => expect(showing("Subagents")).toBe(true));
     expect(showing("Main model")).toBe(false);
-    // General's agent office setting is about subagents too (ADR 0077); its other sections aren't.
-    expect(showing("Agent office")).toBe(true);
     expect(showing("Sending while Hermes replies")).toBe(false);
   });
 

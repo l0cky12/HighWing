@@ -302,7 +302,7 @@ describe("Unread in other profiles", () => {
       expect(hermes.checkTimes.get()).toEqual({ others: now, live: now, byProfile: { work: now, aegis: now } });
     });
 
-    it("tells no one when only the live check runs, as the office's does", async () => {
+    it("tells no one when only the live check runs", async () => {
       const { hermes, told, later } = await checkedOnce();
       const before = hermes.getSnapshot();
       later();

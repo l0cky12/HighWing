@@ -180,10 +180,7 @@ const CLI_EXEC_TIMEOUT_S = 600;
 const CLI_EXEC_ANSWER_MS = (CLI_EXEC_TIMEOUT_S + 60) * 1000;
 /** Checking another profile for Unread chats reads one page of its most recent ones. */
 const OTHER_PAGE_SIZE = 50;
-/**
- * A `session.active_list` check asked for sooner than this after the last one, on the same connection, is skipped. The
- * office asks this often.
- */
+/** A `session.active_list` check asked for sooner than this after the last one, on the same connection, is skipped. */
 export const LIVE_MIN_GAP_MS = 15_000;
 /** A check asked for on a LIVE_MIN_GAP_MS timer can come a little early by the clock; it isn't skipped for that. */
 const LIVE_SLACK_MS = 1_000;

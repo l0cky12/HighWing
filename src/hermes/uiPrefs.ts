@@ -2,7 +2,7 @@
 // had open, whether reasoning shows, how much shows under each message, the model last picked and the starred models,
 // which items the status bar shows, the screenshot shortcut, the preview pane's and chat list's widths, the app's zoom, which computer the Terminal opens
 // on, what sending does while a reply runs, whether message boxes check spelling, Idle compaction, which of the chat
-// list's sections show and which are collapsed, how the agent office shows, and the keyboard shortcuts the owner changed. All preferences live in one
+// list's sections show and which are collapsed, and the keyboard shortcuts the owner changed. All preferences live in one
 // versioned localStorage document.
 // it (chatCache.ts) and later settings add fields here rather than new keys. Nothing here goes to Hermes. Every
 // settings feature reads and writes through this module.
@@ -71,10 +71,6 @@ export type UIPrefs = {
   /** The chat list's sections the owner collapsed, kept across restarts (ADR 0063). */
   chatSectionsCollapsed: SectionKey[];
   chatListMode: ChatListMode;
-  /** The agent office's design (ADR 0161): a floor plan, a board, a list, the 3D building (ADR 0122), or off, with no rail button (ADR 0077). */
-  agentOffice: OfficeView;
-  /** How much the office's building may cost to draw (ADR 0122). */
-  officeQuality: OfficeQuality;
   /** How many days a finished entry stays in the inbox before it is dismissed on its own, as if by hand; null: never. */
   inboxAutoDismissDays: number | null;
   /** How much shows under each message (MESSAGE_DETAILS): its date, then a reply's tokens, then its time and Run button. */
@@ -88,12 +84,6 @@ export type UIPrefs = {
    */
   keybindings: Record<string, string[]>;
 };
-
-export type OfficeView = "plan" | "board" | "list" | "building" | "off";
-export const OFFICE_VIEWS: readonly OfficeView[] = ["plan", "board", "list", "building", "off"];
-
-export type OfficeQuality = "normal" | "low";
-export const OFFICE_QUALITIES: readonly OfficeQuality[] = ["normal", "low"];
 
 export type FollowUp = "queue" | "steer";
 
@@ -148,8 +138,6 @@ export const DEFAULT_UI_PREFS: Readonly<UIPrefs> = Object.freeze({
   chatSectionsShown: [...SECTION_KEYS],
   chatSectionsCollapsed: ["snoozed", "archived"] as SectionKey[],
   chatListMode: "chats",
-  agentOffice: "plan",
-  officeQuality: "normal",
   inboxAutoDismissDays: null,
   messageDetails: "time",
   summonSelection: true,
@@ -166,10 +154,10 @@ export const UI_PREFS_MIGRATIONS: UIPrefsMigrations = {
   0: (doc) => doc,
   // Pinned is new in version 2 (ADR 0085): a list of shown sections from before it shows Pinned too.
   1: (doc) => (toShown(doc.chatSectionsShown) ? { ...doc, chatSectionsShown: ["pinned", ...(doc.chatSectionsShown as unknown[])] } : doc),
-  // The building replaces the Desks and Scene views in version 3 (ADR 0122): whoever picked either sees the building.
-  2: (doc) => (doc.agentOffice === "desks" || doc.agentOffice === "scene" ? { ...doc, agentOffice: "building" } : doc),
-  // The floor plan replaces the building as the default in version 4 (ADR 0161): whoever had the building sees the plan.
-  3: (doc) => (doc.agentOffice === "building" ? { ...doc, agentOffice: "plan" } : doc),
+  // Versions 3 and 4 changed only the agent office's design, and the office is gone (ADR 0202). Their steps stay so a
+  // document from before them still has a way forward.
+  2: (doc) => doc,
+  3: (doc) => doc,
   // Launch starts on a new chat in version 5 (ADR 0162). Every document so far held the old default, on, so it can't
   // tell an owner who chose it from one who never looked: everyone starts on a new chat, and Settings turns it back on.
   4: (doc) => (doc.reopenLastChat === true ? { ...doc, reopenLastChat: false } : doc),
@@ -316,8 +304,6 @@ export function readUIPrefs(doc: UIPrefsDoc, d: Readonly<UIPrefs> = DEFAULT_UI_P
     chatSectionsShown: toShown(doc.chatSectionsShown) ?? [...d.chatSectionsShown],
     chatSectionsCollapsed: toSections(doc.chatSectionsCollapsed) ?? [...d.chatSectionsCollapsed],
     chatListMode: CHAT_LIST_MODES.includes(doc.chatListMode as ChatListMode) ? (doc.chatListMode as ChatListMode) : d.chatListMode,
-    agentOffice: OFFICE_VIEWS.includes(doc.agentOffice as OfficeView) ? (doc.agentOffice as OfficeView) : d.agentOffice,
-    officeQuality: OFFICE_QUALITIES.includes(doc.officeQuality as OfficeQuality) ? (doc.officeQuality as OfficeQuality) : d.officeQuality,
     inboxAutoDismissDays:
       doc.inboxAutoDismissDays === null || (typeof doc.inboxAutoDismissDays === "number" && Number.isFinite(doc.inboxAutoDismissDays) && doc.inboxAutoDismissDays > 0)
         ? doc.inboxAutoDismissDays

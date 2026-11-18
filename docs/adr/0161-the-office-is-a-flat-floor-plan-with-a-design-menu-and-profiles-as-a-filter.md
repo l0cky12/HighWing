@@ -1,5 +1,7 @@
 # The office is a flat floor plan, with a Design menu, and profiles as a filter
 
+> **Superseded by [ADR 0202](0202-the-repository-automations-and-office-screens-are-removed.md)**. The agent office is gone, with its floor plan, board, list and Design menu. A saved `agentOffice` or `officeQuality` is ignored.
+
 > **Accepted** (#569). The owner picked it from the screenshots, keeping the 3D building as one of its designs. It supersedes, in ADR 0122, the tower (a floor per profile) as the way to tell profiles apart, the building as the default, the people and furniture as the default look, and the `building | list | off` setting; in ADR 0077, the one setting with three values. ADR 0122's rooms by state, its card, its rule that nothing is done from the office, and everything it reads stay. So do ADR 0077's rules on state: the inbox's word for a reply, the tree's for a subagent, Finished only on Hermes's word, and "as last seen" for what the app can't vouch for.
 
 The owner finds the 3D building cartoonish: little people with faces and hair, brown desks and blue couches, in an app that is otherwise hairlines, greys and one copper accent. And the profiles stack: each is a floor of a tower beside the building, so the owner's forty profiles make a wall of slabs and label columns over the floor being looked at. The owner asked for a menu to see different designs. A council of four models (Claude Fable 5.2, GPT-6.1 Sol, GPT-6 Astra, Grok 4.7) proposed the designs below and reviewed them in the real app.

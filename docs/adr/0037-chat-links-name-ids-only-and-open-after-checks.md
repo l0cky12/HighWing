@@ -1,5 +1,7 @@
 # Chat links name ids only, and open a chat only after every check passes
 
+> **Amended by [ADR 0224](0224-leaving-a-profile-asks-only-about-a-waiting-approval-or-question.md).** A link to another profile asks first only about a waiting Approval or question, not a running reply.
+
 Issue #79 asks for a link that opens one chat in the right connection and profile, from a cold start or into the window already open, with a pending state that never sends anything, and clear messages when the chat, profile or connection is gone.
 
 A link is `hermes-chat://chat?v=1&connection=<ref>&profile=<profile>&id=<chat id>`.

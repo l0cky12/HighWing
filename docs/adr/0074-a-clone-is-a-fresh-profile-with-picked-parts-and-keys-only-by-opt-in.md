@@ -1,5 +1,7 @@
 # A clone is a fresh profile with the parts picked, and API keys go only by opt-in
 
+> **Amended by [ADR 0224](0224-leaving-a-profile-asks-only-about-a-waiting-approval-or-question.md).** The switcher that "Open <name>" goes through asks first only about a waiting Approval or question, not a running reply.
+
 Issue #91 asks for Clone profile: a new profile made from an existing one, without sharing credentials, chats, jobs or delivery channels by accident, with each optional category shown and the name checked before anything is written. The deployed Hermes (`f0d94882`, research checkout `~/.cache/hermes-src-168`) has one route that makes profiles, `POST /api/profiles` (`web_routers/profiles.py` `create_profile_endpoint`, body `ProfileCreate` in `web_models.py`). It builds the profile in a hidden staging folder and renames it into place, so a refusal or a failure while building leaves nothing. It refuses a taken, reserved or invalid name (400), and drops messaging channels from a copy unless asked. But its copy, `clone_from`, always copies `config.yaml` and `.env` (`profiles.py` `_CLONE_CONFIG_FILES`), which hold the source's API keys. Checked live on a throwaway `f0d94882` dashboard: a `clone_from` copy had the source's `OPENROUTER_API_KEY` in its `.env` and a provider `api_key` in its `config.yaml`, without the source's Telegram bot token.
 
 ## Decisions

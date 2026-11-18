@@ -1,5 +1,7 @@
 # Saved connections have stable ids, keep their secrets and data apart, and one is in use at a time
 
+> **Amended by [ADR 0224](0224-leaving-a-profile-asks-only-about-a-waiting-approval-or-question.md).** Switching away from the connection in use asks first only about a waiting Approval, not a running reply. Removing it still names both.
+
 Hermes Chat kept one sign-in, so reaching another Hermes server meant overwriting it (issue #88). Now it keeps a list of **saved connections** in one versioned local-storage document, `hermes-chat.connections` (`src/hermes/connections.ts`). Each has a random UUID as its id, a name, SSH or URL mode, its non-secret address (SSH target or URL) and dashboard username, and when it was added and last used. The id never changes, even when the address is edited, and everything else is keyed by it:
 
 - **Keyring.** Each connection has its own two entries in the system keyring, `dashboard-password/<id>` and `extra-request-headers/<id>` (service `hermes-chat`). Rust builds the entry name from the id and refuses an id that isn't 8 to 64 lowercase letters, digits and dashes, so the webview can't name another entry (`saved_password::account`).

@@ -47,6 +47,7 @@ jobs:
         with:
           workspaces: src-tauri
           shared-key: nsis
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
       - name: Build the app (release, frontend embedded, no installer, WebView2 DevTools port on)
         run: npx tauri build --no-bundle --config .github/windows-smoke/tauri.smoke.conf.json

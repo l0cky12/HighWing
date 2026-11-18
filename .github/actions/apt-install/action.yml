@@ -1,0 +1,41 @@
+name: apt-install
+description: >-
+  Installs Ubuntu packages from .deb files kept in the Actions cache, so a stalled mirror can't hold a job for twenty
+  minutes (ADR 0222). Only main saves the cache, once a week, which every pull request can then restore.
+inputs:
+  packages:
+    description: The packages to install, separated by spaces or newlines.
+    required: true
+runs:
+  using: composite
+  steps:
+    - id: key
+      shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+      run: |
+        list=$(printf '%s' "$PACKAGES" | tr -s ' \n' '\n' | sed '/^$/d' | sort)
+        echo "prefix=apt-$ImageOS-$(printf '%s' "$list" | sha256sum | cut -c1-16)-" >> "$GITHUB_OUTPUT"
+        echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+    - id: restore
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/apt-archives
+        key: ${{ steps.key.outputs.prefix }}${{ steps.key.outputs.week }}
+        restore-keys: ${{ steps.key.outputs.prefix }}
+    - shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+      run: |
+        archives="$HOME/apt-archives"
+        mkdir -p "$archives/partial"
+        sudo apt-get update
+        # shellcheck disable=SC2086 # one word per package
+        sudo apt-get install -y --no-install-recommends -o Dir::Cache::Archives="$archives" $PACKAGES
+        sudo apt-get autoclean -o Dir::Cache::Archives="$archives"
+        sudo chown -R "$USER" "$archives"
+    - if: github.ref == 'refs/heads/main' && steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/apt-archives
+        key: ${{ steps.key.outputs.prefix }}${{ steps.key.outputs.week }}

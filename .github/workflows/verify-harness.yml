@@ -9,6 +9,7 @@ on:
     paths:
       - ".claude/skills/verify-hermes-chat/**"
       - ".github/workflows/verify-harness.yml"
+      - ".github/actions/**"
       - "src/**"
       - "bench/**"
       - "package-lock.json"
@@ -17,6 +18,7 @@ on:
     paths:
       - ".claude/skills/verify-hermes-chat/**"
       - ".github/workflows/verify-harness.yml"
+      - ".github/actions/**"
       - "src/**"
       - "bench/**"
       - "package-lock.json"
@@ -41,10 +43,9 @@ jobs:
           cache: npm
       # Present, these are used as they are: hv bootstrap's own download names Debian's packages, not Ubuntu's.
       - name: Headless X, WebKitWebDriver and the tools hv checks for
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            xvfb x11-apps xdotool openbox webkit2gtk-driver bubblewrap dbus
+        uses: ./.github/actions/apt-install
+        with:
+          packages: xvfb x11-apps xdotool openbox webkit2gtk-driver bubblewrap dbus
       # The stand-in dashboard is bundled with the repo's rolldown.
       - run: npm ci
       - run: .claude/skills/verify-hermes-chat/scripts/hv bootstrap

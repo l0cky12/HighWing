@@ -1,15 +1,25 @@
 name: installers
 
 # Builds the Windows installer, the .deb and a plain AppImage (no updater). On a v<version> tag it also attaches all
-# three to that tag's GitHub release (ADR 0080, ADR 0183, ADR 0221).
+# three to that tag's GitHub release (ADR 0080, ADR 0183, ADR 0221). On main it runs only to save the Rust and package
+# caches pull requests restore: when the crates or CI change, and weekly for a new Rust release (ADR 0222).
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1"
   push:
     tags: ["v*"]
+    branches: [main]
+    paths:
+      - ".github/workflows/installers.yml"
+      - ".github/actions/**"
+      - "src-tauri/Cargo.lock"
+      - "src-tauri/Cargo.toml"
   pull_request:
     paths:
       - ".github/workflows/installers.yml"
+      - ".github/actions/**"
       - ".github/windows-relay/**"
       - "scripts/release/attach-release*.sh"
       - "scripts/release/appimage-launches.sh"
@@ -39,12 +49,18 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: src-tauri
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       # tauri::generate_context! needs frontendDist (../dist) to exist at compile time.
       - run: mkdir -p dist
         shell: bash
       # Every test binary, as on Linux: the library's unit tests and each file in tests/.
       - run: cargo test --lib --tests
         working-directory: src-tauri
+      # Runs one ignored test from the debug test build the step above made, so nothing compiles again.
+      - name: No port of a tunnel serves a program run by another account
+        shell: pwsh
+        working-directory: src-tauri
+        run: ../.github/windows-relay/other-account.ps1
       # Lints the cfg(windows) code, which Linux CI never compiles.
       - run: cargo clippy --all-targets -- -D warnings
         working-directory: src-tauri
@@ -68,13 +84,8 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: src-tauri
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
-      - name: No port of a tunnel serves a program run by another account
-        shell: pwsh
-        working-directory: src-tauri
-        env:
-          RUSTFLAGS: ""
-        run: ../.github/windows-relay/other-account.ps1
       # The bundler downloads NSIS from GitHub releases on every run, and a 5xx there fails the whole job. A retry
       # rebuilds only the bundle: the compiled release binary is kept.
       - name: Build the NSIS installer
@@ -110,15 +121,16 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: node scripts/release/version.mjs check "$TAG"
       - name: Install Tauri system libraries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev librsvg2-dev libdbus-1-dev \
+        uses: ./.github/actions/apt-install
+        with:
+          packages: >-
+            pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev librsvg2-dev libdbus-1-dev
             libayatana-appindicator3-dev
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: src-tauri
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
       - run: npx tauri build --bundles deb
       - name: The .deb installs with apt and its binary finds every library
@@ -148,15 +160,16 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: node scripts/release/version.mjs check "$TAG"
       - name: Install Tauri system libraries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev librsvg2-dev libdbus-1-dev \
+        uses: ./.github/actions/apt-install
+        with:
+          packages: >-
+            pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev librsvg2-dev libdbus-1-dev
             libayatana-appindicator3-dev patchelf file xvfb xdotool fuse3
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: src-tauri
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: npm ci
       - run: npx tauri build --bundles appimage
       - name: The AppImage opens a window

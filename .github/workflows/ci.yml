@@ -13,10 +13,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  frontend:
+  # The suite in three parts at once (ADR 0222). Vitest splits the files, so each test runs in exactly one part.
+  test:
+    name: test (${{ matrix.shard }}/3)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test -- --shard=${{ matrix.shard }}/3
+
+  # Waits for every part of the suite, so this required check still means the tests passed.
+  frontend:
+    needs: test
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Every part of the test suite passed
+        if: needs.test.result != 'success'
+        run: |
+          echo "::error::The test suite's result is ${{ needs.test.result }}."
+          exit 1
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -27,8 +53,6 @@ jobs:
       - name: Every Markdown file is one the owner asked for
         run: node scripts/check-markdown.mjs
       - run: npm ci
-      - run: npm test
-      - run: npm test
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run build
       - run: scripts/release/attach-release.test.sh
@@ -60,15 +84,16 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install Tauri system libraries
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+        uses: ./.github/actions/apt-install
+        with:
+          packages: >-
+            pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev
             librsvg2-dev libdbus-1-dev xvfb
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: src-tauri
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       # tauri::generate_context! needs frontendDist (../dist) to exist at compile time.
       - run: mkdir -p dist
       # Every test binary: the library's unit tests and each file in tests/.

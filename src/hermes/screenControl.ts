@@ -43,23 +43,48 @@ export class ScreenControl {
   private held = new Set<string>();
   private minting?: Promise<DisplayObserve>;
   private releasing?: Promise<void>;
+  /** Broadcasts heard before the profile's screen was named, by its key. */
+  private heard = new Map<string, DisplayLease>();
+  /** The connection `know` asked on. */
+  private askedOn?: object;
 
   constructor(private readonly deps: ScreenControlDeps) {}
 
-  /** Folds in a `display.lease` broadcast. One for another profile's screen, or older than the lease known, is dropped. */
+  /**
+   * Folds in a `display.lease` broadcast. One for another profile's screen, or older than the lease known, is dropped.
+   * One heard before a status names the profile's screen waits for it.
+   */
   note(profileKey: string, lease: DisplayLease): void {
     const k = this.known;
-    if (k && k.profile === this.deps.profile() && k.profileKey === profileKey) this.fold(profileKey, lease);
+    if (k && k.profile === this.deps.profile()) {
+      if (k.profileKey === profileKey) this.fold(profileKey, lease);
+    } else if (!isOlder(this.heard.get(profileKey), lease)) this.heard.set(profileKey, lease);
   }
 
   /** Folds in the lease a status, a start or a stop answered with, and returns that answer. */
   noteStatus<S extends DisplayStatus>(s: S): S {
-    if (s.lease && typeof s.profile_key === "string") this.fold(s.profile_key, s.lease);
+    if (s.lease && typeof s.profile_key === "string") {
+      this.fold(s.profile_key, s.lease);
+      const heard = this.heard.get(s.profile_key);
+      this.heard.clear();
+      if (heard) this.fold(s.profile_key, heard);
+    }
     return s;
   }
 
   status(): Promise<DisplayStatus> {
     return this.ask("display.status").then((s) => this.noteStatus(s as DisplayStatus));
+  }
+
+  /** Asks who holds the screen, once per connection, when nothing is known of it yet. */
+  know(): Promise<void> | undefined {
+    const connection = this.deps.connection();
+    if (!connection || this.state() || this.askedOn === connection) return undefined;
+    this.askedOn = connection;
+    return this.status().then(
+      () => {},
+      () => {},
+    );
   }
 
   /** A stream ticket, as this connection's viewer: minted on first use and reused after, so a hold survives a re-attach. */
@@ -114,6 +139,7 @@ export class ScreenControl {
   /** The connection or the profile shown changed: a viewer minted before is no good now. */
   rescope(): void {
     this.minting = undefined;
+    this.heard.clear();
     this.publish();
   }
 

@@ -102,6 +102,7 @@ import { hostFileView, readServerFile, type FileView } from "./preview";
 import type { PathKind, ServerPath } from "./paths";
 import { parseDoctor, type CliResult, type DisplayLease, type DisplayStatus, type ScreenApi } from "./screen";
 import { ScreenControl, type ScreenState } from "./screenControl";
+import { COMPUTER_USE } from "./computerUse";
 import { checkCommand, dockFile, foundPrograms, shellQuote } from "./screenApps";
 import { readScreenClipboard } from "./screenClipboard";
 import { agentFsEditIo } from "./artifacts";
@@ -4786,6 +4787,11 @@ export class Hermes {
       const call = chat.items[runningCall(chat.items, payload.tool_id)];
       const task = call?.kind === "tool" && call.name === "kanban_create" ? parseKanbanCreate(call.args, payload.result, Date.now(), this.kanbanWatch.currentBoard()) : undefined;
       if (task) this.kanbanWatch.add(task, chat.id);
+    }
+    // The run card and the banner say who holds the screen.
+    if (type === "tool.start" && payload.name === COMPUTER_USE) {
+      const knowing = this.control.know();
+      if (knowing) this.track(knowing);
     }
     this.record(chat.id, type, payload);
     const counted = type === "message.complete" ? this.turnUsage(session_id!, payload.usage) : undefined;

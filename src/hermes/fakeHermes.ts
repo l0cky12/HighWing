@@ -3174,6 +3174,33 @@ export class FakeHermes {
     this.event(runtimeId, "message.complete", { text: plan.reply, status: "complete", usage: counters(), persisted_turn: { user_row_id, final_assistant_row_id } });
   }
 
+  /**
+   * Sends a recorded Hermes's frames (cuFixtures.ts) into the live session `runtimeId`, in order: each event to that
+   * session, a lease broadcast as this fake's own screen, and each `approval` request asked anew, waiting for the app's
+   * answer before going on. Answers to the recorder's own requests, and what it sent, are left out.
+   */
+  async replay(runtimeId: string, frames: readonly { dir: string; frame: Record<string, unknown> }[]) {
+    const asked = new Set<string>();
+    for (const { dir, frame } of frames) {
+      if (dir !== "in") continue;
+      const params = (frame.params ?? {}) as Record<string, unknown>;
+      if (frame.method === "approval") {
+        asked.add(String(frame.id));
+        const { session_id: _, ...ask } = params;
+        const id = this.ask(runtimeId, "approval", ask);
+        while (id && this.openRequests.has(id)) await new Promise((r) => setTimeout(r, 2));
+        continue;
+      }
+      if (frame.method !== "event") continue;
+      const { type, payload = {} } = params as { type: string; payload?: Record<string, unknown> };
+      if (type === "request.cancel" && asked.has(String(payload.id))) continue;
+      if (type === "display.lease") {
+        if (this.display) this.display.lease = payload.lease as NonNullable<FakeHermes["display"]>["lease"];
+        this.broadcast(type, { ...payload, profile_key: "/home/lena/.hermes" });
+      } else this.event(runtimeId, type, payload);
+    }
+  }
+
   /** The runtime session id the server handed out for a stored session. */
   runtimeIdOf(stored: string) {
     return [...this.runtime].reverse().find(([, s]) => s === stored)?.[0];

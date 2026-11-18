@@ -5,7 +5,7 @@ import { isObj } from "./values";
 // words the owner typed are never taken for a bot's.
 
 /** Hermes's name for the tool (`MESSAGE_AGENT_TOOL_NAME`, `tools/bot_mode_dm.py` at 0.23.2). */
-export const MESSAGE_AGENT_TOOL = "message_agent";
+const MESSAGE_AGENT_TOOL = "message_agent";
 
 /**
  * A teammate as Hermes signs a message from one (`message_agent_tool`): `Message from 🤖 <name> (@<handle>): <text>`.

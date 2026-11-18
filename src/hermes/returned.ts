@@ -104,7 +104,7 @@ export function returnedItem(text: string, displayKind: unknown, metadata: unkno
  * A Returned result as the stored row `returnedItem` reads it from, for an export in Hermes's session format: a
  * teammate's message under Hermes's signature, a delivery's answer as its runner's output. `text` redacts each part.
  */
-export function storedReturned(r: Returned, text: (s: string) => string = (s) => s): { content: string; display_kind: string; display_metadata?: { display_text: string } } {
+export function storedReturned(r: Returned, text: (s: string) => string): { content: string; display_kind: string; display_metadata?: { display_text: string } } {
   const title = r.title && { display_metadata: { display_text: text(r.title) } };
   if (r.agent?.kind === "answer") {
     const answer = { deliveryId: r.agent.deliveryId, status: r.agent.status, outcome: text(r.title ?? r.body), ...(r.title && { reply: text(r.body) }) };

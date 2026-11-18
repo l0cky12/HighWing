@@ -1617,7 +1617,8 @@ function Thought({ item, live, query }: { item: ThinkingItem; live: boolean; que
 
 /**
  * A card on Hermes's side of the transcript: open from the start, so the owner sees what it holds, and closed or opened
- * again by its header. `tips`: the header's tooltip, open and closed. `note`: a few words beside the title.
+ * again by its header. `tips`: the header's tooltip, open and closed. `note`: a few words beside the title. `foot`
+ * shows whether it is open or closed.
  */
 function TurnCard({
   kind = "",
@@ -1625,9 +1626,10 @@ function TurnCard({
   heading,
   note,
   tips,
+  foot,
   children,
   ...rest
-}: { kind?: string; icon: ReactNode; heading: ReactNode; note?: string; tips: { hide: string; show: string }; children: ReactNode } & HTMLAttributes<HTMLDivElement>) {
+}: { kind?: string; icon: ReactNode; heading: ReactNode; note?: string; tips: { hide: string; show: string }; foot?: ReactNode; children: ReactNode } & HTMLAttributes<HTMLDivElement>) {
   const [open, setOpen] = useState(true);
   return (
     <div className={`msg returned ${kind}`.trimEnd()} {...rest}>
@@ -1638,6 +1640,7 @@ function TurnCard({
         <ChevronRight size={13} className={`chev ${open ? "open" : ""}`} aria-hidden />
       </button>
       {open && children}
+      {foot}
     </div>
   );
 }
@@ -1661,6 +1664,7 @@ function ReturnedCard({ item, query, date }: { item: Extract<Item, { kind: "retu
       tips={agent?.kind === "from" ? l.agent : l.returned}
       data-item={item.id}
       data-at={item.at}
+      foot={date && <StoredTime at={item.at} />}
     >
       {item.process ? (
         <pre className="returned-body returned-log">{highlight(item.body, query)}</pre>
@@ -1669,7 +1673,6 @@ function ReturnedCard({ item, query, date }: { item: Extract<Item, { kind: "retu
           <Markdown text={item.body} query={query} />
         </div>
       )}
-      {date && <StoredTime at={item.at} />}
     </TurnCard>
   );
 }

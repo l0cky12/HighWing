@@ -1,4 +1,4 @@
-// The Restart gateway button's reads and write (ADR 0203), through the dashboard's routes at `da9c2bd`:
+// The Restart gateway button's reads and write (ADR 0204), through the dashboard's routes at `da9c2bd`:
 //
 // - `GET /api/status?profile=` says whether the profile's gateway runs (`gateway_running`, `gateway_state`), how many
 //   replies it is running (`active_agents`), and, for a profile the shared multiplexer serves, every profile that

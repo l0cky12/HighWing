@@ -2,7 +2,7 @@
 // as the deployed `f0d94882` answers them (`hermes_cli/web_routers/messaging.py`): the list with redacted previews and
 // the state ladder of `_messaging_platform_payload`, the write that checks the whole request before touching `.env` or
 // config.yaml, and the status check that sends no message. Each profile keeps its own `.env`, switches and gateway.
-// Also the Restart gateway button's routes at `da9c2bd` (ADR 0203): `POST /api/gateway/restart`, its shared action
+// Also the Restart gateway button's routes at `da9c2bd` (ADR 0204): `POST /api/gateway/restart`, its shared action
 // record `GET /api/actions/gateway-restart/status`, and the gateway fields of `GET /api/status` (`statusOf`).
 import type { RestRequest } from "./fakeHermes";
 import { RestError } from "./pipe";

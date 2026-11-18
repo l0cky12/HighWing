@@ -1,4 +1,4 @@
-// The Restart gateway button's API (gatewayRestart.ts, ADR 0203) against the fake dashboard's restart routes
+// The Restart gateway button's API (gatewayRestart.ts, ADR 0204) against the fake dashboard's restart routes
 // (fakeGateways.ts): a restart counts only once Hermes reads the gateway back as running, and every other ending says why.
 import { describe, expect, it } from "vitest";
 import { FakeHermes } from "./fakeHermes";

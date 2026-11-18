@@ -2,7 +2,7 @@
 // Settings → MCP servers on screen (McpSettings.tsx, ADR 0121), against the fake dashboard's MCP routes and Rust's edit
 // (fakeMcp.ts): the list with transport, switch and plugin, adding and editing in a dialog with write-only secrets,
 // removing after asking, Test, OAuth sign-in followed to the end, the catalog, no_mcp, answers for another profile
-// dropped, and Restart gateway beside a server edited in place (ADR 0203). Every server here is synthetic.
+// dropped, and Restart gateway beside a server edited in place (ADR 0204). Every server here is synthetic.
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { readFileSync } from "node:fs";

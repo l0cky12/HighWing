@@ -3,7 +3,7 @@
 // row shows Hermes's redacted preview, and Replace or Remove changes it only on Save; a row left alone keeps what Hermes
 // has. Save reads the platform first and sends nothing if it changed on the server, then reads it again to confirm.
 // Check status asks Hermes how the connection is; it sends no message (gateways.ts). When the running gateway hasn't
-// picked a change up, Restart gateway shows under Status (ADR 0203).
+// picked a change up, Restart gateway shows under Status (ADR 0204).
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, ExternalLink, Info, KeyRound, RefreshCw, Trash2, Undo2 } from "lucide-react";
 import { SettingNote, SettingRow, SettingsSection } from "./SettingRows";

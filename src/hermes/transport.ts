@@ -1286,7 +1286,7 @@ export class Hermes {
    */
   readonly gateways = new GatewaysApi((method, pathAndQuery, body) => this.connectedRest(method, pathAndQuery, body));
   /**
-   * The Restart gateway button's status read, restart and read-back (gatewayRestart.ts, ADR 0203), beside Settings →
+   * The Restart gateway button's status read, restart and read-back (gatewayRestart.ts, ADR 0204), beside Settings →
    * Gateways and MCP servers. Its reads go on while the pipe reconnects; the button itself waits for a connection.
    */
   readonly gatewayRestart = new GatewayRestartApi((method, pathAndQuery, body) => this.rest(method, pathAndQuery, body));

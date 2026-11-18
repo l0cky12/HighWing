@@ -1592,7 +1592,7 @@ impl Dashboard {
     /// (`memory_provider_write`, ADR 0045), and Settings → Voice's provider pick and key save (`voice_provider_write`,
     /// ADR 0115), Settings → MCP servers' add, switch, test, sign-in and catalog install (`mcp::relayed`, ADR 0121), and
     /// Settings → Gateways' Telegram and Discord save and status check, and the Restart gateway button's
-    /// `POST api/gateway/restart` with no body (`gateway_write`, ADR 0073, ADR 0203).
+    /// `POST api/gateway/restart` with no body (`gateway_write`, ADR 0073, ADR 0204).
     /// Settings → Providers' two writes that carry nothing secret, starting a sign-in and activating an endpoint
     /// (`provider_account_write`, ADR 0133).
     /// `DELETE api/env` is refused whatever the body: a key leaves the server only through
@@ -2546,7 +2546,7 @@ pub fn voice_provider_write(path: &str, body: Option<&str>) -> bool {
 /// under that platform's own env var names) and `clear_env` (those names), and nothing else, a profile included; and
 /// `POST api/messaging/platforms/{id}/test` with no body, which only reports the state. A token goes from the webview
 /// to Hermes in the `env` value and is never kept or logged here. Also the Restart gateway button's
-/// `POST api/gateway/restart` with no body; the profile goes in the query (ADR 0203).
+/// `POST api/gateway/restart` with no body; the profile goes in the query (ADR 0204).
 pub fn gateway_write(method: &str, path: &str, body: Option<&str>) -> bool {
     if path == "api/gateway/restart" {
         return method == "POST" && body.is_none();

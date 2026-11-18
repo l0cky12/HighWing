@@ -448,7 +448,9 @@ function computerUse(sid: string, prompt: string) {
   const sleep = (seconds: number) => new Promise<void>((done) => setTimeout(done, Math.min(seconds, 1) * 600));
   const turn = /takeover/i.test(prompt)
     ? { steps: [CU.capture()], reply: "Someone has taken over the Bot Desktop, so I stopped. Hand it back and I'll carry on." }
-    : { steps: DESK_RUN, reply: "/srv is 92% full, and /srv/backup holds 212 GiB of it." };
+    : /deny/i.test(prompt)
+      ? { steps: [CU.capture(), CU.doubleClick([640, 400], "foreground")], reply: "You said no, so I left the desktop alone." }
+      : { steps: DESK_RUN, reply: "/srv is 92% full, and /srv/backup holds 212 GiB of it." };
   void server
     .computerUseTurn(sid, turn, sleep)
     .finally(() => cuTurns.delete(sid))

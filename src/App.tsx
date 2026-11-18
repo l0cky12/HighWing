@@ -1103,6 +1103,18 @@ type CompareSide = { pane: string; chatId: string | null; model?: ModelPick };
 type Compare = readonly [CompareSide, CompareSide];
 
 /**
+ * A bot visit (ADR 0203): a bot in another profile opened from Bots mode. The owner's chats stay on `home`, where the
+ * active pane showed `before`.
+ */
+type BotVisit = { home: string; before: string | null };
+
+/**
+ * What opens once the profile switched to has listed its chats, unless the owner goes elsewhere first (`nav`): a bot's
+ * Bot Chat (ADR 0066), the New chat pane, or the chat a bot visit left (ADR 0203).
+ */
+type Arrival = { profile: string; nav: number } & ({ open: "bot"; bot: Bot; opening?: boolean } | { open: "new" } | { open: "chat"; chatId: string });
+
+/**
  * Starts a pane's chat if it hasn't started, and sends to it. `mirrored`: the message was typed in the other compared
  * pane, so this pane's own draft stays as it is. Resolves whether the message reached the chat's outbox.
  */
@@ -1568,7 +1580,8 @@ export function Main({
   // computer for the connection, and change nothing else. `goTo`: an entry's chat to open once its profile's list
   // has it. `focusItem`: the card or message in a pane to show once it is on screen.
   const [inboxOpen, setInboxOpen] = useState(false);
-  const [botGo, setBotGo] = useState<{ bot: Bot; then: "open" | "new"; nav: number; opening?: boolean }>();
+  const [arrival, setArrival] = useState<Arrival>();
+  const [visit, setVisit] = useState<BotVisit>();
   /** The agent office (Office.tsx, ADR 0077), unless Settings turns it off. */
   const [officeOpen, setOfficeOpen] = useState(false);
   const ackScope = inboxScope(connection);
@@ -2251,12 +2264,13 @@ export function Main({
   };
 
   // The other profile's chats replace the list, so one pane stays, on a fresh draft. The profile left keeps its last
-  // open chat for the next launch.
-  const switchProfileNow = (name: string, keepSettings = false) => {
+  // open chat for the next launch. A switch is a bot visit only when `visit` says so; any other ends one (ADR 0203).
+  const switchProfileNow = (name: string, { keepSettings = false, visit: visiting }: { keepSettings?: boolean; visit?: BotVisit } = {}) => {
     navGen.current++;
     const keep = activeKeyRef.current;
     setGoTo(undefined);
-    setBotGo(undefined);
+    setArrival(undefined);
+    setVisit(visiting);
     setFocusItem(undefined);
     setPanes([{ key: keep, view: newView(), chatId: null, tabs: [null] }]);
     activeKeyRef.current = keep;
@@ -2280,7 +2294,7 @@ export function Main({
   const switchFromProfiles = (name: string, keepSettings?: boolean) =>
     new Promise<boolean>((done) =>
       guard(
-        () => void switchProfileNow(name, keepSettings).then(() => done(hermes.profile === name), () => done(hermes.profile === name)),
+        () => void switchProfileNow(name, { keepSettings }).then(() => done(hermes.profile === name), () => done(hermes.profile === name)),
         "profile",
         () => done(false),
       ),
@@ -2418,34 +2432,58 @@ export function Main({
     beforeBotChat.current = null;
   }, [profile]);
   const onBotChat = !!shownChat && isBotChat(shownChat);
-  const openBot = (b: Bot, then: "open" | "new") => {
+  /** `visiting`: what becomes of a bot visit (ADR 0203); none ends it, here or with the switch to the bot's profile. */
+  const openBot = (b: Bot, then: "open" | "new", visiting?: BotVisit) => {
     guard(() => {
       if (then === "open" && b.profile === profile && !onBotChat) beforeBotChat.current = active.chatId;
-      if (b.profile !== profile) void switchProfileNow(b.profile);
+      if (b.profile !== profile) void switchProfileNow(b.profile, { visit: visiting });
+      else setVisit(visiting);
       // Anything the owner opens or switches to after this, before the Bot Chat opens, wins over it (`navGen`).
-      setBotGo({ bot: b, then, nav: navGen.current });
+      setArrival(then === "open" ? { open: "bot", bot: b, profile: b.profile, nav: navGen.current } : { open: "new", profile: b.profile, nav: navGen.current });
     }, b.profile !== profile ? "profile" : "leave");
   };
   useEffect(() => {
-    const go = botGo;
+    const go = arrival;
     if (!go) return;
-    if (navGen.current !== go.nav) return setBotGo(undefined);
-    if (go.opening || go.bot.profile !== profile || switching || !hermes.hasListed()) return;
-    if (go.then === "new") {
-      setBotGo(undefined);
-      newChat();
+    if (navGen.current !== go.nav) return setArrival(undefined);
+    if ((go.open === "bot" && go.opening) || go.profile !== profile || switching || !hermes.hasListed()) return;
+    if (go.open !== "bot") {
+      setArrival(undefined);
+      if (go.open === "new") newChat();
+      // The chat a bot visit left, while the list still has it; otherwise the New chat pane the switch showed.
+      else if (chats.some((c) => c.id === go.chatId)) openChat(go.chatId);
       return;
     }
     const opening = { ...go, opening: true };
-    setBotGo(opening);
-    const still = () => navGen.current === go.nav && hermes.profile === go.bot.profile;
+    setArrival(opening);
+    const still = () => navGen.current === go.nav && hermes.profile === go.profile;
     hermes
       .openBotChat(go.bot)
       .then((id) => still() && openChat(id, { remember: false }))
       .catch((e: unknown) => still() && setToast({ text: (e as Error).message, at: Date.now() }))
-      .finally(() => setBotGo((g) => (g === opening ? undefined : g)));
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- run when the bot pick, profile or list changes; `newChat` and `openChat` are new functions each render and would run it on every render
-  }, [botGo, profile, switching, chats]);
+      .finally(() => setArrival((g) => (g === opening ? undefined : g)));
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- run when the pick, profile or list changes; `newChat` and `openChat` are new functions each render and would run it on every render
+  }, [arrival, profile, switching, chats]);
+
+  // A bot visit (ADR 0203). A bot row in Bots mode whose profile isn't shown starts one, or carries one on, and the
+  // owner's own bot ends it there. Chats and New chat go back to `home`; an ordinary chat of the bot's profile on screen
+  // makes that profile the owner's, and so does All N chats. The next launch opens on `home` while a visit lasts.
+  const visitBot = (b: Bot) =>
+    openBot(b, "open", b.profile === profile ? visit : b.profile === visit?.home ? undefined : (visit ?? { home: profile, before: active.chatId }));
+  const goHome = (v: BotVisit, to: "chats" | "new") =>
+    guard(() => {
+      if (to === "chats") setChatListMode("chats");
+      void switchProfileNow(v.home);
+      const nav = navGen.current;
+      setArrival(to === "chats" && v.before ? { open: "chat", chatId: v.before, profile: v.home, nav } : { open: "new", profile: v.home, nav });
+    }, "profile");
+  /** The owner's New chat (its buttons, Ctrl+N and the tray). */
+  const startNewChat = () => (visit ? goHome(visit, "new") : newChat());
+  const pickMode = (mode: ChatListMode) => (mode === "chats" && visit ? goHome(visit, "chats") : setChatListMode(mode));
+  useEffect(() => {
+    if (visit && shownChat && !isBotChat(shownChat)) setVisit(undefined);
+  }, [visit, shownChat]);
+  useEffect(() => hermes.setVisitHome(visit?.home), [hermes, visit?.home]);
 
   // The Approval card or message an entry is about is scrolled to and focused once its chat shows it. Focus goes to
   // the card itself, never to one of its answers. An Approval in a chat this connection hadn't resumed shows once it
@@ -2673,7 +2711,7 @@ export function Main({
   // never what they say; signing out clears it.
   const trayCovered = () => covered || !!document.querySelector('[aria-modal="true"]');
   const trayNewChat = useRef(() => {});
-  trayNewChat.current = () => trayCovered() || newChat();
+  trayNewChat.current = () => trayCovered() || startNewChat();
   const trayInbox = useRef(() => {});
   trayInbox.current = () => {
     if (trayCovered()) return;
@@ -2964,7 +3002,7 @@ export function Main({
           return;
         case "newChat":
           e.preventDefault();
-          newChat();
+          startNewChat();
           return;
         case "nextTab":
         case "prevTab":
@@ -2985,7 +3023,7 @@ export function Main({
         case "botChat":
           if (!onChat || !shownBot) return;
           e.preventDefault();
-          if (!onBotChat) openBot(shownBot, "open");
+          if (!onBotChat) openBot(shownBot, "open", visit);
           else {
             const back = beforeBotChat.current;
             beforeBotChat.current = null;
@@ -2997,7 +3035,7 @@ export function Main({
           if (!hasBotMode) return;
           e.preventDefault();
           setListOpen(true);
-          setChatListMode(chatListMode === "bots" ? "chats" : "bots");
+          pickMode(chatListMode === "bots" ? "chats" : "bots");
           return;
         case "settings":
           e.preventDefault();
@@ -3277,6 +3315,7 @@ export function Main({
           shown.set(prefScope(connection, to), shown.get(fromPref) ?? null);
           shown.delete(fromPref);
         }
+        setVisit((v) => (v?.home === from ? { ...v, home: to } : v));
         try {
           await renameProfileLocally(connection, from, to, profileStores());
         } finally {
@@ -3287,6 +3326,8 @@ export function Main({
         }
       },
       deleted: async (name) => {
+        // A bot visit can't go back to a profile that is gone: the bot's profile is the owner's now.
+        setVisit((v) => (v?.home === name ? undefined : v));
         try {
           await forgetProfileLocally(connection, name, profileStores());
         } finally {
@@ -3338,7 +3379,7 @@ export function Main({
         closedReason={closedReason}
         onReconnect={() => void hermes.reconnect()}
         onToggleList={() => setListOpen((o) => !o)}
-        onNew={() => newChat()}
+        onNew={startNewChat}
         onSearch={() => openSearch()}
         onOffice={
           agentOffice === "off"
@@ -3443,11 +3484,15 @@ export function Main({
             hasBotMode
               ? {
                   value: chatListMode,
-                  onChange: setChatListMode,
+                  onChange: pickMode,
                   ...waitingInBots,
                   pictures: botPictures,
                   leaving: leavingNote(profile, chats, words.profiles.leaving),
                   onOpenBot: (b) => openBot(b, "open"),
+                  onAllChats: () => {
+                    setVisit(undefined);
+                    setChatListMode("chats");
+                  },
                 }
               : undefined
           }
@@ -3468,7 +3513,7 @@ export function Main({
                   profile={profile}
                   current={!covering && shownChat && isBotChat(shownChat) ? profile : undefined}
                   leaving={leavingNote(profile, chats, words.profiles.leaving)}
-                  onOpen={(b) => openBot(b, "open")}
+                  onOpen={visitBot}
                   onNewChat={(b) => openBot(b, "new")}
                   onMenu={botActions.onMenu}
                   under={under}
@@ -3569,7 +3614,7 @@ export function Main({
           onSwitchProfile={switchProfile}
           onRetrySwitch={() => void (status === "connected" ? hermes.sync() : hermes.reconnect())}
           profileClone={hermes.profileClone}
-          onNew={() => newChat()}
+          onNew={startNewChat}
           onSearch={() => openSearch()}
           onHide={() => setListOpen(false)}
           resize={{

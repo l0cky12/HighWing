@@ -1025,6 +1025,8 @@ export type ListModes = {
   pictures: Readonly<Record<string, string>>;
   leaving?: string;
   onOpenBot: (bot: Bot) => void;
+  /** All N chats under the shown bot: Chats, on the bot's profile. */
+  onAllChats: () => void;
 };
 
 export type ShownBot = { bot: Bot; look: BotLookShown };
@@ -1524,7 +1526,7 @@ export function ChatList({
                 selectedId={selectedId}
                 alsoShownId={alsoShownId}
                 onOpen={onOpen}
-                onAll={() => mode?.onChange("chats")}
+                onAll={() => mode?.onAllChats()}
               />
             ),
           )}

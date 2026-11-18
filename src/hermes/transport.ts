@@ -796,6 +796,8 @@ export class Hermes {
   private botChats = new BotChats((method, params) => this.request(method, params), APP_SOURCE);
   /** The Bot Chats the latest roster named, by profile: registry rows and lineage tips, which search leaves out. */
   private botChatIds = new Map<string, Set<string>>();
+  /** See `setVisitHome`. */
+  private visitHome?: string;
   /** The roster read for the Bot Chats' ids on a connection (`knownBotChats`). */
   private botChatsRead?: { gen: number; done: Promise<void> };
   /** This connection's picture asks, by profile: each a token the next ask replaces, so only the latest one lands. */
@@ -4450,6 +4452,16 @@ export class Hermes {
     return this.listedAt !== undefined;
   }
 
+  /**
+   * The owner's own profile while a bot visit (ADR 0203) shows another one, or none: the next launch opens on `home`,
+   * not on the profile shown. With none, the profile shown is the one remembered again, once it has listed.
+   */
+  setVisitHome(home: string | undefined): void {
+    this.visitHome = home;
+    if (home) this.cache.rememberProfile(home);
+    else if (this.hasListed()) this.cache.rememberProfile(this.profile);
+  }
+
   /** The storage the chat lists and Saved copies kept on this computer take, in bytes. */
   cacheBytes(): number {
     return this.cache.bytes();
@@ -5570,7 +5582,7 @@ export class Hermes {
     this.track(this.knownBotChats());
     for (const chatId of readOnScreen) this.seen(chatId);
     this.saveList(profile, chats);
-    if (switched) this.cache.rememberProfile(profile);
+    if (switched) this.cache.rememberProfile(this.visitHome ?? profile);
     const busy = this.busyIn.get(profile);
     this.busyIn.delete(profile);
     for (const id of busy ?? []) this.resumeOnReconnect.add(id);

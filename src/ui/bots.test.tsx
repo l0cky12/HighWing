@@ -57,13 +57,14 @@ async function launch(setup: (server: FakeHermes) => void = () => {}) {
   server.liveSessions = [{ id: "rt-s", session_key: "scribe-bot", status: "working", last_active: nowS() - 5 }];
   setup(server);
   servers.push(server);
-  const hermes = await connect(server.openPipe, undefined, memoryCache());
+  const cache = memoryCache();
+  const hermes = await connect(server.openPipe, undefined, cache);
   running.push(hermes);
   render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: `lena@hermes-${++launches}`, url: "", username: "lena" }} onSignOut={async () => {}} />);
   await waitFor(() => expect(hermes.hasListed()).toBe(true));
   await act(async () => void (await hermes.idle()));
   await act(async () => void (await hermes.checkOtherProfiles()));
-  return { server, hermes, user: userEvent.setup() };
+  return { server, hermes, cache, user: userEvent.setup() };
 }
 
 /** Bots mode's part of the chat list panel: New bot and Reload, then the bots' rows. */
@@ -1168,20 +1169,22 @@ describe("The chat list panel's two modes", () => {
     expect(current()).toEqual([null, null]);
   });
 
-  it("stays in Bots mode on New chat, with no bot current", async () => {
-    const { user } = await launch();
+  it("stays in Bots mode on New chat, back on the owner's own profile, with no bot current", async () => {
+    const { hermes, user } = await launch();
     await openScribe(user);
     await user.click(within(panel()).getByRole("button", { name: "New chat" }));
-    await waitFor(() => expect(screen.getByText("What should Scribe work on?")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("What should Hermes work on?")).toBeTruthy());
+    expect(hermes.profile).toBe("default");
     expect(shownMode()).toBe("Bots");
     expect(current()).toEqual([null, null]);
   });
 
-  it("stays in Bots mode on Ctrl+N", async () => {
-    const { user } = await launch();
+  it("stays in Bots mode on Ctrl+N, back on the owner's own profile", async () => {
+    const { hermes, user } = await launch();
     await openScribe(user);
     await user.keyboard("{Control>}n{/Control}");
-    await waitFor(() => expect(screen.getByText("What should Scribe work on?")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("What should Hermes work on?")).toBeTruthy());
+    expect(hermes.profile).toBe("default");
     expect(shownMode()).toBe("Bots");
     expect(names()).toEqual(["Hermes", "Scribe"]);
   });
@@ -1404,6 +1407,117 @@ describe("The chat list panel's two modes", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("A bot visit", () => {
+  const title = () => document.querySelector<HTMLElement>(".chat-head .chat-title")?.textContent ?? "";
+  const switcher = () => document.querySelector<HTMLElement>(".sidebar .sb-profile .profile-btn .profile-name")?.textContent;
+  const rowOf = (name: string) => botRows().find((r) => r.querySelector(".bots-name")?.textContent === name)!;
+  const withOps = (s: FakeHermes) => {
+    s.otherProfiles.ops = [row("ops-bot", 0.01, { title: BOT_CHAT_TITLE, hidden: true })];
+    s.transcripts = { ...s.transcripts, "ops-bot": [{ role: "assistant", text: "Deploy is green." }] };
+    s.profileMeta.ops = { ui_meta: { "hermes-bots": { title: "Ops" } } };
+    s.liveSessions = [];
+  };
+
+  /** On `default` with Disk usage open, Scribe opened from Bots mode. */
+  async function visitScribe(setup?: (s: FakeHermes) => void, count = 2) {
+    const env = await launch(setup);
+    await env.user.click(screen.getByText("Disk usage"));
+    await waitFor(() => expect(title()).toMatch(/^Disk usage/));
+    await showBots(env.user, count);
+    await env.user.click(rowOf("Scribe"));
+    await waitFor(() => expect(title()).toBe("SScribeBot Chat"));
+    expect(env.hermes.profile).toBe("scribe");
+    return env;
+  }
+
+  it("goes back to the owner's profile and the chat they were in when Chats is picked", async () => {
+    const { hermes, user } = await visitScribe();
+    await user.click(modeTab("Chats"));
+    await waitFor(() => expect(hermes.profile).toBe("default"));
+    await waitFor(() => expect(title()).toMatch(/^Disk usage/));
+    expect(switcher()).toBe("Hermes");
+    expect(listTitles()).toEqual(["Disk usage"]);
+  });
+
+  it("goes back on Ctrl+Shift+B too", async () => {
+    const { hermes, user } = await visitScribe();
+    await user.click(screen.getByPlaceholderText(/Message/));
+    await user.keyboard("{Control>}{Shift>}b{/Shift}{/Control}");
+    await waitFor(() => expect(hermes.profile).toBe("default"));
+    await waitFor(() => expect(title()).toMatch(/^Disk usage/));
+    expect(modeTab("Chats").getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("keeps the owner's profile through a second bot", async () => {
+    const { hermes, user } = await visitScribe(withOps, 3);
+    await user.click(rowOf("Ops"));
+    await waitFor(() => expect(title()).toBe("OOpsBot Chat"));
+    expect(hermes.profile).toBe("ops");
+    await user.click(modeTab("Chats"));
+    await waitFor(() => expect(hermes.profile).toBe("default"));
+    await waitFor(() => expect(title()).toMatch(/^Disk usage/));
+  });
+
+  it("ends on the owner's own bot, which stays open on Chats", async () => {
+    const { hermes, user } = await visitScribe((s) => (s.liveSessions = []));
+    await user.click(rowOf("Hermes"));
+    await waitFor(() => expect(title()).toBe("HHermesBot Chat"));
+    expect(hermes.profile).toBe("default");
+    await user.click(modeTab("Chats"));
+    await act(async () => void (await hermes.idle()));
+    expect(title()).toBe("HHermesBot Chat");
+    expect(switcher()).toBe("Hermes");
+  });
+
+  it("makes the bot's profile the owner's once an ordinary chat of it is open", async () => {
+    const { hermes, user } = await visitScribe();
+    await user.click(within(bots()).getByRole("button", { name: /Changelog wording/ }));
+    await waitFor(() => expect(title()).toMatch(/^Changelog wording/));
+    await user.click(modeTab("Chats"));
+    await act(async () => void (await hermes.idle()));
+    expect(hermes.profile).toBe("scribe");
+    expect(switcher()).toBe("Scribe");
+    expect(title()).toMatch(/^Changelog wording/);
+  });
+
+  it("makes the bot's profile the owner's from All N chats", async () => {
+    const { hermes, user } = await visitScribe();
+    await user.click(within(bots()).getByRole("button", { name: "All 1 chat" }));
+    expect(modeTab("Chats").getAttribute("aria-selected")).toBe("true");
+    await act(async () => void (await hermes.idle()));
+    expect(hermes.profile).toBe("scribe");
+    expect(switcher()).toBe("Scribe");
+  });
+
+  it("makes another bot's profile the owner's from its pen", async () => {
+    const { hermes, user } = await visitScribe(withOps, 3);
+    await user.click(within(bots()).getByRole("button", { name: "New chat with Ops" }));
+    await waitFor(() => expect(hermes.profile).toBe("ops"));
+    await user.click(modeTab("Chats"));
+    await act(async () => void (await hermes.idle()));
+    expect(hermes.profile).toBe("ops");
+    expect(switcher()).toBe("Ops");
+  });
+
+  /** What the next launch opens on: `connect` with the same saved data, to a server that has every profile. */
+  async function nextLaunch(cache: ReturnType<typeof memoryCache>) {
+    const server = new FakeHermes();
+    server.otherProfiles = { scribe: [] };
+    const again = await connect(server.openPipe, undefined, cache);
+    running.push(again);
+    return again.profile;
+  }
+
+  it("leaves the next launch on the owner's profile, until the bot's profile is theirs", async () => {
+    const { hermes, cache, user } = await visitScribe();
+    await act(async () => void (await hermes.idle()));
+    expect(await nextLaunch(cache)).toBe("default");
+    await user.click(within(bots()).getByRole("button", { name: /Changelog wording/ }));
+    await waitFor(() => expect(title()).toMatch(/^Changelog wording/));
+    expect(await nextLaunch(cache)).toBe("scribe");
   });
 });
 

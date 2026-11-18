@@ -418,7 +418,7 @@ chmod +x hermes-chat_<version>_amd64.AppImage
 ./hermes-chat_<version>_amd64.AppImage
 ```
 
-It is built on Ubuntu 24.04, so it needs a system at least that new, on x86_64. It needs FUSE with a `fusermount` command (the `fuse3` package on Debian and Ubuntu, `fuse2` on Arch). Without FUSE, run it with `--appimage-extract-and-run`. The `.sha256` file beside it holds its checksum (`sha256sum -c`). It registers no launcher or [chat links](#chat-links-and-the-desktop). The app doesn't update it, and Settings says so: to update, download a newer AppImage. Pushing a `v<version>` tag builds the AppImage, checks that it opens a window under a virtual display, and attaches it to that release (ADR 0213).
+It is built on Ubuntu 24.04, so it needs a system at least that new, on x86_64. It needs FUSE with a `fusermount` command (the `fuse3` package on Debian and Ubuntu, `fuse2` on Arch). Without FUSE, run it with `--appimage-extract-and-run`. The `.sha256` file beside it holds its checksum (`sha256sum -c`). It registers no launcher or [chat links](#chat-links-and-the-desktop). The app doesn't update it, and Settings says so: to update, download a newer AppImage. Pushing a `v<version>` tag builds the AppImage, checks that it opens a window under a virtual display, and attaches it to that release (ADR 0221).
 
 ## Install on Windows
 

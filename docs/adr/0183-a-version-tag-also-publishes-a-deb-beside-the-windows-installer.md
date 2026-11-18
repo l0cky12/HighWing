@@ -1,6 +1,6 @@
 # A version tag also publishes a .deb beside the Windows installer
 
-> **Partly superseded by [ADR 0213](0213-a-version-tag-also-publishes-a-plain-appimage.md).** The AppImage no longer waits on the update key: a tag also publishes a plain one, and `scripts/release/attach-release.sh` takes a fourth folder for it. The rest of this ADR stands.
+> **Partly superseded by [ADR 0221](0221-a-version-tag-also-publishes-a-plain-appimage.md).** The AppImage no longer waits on the update key: a tag also publishes a plain one, and `scripts/release/attach-release.sh` takes a fourth folder for it. The rest of this ADR stands.
 
 > **Accepted.** The build is the `deb` job in `.github/workflows/installers.yml`, the publish step `scripts/release/attach-release.sh` (tested by `attach-release.test.sh`), the package's settings `bundle.linux.deb` in `src-tauri/tauri.conf.json`, and the Settings text for a .deb install in `src/hermes/updates.ts`. It partly supersedes ADR 0080, whose workflow and script names no longer hold.
 

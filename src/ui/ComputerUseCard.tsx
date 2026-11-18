@@ -146,7 +146,7 @@ function Line({
       </button>
       {details}
       {asks.map((ask) => (
-        <ApprovalCard key={ask.id} item={ask} offline={offline} movedAt={movedAt} heading={l.ask(ask.command.replace(/^computer_use: /, "").replace(/\s*\[FOREGROUND\b[^\]]*\]$/, ""))} onAnswer={(c, confirmed) => onAnswer(ask.id, c, confirmed)} />
+        <ApprovalCard key={ask.id} item={ask} offline={offline} movedAt={movedAt} app={step.action.app} onAnswer={(c, confirmed) => onAnswer(ask.id, c, confirmed)} />
       ))}
     </li>
   );

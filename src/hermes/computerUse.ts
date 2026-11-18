@@ -2,6 +2,7 @@
 // dealt with before anything here reads an item: stored history's `tool_call` wrapper is unwrapped in transport.ts, and
 // a result is trimmed by `keptResult` before the chat keeps it. So every function here reads tool items alone, live or
 // saved, and a run is never stored: `foldRuns` derives it on each render.
+import type { Catalogue } from "../i18n/locale";
 import { agentSend } from "./agentMessages";
 import { beginsTurn, isWaiting, turnStart, type ApprovalItem, type Chat, type Item } from "./model";
 import { isObj } from "./values";
@@ -178,8 +179,8 @@ export function stepOf(tool: ToolItem, n: number): CuStep | undefined {
   };
 }
 
-/** An Approval Hermes asked for a computer_use action: its command starts with the tool's name. */
-const isCuAsk = (i: Item): i is ApprovalItem => i.kind === "approval" && i.command.startsWith(`${COMPUTER_USE}: `);
+/** An Approval Hermes asked for a computer_use action: `approvalItem` parsed a cua pattern key off it. */
+const isCuAsk = (i: Item): i is ApprovalItem & { cua: CuAsk } => i.kind === "approval" && i.cua !== undefined;
 
 /** What may sit between two calls of one run without ending it. */
 const absorbed = (i: Item) => i.kind === "thinking" || isCuAsk(i) || (i.kind === "tool" && !agentSend(i));
@@ -255,4 +256,36 @@ export function screenUse(chat: Pick<Chat, "items" | "running">): ScreenUse | un
     ...(calls[0].at !== undefined && { since: calls[0].at }),
     ...(end.kind === "refused" && { refused: end.why }),
   };
+}
+
+/**
+ * A cua Approval's details, parsed from the request at the boundary (`approvalItem`). `verb` and `scope` come from
+ * `pattern_key` (`cua:<verb>:<background|foreground>`), the one field Hermes grants by, so a grant covers one verb in
+ * one delivery mode and the other mode still asks. `bring_to_front` is a verb of its own: Hermes asks for it as a second
+ * scope when a call keeps the window raised. `target`: the command with its `computer_use: ` prefix and `[FOREGROUND —
+ * …]` note taken off ("click at (619, 777)", "type 'echo …'").
+ */
+export type CuAsk = { verb: string; scope: Delivery; target: string; patternKey: string };
+
+const PATTERN = /^cua:([a-z_]+):(background|foreground)$/;
+const FOREGROUND_NOTE = /\s*\[FOREGROUND\b[^\]]*\]\s*$/;
+
+/** The cua details of an `approval` request's params, or undefined when its pattern key isn't a cua one. */
+export function askOf(params: Record<string, unknown>): CuAsk | undefined {
+  const patternKey = text(params.pattern_key);
+  const key = PATTERN.exec(patternKey);
+  if (!key) return undefined;
+  const target = text(params.command).replace(`${COMPUTER_USE}: `, "").replace(FOREGROUND_NOTE, "").trim();
+  return { verb: key[1], scope: key[2] as Delivery, target, patternKey };
+}
+
+/** The other way an input is delivered: what a grant for `scope` leaves asking. */
+export const otherScope = (scope: Delivery): Delivery => (scope === "background" ? "foreground" : "background");
+
+type AskWords = Catalogue["chat"]["computerUse"]["ask"];
+
+/** What a grant of `ask` covers, in the owner's words: "background clicks", "foreground key presses". */
+export function grantWords(ask: CuAsk, l: AskWords): string {
+  const noun: string | undefined = Object.hasOwn(l.noun, ask.verb) ? l.noun[ask.verb as keyof typeof l.noun] : undefined;
+  return l.covers(ask.scope, noun ?? l.otherNoun(ask.verb.replaceAll("_", " ")));
 }

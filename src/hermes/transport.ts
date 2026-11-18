@@ -102,7 +102,7 @@ import { hostFileView, readServerFile, type FileView } from "./preview";
 import type { PathKind, ServerPath } from "./paths";
 import { parseDoctor, type CliResult, type DisplayLease, type DisplayStatus, type ScreenApi } from "./screen";
 import { ScreenControl, type ScreenState } from "./screenControl";
-import { COMPUTER_USE } from "./computerUse";
+import { askOf, COMPUTER_USE } from "./computerUse";
 import { checkCommand, dockFile, foundPrograms, shellQuote } from "./screenApps";
 import { readScreenClipboard } from "./screenClipboard";
 import { agentFsEditIo } from "./artifacts";
@@ -6600,6 +6600,7 @@ function questionSummary(q: QuestionItem): string {
 function approvalItem(r: ServerRequest): ApprovalItem {
   const p = r.params;
   const offered = Array.isArray(p.choices) ? p.choices : [];
+  const cua = askOf(p);
   return {
     kind: "approval",
     id: r.id,
@@ -6610,6 +6611,7 @@ function approvalItem(r: ServerRequest): ApprovalItem {
     // A grant Hermes doesn't say it allows is ruled out.
     allowSession: p.allow_session === true,
     allowPermanent: p.allow_permanent === true,
+    ...(cua && { cua }),
   };
 }
 

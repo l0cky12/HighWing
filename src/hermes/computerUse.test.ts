@@ -1,8 +1,11 @@
 // Hermes's computer_use as the transcript reads it (computerUse.ts, ADR 0216), against frames recorded from a real
 // Hermes (src/hermes/fixtures/computer-use, ADR 0213).
 import { describe, expect, it } from "vitest";
-import { KEPT_CAPTURE_CHARS, foldRuns, keptResult, screenUse, stepOf, type CuRun } from "./computerUse";
+import { en } from "../i18n/en";
+import { es } from "../i18n/es";
+import { KEPT_CAPTURE_CHARS, askOf, foldRuns, grantWords, keptResult, screenUse, stepOf, type CuRun } from "./computerUse";
 import { cuEvents, cuFixture, type CuFixture } from "./cuFixtures";
+import { CU, cuApproval } from "./fakeComputerUse";
 import { FakeHermes, row } from "./fakeHermes";
 import type { Item } from "./model";
 import { toolResultText } from "./toolResult";
@@ -269,5 +272,50 @@ describe("The last turn's use of the screen", () => {
     const refused: Item = { kind: "tool", id: "c1", name: "computer_use", args: { action: "scroll" }, status: "done", result: JSON.stringify({ ok: false, code: "human_has_control", error: "A human has taken over" }) };
     const after: Item = { kind: "tool", id: "c2", name: "computer_use", args: { action: "capture" }, status: "done", result: JSON.stringify({ ok: true }) };
     expect(screenUse({ items: [refused, after] })?.refused).toBeUndefined();
+  });
+});
+
+describe("What a cua Approval asks", () => {
+  const asked = (name: Parameters<typeof cuEvents>[0] | "10-turn-approve") =>
+    cuFixture(name).flatMap(({ dir, frame }) => (dir === "in" && frame.method === "approval" ? [frame.params as Record<string, unknown>] : []));
+  const read = (params: Record<string, unknown>) => {
+    const ask = askOf(params);
+    return ask && [ask.verb, ask.scope, ask.target];
+  };
+
+  it("reads a background click from its pattern key and command", () => {
+    expect(askOf(asked("10-turn-approve")[0])).toEqual({ verb: "click", scope: "background", target: "click at (619, 777)", patternKey: "cua:click:background" });
+  });
+
+  it("reads each foreground action with Hermes's note on the window taken off", () => {
+    expect(asked("11-turn-foreground").map(read)).toEqual([
+      ["click", "foreground", "click at (618, 777)"],
+      ["type", "foreground", "type 'echo highwing-capture'"],
+      ["key", "foreground", "key 'return'"],
+    ]);
+    expect(asked("12-turn-deny").map(read)).toEqual([["double_click", "foreground", "double_click at (640, 400)"]]);
+  });
+
+  it("reads a scroll and a bring_to_front scope as their own verbs", () => {
+    expect(read(cuApproval(CU.scroll("down", 3, "foreground").args)!.params)).toEqual(["scroll", "foreground", "scroll down x3"]);
+    expect(read({ pattern_key: "cua:bring_to_front:foreground", command: "computer_use: click at (1, 2) [FOREGROUND — briefly raises the window / changes focus]" })).toEqual([
+      "bring_to_front",
+      "foreground",
+      "click at (1, 2)",
+    ]);
+  });
+
+  it("takes any other request for a plain Approval, whatever its command says", () => {
+    expect(askOf({ command: "computer_use: click at (1, 2)" })).toBeUndefined();
+    expect(askOf({ pattern_key: "rm -rf", command: "computer_use: click at (1, 2)" })).toBeUndefined();
+    expect(askOf({ pattern_key: "cua:click:sideways", command: "computer_use: click" })).toBeUndefined();
+  });
+
+  it("says what a grant covers, scope first in English and last in Spanish", () => {
+    const click = askOf(asked("10-turn-approve")[0])!;
+    expect(grantWords(click, en.chat.computerUse.ask)).toBe("background clicks");
+    expect(grantWords({ ...click, verb: "key", scope: "foreground" }, en.chat.computerUse.ask)).toBe("foreground key presses");
+    expect(grantWords({ ...click, verb: "mystery_move" }, en.chat.computerUse.ask)).toBe("background mystery move actions");
+    expect(grantWords(click, { ...en.chat.computerUse.ask, ...es.chat?.computerUse?.ask })).toBe("clics en segundo plano");
   });
 });

@@ -646,7 +646,12 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
 .approval-lines { color: var(--muted); font-size: calc(12rem / 14); margin: -4px 0 8px; }
 .approval.answered .approval-cmd { margin: 6px 0 2px; color: var(--muted); }
 .approval-desc { color: var(--muted); font-size: calc(13rem / 14); }
-.approval-actions { display: flex; gap: 8px; margin-top: 12px; }
+.approval-cu { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; margin: 8px 0 2px; }
+.approval-cu .approval-desc { flex-basis: 100%; }
+.approval-target { font-family: var(--mono); font-size: calc(12.3rem / 14); color: var(--muted); overflow-wrap: anywhere; }
+.cu-scope { font-size: calc(12rem / 14); color: var(--muted); border: 1px solid var(--line-2); border-radius: 5px; padding: 0 5px; }
+.cu-scope.foreground { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+.approval-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .approval-confirm { margin-top: 12px; }
 .approval-confirm .approval-desc { color: var(--text); }
 /* Clarify, Sudo password and Secret cards (QuestionCard.tsx) */

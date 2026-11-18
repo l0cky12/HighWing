@@ -224,9 +224,49 @@ async function live(): Promise<Chat> {
   return chat();
 }
 
+/** A reply that made one computer_use call, as `at` the server's events: between two calls, or after a dropped connection. */
+async function midTurn(at: "between calls" | "dropped"): Promise<Chat> {
+  const server = new FakeHermes();
+  const hermes = await connect(server.openPipe);
+  running.push(hermes);
+  const id = await hermes.newChat();
+  await hermes.send(id, "Tidy the desktop");
+  const rid = server.runtimeIdOf(id)!;
+  const chat = () => hermes.getSnapshot().chats.find((c) => c.id === id)!;
+  const { args, result } = CU.capture();
+  server.event(rid, "message.start");
+  server.event(rid, "tool.start", { tool_id: "c1", name: "computer_use", args });
+  if (at === "between calls") server.event(rid, "tool.complete", { tool_id: "c1", name: "computer_use", args, duration_s: 0.7, result });
+  else server.drop();
+  await waitFor(() => expect(at === "dropped" ? !chat().running : chat().items.some((i) => i.kind === "tool" && i.status === "done")).toBe(true));
+  return chat();
+}
+
 describe("A run's counter and Stop", () => {
   afterEach(() => vi.useRealTimers());
   const title = () => cards()[0].querySelector(".returned-title")!.textContent;
+
+  it("keeps Stop and the counter going between two calls while the reply runs", async () => {
+    const chat = await midTurn("between calls");
+    const at = chat.items.find((i) => i.kind === "tool")!.at!;
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"], now: at + 5_000 });
+    pane(chat);
+    expect(title()).toBe("Computer use · step 1 · 0:05");
+    act(() => vi.advanceTimersByTime(1000));
+    expect(title()).toBe("Computer use · step 1 · 0:06");
+    expect(within(cards()[0]).getByRole("button", { name: "Stop" })).toBeTruthy();
+    expect(cards()[0].querySelector(".cu-state")!.textContent).toBe("working");
+  });
+
+  it("stops counting and offers no Stop once the reply isn't running, though its call never ended", async () => {
+    const chat = await midTurn("dropped");
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"], now: Date.now() + 5_000 });
+    pane(chat);
+    expect(title()).toBe("Computer use · 1 step");
+    act(() => vi.advanceTimersByTime(1000));
+    expect(title()).toBe("Computer use · 1 step");
+    expect(within(cards()[0]).queryByRole("button", { name: "Stop" })).toBeNull();
+  });
 
   it("counts the step under way and the time since the first, once a second, while the run is live", async () => {
     const chat = await live();

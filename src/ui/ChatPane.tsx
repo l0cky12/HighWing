@@ -619,8 +619,9 @@ export function ChatPane({
   const onStopRef = useRef(onStop);
   onStopRef.current = onStop;
   const stopping = !!chat.stopping;
+  const replying = !!chat.running;
   const lastRun = screenUse(chat)?.key;
-  const runStop = useMemo(() => ({ onStop: () => onStopRef.current(), stopping, lastRun }), [stopping, lastRun]);
+  const runStop = useMemo(() => ({ onStop: () => onStopRef.current(), stopping, running: replying, lastRun }), [stopping, replying, lastRun]);
   const onQuestionRef = useRef(onQuestion);
   onQuestionRef.current = onQuestion;
   const question = useCallback((itemId: string, a: QuestionAnswer) => onQuestionRef.current(itemId, a), []);

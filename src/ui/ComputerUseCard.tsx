@@ -23,10 +23,11 @@ export function ScreenDeskProvider({ value, children }: { value: ScreenDesk; chi
 }
 
 /**
- * The chat's own Stop, the composer's (ADR 0219), for the Stop on its live run. `lastRun`: the id of the chat's last
- * run, the one that offers Hand back once a Stop has taken the screen. ChatPane provides it.
+ * The chat's own Stop, the composer's (ADR 0219), for the Stop on its live run. `lastRun`: the id of the current turn's
+ * last run, the one that is live while the reply is `running`, and that offers Hand back once a Stop has taken the screen.
+ * ChatPane provides it.
  */
-export type RunStop = { onStop: () => void; stopping: boolean; lastRun?: string };
+export type RunStop = { onStop: () => void; stopping: boolean; running: boolean; lastRun?: string };
 
 const RunStopContext = createContext<RunStop | undefined>(undefined);
 
@@ -77,17 +78,19 @@ export function ComputerUseCard({
   const { screen, onWatch, onHandBack } = useContext(ScreenDeskContext);
   const stop = useContext(RunStopContext);
   const [open, setOpen] = useState(true);
-  const live = run.state === "acting" || run.state === "asking";
+  // Live while the reply runs, between two calls too; a call left running by a dropped connection isn't.
+  const live = !!stop?.running && run.id === stop.lastRun;
+  const state = live && run.state === "done" ? "acting" : run.state;
   const latest = [...run.lines].reverse().find((x) => x.kind === "step");
   const now = useNow(live);
   return (
-    <div className={`msg returned cu-run ${run.state}`} data-item={run.id} data-calls={callIds(run.items) || undefined} tabIndex={-1}>
+    <div className={`msg returned cu-run ${state}`} data-item={run.id} data-calls={callIds(run.items) || undefined} tabIndex={-1}>
       <button className="returned-head" aria-expanded={open} title={open ? l.hide : l.show} onClick={() => setOpen((o) => !o)}>
         {live ? <Spinner /> : <MonitorPlay size={14} aria-hidden />}
         <span className="returned-title">
           {l.title} · <span className="cu-counter">{counter(run, live, latest?.kind === "step" ? latest.step.n : run.steps, now, l)}</span>
         </span>
-        <span className={`cu-state ${run.state}`}>{l.state[run.state]}</span>
+        <span className={`cu-state ${state}`}>{l.state[state]}</span>
         <ChevronRight size={13} className={`chev ${open ? "open" : ""}`} aria-hidden />
       </button>
       <div className="cu-bar">

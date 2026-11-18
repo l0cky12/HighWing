@@ -17,12 +17,13 @@ TURN_KINDS = ("turn.settled", "turn.failed", "turn.cancelled", "turn.deferred")
 
 
 def read(db, text):
+    """The turns for the newest owner message with this exact text; with text None, for the newest owner message."""
     conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
         rows = conn.execute(
             "SELECT room_id, seq, event_id, payload_json FROM hosted_room_events WHERE kind='message.user' ORDER BY created_at DESC"
         ).fetchall()
-        owner = next((r for r in rows if json.loads(r[3]).get("text") == text), None)
+        owner = next((r for r in rows if text is None or json.loads(r[3]).get("text") == text), None)
         if owner is None:
             return None
         room, seq, discussion = owner[0], owner[1], owner[2]
@@ -37,6 +38,7 @@ def read(db, text):
     queued = [p for t, p in tasks if t.startswith(f"d{seq}.")]
     activity = [p.get("status") for k, p in mine if k == "room.activity"]
     return {
+        "text": json.loads(owner[3]).get("text"),
         "room": room,
         "owner_seq": seq,
         "discussion": discussion,
@@ -67,9 +69,11 @@ def main(argv):
         if found and found["settled"] or time.time() >= deadline:
             break
         time.sleep(0.5)
-    print(json.dumps(found, indent=1))
     if found is None:
-        sys.exit(f"room-turns: no owner message with text {text!r}")
+        latest = read(db, None)
+        print(json.dumps(latest, indent=1))
+        sys.exit(f"room-turns: FAIL: Hermes has no owner message with text {text!r}; the newest is shown above")
+    print(json.dumps(found, indent=1))
     if expect is None:
         return
     problems = [f"{k} {found[k]} != expected {expect}" for k in ("queued", "turn_outcomes", "replied") if found[k] != expect]

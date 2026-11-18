@@ -1,5 +1,5 @@
 // Hermes's computer_use as the transcript reads it (computerUse.ts, ADR 0216), against frames recorded from a real
-// Hermes (src/hermes/fixtures/computer-use, ADR 0213).
+// Hermes (src/hermes/fixtures/computer-use, ADR 0220).
 import { describe, expect, it } from "vitest";
 import { en } from "../i18n/en";
 import { es } from "../i18n/es";

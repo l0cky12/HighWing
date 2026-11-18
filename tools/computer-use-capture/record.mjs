@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Records every /api/ws frame of one real Hermes turn to JSONL ({t, dir: in|out|note, frame} per line), so the app's
-// computer-use parser is tested against what Hermes sends rather than what its docs say (ADR 0213). fixtures.mjs then
+// computer-use parser is tested against what Hermes sends rather than what its docs say (ADR 0220). fixtures.mjs then
 // cuts the recordings into src/hermes/fixtures/computer-use/. Keep recordings outside the repo: they hold full screenshots.
 //
 //   node tools/computer-use-capture/record.mjs --base http://<host>:<port> --user <name> --password-file <file> \

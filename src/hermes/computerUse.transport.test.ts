@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Every recorded computer_use turn (src/hermes/fixtures/computer-use, ADR 0213) through the real transport and the Saved
+// Every recorded computer_use turn (src/hermes/fixtures/computer-use, ADR 0220) through the real transport and the Saved
 // copy this computer keeps (chatCache.ts): no screenshot is ever kept, and a chat read back shows the same run.
 import { afterEach, describe, expect, it } from "vitest";
 import { localChatCache } from "./chatCache";

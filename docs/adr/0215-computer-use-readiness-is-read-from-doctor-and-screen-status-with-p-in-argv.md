@@ -1,6 +1,6 @@
 # Computer-use readiness is read from doctor and screen status with `-p` in argv
 
-> **Accepted.** Phase 1 of computer use (issue #43). Settings → Diagnostics has a Computer use section that says, for the profile shown, whether each prerequisite of Hermes's `computer_use` is met, and when it isn't, why and what to do. The recordings it was written against are in `src/hermes/fixtures/computer-use/` (ADR 0213).
+> **Accepted.** Phase 1 of computer use (issue #43). Settings → Diagnostics has a Computer use section that says, for the profile shown, whether each prerequisite of Hermes's `computer_use` is met, and when it isn't, why and what to do. The recordings it was written against are in `src/hermes/fixtures/computer-use/` (ADR 0220).
 
 Hermes's `computer_use` needs a switched-on toolset, a working cua-driver, the Bot Desktop's packages, enough memory, a screen placement Hermes allows, and a screen no person is holding. A missing one shows up as a failed step in a reply, with no hint of which. Hermes already answers each part: `computer-use doctor --json` for the driver, and `display.status` for the rest. The toolset is in the toolsets list the app reads for Settings → Toolsets (ADR 0021).
 

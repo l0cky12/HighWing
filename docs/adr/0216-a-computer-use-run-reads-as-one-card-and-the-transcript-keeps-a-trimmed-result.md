@@ -1,6 +1,6 @@
 # A computer-use run reads as one card, and the transcript keeps a trimmed result
 
-> **Accepted.** Phase 2 of computer use (issue #43). Amends [ADR 0061](0061-a-tool-results-inline-images-stay-out-of-the-chat.md): a `computer_use` result is trimmed before ADR 0061's data-URL swap runs. Built on the recordings of [ADR 0213](0213-computer-use-shapes-are-recorded-from-a-real-hermes-and-kept-as-fixtures.md).
+> **Accepted.** Phase 2 of computer use (issue #43). Amends [ADR 0061](0061-a-tool-results-inline-images-stay-out-of-the-chat.md): a `computer_use` result is trimmed before ADR 0061's data-URL swap runs. Built on the recordings of [ADR 0220](0220-computer-use-shapes-are-recorded-from-a-real-hermes-and-kept-as-fixtures.md).
 
 When Hermes drives its Bot Desktop, each `computer_use` call came into the chat as a generic tool row. A 20-step task was 20 rows named `computer_use`, each with a JSON blob behind it. The rows didn't say what the action was, whether it landed, or who held the screen. Reopened from Hermes, the chat showed rows named `tool_call`, because Hermes stores each call inside that wrapper. A capture's result kept its whole element list, up to about 40 KB a step, so a long run's Saved copy grew fast even with ADR 0061's screenshot swap.
 

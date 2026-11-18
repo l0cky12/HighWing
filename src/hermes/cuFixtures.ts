@@ -1,4 +1,4 @@
-// The computer_use frames recorded from a real Hermes (ADR 0213, docs/research/computer-use-payloads.md), for tests and
+// The computer_use frames recorded from a real Hermes (ADR 0220, docs/research/computer-use-payloads.md), for tests and
 // FakeHermes `replay`. Each line of a fixture is one WebSocket frame, with when it came and which way it went.
 import approve from "./fixtures/computer-use/10-turn-approve.jsonl?raw";
 import foreground from "./fixtures/computer-use/11-turn-foreground.jsonl?raw";

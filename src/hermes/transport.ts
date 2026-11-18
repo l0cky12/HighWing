@@ -100,7 +100,7 @@ import { providerKeys, readyProviders, SignInFailure, type ProviderSetup, type S
 import { restartHold } from "./unsaved";
 import { hostFileView, readServerFile, type FileView } from "./preview";
 import type { PathKind, ServerPath } from "./paths";
-import { parseDoctor, type CliResult, type DisplayLease, type DisplayStatus, type ScreenApi } from "./screen";
+import { parseDoctor, type CliResult, type DisplayLease, type ScreenApi } from "./screen";
 import { ScreenControl, type ScreenState } from "./screenControl";
 import { askOf, COMPUTER_USE } from "./computerUse";
 import { checkCommand, dockFile, foundPrograms, shellQuote } from "./screenApps";
@@ -926,8 +926,8 @@ export class Hermes {
    */
   readonly screen: ScreenApi = {
     status: () => this.control.status(),
-    start: async () => this.control.noteStatus((await this.request("display.start", { profile: this.profile })) as DisplayStatus),
-    stop: async () => this.control.noteStatus((await this.request("display.stop", { profile: this.profile })) as DisplayStatus),
+    start: () => this.control.report("display.start"),
+    stop: () => this.control.report("display.stop"),
     installBrowser: () => this.request("cli.exec", { argv: ["pm", "install", "chromium"], timeout: CLI_EXEC_TIMEOUT_S }) as Promise<CliResult>,
     doctor: async () =>
       parseDoctor((await this.request("cli.exec", { argv: ["-p", this.profile, "computer-use", "doctor", "--json"], timeout: CLI_EXEC_TIMEOUT_S })) as CliResult),

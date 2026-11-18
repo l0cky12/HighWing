@@ -21,7 +21,10 @@ const MAX_MESSAGES = 10;
 const MAX_CONTINUES = 5;
 const MAX_LOG_LIMIT = 500;
 const GATEWAY = "install:stand-in";
-const MENTION = /@([A-Za-z0-9][A-Za-z0-9._:-]*)/g;
+// Hermes's _MENTION_RE under re.IGNORECASE, which on a str pattern widens [A-Za-z] to İ ı ſ and the Kelvin sign; JS /i would not.
+const MENTION = /@([A-Za-z0-9\u0130\u0131\u017f\u212a][A-Za-z0-9._:\-\u0130\u0131\u017f\u212a]*)/g;
+// str.casefold() on that alphabet: toLowerCase, but the long s folds to s.
+const casefold = (s: string): string => s.toLowerCase().replaceAll("\u017f", "s");
 const NO_METHOD = -32601;
 const WORKER_DOWN = "Group Chat worker is unavailable. Restart the Hermes gateway and try again.";
 const DRIVER_DOWN = "hosted room driver is unavailable";
@@ -318,8 +321,8 @@ export class FakeGroups {
   }
 
   private mentioned(texts: readonly string[], members: readonly Member[], defaultAll: boolean): Member[] {
-    const named = new Set(texts.flatMap((t) => [...t.matchAll(MENTION)].map((m) => m[1].toLowerCase())));
-    const some = members.filter((m) => named.has(m.handle.toLowerCase()));
+    const named = new Set(texts.flatMap((t) => [...t.matchAll(MENTION)].map((m) => casefold(m[1]))));
+    const some = members.filter((m) => named.has(casefold(m.handle)));
     return named.has("all") || named.has("everyone") || (defaultAll && !some.length) ? [...members] : some;
   }
 

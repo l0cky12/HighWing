@@ -601,7 +601,7 @@ export const en = {
     },
   },
   /**
-   * Which model writes a persona or project instructions, and why it failed (writingModel.ts, ADR 0205). `model` is
+   * Which model writes a persona or project instructions, and why it failed (writingModel.ts, ADR 0209). `model` is
    * "provider · model".
    */
   writing: {
@@ -630,8 +630,6 @@ export const en = {
     mainNoProvider: (profile: string) => `${profile} has no model Hermes can write with. Pick a Writing model in Settings → Model.`,
     mainOther: (profile: string, model: string, detail: string) =>
       `${profile} writes with its own model, ${model}, and Hermes couldn't use it for writing: ${detail.replace(/\.$/, "")}. Pick a Writing model in Settings → Model.`,
-    openTextGeneration: "Open Text generation",
-    openWritingModel: "Open Writing model",
     /** Settings → Model → Writing model (WritingModelSettings.tsx). */
     settings: {
       title: "Writing model",

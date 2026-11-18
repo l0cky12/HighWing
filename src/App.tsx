@@ -23,7 +23,6 @@ import { PROJECTS_KEY, projectLinks, projectScope } from "./hermes/projectLinks"
 import { chatContext, contextLedger, knownWindow, type ChatContexts } from "./hermes/projectContextFiles";
 import { ProjectsStore, type Project } from "./hermes/projects";
 import { instructionsMessage, modelProblem, resolveNewChat, savedDefaults, type ProjectDefaults } from "./hermes/projectDefaults";
-import type { WritingFailed } from "./hermes/writingModel";
 import { systemSecrets } from "./hermes/tauriKeyring";
 import { appUpdates } from "./hermes/tauriUpdates";
 import { tauriSnapshots } from "./hermes/snapshots";
@@ -1331,7 +1330,6 @@ export function Main({
   useCloseGuard(memoryUnsaved || skillUnsaved || !!personaUnsaved || artifactUnsaved, (close) => guardRef.current(close, "close"));
   // A new object each time a row asks Settings to show the Text generation model; the rail's button opens it plainly.
   const [showTextGeneration, setShowTextGeneration] = useState<object>();
-  const [showWritingModel, setShowWritingModel] = useState<object>();
   /** Set to open Settings on its Memory tab, from the context inspector. */
   const [showMemory, setShowMemory] = useState<object>();
   /** Set, each time anew, to open Settings → Diagnostics, at the capability a screen's note named. */
@@ -1733,7 +1731,6 @@ export function Main({
     setJobsOpen(false);
     setUsageOpen(false); setWorkOpen(false);
     setShowTextGeneration(undefined);
-    setShowWritingModel(undefined);
     setShowMemory(undefined);
     setShowDiagnostics(undefined);
     setShowVoice(undefined);
@@ -1998,21 +1995,9 @@ export function Main({
     // One destination at a time: an earlier Memory shortcut mustn't switch Settings away from this one.
     setShowMemory(undefined);
     setShowDiagnostics(undefined);
-    setShowWritingModel(undefined);
     setShowTextGeneration({});
     setSettingsOpen(true);
   };
-  const openWritingModel = () => {
-    setProjectOpen(false);
-    setJobsOpen(false);
-    setUsageOpen(false); setWorkOpen(false);
-    setShowMemory(undefined);
-    setShowDiagnostics(undefined);
-    setShowTextGeneration(undefined);
-    setShowWritingModel({});
-    setSettingsOpen(true);
-  };
-  const openWritingFix = (fix: WritingFailed["fix"]) => (fix === "text-model" ? openTextGeneration() : openWritingModel());
   // Reveal the composer when Search, Settings, Projects, Server files or a narrow preview covers it, so the capture can
   // be reviewed.
   const takeScreenshot = (remote = false) => guard(() => {
@@ -3104,8 +3089,7 @@ export function Main({
                   setJobsOpen(false);
                   setUsageOpen(false); setWorkOpen(false);
                   setShowTextGeneration(undefined);
-                  setShowWritingModel(undefined);
-                  setShowDiagnostics(undefined);
+                                setShowDiagnostics(undefined);
                   setShowVoice(undefined);
                   setShowMemory({});
                   setSettingsOpen(true);
@@ -3634,7 +3618,7 @@ export function Main({
             localStt={localStt}
             transcribe={(audio, mime, side, signal) => localStt.transcribe({ audio, mime, profile: hermes.profile, connection: hermes.connectionId, side, signal })}
             showTextGeneration={showTextGeneration}
-            writing={{ desk: status === "connected" ? writing : undefined, scope: writingScope, show: showWritingModel }}
+            writing={{ desk: status === "connected" ? writing : undefined, scope: writingScope }}
             showMemory={showMemory}
             capabilities={hermes.capabilities}
             openGuide={openGuide}

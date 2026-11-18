@@ -1,4 +1,4 @@
-// Settings → Model → Writing model (ADR 0205): the model that writes personas and project instructions for every bot
+// Settings → Model → Writing model (ADR 0209): the model that writes personas and project instructions for every bot
 // with no model pinned on the server, kept on this computer for the connection, and which model each bot writes with.
 // Picking one writes nothing to Hermes; a bot's config gets its copy at that bot's next writing call (writingModel.ts).
 import { useEffect, useId, useState, useSyncExternalStore } from "react";
@@ -19,7 +19,6 @@ export function WritingModelSettings({
   scope,
   profiles,
   catalog,
-  show,
   reread,
 }: {
   /** Undefined while not connected: the saved pick still shows, and the bot list says it needs a connection. */
@@ -28,8 +27,6 @@ export function WritingModelSettings({
   scope: string;
   profiles: () => Promise<string[]>;
   catalog: () => Promise<CatalogProvider[]>;
-  /** Set anew to scroll here and focus the heading. */
-  show?: object;
   /** Changes after Settings → Model wrote to Hermes, so a pin set or cleared there shows in the bot list. */
   reread?: number;
 }) {
@@ -43,14 +40,6 @@ export function WritingModelSettings({
   const [bots, setBots] = useState<Bots>({ kind: "reading" });
 
   useEffect(() => setProvider(saved?.provider ?? ""), [saved?.provider]);
-
-  useEffect(() => {
-    const heading = show && document.getElementById(titleId);
-    if (!heading) return;
-    heading.tabIndex = -1;
-    heading.scrollIntoView({ block: "start" });
-    heading.focus({ preventScroll: true });
-  }, [show, titleId]);
 
   useEffect(() => {
     if (!desk) return;

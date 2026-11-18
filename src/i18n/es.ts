@@ -603,8 +603,6 @@ export const es: Catalogue = {
     mainNoProvider: (profile) => `${profile} no tiene ningún modelo con el que Hermes pueda escribir. Elige un modelo de escritura en Ajustes → Modelo.`,
     mainOther: (profile, model, detail) =>
       `${profile} escribe con su propio modelo, ${model}, y Hermes no pudo usarlo para escribir: ${detail.replace(/\.$/, "")}. Elige un modelo de escritura en Ajustes → Modelo.`,
-    openTextGeneration: "Abrir Generación de texto",
-    openWritingModel: "Abrir Modelo de escritura",
     settings: {
       title: "Modelo de escritura",
       intro:

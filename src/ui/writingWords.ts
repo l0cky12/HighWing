@@ -1,5 +1,5 @@
 // The words for which model writes a persona or project instructions, and why it failed, from the route it took
-// (writingModel.ts, ADR 0205).
+// (writingModel.ts, ADR 0209).
 import { shortName } from "../hermes/models";
 import { hermesCommand, missingSignIn } from "../hermes/transport";
 import type { WritingFailed, WritingRoute } from "../hermes/writingModel";
@@ -51,5 +51,3 @@ export function writingFailedText(w: Words, e: WritingFailed): string {
       return cause === "other" ? w.mainOther(profile, modelName(w, route), detail) : w.mainSignIn(profile, modelName(w, route));
   }
 }
-
-export const fixLabel = (w: Words, fix: WritingFailed["fix"]) => (fix === "text-model" ? w.openTextGeneration : w.openWritingModel);

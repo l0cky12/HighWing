@@ -177,7 +177,7 @@ function followsLine(route: WritingRoute): string {
 
 /**
  * The Project instructions model: what Write with AI and Improve with AI run on, pinned on the server (ADR 0177). Until
- * one is picked, writing goes on as for a persona (ADR 0205). Written as soon as it's picked, like Text generation's.
+ * one is picked, writing goes on as for a persona (ADR 0209). Written as soon as it's picked, like Text generation's.
  * Hermes has no slot for it, so it goes into the profile's config with `PUT /api/config`, where Hermes checks no price.
  */
 function InstructionsModel({
@@ -431,7 +431,7 @@ export function ModelSettings({
   connected: boolean;
   /** Set anew to bring the Text generation model into view once the setup is read. */
   showTextGeneration?: object;
-  /** Where this connection's Writing model is kept (ADR 0205). */
+  /** Where this connection's Writing model is kept (ADR 0209). */
   writingScope?: string;
   /** After any part is written to Hermes: a pin changed may change which model writes for a bot. */
   onWritten?: () => void;

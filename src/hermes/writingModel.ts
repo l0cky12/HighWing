@@ -1,4 +1,4 @@
-// Writing for a bot (ADR 0205): Write with AI on the profile form's Persona (New and Edit), and project
+// Writing for a bot (ADR 0209): Write with AI on the profile form's Persona (New and Edit), and project
 // instructions. One stateless `llm.oneshot` per call, which takes no model: Hermes runs `auxiliary.<task>` of the
 // profile's config. So which model writes is decided here, as which `task` to send and, for the app's Writing model,
 // one config key this app keeps in step. Precedence: a model pinned on the server for the bot, then the app's Writing
@@ -65,7 +65,7 @@ export type Written = { text: string; route: WritingRoute };
 
 /**
  * Why Hermes couldn't write. `sign-in`: it has no credentials for the route's provider. `no-provider`: it found no
- * provider to run the task on at all. Either only refines the words; the route decides the fix.
+ * provider to run the task on at all. Either only refines the words; the route decides what they say to change.
  */
 export type WritingCause = "sign-in" | "no-provider" | "other";
 
@@ -75,7 +75,7 @@ function causeOf(detail: string): WritingCause {
   return "other";
 }
 
-/** Hermes ran a writing call and it failed. Carries the route, so the words and the fix come from why this model was chosen. */
+/** Hermes ran a writing call and it failed. Carries the route, so the words come from why this model was chosen. */
 export class WritingFailed extends Error {
   constructor(
     readonly profile: string,
@@ -85,17 +85,6 @@ export class WritingFailed extends Error {
     readonly detail: string,
   ) {
     super(detail);
-  }
-
-  /** The setting that changes the outcome: a pin where it lives, everything else at the Writing model. */
-  get fix(): "text-model" | "writing-model" {
-    switch (this.route.via) {
-      case "pin":
-        return "text-model";
-      case "app":
-      case "main":
-        return "writing-model";
-    }
   }
 }
 

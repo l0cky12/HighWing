@@ -84,7 +84,7 @@ export type ProfilesWiring = {
   copyText: (text: string) => Promise<void>;
   /**
    * Write with AI on the form's Persona (ADR 0197, 0206), run as `profile` on the model that writes for it
-   * (writingModel.ts, ADR 0203): the profile in use for New, the profile edited for Edit. Given only while connected.
+   * (writingModel.ts, ADR 0209): the profile in use for New, the profile edited for Edit. Given only while connected.
    */
   rephrase?: (profile: string) => Writer;
   /** Each profile's SOUL.md, which Edit reads as it opens and saves with the form (ADR 0206); without it Edit has no Persona. */

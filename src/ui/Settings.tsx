@@ -368,11 +368,8 @@ export function SettingsScreen({
   guard?: (go: () => void) => void;
   /** Set, each time anew, to show the Model tab at the Text generation model: from a title that couldn't be regenerated. */
   showTextGeneration?: object;
-  /**
-   * The Writing model (ADR 0205): the connection's writing desk while connected, where its pick is kept, and, set anew
-   * each time, `show` opens the Model tab at it, from a writing call that failed on it.
-   */
-  writing?: { desk?: WritingDesk; scope: string; show?: object };
+  /** The Writing model (ADR 0209): the connection's writing desk while connected, and where its pick is kept. */
+  writing?: { desk?: WritingDesk; scope: string };
   /** The saved connections (Connections.tsx `ConnectionManager`), shown first in General. */
   connectionManager?: ReactNode;
   /** Set (to a new object each time) to show the Memory tab. */
@@ -424,7 +421,7 @@ export function SettingsScreen({
   );
   const [modelWrites, setModelWrites] = useState(0);
   const [tab, setTabNow] = useState<Tab>(
-    showTextGeneration || writing?.show
+    showTextGeneration
       ? "model"
       : showMemory && memory
         ? "memory"
@@ -504,12 +501,6 @@ export function SettingsScreen({
     setTab("model");
   // eslint-disable-next-line react-hooks/exhaustive-deps -- open the Model tab only when a new `showTextGeneration` arrives; `setTab` is rebuilt each render, so listing it would switch back to Model on every render
   }, [showTextGeneration]);
-  useEffect(() => {
-    if (!writing?.show) return;
-    setQuery("");
-    setTab("model");
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- as for `showTextGeneration` above
-  }, [writing?.show]);
   useEffect(() => {
     if (!showMemory || !memory) return;
     setQuery("");
@@ -973,7 +964,6 @@ export function SettingsScreen({
                 scope={writing.scope}
                 profiles={listProfiles ?? (async () => [profile])}
                 catalog={() => modelSettings.providers()}
-                show={searching ? undefined : writing.show}
                 reread={modelWrites}
               />
             )}

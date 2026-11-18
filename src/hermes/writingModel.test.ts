@@ -98,18 +98,18 @@ describe("A writing call on the fake server", () => {
     expect(server.oneshotCalls).toEqual([]);
   });
 
-  it.each<[string, (s: FakeHermes) => void, string, WritingRoute["via"], "text-model" | "writing-model"]>([
-    ["a pin", (s) => s.signedOut.add("openrouter"), "default", "pin", "text-model"],
-    ["the Writing model", (s) => s.signedOut.add("openrouter"), "wazuh", "app", "writing-model"],
-    ["the bot's own model", (s) => s.signedOut.add("openai-codex"), "wazuh", "main", "writing-model"],
-  ])("fails on %s with no sign-in, pointing at the setting that fixes it", async (_, signOut, profile, via, fix) => {
+  it.each<[string, (s: FakeHermes) => void, string, WritingRoute["via"]]>([
+    ["a pin", (s) => s.signedOut.add("openrouter"), "default", "pin"],
+    ["the Writing model", (s) => s.signedOut.add("openrouter"), "wazuh", "app"],
+    ["the bot's own model", (s) => s.signedOut.add("openai-codex"), "wazuh", "main"],
+  ])("fails on %s with no sign-in, carrying the route it ran on", async (_, signOut, profile, via) => {
     const { server, desk, call, setPick } = await twoBots({ pick });
     if (via === "main") setPick(undefined);
     signOut(server);
     const failed = await desk.writer(profile, "persona").ask(call).catch((e: unknown) => e);
     expect(failed).toBeInstanceOf(WritingFailed);
     // On its own model Hermes doesn't name a sign-in: it says it found no provider for the task at all.
-    expect(failed).toMatchObject({ profile, route: { via }, cause: via === "main" ? "no-provider" : "sign-in", fix });
+    expect(failed).toMatchObject({ profile, route: { via }, cause: via === "main" ? "no-provider" : "sign-in" });
   });
 
   it("leaves chat titles alone: Text generation's block and a Regenerate title's model don't move", async () => {

@@ -340,6 +340,24 @@ describe("Stop during a computer-use turn", () => {
     expect(server.display!.lease.holder).toBe("agent");
   });
 
+  it("shares one hold between overlapping Stops, so a Hand back after the first isn't undone", async () => {
+    const { server, hermes } = await started();
+    const acquire = server.handlers["display.lease.acquire"];
+    const waiting: (() => void)[] = [];
+    server.handlers["display.lease.acquire"] = (r) => void waiting.push(() => acquire(r));
+    const first = hermes.stopScreen();
+    const second = hermes.stopScreen();
+    await until(() => waiting.length > 0);
+    await new Promise((r) => setTimeout(r, 20));
+    waiting.shift()!();
+    expect(await first).toEqual({ stopped: [], hold: { kind: "held" } });
+    await hermes.screen.handBack();
+    waiting.splice(0).forEach((answer) => answer());
+    expect(await second).toEqual({ stopped: [], hold: { kind: "held" } });
+    expect(server.display!.lease.holder).toBe("agent");
+    expect(screenAsks(server).map(([m]) => m)).toEqual(["display.observe", "display.lease.acquire"]);
+  });
+
   it("the panic Stop takes the screen with no reply running, and says when there is no screen to take", async () => {
     const { server, hermes } = await started();
     expect(await hermes.stopScreen()).toEqual({ stopped: [], hold: { kind: "held" } });

@@ -45,6 +45,8 @@ export class ScreenControl {
   private held = new Set<string>();
   private minting?: Promise<DisplayObserve>;
   private releasing?: Promise<void>;
+  /** The hold on its way, and the connection and profile it was asked on. */
+  private holding?: { scope: Scope; outcome: Promise<HoldOutcome> };
   /** Broadcasts heard before the profile's screen was named, by its key. */
   private heard = new Map<string, DisplayLease>();
   /** The connection and profile `know` last asked on. */
@@ -100,14 +102,29 @@ export class ScreenControl {
     return asking;
   }
 
-  /** Takes the screen for the owner. Idempotent: `already` when this viewer holds it, with no request. */
-  async hold(reason?: string): Promise<HoldOutcome> {
-    if (this.state()?.holder.kind === "you") return { kind: "already" };
+  /**
+   * Takes the screen for the owner. Idempotent: `already` when this viewer holds it, with no request, and a hold asked
+   * for while one is on its way on the same connection and profile shares it, so a Hand back after it stays.
+   */
+  hold(reason?: string): Promise<HoldOutcome> {
+    if (this.state()?.holder.kind === "you") return Promise.resolve({ kind: "already" });
+    const h = this.holding;
+    if (h && this.inScope(h.scope)) return h.outcome;
+    const scope = this.scope();
+    const outcome = this.acquire(scope, reason).finally(() => {
+      if (this.holding?.outcome === outcome) this.holding = undefined;
+    });
+    this.holding = { scope, outcome };
+    return outcome;
+  }
+
+  /** Acquires the lease. Its answer, like any other, is dropped when the connection or the profile changed since `scope`. */
+  private async acquire(scope: Scope, reason?: string): Promise<HoldOutcome> {
     try {
       const viewer = this.current() ?? (await this.observe(), this.current());
       if (!viewer) return { kind: "failed", why: "The connection to Hermes changed while taking the screen." };
       const { lease } = (await this.ask("display.lease.acquire", { viewer_id: viewer.id, ...(reason && { reason }) })) as { lease: DisplayLease };
-      if (this.known) this.fold(this.known.profileKey, lease);
+      if (this.known && this.inScope(scope)) this.fold(this.known.profileKey, lease);
       return { kind: "held" };
     } catch (e) {
       if (isUnavailable(e)) return { kind: "no-screen", why: "This Hermes has no Bot Desktop." };

@@ -68,7 +68,8 @@
 //   AI, Regenerate title) answers: `answer` its text, `failure` Hermes's failure reason (null clears it), `signedOut`
 //   the providers with no sign-in on the server, and `hold: true` keeps each answer until `POST /__oneshot?release=1`
 //   (a test's control). `/__state` lists each profile's SOUL.md under `souls` and every call's params under `oneshots`.
-// HV_BOTS=1 adds three bots, the profiles `ada`, `bram` and `cleo`, each with a Bot Chat.
+// HV_BOTS=1 adds three bots, the profiles `ada`, `bram` and `cleo`, each with a Bot Chat and a one-line description, and
+//   gives `ada` the ordinary chat `ada-notes`, "Release notes draft", with two messages.
 // HV_SEAT=1 stores a room seat's session in `default`, as Hermes stores one: source `bot_room`, hidden, titled
 //   "Group: r1", holding the word "quokka", and listed as working in `session.active_list`.
 // HV_INBOX=1 gives the `work` profile two Unread chats for the Rail inbox: one last active 3 days ago, one an hour ago.
@@ -214,11 +215,21 @@ if (process.env.HV_EVERYWHERE === "1") {
   server.storeMessage("snapshots", { role: "user", text: "How often do we snapshot the volumes?" });
   server.storeMessage("snapshots", { role: "assistant", text: "Hourly snapshots, kept for two days, then the nightly backup takes over." });
 }
-if (process.env.HV_BOTS === "1")
-  for (const [profile, color] of Object.entries({ ada: "#f59e0b", bram: "#3b82f6", cleo: "#a855f7" })) {
+if (process.env.HV_BOTS === "1") {
+  for (const [profile, [color, description]] of Object.entries({
+    ada: ["#f59e0b", "Writes the release notes"],
+    bram: ["#3b82f6", "Reviews pull requests"],
+    cleo: ["#a855f7", "Watches the nightly jobs"],
+  })) {
     server.otherProfiles[profile] = [row(`${profile}-bot`, 1, { title: "Bot Chat", hidden: true })];
-    server.profileMeta[profile] = { ui_meta: { "hermes-bots": { title: profile[0].toUpperCase() + profile.slice(1), color } } };
+    server.profileMeta[profile] = { description, ui_meta: { "hermes-bots": { title: profile[0].toUpperCase() + profile.slice(1), color } } };
   }
+  server.otherProfiles.ada.push(row("ada-notes", 2, { title: "Release notes draft" }));
+  server.transcripts["ada-notes"] = [
+    { role: "user", text: "Draft the release notes for 0.3.", row_id: 1 },
+    { role: "assistant", text: "Bots can now be named with @ in a Bot Chat.", row_id: 2 },
+  ];
+}
 if (process.env.HV_SEAT === "1") server.seatSession("default", "r1", "The quokka census is done.");
 server.mcp.servers.default = {
   filesystem: { command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", "/srv/notes"] },

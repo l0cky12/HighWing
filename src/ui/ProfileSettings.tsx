@@ -79,7 +79,7 @@ export type ProfilesWiring = {
   /** Shows Settings → Persona, Memory or Skills on `name`. */
   showTab: (tab: "persona" | "memory" | "skills", name: string) => void;
   copyText: (text: string) => Promise<void>;
-  /** Generate with AI under New's Persona (ADR 0197), run as the profile in use; given only while connected. */
+  /** Write with AI under New's Persona (ADR 0197, 0203), run as the profile in use; given only while connected. */
   rephrase?: RephraseWiring;
   /** New's Skills and Tools (ADR 0197): read from the profile in use, applied to the new profile and read back. */
   setup?: SetupApis;
@@ -864,7 +864,7 @@ export function ProfileForm({
   // Set by the Create that runs, and cleared only by it: a second activation before the screen catches up sends nothing.
   const creating = useRef(false);
   // New only: Edit has neither, so they read nothing there.
-  const rephrase = usePersonaRephrase({ wiring: row ? undefined : wiring.rephrase, connected, profile: wiring.inUse, text: soul });
+  const rephrase = usePersonaRephrase({ wiring: row ? undefined : wiring.rephrase, connected, profile: wiring.inUse, text: soul, setText: setSoul });
   const capabilities = useBotSetup(row ? undefined : wiring.setup, wiring.inUse);
   // The dialog swaps the whole form for a shorter view (what a create came to, or the question before leaving). WebKit
   // keeps the form's scroll offset past the shorter view's end, which draws it blank, so each view starts at its top.
@@ -895,7 +895,7 @@ export function ProfileForm({
   const formLook = base.look && { ...base.look, title, color, picture };
   const lookEdits = base.look && formLook ? editsOf(base.look, formLook, BOT_LOOK_SAME) : {};
   const lookChanged = Object.keys(lookEdits).length > 0;
-  const dirty = (row ? nameChanged : !!trimmed) || descChanged || modelTouched || lookChanged || !!soul.trim() || rephrase.state.kind === "suggestion" || choosing(capabilities.setup);
+  const dirty = (row ? nameChanged : !!trimmed) || descChanged || modelTouched || lookChanged || !!soul.trim() || choosing(capabilities.setup);
 
   const issue = isDefault
     ? !trimmed
@@ -920,8 +920,8 @@ export function ProfileForm({
   const createWhy = row ? undefined : why("create");
   // `rows` undefined: the profiles there are aren't read yet, so New waits rather than send a name it can't check.
   const unreadWhy = !row && !rows ? f.namesUnread : undefined;
-  // A rewrite in flight or not yet applied isn't the persona: Create waits for the owner to settle it.
-  const rephraseWhy = row ? undefined : rephrase.state.kind === "asking" ? f.rephrase.blockedAsking : rephrase.state.kind === "suggestion" ? f.rephrase.blockedOpen : undefined;
+  // A rewrite in flight is about to replace the persona: Create waits for it.
+  const rephraseWhy = rephrase.state.kind === "asking" ? f.rephrase.blockedAsking : undefined;
   const listWhy = !row && (capabilities.skills.inventory.kind === "reading" || capabilities.toolsets.inventory.kind === "reading") ? f.setup.waitList : undefined;
   const saveWhy =
     createWhy ?? (!connected ? w.notConnected : undefined) ?? (issue && (row ? nameChanged : true) ? issue : undefined) ?? unreadWhy ?? busyText ?? renameWhy ?? descWhy ?? modelWhy ?? rephraseWhy ?? listWhy;
@@ -1415,13 +1415,13 @@ export function ProfileForm({
                     id={soulId}
                     className="persona-text profile-soul"
                     rows={4}
-                    readOnly={saving}
+                    readOnly={saving || rephrase.state.kind === "asking"}
                     placeholder={f.personaDefault}
                     value={soul}
                     onChange={(e) => setSoul(e.target.value)}
                   />
                   <div className="set-hint">{f.personaHint}</div>
-                  <RephrasePanel r={rephrase} text={soul} hintId={rephraseHint} onReplace={setSoul} focusBox={() => soulBox.current?.focus()} />
+                  <RephrasePanel r={rephrase} hintId={rephraseHint} focusBox={() => soulBox.current?.focus()} />
                 </div>
                 <BotCapabilities state={capabilities} profile={wiring.inUse} disabled={saving} />
               </>

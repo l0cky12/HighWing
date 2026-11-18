@@ -4286,10 +4286,9 @@ div.export-preview.export-page { height: auto; padding: 10px 12px; background: v
 .profile-dialog p { margin: 0 0 6px; }
 .profile-save-why { text-align: right; }
 /* New's Generate with AI (ADR 0197): the call in flight, and the suggestion under the Persona box. */
-.persona-rephrase-asking { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; color: var(--muted); }
-.persona-rephrase-asking .btn { padding: 2px 9px; }
-.persona-rephrase-asking .set-hint { flex-basis: 100%; }
-.persona-suggestion { padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--raised); }
+.persona-rephrase-note { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; color: var(--muted); }
+.persona-rephrase-note .btn { padding: 2px 9px; }
+.persona-rephrase-note .set-hint { flex-basis: 100%; }
 /* New's Skills, Tools and MCP servers (ADR 0197): Hermes's defaults or Choose, then a filterable checklist. */
 .bot-setup { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin: 0; padding: 0; border: 0; }
 .bot-setup > legend { padding: 0; margin-bottom: 6px; }

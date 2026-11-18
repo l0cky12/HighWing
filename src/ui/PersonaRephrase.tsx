@@ -1,8 +1,8 @@
-// Generate with AI on the New profile form's Persona (ADR 0197). It rewrites only what the owner typed, on an explicit
-// click, through one stateless `llm.oneshot` as the profile in use on its Text generation model. The answer is a
-// suggestion the owner can edit, then Replace persona or Discard; nothing reaches the persona box or Hermes otherwise.
+// Write with AI on the profile form's Persona (ADR 0197, 0203). It rewrites only what the owner typed, on an explicit
+// click, through one stateless `llm.oneshot` on a profile's Text generation model, and puts the answer in the field
+// itself; Undo puts the owner's text back. Nothing reaches Hermes's SOUL.md until the form's Create or Save.
 // Hermes has no cancel: Stop, a newer ask, closing the dialog and a switch of profile only drop the answer when it comes.
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Wand2 } from "lucide-react";
 import { ASK_DEADLINE_MS } from "../hermes/artifacts";
 import type { Call } from "../hermes/instructionsAI";
@@ -13,27 +13,39 @@ import { errorText } from "../hermes/values";
 import { useLocale } from "../i18n/locale";
 import { Spinner } from "./bits";
 
-/** How the form reaches Hermes: one `llm.oneshot` on Text generation's task, and that task's model in the profile in use. */
+/** How the form reaches Hermes for one profile: one `llm.oneshot` on Text generation's task, and that task's model. */
 export type RephraseWiring = { ask: (call: Call) => Promise<string>; model: () => Promise<{ provider: string; model: string }> };
 
 /**
- * Where a rewrite stands. `asking`: call `n` is out, written from `before`. `suggestion`: Hermes's answer, as the owner
- * edits it, written from `before`; Replace persona asks again first when the box no longer holds that. `cut`: only the
- * first `PERSONA_INPUT_MAX` characters of `before` were sent.
+ * Where a rewrite stands. `asking`: call `n` is out, written from `before`. `replaced`: the field held `before` and now
+ * holds Hermes's answer, `after`; `cut`: only the first `PERSONA_INPUT_MAX` characters of `before` were sent.
  */
 export type Rephrase =
   | { kind: "idle" }
   | { kind: "asking"; n: number; before: string }
-  | { kind: "suggestion"; before: string; text: string; cut: boolean }
+  | { kind: "replaced"; before: string; after: string; cut: boolean }
   | { kind: "failed"; message: string };
 
 type ModelRead = { kind: "reading" } | { kind: "read"; provider: string; model: string } | { kind: "failed"; message: string };
 
 /**
- * The rewrite's state and actions for one open form. `text`: the persona box now. `why`: what keeps Generate with AI
- * from running now, shown under the field; undefined when it can.
+ * The rewrite's state and actions for one open form. `profile`: whose Text generation model writes. `text` and
+ * `setText`: the Persona field. `why`: what keeps Write with AI from running now, shown under the field; undefined
+ * when it can.
  */
-export function usePersonaRephrase({ wiring, connected, profile, text }: { wiring?: RephraseWiring; connected: boolean; profile: string; text: string }) {
+export function usePersonaRephrase({
+  wiring,
+  connected,
+  profile,
+  text,
+  setText,
+}: {
+  wiring?: RephraseWiring;
+  connected: boolean;
+  profile: string;
+  text: string;
+  setText: (text: string) => void;
+}) {
   const w = useLocale().profiles.form.rephrase;
   const [state, setState] = useState<Rephrase>({ kind: "idle" });
   const [model, setModel] = useState<ModelRead>({ kind: "reading" });
@@ -53,12 +65,12 @@ export function usePersonaRephrase({ wiring, connected, profile, text }: { wirin
       // eslint-disable-next-line react-hooks/exhaustive-deps -- a call counter, not a node: bumping it on close drops any answer still on its way
       latest.current++;
       out.current = undefined;
-      // Wiring goes with the connection, and the model with the profile in use: a rewrite dropped then is over, so it
-      // no longer holds Create back.
+      // Wiring goes with the connection, and the model with the profile: a rewrite dropped then is over, so it no
+      // longer holds Create or Save back.
       setState((s) => (s.kind === "asking" ? { kind: "idle" } : s));
       setModel({ kind: "reading" });
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- read once per open form, and again once it has wiring or another profile is in use
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- read once per open form, and again once it has wiring or another profile writes
   }, [wired, profile]);
 
   const why = !connected
@@ -73,11 +85,9 @@ export function usePersonaRephrase({ wiring, connected, profile, text }: { wirin
             ? w.noModel(profile)
             : state.kind === "asking"
               ? w.asking
-              : state.kind === "suggestion"
-                ? w.open
-                : !text.trim()
-                  ? w.empty
-                  : undefined;
+              : !text.trim()
+                ? w.empty
+                : undefined;
   const runsOn = model.kind === "read" && model.provider ? w.runsOn(shortName(model.model) || model.provider, profile) : undefined;
 
   const ask = async () => {
@@ -89,7 +99,9 @@ export function usePersonaRephrase({ wiring, connected, profile, text }: { wirin
     try {
       const answer = rephraseFrom(await deadline(wiring.ask(rephraseCall(before)), ASK_DEADLINE_MS));
       if (latest.current !== n) return;
-      setState(answer === undefined ? { kind: "failed", message: w.noText } : { kind: "suggestion", before, text: answer, cut: personaCut(before) });
+      if (answer === undefined) return setState({ kind: "failed", message: w.noText });
+      setText(answer);
+      setState({ kind: "replaced", before, after: answer, cut: personaCut(before) });
     } catch (e) {
       if (latest.current === n) setState({ kind: "failed", message: errorText(e) });
     } finally {
@@ -101,13 +113,19 @@ export function usePersonaRephrase({ wiring, connected, profile, text }: { wirin
     out.current = undefined;
     setState({ kind: "idle" });
   };
-  const edit = (next: string) => setState((s) => (s.kind === "suggestion" ? { ...s, text: next } : s));
-  return { state, why, runsOn, ask, stop, edit, discard: stop };
+  const undo = () => {
+    if (state.kind !== "replaced") return;
+    setText(state.before);
+    setState({ kind: "idle" });
+  };
+  // Undo is offered only while the field still holds the answer: once the owner edits it, the text is theirs.
+  const undoable = state.kind === "replaced" && state.after === text;
+  return { state, why, runsOn, ask, stop, undo, undoable };
 }
 
 export type PersonaRephraseState = ReturnType<typeof usePersonaRephrase>;
 
-/** Generate with AI, beside the Persona label. Stays focusable when it can't run, so its reason is read with it. */
+/** Write with AI, beside the Persona label. Stays focusable when it can't run, so its reason is read with it. */
 export function RephraseButton({ r, disabled, hintId }: { r: PersonaRephraseState; disabled: boolean; hintId: string }) {
   const w = useLocale().profiles.form.rephrase;
   const off = disabled || !!r.why;
@@ -119,39 +137,29 @@ export function RephraseButton({ r, disabled, hintId }: { r: PersonaRephraseStat
 }
 
 /**
- * Under the Persona field: why Generate with AI can't run or what runs it (`hintId`), then the call in flight with Stop,
- * the editable suggestion with Replace persona and Discard, or why it failed. `text`: the box now. `onReplace` puts the
- * suggestion in the box; `focusBox` moves focus back to it when the panel goes.
+ * Under the Persona field: why Write with AI can't run or what runs it (`hintId`), then the call in flight with Stop,
+ * what replaced the field with Undo, or why it failed. `focusBox` moves focus back to the field when a button goes.
  */
-export function RephrasePanel({
-  r,
-  text,
-  hintId,
-  onReplace,
-  focusBox,
-}: {
-  r: PersonaRephraseState;
-  text: string;
-  hintId: string;
-  onReplace: (text: string) => void;
-  focusBox: () => void;
-}) {
+export function RephrasePanel({ r, hintId, focusBox }: { r: PersonaRephraseState; hintId: string; focusBox: () => void }) {
   const w = useLocale().profiles.form.rephrase;
-  const suggestionId = useId();
-  const noteId = useId();
   const { state } = r;
-  const stale = state.kind === "suggestion" && state.before !== text;
   const close = (then: () => void) => {
     then();
     requestAnimationFrame(focusBox);
   };
+  // Stop had focus while the call ran; once the answer is in, the field it went to has it, unless the owner moved on.
+  const replaced = state.kind === "replaced";
+  useEffect(() => {
+    if (replaced && (!document.activeElement || document.activeElement === document.body)) focusBox();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- only when an answer lands
+  }, [replaced]);
   return (
     <>
       <div id={hintId} className="set-hint">
         {r.why && state.kind !== "asking" ? r.why : r.runsOn}
       </div>
       {state.kind === "asking" && (
-        <div className="persona-rephrase-asking small" role="status">
+        <div className="persona-rephrase-note small" role="status">
           <Spinner /> {w.asking}{" "}
           <button className="btn" onClick={() => close(r.stop)}>
             {w.stop}
@@ -164,46 +172,13 @@ export function RephrasePanel({
           {w.failed(state.message)}
         </div>
       )}
-      {state.kind === "suggestion" && (
-        <div className="field persona-suggestion">
-          <label className="field-label" htmlFor={suggestionId}>
-            {w.suggestion}
-          </label>
-          <textarea
-            id={suggestionId}
-            className="persona-text profile-soul"
-            rows={6}
-            autoFocus
-            aria-describedby={noteId}
-            value={state.text}
-            onChange={(e) => r.edit(e.target.value)}
-          />
-          <div id={noteId} className="set-hint">
-            {state.cut && `${w.cut(PERSONA_INPUT_MAX)} `}
-            {w.suggestionHint}
-          </div>
-          {stale && (
-            <div className="small profile-conflict" role="alert">
-              {w.changed}
-            </div>
-          )}
-          <div className="confirm-actions">
-            <button className="btn" onClick={() => close(r.discard)}>
-              {w.discard}
-            </button>
-            <button
-              className="btn primary"
-              disabled={!state.text.trim()}
-              onClick={() =>
-                close(() => {
-                  onReplace(state.text);
-                  r.discard();
-                })
-              }
-            >
-              {stale ? w.replaceAnyway : w.replace}
-            </button>
-          </div>
+      {r.undoable && state.kind === "replaced" && (
+        <div className="persona-rephrase-note small" role="status">
+          {state.cut && `${w.cut(PERSONA_INPUT_MAX)} `}
+          {w.replaced}{" "}
+          <button className="btn" onClick={() => close(r.undo)}>
+            {w.undo}
+          </button>
         </div>
       )}
     </>

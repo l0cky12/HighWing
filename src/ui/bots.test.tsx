@@ -224,11 +224,10 @@ describe("New bot in the Bots view", () => {
     await user.click(screen.getByRole("button", { name: "New bot" }));
     await user.type(within(form()).getByLabelText("Name"), "ada");
     await user.type(within(form()).getByLabelText("Persona (optional)"), "summarise papers, keep it brief");
-    const generate = within(form()).getByRole("button", { name: /Generate with AI/ });
+    const generate = within(form()).getByRole("button", { name: /Write with AI/ });
     await waitFor(() => expect(generate.getAttribute("aria-disabled")).toBeNull());
     await user.click(generate);
-    await within(form()).findByLabelText("Suggested persona");
-    await user.click(within(form()).getByRole("button", { name: "Replace persona" }));
+    await within(form()).findByRole("button", { name: "Undo" });
     const skills = within(form()).getByRole("group", { name: "Skills" });
     await user.click(within(skills).getByRole("radio", { name: "Choose" }));
     await user.click(await within(skills).findByLabelText(/recipes/));

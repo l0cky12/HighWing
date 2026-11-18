@@ -9,7 +9,7 @@
 //! `hermes-chat <link>` is how the desktop opens a chat link (links.rs, ADR 0037): with Hermes Chat running, the link
 //! goes to it and its window comes forward; with none running, the app starts and keeps the link for its window.
 //!
-//! `hermes-chat --stop` is the panic Stop (stop.rs, ADR 0221). It goes to the running app the same way, and wins over
+//! `hermes-chat --stop` is the panic Stop (stop.rs, ADR 0223). It goes to the running app the same way, and wins over
 //! anything else on the command line; with none running, the app starts and does it once it is signed in.
 //!
 //! The requests travel over the session bus on Linux (remote/bus.rs) and over a named pipe of this user's on Windows

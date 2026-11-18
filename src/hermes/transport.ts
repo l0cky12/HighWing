@@ -4212,7 +4212,7 @@ export class Hermes {
   }
 
   /**
-   * The panic Stop, for the Stop shortcut and `hermes-chat --stop` (ADR 0221): stops every reply in the shown profile
+   * The panic Stop, for the Stop shortcut and `hermes-chat --stop` (ADR 0223): stops every reply in the shown profile
    * that is using the Bot Desktop, and takes the screen whether one is or not. Idempotent: a reply already stopping is
    * left alone, and a screen this connection holds already is `already`.
    */

@@ -23,7 +23,7 @@ export function ScreenDeskProvider({ value, children }: { value: ScreenDesk; chi
 }
 
 /**
- * The chat's own Stop, the composer's (ADR 0221), for the Stop on its live run. `lastRun`: the id of the current turn's
+ * The chat's own Stop, the composer's (ADR 0223), for the Stop on its live run. `lastRun`: the id of the current turn's
  * last run, the one that is live while the reply is `running`, and that offers Hand back once a Stop has taken the screen.
  * ChatPane provides it.
  */

@@ -12,7 +12,7 @@ import { FakeHermes } from "../hermes/fakeHermes";
 import { connect, type Hermes } from "../hermes/transport";
 import { GatewayRestartApi } from "../hermes/gatewayRestart";
 import { fakeClock } from "../hermes/fakeGateways";
-import type { RestMethod } from "../hermes/pipe";
+import { RestError, type RestMethod } from "../hermes/pipe";
 import { appearanceStore } from "./appearance";
 import { McpSettings } from "./McpSettings";
 import { SettingsScreen } from "./Settings";
@@ -442,6 +442,22 @@ describe("Settings → MCP servers: Restart gateway", () => {
     await within(rowOf("fs")).findByText("Gateway restarted.");
     expect(s.gateways.restarts).toEqual({ default: 1 });
     expect(restartIn("git")).toBeNull();
+  });
+
+  it("keeps an earlier edit's button when the next edit can't read whether the gateway runs", async () => {
+    const s = server();
+    s.gateways.gateway.default = { running: true, platforms: {} };
+    const { user } = await shown({ s });
+    await editCommand(user, "fs", "bunx");
+    await waitFor(() => expect(restartIn("fs")).toBeTruthy());
+    const statusReads = vi.fn(() => {
+      throw new RestError(502, JSON.stringify({ detail: "Bad Gateway" }));
+    });
+    s.rest["GET /api/status"] = statusReads;
+    await editCommand(user, "fs", "uvx");
+    await waitFor(() => expect(statusReads).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(restartIn("fs")).toBeTruthy();
   });
 
   it("keeps the button when switching the server off is refused, and drops it once a switch-off is saved", async () => {

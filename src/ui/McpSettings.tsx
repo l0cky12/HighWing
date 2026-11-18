@@ -268,13 +268,18 @@ export function McpSettings({
    */
   const editedInPlace = async (was: string, name: string, l: McpList | undefined) => {
     const p = profile;
-    restart?.unmark(p, `mcp:${was}`);
-    if (!restart || was !== name || !l?.servers.find((s) => s.name === name)?.enabled) return;
+    if (!restart) return;
+    if (was !== name || !l?.servers.find((s) => s.name === name)?.enabled) {
+      restart.unmark(p, `mcp:${was}`);
+      return;
+    }
+    // Unknown leaves an earlier edit's mark as it was.
     const running = await restart.status(p).then(
       (s) => s.running,
-      () => false,
+      () => undefined,
     );
-    if (running) restart.mark(p, `mcp:${name}`);
+    if (running === true) restart.mark(p, `mcp:${name}`);
+    else if (running === false) restart.unmark(p, `mcp:${name}`);
   };
 
   const names = list?.servers.map((s) => s.name) ?? [];

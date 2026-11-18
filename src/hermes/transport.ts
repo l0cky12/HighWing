@@ -5734,6 +5734,7 @@ export class Hermes {
       // in the archived view, and one born visible elsewhere is still named "Bot Chat".
       // Only the archived view lists hidden sessions, so a thread any other view lists isn't hidden.
       for (const r of res.sessions) {
+        if (r.source === ROOM_SEAT_SOURCE) continue;
         const kind = this.apart(profile, r);
         if (kind === "botChat") botChats.add(r.id);
         else if (kind === undefined) rows.push(r);

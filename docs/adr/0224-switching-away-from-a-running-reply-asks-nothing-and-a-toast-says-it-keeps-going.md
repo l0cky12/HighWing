@@ -31,5 +31,5 @@ An Approval or a Question is different. Hermes stops waiting for it after its ti
 ## Consequences
 
 - One click on another bot opens it. The bot left keeps replying, and its reply is there on return.
-- A switch where the setup's "Save and connect" replaces the connection (`connectionGuard`) carries no toast. It still asks about Approvals.
+- Two connection switches carry no toast: one where Setup's "Save and connect" replaces the connection (`connectionGuard`), and one that stops at the sign-in screen because the connection has no saved password. Both still ask about Approvals. The sign-in screen is a pause of its own, and a note shown after the owner types a password names replies that may have ended by then.
 - A reply is no longer a reason to stop at a switch. The 600 s idle interrupt is untested, so a reply that is silent that long in a profile the owner left may be cut off by Hermes.

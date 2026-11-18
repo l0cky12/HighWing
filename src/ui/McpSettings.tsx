@@ -25,6 +25,7 @@ import {
   type OAuthFlow,
   type ServerForm,
   McpUnsupportedError,
+  connectionChanged,
   envKeyFor,
   formProblem,
 } from "../hermes/mcp";
@@ -266,13 +267,15 @@ export function McpSettings({
    * After a saved edit. Hermes's gateway reconciles MCP servers by name only, within a minute, so it picks up an added,
    * removed, switched or renamed server by itself, but keeps a server edited under the same name on its old settings.
    */
-  const editedInPlace = async (was: string, name: string, l: McpList | undefined) => {
+  const editedInPlace = async (was: McpServer, form: ServerForm, l: McpList | undefined) => {
     const p = profile;
+    const name = form.name;
     if (!restart) return;
-    if (was !== name || !l?.servers.find((s) => s.name === name)?.enabled) {
-      restart.unmark(p, `mcp:${was}`);
+    if (was.name !== name || !l?.servers.find((s) => s.name === name)?.enabled) {
+      restart.unmark(p, `mcp:${was.name}`);
       return;
     }
+    if (!connectionChanged(was, form)) return;
     // A marked server's new save outlives a restart already running; an unknown read leaves the mark as it is.
     if (restart.marksOf(p).has(`mcp:${name}`)) restart.mark(p, `mcp:${name}`);
     const running = await restart.status(p).then(
@@ -561,7 +564,7 @@ export function McpSettings({
           onDone={(form, r) => {
             setDialog(undefined);
             settle(profile, form.name, r, dialog.kind === "edit" ? "Saved" : `Added ${form.name}`);
-            if (dialog.kind === "edit" && r.kind === "saved") void editedInPlace(dialog.server.name, form.name, r.list);
+            if (dialog.kind === "edit" && r.kind === "saved") void editedInPlace(dialog.server, form, r.list);
           }}
           onClose={() => setDialog(undefined)}
         />

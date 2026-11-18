@@ -444,6 +444,17 @@ describe("Settings → MCP servers: Restart gateway", () => {
     expect(restartIn("git")).toBeNull();
   });
 
+  it("shows nothing after an edit saved with nothing changed", async () => {
+    const s = server();
+    s.gateways.gateway.default = { running: true, platforms: {} };
+    const { user } = await shown({ s });
+    await user.click(within(rowOf("fs")).getByRole("button", { name: "Edit fs" }));
+    await user.click(within(dialog()).getByRole("button", { name: "Save" }));
+    await within(rowOf("fs")).findByText("Saved: Hermes reads it back that way.");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(restartIn("fs")).toBeNull();
+  });
+
   it("keeps an earlier edit's button when the next edit can't read whether the gateway runs", async () => {
     const s = server();
     s.gateways.gateway.default = { running: true, platforms: {} };

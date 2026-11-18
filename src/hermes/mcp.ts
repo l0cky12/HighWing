@@ -218,6 +218,20 @@ function createBody(form: ServerForm): Json {
   };
 }
 
+/** Whether saving `form` over `server` changes how it connects; a typed secret counts, since the old one can't be read. */
+export function connectionChanged(server: McpServer, form: ServerForm): boolean {
+  if (form.transport !== server.transport) return true;
+  if (form.transport === "http") return form.url.trim() !== (server.url ?? "") || form.auth !== server.auth || !!form.bearerToken?.trim();
+  const keys = form.env.map((e) => e.key);
+  return (
+    form.command.trim() !== (server.command ?? "") ||
+    form.args.join("\0") !== server.args.join("\0") ||
+    keys.length !== server.envKeys.length ||
+    keys.some((k) => !server.envKeys.includes(k)) ||
+    form.env.some((e) => e.value !== undefined)
+  );
+}
+
 /** What Rust's edit takes for `form`, editing the server named `name`. */
 export function editOf(name: string, form: ServerForm): McpEdit {
   const server: McpEdit["server"] =

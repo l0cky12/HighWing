@@ -1,5 +1,7 @@
 # Shortcuts are a command table each handler asks, and the owner's changes are a diff in the display preferences
 
+> **Amended by [ADR 0212](0212-screenshot-capture-is-removed-and-its-staging-folder-stays-for-pasted-files-and-annotations.md).** The screenshot shortcut is gone, so it no longer blocks a chord, and Ctrl+Shift+S can be bound to a command.
+
 Issue #285: every keyboard shortcut was a literal in the handler that answered it, in eight files, and the only place to find one was a tooltip. The owner couldn't change any of them. The issue asks for one Settings page that lists every command with its keys and lets the owner rebind it, with each default kept as it was, no key firing during IME composition, and no bare key answering an Approval or stopping a reply with the cursor outside a text field (`keyboard.test.tsx` pins both).
 
 ## Decisions

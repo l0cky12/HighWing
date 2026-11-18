@@ -260,12 +260,8 @@ _Avoid_: placeholder, inline attachment, reference (a Referenced chat is somethi
 Another of the owner's chats in the same profile, picked with "@" in the composer so a message can build on it. Hermes summarizes it with the profile's Text generation model, and the summary goes with that one message as attached context the model reads and the bubble doesn't show. Edit and Regenerate send it again. The message shows which chats it referenced. A reference is kept only while the app runs until its message is sent; a message waits for every summary, and can't be queued or steered (ADR 0165).
 _Avoid_: chat reference or `ChatRef` (a chat named by connection, profile and id), mention, link, attachment
 
-**Screenshot**:
-An image of a region or window of the owner's screen, taken from the composer by a shortcut or the camera button, and staged as an Attachment. It stays on this computer until the message is sent. A capture staged in a composer is deleted when the owner removes it or its chat is deleted or archived, and is staged in one chat at a time; a failed or uncertain message keeps its Screenshot for Retry until confirmed, reconciled or dismissed.
-_Avoid_: screen capture, snapshot
-
 **Annotation**:
-A pointer at part of a web page in the Preview, staged in the composer: a Screenshot of the page with the picked element or region marked, plus a block of words with the page's address, the time, the box and the owner's note. An element also adds its details. A region has none, and says why. The owner presses Annotate in the Preview, picks on a **still** of the page, which covers the live page while they annotate (the page stays loaded behind it), and reviews everything on a card before Add to message. Nothing is sent until the owner sends the message. On Windows every annotation is a region (ADR 0094, ADR 0153).
+A pointer at part of a web page in the Preview, staged in the composer: an image of the page with the picked element or region marked, plus a block of words with the page's address, the time, the box and the owner's note. An element also adds its details. A region has none, and says why. The owner presses Annotate in the Preview, picks on a **still** of the page, which covers the live page while they annotate (the page stays loaded behind it), and reviews everything on a card before Add to message. Nothing is sent until the owner sends the message. On Windows every annotation is a region (ADR 0094, ADR 0153).
 _Avoid_: comment (the official desktop app's word), inspector
 
 **Keyboard shortcut**:
@@ -274,7 +270,7 @@ _Avoid_: keybinding (the code's word), hotkey, accelerator
 
 **Global shortcut** (removed):
 The app no longer registers a key of its own (#169; ADR 0107 is superseded). A key the owner binds in their desktop's own config to `hermes-chat --show` or `hermes-chat --toggle` brings Highwing's one window forward from any app, with the cursor in the selected pane's composer; `--toggle` hides it when it's already in front.
-_Avoid_: summon key, screenshot shortcut (that one works only inside the app, unless bound to `--screenshot`)
+_Avoid_: summon key
 
 **Branch**:
 A new chat that starts with another chat's history up to one message, made from that message with Branch from here. Hermes copies the history and keeps which chat the branch came from, so every Hermes client has it. Hermes copies what the owner and Hermes said, and Hermes's reasoning, but not tool outputs. A file a copied message refers to stays where it is on the server, for the branch to read while it's there. The chat it came from stays as it was. A branch has its own Draft and Queued messages, and what the owner sends goes to it alone. It is Active, runs on its parent's model in its parent's folder, and takes Hermes's name for it (the parent's title with a number) unless the owner gives one. Its top says where it came from. Which message that was is kept on this computer only. A branch can't be made while a reply is running or an Approval waits. Branching never undoes anything Hermes did on the server (ADR 0027).

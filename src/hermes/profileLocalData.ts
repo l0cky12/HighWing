@@ -29,7 +29,7 @@ import { WORKTREE_CHATS_KEY } from "./worktrees";
 import { isObj } from "./values";
 
 /**
- * Settings → Persona's unsaved edits and replaced versions. Nothing writes them since the page went (ADR 0203), but
+ * Settings → Persona's unsaved edits and replaced versions. Nothing writes them since the page went (ADR 0204), but
  * copies an earlier version kept still go with their profile or connection.
  */
 const PERSONA_PREFIX = "hermes-chat.persona.";

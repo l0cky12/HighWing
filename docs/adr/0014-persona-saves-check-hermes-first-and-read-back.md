@@ -1,6 +1,6 @@
 # Persona saves check what Hermes has first, and read it back after
 
-> **Partly superseded by [ADR 0203](0203-a-persona-is-edited-only-in-the-profile-form-and-write-with-ai-rewrites-it-in-place.md).** Settings → Persona is gone; the profile form's Persona saves `SOUL.md` with this ADR's check first and read back. Kept drafts and replaced versions on this computer went with the page.
+> **Partly superseded by [ADR 0204](0204-a-persona-is-edited-only-in-the-profile-form-and-write-with-ai-rewrites-it-in-place.md).** Settings → Persona is gone; the profile form's Persona saves `SOUL.md` with this ADR's check first and read back. Kept drafts and replaced versions on this computer went with the page.
 
 Settings → Persona edits the shown profile's `SOUL.md` through the dashboard's own persona routes, `GET` and `PUT /api/profiles/{name}/soul`. At the deployed `bf0203a` the `PUT` replaces the whole file atomically (temp file, fsync, rename). It has no revision, ETag or If-Match, and it creates the file when it is missing. So the app guards the write itself. A Save reads `SOUL.md` again and writes only if Hermes still has the text the edit started from. After the write it reads the file back, and it says "saved" only when Hermes has exactly what was sent. A changed file becomes a conflict: nothing is written, and the owner sees what Hermes has now, then chooses to save over it (after a confirmation) or take the server's version. The editor never says something saved that only this computer holds.
 

@@ -115,7 +115,7 @@ export function readProfileRows(res: unknown): ProfileRow[] {
 }
 
 /**
- * Each change Settings → Profiles and the Bots view make, by the Hermes route or JSON-RPC method it goes through.
+ * Each change Settings → Profiles and Bots mode make, by the Hermes route or JSON-RPC method it goes through.
  * `botLook` writes the Bot Mode block and `botPicture` the profile's avatar (ADR 0189).
  */
 export type ProfileAction = "create" | "rename" | "describe" | "describeAuto" | "setModel" | "remove" | "botLook" | "botPicture";

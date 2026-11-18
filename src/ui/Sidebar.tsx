@@ -42,9 +42,6 @@ export function Rail({
   onToggleList,
   onNew,
   onSearch,
-  onBots,
-  botsOpen = false,
-  botsNeedYou = false,
   onOffice,
   officeOpen = false,
   onWork,
@@ -73,10 +70,6 @@ export function Rail({
   onToggleList: () => void;
   onNew: () => void;
   onSearch: () => void;
-  /** Opens or closes the Bots view (Bots.tsx, ADR 0066); none when this Hermes has no Bot Mode. `botsNeedYou`: a bot waits on the owner. */
-  onBots?: () => void;
-  botsOpen?: boolean;
-  botsNeedYou?: boolean;
   /** Opens or closes the agent office (Office.tsx, ADR 0077); none while Settings turns it off. */
   onOffice?: () => void;
   officeOpen?: boolean;
@@ -153,18 +146,6 @@ export function Rail({
         <button className="icon-btn rail-primary" aria-label={`Search all chats (${label("search")})`} aria-keyshortcuts={ariaKeys(keys.search)} onClick={onSearch} {...bind("search", { label: "Search all chats", keys: label("search") })}>
           <Search size={18} />
         </button>
-        {onBots && (
-          <button
-            className={`icon-btn rail-primary bots-btn ${botsOpen ? "on" : ""}`}
-            aria-label={botsNeedYou ? "Bots, one needs you" : "Bots"}
-            aria-expanded={botsOpen}
-            onClick={onBots}
-            {...bind("bots", { label: "Bots", note: botsNeedYou ? "A bot needs you" : "Each profile as a bot, with its Bot Chat" })}
-          >
-            <BotIcon size={18} />
-            {botsNeedYou && <span className="dot" aria-hidden />}
-          </button>
-        )}
         {onOffice && (
           <button
             className={`icon-btn rail-primary office-btn ${officeOpen ? "on" : ""}`}
@@ -1044,6 +1025,8 @@ export type ListModes = {
   pictures: Readonly<Record<string, string>>;
   leaving?: string;
   onOpenBot: (bot: Bot) => void;
+  /** All N chats under the shown bot: Chats, on the bot's profile. */
+  onAllChats: () => void;
 };
 
 export type ShownBot = { bot: Bot; look: BotLookShown };
@@ -1177,8 +1160,8 @@ function NeedsYouLine({ waiting, pictures, leaving, onOpenBot, onShowBots }: Pic
  * Chats Hermes has archived are in `chats` only while the Archived section is shown (App.tsx lists them then).
  * `projectSwitcher` sits under the profile's name; `chats` are only the shown project's when one is picked there.
  * `projectsOf`: the projects a chat's menu offers to put it in or take it out of.
- * `bots`: bot mode, while a Bot Chat is open (ADR 0066): the bots (Bots.tsx `BotList`) under the profile's name, New
- * chat and Search, in place of the project switcher and the chats.
+ * `bots`: Bots mode (ADR 0195, ADR 0203): the bots (Bots.tsx `BotList`) with New bot and Reload above them, under New
+ * chat and Search, in place of the project switcher and the chats. `under` goes under the shown profile's bot.
  */
 export function ChatList({
   profile,
@@ -1543,7 +1526,7 @@ export function ChatList({
                 selectedId={selectedId}
                 alsoShownId={alsoShownId}
                 onOpen={onOpen}
-                onAll={() => mode?.onChange("chats")}
+                onAll={() => mode?.onAllChats()}
               />
             ),
           )}

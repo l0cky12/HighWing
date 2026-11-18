@@ -5,6 +5,7 @@
 // dropped. Every server here is synthetic.
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
 import { StrictMode, useState } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { FakeHermes } from "../hermes/fakeHermes";
@@ -327,36 +328,38 @@ function memoryStorage() {
   return { getItem: (k: string) => items.get(k) ?? null, setItem: (k: string, v: string) => void items.set(k, v) };
 }
 
+/** Settings on its own, with the server's two profiles to pick from. */
+function Shell({ hermes }: { hermes: Hermes }) {
+  const [appearance] = useState(() => appearanceStore(memoryStorage(), document.createElement("html")));
+  return (
+    <SettingsScreen
+      status="connected"
+      unsecure={false}
+      username="lena"
+      passwordSaved
+      profile="default"
+      olderPulled={false}
+      cacheBytes={() => 0}
+      appearance={appearance}
+      listFonts={async () => ({ all: [], mono: [] })}
+      modelSettings={hermes.modelSettings}
+      mcp={hermes.mcp}
+      listProfiles={async () => ["default", "work"]}
+      onClearCache={() => {}}
+      onPullOlder={async () => []}
+      onSignOut={async () => {}}
+      onClose={() => {}}
+    />
+  );
+}
+
 describe("Settings → MCP servers: the tab", () => {
   it("has its own tab with a profile picker starting on the profile in use", async () => {
     const s = server();
     const hermes = await connect(s.openPipe, "default");
     running.push(hermes);
     const user = userEvent.setup();
-    function Shell() {
-      const [appearance] = useState(() => appearanceStore(memoryStorage(), document.createElement("html")));
-      return (
-        <SettingsScreen
-          status="connected"
-          unsecure={false}
-          username="lena"
-          passwordSaved
-          profile="default"
-          olderPulled={false}
-          cacheBytes={() => 0}
-          appearance={appearance}
-          listFonts={async () => ({ all: [], mono: [] })}
-          modelSettings={hermes.modelSettings}
-          mcp={hermes.mcp}
-          listProfiles={async () => ["default", "work"]}
-          onClearCache={() => {}}
-          onPullOlder={async () => []}
-          onSignOut={async () => {}}
-          onClose={() => {}}
-        />
-      );
-    }
-    render(<Shell />);
+    render(<Shell hermes={hermes} />);
     await user.click(screen.getByRole("tab", { name: "MCP servers" }));
     await screen.findByText("fs", { selector: ".mcp-name .mono" });
     const pick = screen.getByRole("combobox", { name: "Profile whose MCP servers are shown" }) as HTMLSelectElement;
@@ -365,5 +368,27 @@ describe("Settings → MCP servers: the tab", () => {
     await user.selectOptions(pick, "work");
     await screen.findByText("calendar", { selector: ".mcp-name .mono" });
     expect(screen.queryByText("fs", { selector: ".mcp-name .mono" })).toBeNull();
+  });
+
+  it("leaves the profile picker room for its text at a larger interface font size", async () => {
+    // A fixed 28px height cut the picker's text off once the interface font size grew it. WebKitGTK needs about 1.8
+    // times the font size inside the border and padding to show a select's whole line.
+    const sheet = document.createElement("style");
+    sheet.textContent = readFileSync("src/styles.css", "utf8");
+    document.head.append(sheet);
+    document.documentElement.style.fontSize = "18px";
+    try {
+      const hermes = await connect(server().openPipe, "default");
+      running.push(hermes);
+      render(<Shell hermes={hermes} />);
+      await userEvent.setup().click(screen.getByRole("tab", { name: "MCP servers" }));
+      const s = getComputedStyle(screen.getByRole("combobox", { name: "Profile whose MCP servers are shown" }));
+      const px = (v: string) => parseFloat(v);
+      const room = px(s.height) - px(s.paddingTop) - px(s.paddingBottom) - px(s.borderTopWidth) - px(s.borderBottomWidth);
+      expect(room / px(s.fontSize)).toBeGreaterThan(1.8);
+    } finally {
+      sheet.remove();
+      document.documentElement.style.fontSize = "";
+    }
   });
 });

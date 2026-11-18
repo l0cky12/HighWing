@@ -1,6 +1,6 @@
 # Bot mode's rows open Chat, Settings and Delete on a right-click
 
-> **Accepted.** It changes one line of ADR 0189: "The bots in the chat list panel have no menu." The rest of ADR 0189, and ADR 0066's bot mode, stand. The menu is `usePanelBotMenu` in `src/ui/Bots.tsx`, wired in `src/App.tsx`. Tested in `src/ui/bots.test.tsx` and `e2e/features/bot-menu.e2e.tsx`.
+> **Accepted.** It changes one line of ADR 0189: "The bots in the chat list panel have no menu." The rest of ADR 0189, and ADR 0066's bot mode, stand. The menu is `usePanelBotMenu` in `src/ui/Bots.tsx`, wired in `src/App.tsx`. Tested in `src/ui/bots.test.tsx` and `e2e/features/bot-menu.e2e.tsx`. **Partly superseded by [ADR 0203](0203-the-bots-view-folds-into-bots-mode-and-a-bot-opened-there-is-a-visit.md).** The menu also has Clone, Pin and Hide, and the Bots view is gone.
 
 In bot mode (ADR 0066) the chat list panel shows the bots in place of the chats. A right-click on a bot there did nothing, while a right-click on a chat in the same panel opens that chat's menu. To edit or delete a bot the owner had to open the Bots view from the rail and use the row's menu there.
 

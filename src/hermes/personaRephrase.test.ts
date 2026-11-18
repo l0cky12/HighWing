@@ -1,4 +1,4 @@
-// What Write with AI sends for a rough persona, and how it reads Hermes's answer (ADR 0197, 0203). All text is synthetic.
+// What Write with AI sends for a rough persona, and how it reads Hermes's answer (ADR 0197, 0204). All text is synthetic.
 import { describe, expect, it } from "vitest";
 import { PERSONA_INPUT_MAX, REPHRASE_INSTRUCTIONS, REPHRASE_TOKENS, personaCut, rephraseCall, rephraseFrom } from "./personaRephrase";
 

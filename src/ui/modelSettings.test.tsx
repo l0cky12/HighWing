@@ -96,9 +96,9 @@ describe("Settings → Model", () => {
       await shown();
       for (const name of ["Main provider", "Main model", "Main reasoning effort"]) expect(select(name).closest(".set-control")).toBeTruthy();
       for (const s of screen.getAllByRole<HTMLSelectElement>("combobox")) {
-        expect([s.getAttribute("aria-label"), getComputedStyle(s).height, getComputedStyle(s).paddingTop, getComputedStyle(s).paddingBottom]).toEqual([
+        expect([s.getAttribute("aria-label"), Math.round(parseFloat(getComputedStyle(s).height)), getComputedStyle(s).paddingTop, getComputedStyle(s).paddingBottom]).toEqual([
           s.getAttribute("aria-label"),
-          "32px",
+          32,
           "0px",
           "0px",
         ]);

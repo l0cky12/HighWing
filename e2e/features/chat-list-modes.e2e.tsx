@@ -134,8 +134,10 @@ it("lists the shown profile's chats under its bot in Bots mode, and All N chats 
   await expect.element(app.getByPlaceholder("Message Hermes")).toBeVisible();
 });
 
-it("switches profile from a bot's row in Bots mode, its chats moving under it", async () => {
+it("visits a bot from Bots mode, its chats moving under it, and Chats goes back to the profile and chat left", async () => {
   const { app, panel, tab } = await start();
+  await panel.getByRole("button", { name: /Nightly backup failing/ }).click();
+  await expect.element(app.getByText("Why did last night's backup fail?")).toBeVisible();
   await tab("Bots").click();
   await panel.getByRole("button", { name: /^Quill \(profile writer\)\./ }).click();
   await expect.poll(titleOf(app)).toBe("QQuillBot Chat");
@@ -143,8 +145,9 @@ it("switches profile from a bot's row in Bots mode, its chats moving under it", 
   await expect.element(tab("Bots")).toHaveAttribute("aria-selected", "true");
   await shot("other-profile");
   await tab("Chats").click();
-  await expect.element(panel.getByRole("button", { name: "Quill (writer)" })).toBeVisible();
-  await shot("other-profile-chats");
+  await expect.element(panel.getByRole("button", { name: "Hermes (default)" })).toBeVisible();
+  await expect.element(app.getByText("Why did last night's backup fail?")).toBeVisible();
+  await shot("back-home");
 });
 
 it("names a bot without a name by its profile id, once", async () => {

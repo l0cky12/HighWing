@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-// The New profile form's Write with AI, Skills, Tools and MCP servers (ADR 0197, 0203), shared by Settings → Profiles
-// and the Bots view's New bot, through the real transport against FakeHermes at `f0d94882`. What the owner sees, and
-// what Hermes received: the rewrite only on a click, in the field with Undo, and each chosen skill and toolset read
+// The New profile form's Write with AI, Skills, Tools and MCP servers (ADR 0197, 0204), shared by Settings → Profiles
+// and Bots mode's New bot, through the real transport against FakeHermes at `f0d94882`. What the owner sees, and what
+// Hermes received: the rewrite only on a click, in the field with Undo, and each chosen skill and toolset read
 // back from the new profile before any success is said. All data is synthetic.
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -39,7 +39,7 @@ type Options = {
   forgetFails?: boolean;
   /** Offers one provider and model to pick, as App's catalogue does. */
   models?: boolean;
-  /** As the Bots view's New bot: no Set model after a create that didn't set it. */
+  /** As Bots mode's New bot: no Set model after a create that didn't set it. */
   noEdit?: boolean;
 };
 

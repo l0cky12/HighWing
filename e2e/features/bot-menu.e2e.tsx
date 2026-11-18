@@ -24,13 +24,12 @@ const seed = (s: FakeHermes) => {
 
 async function botMode() {
   const { app, server } = await boot({ seed });
-  await app.getByRole("button", { name: "Bots", exact: true }).click();
-  await app.getByRole("dialog", { name: "Bots" }).getByRole("button", { name: /^Scribe\./ }).click();
-  await expect.element(app.getByText("Draft the release notes for 0.9")).toBeVisible();
   const panel = app.getByRole("complementary");
   await panel.getByRole("tab", { name: /^Bots/ }).click();
   await expect.element(panel.getByRole("tab", { name: /^Bots/ })).toHaveAttribute("aria-selected", "true");
   const rowOf = (name: string) => panel.getByRole("button", { name: new RegExp(`^${name}\\.`) });
+  await rowOf("Scribe").click();
+  await expect.element(app.getByText("Draft the release notes for 0.9")).toBeVisible();
   await expect.element(rowOf("Scratch")).toBeVisible();
   return { app, server, panel, rowOf };
 }
@@ -38,14 +37,14 @@ async function botMode() {
 /** What was written to the server's profiles: opening a Bot Chat writes its own read mark, which isn't the menu's. */
 const writes = (server: FakeHermes) => server.restRequests.filter((r) => r.method !== "GET" && r.path.startsWith("/api/profiles")).map((r) => `${r.method} ${r.path}`);
 
-it("opens Chat, Settings and Delete on a right-click on a bot in the chat list panel, switching nothing", async () => {
+it("opens Chat, Settings, Edit persona…, Clone, Pin, Hide and Delete on a right-click on a bot in the chat list panel, switching nothing", async () => {
   const { app, server, rowOf } = await botMode();
   await shot("bot-mode");
   await rowOf("Scratch").click({ button: "right" });
   await shot("right-clicked");
   const menu = app.getByRole("menu", { name: "More for Scratch" });
   await expect.element(menu).toBeVisible();
-  expect(menu.getByRole("menuitem").elements().map((e) => e.textContent)).toEqual(["Chat", "Settings", "Delete"]);
+  expect(menu.getByRole("menuitem").elements().map((e) => e.textContent)).toEqual(["Chat", "Settings", "Edit persona…", "Clone…", "Pin", "Hide", "Delete"]);
   // Scribe's Bot Chat is still the one open.
   await expect.element(rowOf("Scribe")).toHaveAttribute("aria-current", "true");
   await expect.element(rowOf("Scratch")).not.toHaveAttribute("aria-current");
@@ -90,4 +89,21 @@ it("Delete asks first, naming the bot; Cancel deletes nothing, and confirming de
   await shot("deleted");
   expect(writes(server)).toEqual(["DELETE /api/profiles/scratch"]);
   expect(Object.keys(server.otherProfiles)).toEqual(["scribe"]);
+});
+
+it("makes a bot from New bot above the rows, and Reload reads the bots again", async () => {
+  const { app, server, panel, rowOf } = await botMode();
+  await shot("new-bot-and-reload");
+  await panel.getByRole("button", { name: "New bot" }).click();
+  const form = app.getByRole("dialog", { name: "New bot" });
+  await form.getByLabelText("Name").fill("ada");
+  await form.getByRole("button", { name: /Create bot/ }).click();
+  await expect.element(form).not.toBeInTheDocument();
+  await expect.element(rowOf("Ada")).toHaveFocus();
+  await shot("new-bot-made");
+  expect(writes(server)).toEqual(["POST /api/profiles"]);
+
+  server.profileMeta.ada = { ui_meta: { "hermes-bots": { title: "Ada Lovelace" } } };
+  await panel.getByRole("button", { name: "Reload bots" }).click();
+  await expect.element(panel.getByText("Ada Lovelace")).toBeVisible();
 });

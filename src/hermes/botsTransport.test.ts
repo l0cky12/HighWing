@@ -69,7 +69,7 @@ describe("the roster", () => {
   });
 });
 
-describe("the roster kept for the Bots view", () => {
+describe("the roster kept for Bots mode", () => {
   it("is read with the pictures after connecting, kept across a reconnect, and asks each picture once per connection", async () => {
     const { server, hermes } = await signedIn();
     await hermes.idle();
@@ -267,7 +267,7 @@ describe("keeping Bot Chats out of the list and search", () => {
     expect(found.map((f) => f.chatId)).toEqual(["scribe-side"]);
   });
 
-  it("leaves out a compressed Bot Chat, by its lineage, before the Bots view has ever opened", async () => {
+  it("leaves out a compressed Bot Chat, by its lineage, before Bots mode has ever shown", async () => {
     const { hermes } = await signedIn(new FakeHermes(), (server) => {
       // A compressed Bot Chat whose newest segment is titled otherwise (Hermes carries the title over; this one didn't).
       server.sessions.push(

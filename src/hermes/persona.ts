@@ -1,5 +1,5 @@
 // A profile's SOUL.md on the Hermes server, read and written through dashboard REST: the profile form's Persona
-// (ADR 0203) and Clone profile's persona copy.
+// (ADR 0204) and Clone profile's persona copy.
 //
 // At the deployed `bf0203a` (and upstream `c419cf7`) `hermes_cli/web_routers/profiles.py` has the only API for it:
 // - `GET /api/profiles/{name}/soul` → `{content, exists}`. `content` is `read_text(encoding="utf-8-sig")`, so a byte

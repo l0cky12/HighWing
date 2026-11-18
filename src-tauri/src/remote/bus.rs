@@ -1,5 +1,5 @@
-//! The session bus carries requests on Linux: the running app owns `net.l0cky12.HermesChat` and answers `Show`,
-//! `Toggle` and `OpenLink`. Only this user's own programs can reach their session bus.
+//! The session bus carries requests on Linux: the running app owns `net.l0cky12.HermesChat` and answers `Stop`,
+//! `Show`, `Toggle` and `OpenLink`. Only this user's own programs can reach their session bus.
 
 use super::{Inbox, Request};
 use dbus::blocking::Connection;
@@ -40,6 +40,7 @@ fn send(request: &Request) -> Result<(), dbus::Error> {
 fn send_on(conn: &Connection, request: &Request) -> Result<(), dbus::Error> {
     let proxy = conn.with_proxy(NAME, PATH, Duration::from_secs(5));
     match request {
+        Request::Stop => proxy.method_call(IFACE, "Stop", ()),
         Request::Show { token } => proxy.method_call(IFACE, "Show", (token.clone().unwrap_or_default(),)),
         Request::Toggle { token } => proxy.method_call(IFACE, "Toggle", (token.clone().unwrap_or_default(),)),
         Request::OpenLink { link, token } => proxy.method_call(IFACE, "OpenLink", (link.as_str(), token.clone().unwrap_or_default())),
@@ -78,6 +79,10 @@ fn serve_into(conn: Connection, queue: bool, inbox: &'static Inbox) {
                 let member = msg.member().map(|m| m.to_string());
                 let path = msg.path().map(|p| p.to_string());
                 let reply = match (iface.as_deref(), member.as_deref(), path.as_deref()) {
+                    (Some(IFACE) | None, Some("Stop"), Some(PATH)) => {
+                        inbox.dispatch(Request::Stop);
+                        msg.method_return()
+                    }
                     (Some(IFACE) | None, Some(m @ ("Show" | "Toggle")), Some(PATH)) => {
                         let token = msg.read1::<&str>().ok().filter(|t| !t.is_empty()).map(str::to_owned);
                         inbox.dispatch(if m == "Show" { Request::Show { token } } else { Request::Toggle { token } });
@@ -95,7 +100,7 @@ fn serve_into(conn: Connection, queue: bool, inbox: &'static Inbox) {
                     (Some("org.freedesktop.DBus.Peer"), Some("Ping"), _) => msg.method_return(),
                     _ => msg.error(
                         &"org.freedesktop.DBus.Error.UnknownMethod".into(),
-                        &std::ffi::CString::new("Highwing only answers Show, Toggle and OpenLink.").unwrap(),
+                        &std::ffi::CString::new("Highwing only answers Stop, Show, Toggle and OpenLink.").unwrap(),
                     ),
                 };
                 use dbus::channel::Sender;
@@ -156,7 +161,11 @@ mod tests {
         let g = got.clone();
         inbox.set_handler(move |r| g.locked().push(r));
         send_on(&second, &Request::Show { token: None }).unwrap();
-        assert_eq!(*got.locked(), vec![Request::Show { token: Some("tok".into()) }, Request::Toggle { token: None }, Request::Show { token: None }]);
+        send_on(&second, &Request::Stop).unwrap();
+        assert_eq!(
+            *got.locked(),
+            vec![Request::Show { token: Some("tok".into()) }, Request::Toggle { token: None }, Request::Show { token: None }, Request::Stop]
+        );
     }
 
     #[test]

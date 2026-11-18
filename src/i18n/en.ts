@@ -119,6 +119,13 @@ export const en = {
         openScreen: "Open the Screen",
         failed: (why: string) => `Couldn't hand back the screen: ${why}`,
       },
+      /** What the Stop shortcut or `hermes-chat --stop` did: the replies it stopped, and the screen. */
+      panic: {
+        stopped: (n: number) => (n === 0 ? "No reply was using the Bot Desktop." : n === 1 ? "Stopped the reply using the Bot Desktop." : `Stopped ${n} replies using the Bot Desktop.`),
+        held: "You hold the Bot Desktop now, so Hermes can't use it until you hand it back.",
+        already: "You already hold the Bot Desktop.",
+        notHeld: (why: string) => `Couldn't take the Bot Desktop: ${why}`,
+      },
       follow: {
         section: "Bot Desktop",
         name: "Follow computer use",

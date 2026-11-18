@@ -112,6 +112,12 @@ export const es: Catalogue = {
         openScreen: "Abrir la Pantalla",
         failed: (why) => `No se pudo devolver la pantalla: ${why}`,
       },
+      panic: {
+        stopped: (n) => (n === 0 ? "Ninguna respuesta estaba usando el Bot Desktop." : n === 1 ? "Se detuvo la respuesta que usaba el Bot Desktop." : `Se detuvieron ${n} respuestas que usaban el Bot Desktop.`),
+        held: "Ahora tienes el Bot Desktop, así que Hermes no puede usarlo hasta que se lo devuelvas.",
+        already: "Ya tienes el Bot Desktop.",
+        notHeld: (why) => `No se pudo tomar el Bot Desktop: ${why}`,
+      },
       follow: {
         section: "Bot Desktop",
         name: "Seguir el uso del ordenador",

@@ -9,6 +9,9 @@
 //! `hermes-chat <link>` is how the desktop opens a chat link (links.rs, ADR 0037): with Hermes Chat running, the link
 //! goes to it and its window comes forward; with none running, the app starts and keeps the link for its window.
 //!
+//! `hermes-chat --stop` is the panic Stop (stop.rs, ADR 0216). It goes to the running app the same way, and wins over
+//! anything else on the command line; with none running, the app starts and does it once it is signed in.
+//!
 //! The requests travel over the session bus on Linux (remote/bus.rs) and over a named pipe of this user's on Windows
 //! (remote/pipe.rs); either way only this user's own programs can send one, and a launch hands its request only to
 //! this user's own Hermes Chat. A link only shows a chat, once the window has checked it. On Wayland each request
@@ -37,6 +40,8 @@ use std::sync::Mutex;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Request {
+    /// Stop every reply using the Bot Desktop, and take the screen.
+    Stop,
     /// Bring the window forward. `token`: the desktop's Wayland activation token, if it gave one.
     Show { token: Option<String> },
     /// Bring it forward, or hide it if it is already in front.
@@ -56,7 +61,9 @@ pub fn request_of(args: impl IntoIterator<Item = String>, token: Option<String>,
     let link = crate::links::from_args(args.iter().cloned());
     let args = &args[args.len().min(1)..];
     let has = |f: &str| args.iter().any(|a| a == f);
-    if let Some(link) = link {
+    if has("--stop") {
+        Some(Request::Stop)
+    } else if let Some(link) = link {
         Some(Request::OpenLink { link, token })
     } else if has("--toggle") {
         Some(Request::Toggle { token })
@@ -91,9 +98,10 @@ fn decode(line: &str) -> Result<Request, String> {
     if line.len() > WIRE_MAX {
         return Err("That request is too long.".into());
     }
-    let request: Request = serde_json::from_str(line.trim_end()).map_err(|_| "Highwing only answers show, toggle and openLink.".to_owned())?;
+    let request: Request = serde_json::from_str(line.trim_end()).map_err(|_| "Highwing only answers stop, show, toggle and openLink.".to_owned())?;
     let token = |t: Option<String>| t.filter(|t| !t.is_empty());
     Ok(match request {
+        Request::Stop => Request::Stop,
         Request::Show { token: t } => Request::Show { token: token(t) },
         Request::Toggle { token: t } => Request::Toggle { token: token(t) },
         Request::OpenLink { link, token: t } if crate::links::candidate(&link) => Request::OpenLink { link, token: token(t) },
@@ -155,6 +163,13 @@ mod tests {
     fn reads_what_the_command_line_asks_a_running_app_for() {
         let args = |a: &[&str]| std::iter::once("hermes-chat").chain(a.iter().copied()).map(str::to_owned).collect::<Vec<_>>();
         let tok = Some("t".to_owned());
+        // The panic Stop goes to the running app from any launch, and wins over anything else asked with it.
+        assert_eq!(request_of(args(&["--stop"]), tok.clone(), false), Some(Request::Stop));
+        assert_eq!(request_of(args(&["--stop"]), None, true), Some(Request::Stop));
+        assert_eq!(request_of(args(&["--show", "--stop"]), tok.clone(), false), Some(Request::Stop));
+        assert_eq!(request_of(args(&["--toggle", "--stop"]), None, false), Some(Request::Stop));
+        // The program's own name doesn't count.
+        assert_eq!(request_of(vec!["--stop".to_owned()], None, true), None);
         assert_eq!(request_of(args(&["--show"]), tok.clone(), false), Some(Request::Show { token: tok.clone() }));
         assert_eq!(request_of(args(&["--toggle"]), None, false), Some(Request::Toggle { token: None }));
         // A plain launch shows the running one; an update's restart starts anew.
@@ -175,11 +190,14 @@ mod tests {
     #[test]
     fn a_request_crosses_the_pipe_as_it_was_sent() {
         let link = "hermes-chat://chat?v=1&connection=abcdefghijklmnopqrst&profile=work&id=c9".to_owned();
-        for request in [Request::Show { token: None }, Request::Toggle { token: Some("t".into()) }, Request::OpenLink { link: link.clone(), token: None }] {
+        for request in
+            [Request::Stop, Request::Show { token: None }, Request::Toggle { token: Some("t".into()) }, Request::OpenLink { link: link.clone(), token: None }]
+        {
             let line = encode(&request);
             assert!(!line.contains('\n'), "{line}");
             assert_eq!(decode(&format!("{line}\n")), Ok(request));
         }
+        assert_eq!(encode(&Request::Stop), r#"{"kind":"stop"}"#);
         assert_eq!(encode(&Request::Toggle { token: None }), r#"{"kind":"toggle","token":null}"#);
         assert_eq!(decode(r#"{"kind":"show","token":""}"#), Ok(Request::Show { token: None }));
     }

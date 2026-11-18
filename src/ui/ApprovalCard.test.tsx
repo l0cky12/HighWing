@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ApprovalItem } from "../hermes/model";
 import { ApprovalCard, ConfirmGrant } from "./ApprovalCard";
+import { LocaleContext, localeFor } from "../i18n/locale";
 
 const card = (over: Partial<ApprovalItem> = {}): ApprovalItem => ({
   kind: "approval",
@@ -164,6 +165,22 @@ describe("A computer-use Approval card", () => {
     expect(text(always)).toContain("in any chat");
     expect(text(always)).toContain("The background version still asks.");
     expect(labels(always)).toEqual(["Yes, always allow", "Back"]);
+  });
+
+  it("says a kept-in-front window moves the focus, though Hermes keys it background", () => {
+    const html = renderToStaticMarkup(<ApprovalCard item={card(cua("background", "bring_to_front", "bring_to_front"))} offline={false} onAnswer={() => {}} />);
+    expect(text(html)).toContain("Keeps the window in front");
+    expect(text(html)).toContain("moves the focus on the Bot Desktop whichever way the input is delivered");
+    expect(text(html)).not.toContain("keeps its place");
+  });
+
+  it("asks in Spanish with Spanish buttons", () => {
+    const html = renderToStaticMarkup(
+      <LocaleContext.Provider value={localeFor("es", [])}>
+        <ConfirmGrant item={card(cua("background"))} choice="session" offline={false} onConfirm={() => {}} onBack={() => {}} />
+      </LocaleContext.Provider>,
+    );
+    expect(labels(html)).toEqual(["Sí, permitir en este chat", "Atrás"]);
   });
 });
 

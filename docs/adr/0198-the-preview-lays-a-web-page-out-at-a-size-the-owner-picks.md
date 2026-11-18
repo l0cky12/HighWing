@@ -1,6 +1,6 @@
 # The Preview lays a web page out at a size the owner picks
 
-> **Superseded by [ADR 0211](0211-the-previews-page-size-row-is-removed.md).** The page size row, its device list and its scaling are gone. A web page always fills the Preview. A still on Linux still divides by the font DPI's zoom.
+> **Superseded by [ADR 0214](0214-the-previews-page-size-row-is-removed.md).** The page size row, its device list and its scaling are gone. A web page always fills the Preview. A still on Linux still divides by the font DPI's zoom.
 
 The owner wanted to see a page in the Preview the way a phone or a tablet lays it out, from a menu like the one in Chrome's device toolbar. The menu has Responsive, then 17 devices under Standard, each with its width and height, and a width and height the owner can type.
 

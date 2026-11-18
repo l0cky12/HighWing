@@ -2,7 +2,8 @@
 // Turns record.mjs recordings into the committed fixtures under src/hermes/fixtures/computer-use/.
 // Keeps the frames the app reads for computer use, in order, and drops chatter (deltas, usage, skins) and other tools' calls.
 // A screenshot data URL over 4096 characters is cut to its first 4096; manifest.json lists each original length.
-// Usage: node tools/computer-use-capture/fixtures.mjs <recordings dir> <out dir>
+// Usage: node tools/computer-use-capture/fixtures.mjs <recordings dir> src/hermes/fixtures/computer-use
+// It also replaces each display ticket with `<ticket>` and drops other tools' calls, which can hold the profile's own text.
 import { readFileSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 

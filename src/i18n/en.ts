@@ -837,7 +837,7 @@ export const en = {
       unchecked: (what: string) => `This app couldn't check ${what}.`,
     },
   },
-  /** Settings → Diagnostics' Computer use section (ADR 0212): each prerequisite of Hermes's computer_use, green or red with why. */
+  /** Settings → Diagnostics' Computer use section (ADR 0215): each prerequisite of Hermes's computer_use, green or red with why. */
   computerUse: {
     title: "Computer use",
     intro: (profile: string) => `Whether Hermes can drive profile ${profile}'s Bot Desktop, one prerequisite at a time.`,

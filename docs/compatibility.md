@@ -239,7 +239,7 @@ What it can't show, on any Hermes: no event carries a server time, so every star
 
 ## Computer use readiness
 
-Settings → Diagnostics → Computer use says whether Hermes's `computer_use` can run for the profile shown (ADR 0212). It needs `GET /api/tools/toolsets` for the toolset, `display.status` for the packages, memory, placement and who holds the screen, and `cli.exec` for `hermes -p <profile> computer-use doctor --json`. Hermes `v0.23.2` has all of them. Each read that fails leaves its rows Unknown with the reason, so an older Hermes shows no red rows it can't know about.
+Settings → Diagnostics → Computer use says whether Hermes's `computer_use` can run for the profile shown (ADR 0215). It needs `GET /api/tools/toolsets` for the toolset, `display.status` for the packages, memory, placement and who holds the screen, and `cli.exec` for `hermes -p <profile> computer-use doctor --json`. Hermes `v0.23.2` has all of them. Each read that fails leaves its rows Unknown with the reason, so an older Hermes shows no red rows it can't know about.
 
 - **`-p` is in argv.** `cli.exec` ignores its `profile` parameter, so doctor without `-p` answers for the profile `default`, whatever is shown.
 - **Doctor's exit code.** 0 is ready, 1 is degraded with the failing checks, 2 is no cua-driver and prints text rather than JSON. A server where `cli.exec` is blocked, or with no `computer-use` command, gives Unknown.

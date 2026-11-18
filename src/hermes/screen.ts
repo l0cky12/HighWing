@@ -124,7 +124,7 @@ export interface ScreenApi {
   stop(): Promise<DisplayStatus>;
   /** `hermes pm install chromium` on the server, through `cli.exec` (screenApps.ts, ADR 0193). */
   installBrowser(): Promise<CliResult>;
-  /** `hermes -p <profile> computer-use doctor --json`. `cli.exec` ignores its `profile` parameter, so `-p` is in argv (ADR 0212). */
+  /** `hermes -p <profile> computer-use doctor --json`. `cli.exec` ignores its `profile` parameter, so `-p` is in argv (ADR 0215). */
   doctor(): Promise<DoctorAnswer>;
   /** Which of `programs` are on the PATH Hermes's own commands get, through `shell.exec`. */
   findPrograms(programs: readonly string[]): Promise<string[]>;

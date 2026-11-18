@@ -121,7 +121,7 @@ export function DiagnosticsSettings({
   copyText?: (text: string) => Promise<void>;
   /** `display.status` for the profile in use, which says whether its Bot Desktop has a browser. */
   screen?: Pick<ScreenApi, "status">;
-  /** Reads each prerequisite of the profile's computer use (ADR 0212); `openToolsets` is where its toolset is switched. */
+  /** Reads each prerequisite of the profile's computer use (ADR 0215); `openToolsets` is where its toolset is switched. */
   computerUse?: { check: () => Promise<Readiness>; openToolsets: () => void };
   /** Reads the profile's `display.tool_progress`, for the flight recorder's rows (ADR 0178). */
   toolProgress?: () => Promise<ToolProgress>;

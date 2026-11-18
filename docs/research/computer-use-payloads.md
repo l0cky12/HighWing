@@ -1,6 +1,6 @@
 # What Hermes sends for computer_use
 
-The computer-use build spec marked three payloads as unverified: the context in `tool.start`, the result in `tool.complete`, and the approval request. This note records what the owner's Hermes server sent for them on 2026-11-18, and where that differs from the spec. The recordings became the fixtures in `src/hermes/fixtures/computer-use/` (ADR 0211). The scripts are in `tools/computer-use-capture/`.
+The computer-use build spec marked three payloads as unverified: the context in `tool.start`, the result in `tool.complete`, and the approval request. This note records what the owner's Hermes server sent for them on 2026-11-18, and where that differs from the spec. The recordings became the fixtures in `src/hermes/fixtures/computer-use/` (ADR 0213). The scripts are in `tools/computer-use-capture/`.
 
 ## Setup
 

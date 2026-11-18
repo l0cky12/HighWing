@@ -1,6 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
+    // WebKitGTK's DMA-BUF renderer draws a blank window on some GPU drivers (ADR 0221). Set before any thread starts,
+    // because set_var isn't safe beside other threads.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
     use hermes_chat::remote;
     // An update's restart starts a new app while the old one is still exiting (update.rs); it must not just ask that
     // one to show itself. Not passed on to what the app starts.

@@ -265,7 +265,7 @@ If Highwing isn't running, either one starts it. The cursor goes to the composer
 On Hyprland, for example, add this to `hyprland.conf`:
 
 ```ini
-bind = SUPER, H, exec, env WEBKIT_DISABLE_DMABUF_RENDERER=1 hermes-chat --toggle
+bind = SUPER, H, exec, hermes-chat --toggle
 ```
 
 On Sway: `bindsym $mod+h exec hermes-chat --toggle`. On GNOME or KDE Plasma, add a custom shortcut in the Keyboard settings with that command. Pick keys your desktop doesn't already use.
@@ -369,7 +369,7 @@ The package installs:
 
 - `/usr/bin/hermes-chat`
 - the app icon in the hicolor theme, at 16 to 512 px plus scalable and symbolic versions (redraw them from `assets/` with `tools/icons/build.sh`; see [ADR 0049](adr/0049-the-app-icon-is-the-rails-h-hinted-per-size-with-its-own-tray-image.md))
-- a desktop launcher that sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`, and registers Highwing for `hermes-chat://` [chat links](#chat-links) (`MimeType=x-scheme-handler/hermes-chat`)
+- a desktop launcher that registers Highwing for `hermes-chat://` [chat links](#chat-links) (`MimeType=x-scheme-handler/hermes-chat`)
 
 Optional dependencies:
 
@@ -380,11 +380,7 @@ Optional dependencies:
 | `desktop-file-utils` | Other apps finding Highwing for `hermes-chat://` links. Its pacman hook updates the desktop's handler list when the package is installed or removed. |
 | A hunspell dictionary (`hunspell-en_us`, or your language's) | Underlining misspelled words as you write a message. Without one, nothing is underlined. |
 
-To start the app from a terminal, set the WebKit variable yourself:
-
-```sh
-WEBKIT_DISABLE_DMABUF_RENDERER=1 hermes-chat
-```
+To start the app from a terminal, run `hermes-chat`.
 
 ### Chat links and the desktop
 
@@ -632,7 +628,7 @@ Everything kept per connection in local storage, and in `project-defaults.json`,
 
 | Problem | What to try |
 | --- | --- |
-| The window is blank | Start the app with `WEBKIT_DISABLE_DMABUF_RENDERER=1`. The launcher and `npm run app` already set it. |
+| The window is blank | Highwing sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` itself when the variable is unset. If you set it to `0`, unset it. |
 | "SSH failed" or "SSH didn't open the tunnel within 20s" | Check that `ssh -o BatchMode=yes <target> true` works without a prompt. Load a passphrase-protected key with `ssh-add`. Check that the dashboard listens on port 9119 on the server. |
 | "Wrong username or password" | Use the dashboard's own username and password, not the SSH account. |
 | "This Hermes server speaks the canonical session protocol" | That Hermes version isn't supported yet. |
@@ -641,7 +637,7 @@ Everything kept per connection in local storage, and in `project-defaults.json`,
 | A saved connection can't be reached or turns down the password | The sign-in screen says what to fix. Settings → General → Connections → **Test** checks a connection without leaving the one in use. Pick another saved connection on the sign-in screen, or **Edit** this one. |
 | The connection is labelled Unsecure | Use `https://`, SSH, or a Tailscale address. Plain `http://` to a public or LAN address isn't encrypted. |
 | A page in the preview pane stays blank | On Windows, the site may forbid framing (`X-Frame-Options` or `frame-ancestors`); the Preview then says so. Open it in a browser instead. On Linux such sites show, and a page that can't load says why. |
-| A key bound to `hermes-chat --toggle` does nothing | Run the command in a terminal to see its error. If Highwing might not be open yet, run it as `env WEBKIT_DISABLE_DMABUF_RENDERER=1 hermes-chat --toggle`, as the launcher does. |
+| A key bound to `hermes-chat --toggle` does nothing | Run the command in a terminal to see its error. |
 | A `hermes-chat://` link does nothing, or opens another app | Run `xdg-mime query default x-scheme-handler/hermes-chat`. It should print `hermes-chat.desktop`; if not, run `xdg-mime default hermes-chat.desktop x-scheme-handler/hermes-chat`. |
 | A chat link says the connection isn't known | The link was copied on another computer, or before this computer's local storage was cleared. Choose Open it here if the chat is on the server signed in now. |
 | Dictation can't record | Check the microphone and the PipeWire or PulseAudio sound server. Settings → General → Voice shows which providers the profile uses. |

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs an AppImage the way a user does (through FUSE) on a virtual display and checks that it opens a window titled
 # Highwing, and that WebKit gets WEBKIT_DISABLE_DMABUF_RENDERER=1 when it is unset and a value the user set when it
-# is set (ADR 0221). It runs the AppImage twice: with the variable unset, then set to 0.
+# is set (ADR 0221).
 #
 #   scripts/release/appimage-launches.sh <path to the AppImage>
 #

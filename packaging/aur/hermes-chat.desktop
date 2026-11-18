@@ -4,7 +4,7 @@ Name=Highwing
 GenericName=Hermes Agent Client
 Comment=Desktop client for your Hermes Agent servers
 Keywords=hermes;agent;chat;
-Exec=env WEBKIT_DISABLE_DMABUF_RENDERER=1 hermes-chat %u
+Exec=hermes-chat %u
 Icon=hermes-chat
 Terminal=false
 Categories=Network;Chat;

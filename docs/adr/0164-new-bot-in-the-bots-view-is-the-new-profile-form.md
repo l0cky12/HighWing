@@ -1,6 +1,6 @@
 # New bot in the Bots view is the New profile form
 
-> **Accepted.** It changes one line of ADR 0066: "This app doesn't create bots." The rest of ADR 0066 stands.
+> **Accepted.** It changes one line of ADR 0066: "This app doesn't create bots." The rest of ADR 0066 stands. **Partly superseded by [ADR 0203](0203-the-bots-view-folds-into-bots-mode-and-a-bot-opened-there-is-a-visit.md).** New bot is above the bots in the chat list's Bots mode, and the Bots view is gone.
 
 The owner wanted to set up bots from the Bots view and see the new bot there once made. Until now the view only listed bots. A bot is a profile (ADR 0066), and making one meant leaving for Settings → Profiles, making a profile there, and opening the Bots view again to find it.
 

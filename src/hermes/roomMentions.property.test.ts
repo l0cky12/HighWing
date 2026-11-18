@@ -233,10 +233,11 @@ describe("pickerRows, over generated names", () => {
 
   it("only narrows as the query grows, and lists every bot then Everyone for an empty query", () => {
     const anyNames = fc.array(fc.record({ handle: handleArb, name: fc.string({ unit: "grapheme", minLength: 1, maxLength: 12 }) }), { minLength: 1, maxLength: 5 });
-    // A combining mark appended to the query joins the letter before it under NFC, so it can widen a match; leave it out.
-    const growth = fc.string({ unit: "grapheme", minLength: 1, maxLength: 2 }).filter((s) => !/^\p{M}/u.test(s));
+    const growth = fc.string({ unit: "grapheme", minLength: 1, maxLength: 2 });
     fc.assert(
       fc.property(anyNames, fc.string({ unit: "grapheme", maxLength: 4 }), growth, (roster, q, more) => {
+        // A combining mark or a Hangul vowel joins the letter before it under NFC, which can widen a match; such growth isn't a longer query.
+        fc.pre((q + more).normalize("NFC").startsWith(q.normalize("NFC")));
         const wide = pickerRows(q, roster, "Everyone");
         const narrow = pickerRows(q + more, roster, "Everyone");
         const wideSeats = wide.flatMap((r) => (r.kind === "seat" ? [r.seat] : []));

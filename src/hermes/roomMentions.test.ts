@@ -62,6 +62,14 @@ describe("goesTo", () => {
     expect(goesTo(text, TRIO).mentions).toMatchObject([{ kind: "trailing", raw, tail, meant: { kind: "seat", seat: BRAM } }]);
   });
 
+  it("reads a mention followed by a 64 KB run of marks in a blink, since it runs on every keystroke", () => {
+    const text = `@ada${".".repeat(65_532)}`;
+    const started = performance.now();
+    const g = goesTo(text, TRIO);
+    expect(performance.now() - started).toBeLessThan(250);
+    expect(g.mentions).toMatchObject([{ kind: "trailing", meant: { kind: "seat", seat: ADA }, tail: ".".repeat(65_532) }]);
+  });
+
   it("finds the bot a trailing mark hides when its handle itself ends in a mark, taking the longest handle", () => {
     const REVIEW = { handle: "review-", name: "Reviewer" };
     const REVIEW_BARE = { handle: "review", name: "Review" };

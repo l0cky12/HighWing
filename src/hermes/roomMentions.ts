@@ -71,6 +71,8 @@ const EVERYONE: Target<never> = { kind: "everyone" };
 
 export function goesTo<S extends Handled>(text: string, roster: readonly S[]): GoesTo<S> {
   const bySeat = new Map(roster.map((s) => [fold(s.handle), s]));
+  // Folding never shortens what the regex captures, so no stem longer than the longest handle can name a bot.
+  const longest = Math.max(...[...bySeat.keys(), ...EVERYONE_HANDLES].map((h) => h.length));
   const targetOf = (handle: string): Target<S> | undefined => {
     if (EVERYONE_HANDLES.has(handle)) return EVERYONE;
     const seat = bySeat.get(handle);
@@ -94,10 +96,12 @@ export function goesTo<S extends Handled>(text: string, roster: readonly S[]): G
       else routed.add(handle);
       mentions.push(!glued && !inCode ? { at, raw, kind: "plain", target } : inCode ? { at, raw, kind: "inCode", target } : { at, raw, kind: "glued", target, before: runBefore(text, at) });
     } else if (!glued && !inCode) {
-      let stem = raw.length;
+      let bare = raw.length;
+      while (bare > 0 && TAIL.has(raw[bare - 1])) bare--;
+      let stem = Math.min(raw.length - 1, longest);
       let meant: Target<S> | undefined;
-      while (!meant && stem > 0 && TAIL.has(raw[stem - 1])) meant = targetOf(fold(raw.slice(0, --stem)));
-      mentions.push(meant ? { at, raw, kind: "trailing", meant, tail: raw.slice(stem) } : { at, raw, kind: "unknown" });
+      for (; !meant && stem >= bare && stem > 0; stem--) meant = targetOf(fold(raw.slice(0, stem)));
+      mentions.push(meant ? { at, raw, kind: "trailing", meant, tail: raw.slice(stem + 1) } : { at, raw, kind: "unknown" });
     }
   }
   const [first, ...rest] = roster.filter((s) => routed.has(fold(s.handle)));

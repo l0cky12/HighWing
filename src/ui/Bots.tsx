@@ -379,7 +379,7 @@ export function useBotActions({
 
 /**
  * The bots' rows: pinned first, hidden ones behind a disclosure, Up and Down between them. A row in another profile
- * than `profile` asks first while `leaving` says what switching leaves behind.
+ * than `profile` asks first only while `leaving` names an Approval or Question waiting there; a running reply doesn't ask (ADR 0224).
  * `current`: the profile of the bot whose Bot Chat is open.
  */
 export function BotList({

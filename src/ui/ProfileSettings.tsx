@@ -61,7 +61,7 @@ export type ProfilesWiring = {
   lostMessages: (name: string) => number;
   /** How many scheduled jobs `name` has; undefined when that couldn't be read. */
   jobCount: (name: string) => Promise<number | undefined>;
-  /** What switching away from the profile in use leaves behind, asked about first, as the switcher does. */
+  /** The Approval or Question waiting in the profile in use, which switching away asks about first, as the switcher does. */
   leaving?: string;
   /**
    * Switches the app to `name` through the switcher's own path: its guard asks about unsaved edits first. Resolves

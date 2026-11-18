@@ -177,8 +177,29 @@ describe("Saved connections", () => {
     expect(submits(BRAVO)).toEqual([]);
     expect(JSON.stringify(servers[BRAVO].restRequests)).not.toContain("a1");
 
-    // Editing another saved connection restores that destination's open chat too.
+    // A reply running in bravo does not stop the switch: it happens at once, and alpha's first toast says what runs on.
     await userEvent.click(screen.getByText("Bravo notes"));
+    await waitFor(() => expect(servers[BRAVO].runtimeIdOf("b1")).toBeTruthy());
+    await userEvent.type(composer(), "go on{Enter}");
+    await waitFor(() => expect(submits(BRAVO).length).toBe(1));
+    await openRail();
+    await userEvent.click(within(screen.getByRole("dialog", { name: "Switch connection" })).getByText("alpha.example.com"));
+    expect(await screen.findAllByText("Alpha backups")).toBeTruthy();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.getByRole("status").textContent).toBe("A reply is running: “go on” in default.");
+    await openRail();
+    await userEvent.click(within(screen.getByRole("dialog", { name: "Switch connection" })).getByText("Home"));
+    // Alpha's Approval from above still waits, so leaving it asks, and the question names the Approval only.
+    const again = await screen.findByRole("alertdialog", { name: "Switch to Home?" });
+    expect(within(again).getByText(/An Approval is waiting for you/)).toBeTruthy();
+    expect(within(again).queryByText(/A reply is running/)).toBeNull();
+    await userEvent.click(within(again).getByRole("button", { name: "Switch anyway" }));
+    expect(await screen.findAllByText("Bravo notes")).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+    act(() => servers[BRAVO].event(servers[BRAVO].runtimeIdOf("b1")!, "message.complete", { text: "Done." }));
+
+    // Editing another saved connection restores that destination's open chat too.
+    await userEvent.click(screen.getAllByText("Bravo notes")[0]);
     await waitFor(() => expect(servers[BRAVO].runtimeIdOf("b1")).toBeTruthy());
     act(() => { for (const id of servers[ALPHA].openRequests.keys()) servers[ALPHA].cancelRequest(id, "synthetic timeout"); });
     await openRail();

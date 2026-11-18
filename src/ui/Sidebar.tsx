@@ -593,26 +593,24 @@ function OtherBadge({ info }: { info?: OtherProfile }) {
   );
 }
 
-/**
- * What the owner leaves behind in `profile` by switching away now, if anything: an Approval or another Question
- * waiting, or a reply running. Hermes keeps running the reply; a Question waits only until Hermes stops waiting (its
- * timeout).
- */
 /** A profile's name as the switcher shows it: `default`'s display name first, when Hermes keeps one (ADR 0156). */
 export const profileLabel = (l: Locale, name: string, defaultName?: string) => (name === "default" && defaultName ? l.profiles.named(defaultName, name) : name);
 
-/** What switching away from `profile` leaves behind, in `words` (the catalogue's; English where the screen isn't converted). */
+/**
+ * What switching away from `profile` leaves behind that the owner is asked about, in `words` (the catalogue's; English
+ * where the screen isn't converted): an Approval or another Question waiting, which Hermes stops waiting for after its
+ * timeout. A running reply isn't asked about: Hermes keeps it going (ADR 0224).
+ */
 export function leavingNote(profile: string, chats: Chat[], words: Locale["profiles"]["leaving"] = en.profiles.leaving): string | undefined {
   const asked = chats.flatMap((c) => c.items).find(isWaiting);
   if (asked) return asked.kind === "approval" ? words.approval(profile) : words.question(profile);
-  if (chats.some((c) => c.running)) return words.reply(profile);
 }
 
 /**
  * The current profile's name with a ▾, which opens the server's profiles with a filter box (ADR 0001). Enter picks
  * the first match; Escape or a click outside closes it. A dot on it, and a count on each profile in the menu, show
  * Unread chats in the other profiles, as the latest poll found them. Opening the menu asks for a fresh check.
- * `leaving`: what switching away now leaves behind, which the owner is asked about first. `clone`: the menu's Clone a
+ * `leaving`: the Approval or Question waiting here, which the owner is asked about before switching away. `clone`: the menu's Clone a
  * profile, whose dialog opens the profile it made through the same question. `checkTimes`: when the others were checked.
  */
 function ProfileSwitcher({

@@ -91,27 +91,37 @@ describe("Switching profile in the app", () => {
     await switched(hermes, "work");
   });
 
-  it("says a reply is still running before leaving its profile", async () => {
+  it("switches at once while a reply is running, and says in a toast that it keeps going", async () => {
     const { hermes, user } = await launch();
     await act(async () => {
       const id = await hermes.newChat();
       await hermes.send(id, "Summarise the logs");
     });
     await pickProfile(user, "work");
-    expect((await screen.findByRole("alertdialog")).textContent).toMatch(/A reply is still running in default\. Hermes keeps it going/);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await switched(hermes, "work");
+    expect(screen.getByRole("status").textContent).toMatch(/A reply is still running in default\. Hermes keeps it going/);
   });
 
-  it("keeps the question open if the reply finishes meanwhile, and puts focus back on the switcher on Stay", async () => {
+  it("shows no toast when nothing is running in the profile left", async () => {
+    const { hermes, user } = await launch();
+    await pickProfile(user, "work");
+    await switched(hermes, "work");
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("keeps the question open if the approval is answered meanwhile, and puts focus back on the switcher on Stay", async () => {
     const { server, hermes, user } = await launch();
     let id = "";
     await act(async () => {
       id = await hermes.newChat();
-      await hermes.send(id, "Summarise the logs");
+      await hermes.send(id, "Clean up the logs");
+      server.askApproval(server.runtimeIdOf(id)!);
     });
     await pickProfile(user, "work");
     const ask = await screen.findByRole("alertdialog");
     expect(ask.getAttribute("aria-describedby")).toBeTruthy();
-    expect(document.getElementById(ask.getAttribute("aria-describedby")!)?.textContent).toMatch(/A reply is still running/);
+    expect(document.getElementById(ask.getAttribute("aria-describedby")!)?.textContent).toMatch(/An approval is waiting/);
     act(() => server.event(server.runtimeIdOf(id)!, "message.complete", { text: "Done." }));
     expect(screen.getByRole("alertdialog")).toBe(ask);
 

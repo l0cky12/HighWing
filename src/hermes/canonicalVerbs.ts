@@ -51,7 +51,7 @@ export const APP_METHODS = [
   "file.attach",
   "gateway.capabilities",
   "gateway.ping",
-  // Group rooms (ADR 0205). Never `groups.capabilities`: its first call writes a secret file on the server.
+  // Group rooms (ADR 0206). Never `groups.capabilities`: its first call writes a secret file on the server.
   "groups.approve",
   "groups.continue",
   "groups.create",

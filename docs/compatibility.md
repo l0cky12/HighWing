@@ -204,7 +204,7 @@ Needs `profiles.list` on `/api/ws` with each profile's Bot Chat in its rows (`ca
 
 ## Group rooms
 
-Needs the `groups.*` methods on `/api/ws` (`groups.list`, `groups.state`, `groups.log`, `groups.create`, `groups.send`, `groups.stop`, `groups.approve`, `groups.rename` and `groups.disband`), and Hermes's room worker, which a standalone `hermes dashboard` starts by itself. Checked with `groups.list {limit: 1}`, a read. The app never sends `groups.capabilities`, because its first call writes a secret file on the server (ADR 0205). Hermes has rooms from `v2026.8.31`; `bf0203a`, `f0d94882` and `ae2a81cc` all serve them. Without them, Bots mode has no Group rooms section.
+Needs the `groups.*` methods on `/api/ws` (`groups.list`, `groups.state`, `groups.log`, `groups.create`, `groups.send`, `groups.stop`, `groups.approve`, `groups.rename` and `groups.disband`), and Hermes's room worker, which a standalone `hermes dashboard` starts by itself. Checked with `groups.list {limit: 1}`, a read. The app never sends `groups.capabilities`, because its first call writes a secret file on the server (ADR 0206). Hermes has rooms from `v2026.8.31`; `bf0203a`, `f0d94882` and `ae2a81cc` all serve them. Without them, Bots mode has no Group rooms section.
 
 Two things differ between builds, and the app reads each from what Hermes says rather than from its version:
 

@@ -613,7 +613,7 @@ export const CAPABILITIES: readonly CapabilitySpec[] = [
     needs: "The groups.* methods on /api/ws, and Hermes's room worker running in the dashboard.",
     without: "Bots mode has no Group rooms section.",
     anchor: "group-rooms",
-    // Never `groups.capabilities`: its first call writes a secret file on the server (ADR 0044, ADR 0205).
+    // Never `groups.capabilities`: its first call writes a secret file on the server (ADR 0044, ADR 0206).
     probe: { kind: "rpc", method: "groups.list", params: () => ({ limit: 1 }), shape: isRoomList },
     methods: ["groups.list"],
     writeMethods: /^groups\.(?!list$|state$|log$)/,

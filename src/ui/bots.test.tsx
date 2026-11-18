@@ -1441,6 +1441,18 @@ describe("The chat list panel's two modes", () => {
     await waitFor(() => expect(current()).toEqual(["true", null]));
   });
 
+  it("opens another bot at once while a reply is running here, and says in a toast that it keeps going", async () => {
+    const { hermes, user } = await launch((s) => (s.liveSessions = []));
+    await openScribe(user);
+    await waitFor(() => expect(hermes.getSnapshot().chats.find((c) => c.id === "scribe-bot")?.runtimeId).toBeTruthy());
+    await act(async () => void (await hermes.send("scribe-bot", "Keep going")));
+    expect(hermes.getSnapshot().chats.find((c) => c.id === "scribe-bot")?.running).toBe(true);
+    await user.click(panelBots()[0]);
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    await waitFor(() => expect(hermes.profile).toBe("default"));
+    expect(screen.getByRole("status").textContent).toMatch(/A reply is still running in scribe/);
+  });
+
   it("keeps a chat started while another bot's Bot Chat is on its way, and marks no bot current", async () => {
     const { server, hermes, user } = await launch((s) => (s.liveSessions = []));
     await openScribe(user);

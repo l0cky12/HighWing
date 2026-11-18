@@ -634,7 +634,7 @@ function Screens({ links }: { links: LinkInbox }) {
    * computer saved for it. Without a saved password, or if signing in fails, the sign-in screen asks for `target`.
    * The connection left behind is closed first; Hermes keeps its running replies going on the server.
    */
-  const switchTo = (target: SavedConnection) =>
+  const switchTo = (target: SavedConnection, running?: string) =>
     serial(async (stale) => {
       if (stale()) return;
       const shownAs = (h: Hermes, d: SignInDetails) => {
@@ -643,7 +643,8 @@ function Screens({ links }: { links: LinkInbox }) {
         const c = store.get(target.id) ?? target;
         setConnection(c);
         setHeaders(headerNames(d));
-        setNotSaved(undefined);
+        // The replies left going on the connection just closed, in the toast the new screen opens with.
+        setNotSaved(running);
         setKept({ password: true, headers: true });
         setError(undefined);
         // The connection's own last open chat, in the profile it showed last.
@@ -943,7 +944,7 @@ function Screens({ links }: { links: LinkInbox }) {
           connectionGuard={connectionGuard}
           editGuard={editGuard}
           onSetUp={() => void editConnection(connection)}
-          onSwitchConnection={(c) => void switchTo(c)}
+          onSwitchConnection={(c, running) => void switchTo(c, running)}
           onAddConnection={() => setSetup({ mode: "add", initial: BLANK, target: store.draft(BLANK) })}
           onEditConnection={(c) => void editConnection(c)}
           onRenameConnection={(c, name) => {
@@ -1204,8 +1205,8 @@ export function Main({
   saved?: SavedConnection[];
   /** The connection list's last change couldn't be stored. */
   savedUnsaved?: boolean;
-  /** Leaves this connection for another, once the owner has agreed to leave whatever is running here. */
-  onSwitchConnection?: (c: SavedConnection) => void;
+  /** Leaves this connection for another, once the owner has agreed to leave what waits here. `running`: the replies it leaves going, for the new screen's first toast. */
+  onSwitchConnection?: (c: SavedConnection, running?: string) => void;
   onAddConnection?: () => void;
   /** Opens setup for `c`; for another connection than this one, once the owner has agreed to leave. */
   onEditConnection?: (c: SavedConnection) => void;
@@ -2181,7 +2182,10 @@ export function Main({
     shown?.set(prefScope(connection, name), null);
     if (!keepSettings) setSettingsOpen(false);
     setProjectOpen(false);
-    setToast(null);
+    // A running reply isn't asked about: Hermes keeps it going, so the switch says so after it (ADR 0224). Read now, not
+    // from this render: a chat link's switch runs after a lookup that can outlast a reply starting or ending.
+    const left = hermes.getSnapshot();
+    setToast(left.chats.some((c) => c.running) ? { text: words.profiles.leaving.reply(left.profile), at: Date.now() } : null);
     // What the Preview showed was the old profile's; the Screen tab starts again for the new one.
     stepPreview({ kind: "clear" });
     if (panelTab === "preview") setPanelOpen(false);
@@ -2201,19 +2205,22 @@ export function Main({
       ),
     );
 
-  // Another saved connection (ADR 0112). Whatever is running or waiting here is named first, from the inbox's entries,
-  // which cover every profile on this server; an unsaved memory or skill edit asks first too. Nothing is stopped:
-  // Hermes keeps a running reply going after this connection closes, as it does when the profile switches.
+  // Another saved connection (ADR 0112). An Approval waiting here is named first, from the inbox's entries, which
+  // cover every profile on this server; an unsaved memory or skill edit asks first too. Nothing is stopped, and a
+  // running reply isn't asked about: Hermes keeps it going after this connection closes, as it does when the profile
+  // switches, and the new screen's first toast names it (ADR 0224).
   const [connectionAsk, setConnectionAsk] = useState<{ to: SavedConnection; notes: string[]; go: () => void; stay?: () => void }>();
   const [removeAsk, setRemoveAsk] = useState<SavedConnection>();
-  const leavingConnection = (): string[] => {
-    const named = (es: InboxEntry[]) =>
-      es.slice(0, 3).map((e) => `“${e.title}” in ${e.profile}`).join(", ") + (es.length > 3 ? `, and ${es.length - 3} more` : "");
-    const waiting = inbox.entries.filter((e) => e.kind === "approval" && !e.ended);
+  const named = (es: InboxEntry[]) =>
+    es.slice(0, 3).map((e) => `“${e.title}” in ${e.profile}`).join(", ") + (es.length > 3 ? `, and ${es.length - 3} more` : "");
+  const runningNote = (): string | undefined => {
     const running = inbox.entries.filter((e) => e.kind === "running");
+    if (running.length) return `${running.length === 1 ? "A reply is" : `${running.length} replies are`} running: ${named(running)}.`;
+  };
+  const leavingConnection = (): string[] => {
+    const waiting = inbox.entries.filter((e) => e.kind === "approval" && !e.ended);
     const notes: string[] = [];
     if (waiting.length) notes.push(`${waiting.length === 1 ? "An Approval is" : `${waiting.length} Approvals are`} waiting for you: ${named(waiting)}.`);
-    if (running.length) notes.push(`${running.length === 1 ? "A reply is" : `${running.length} replies are`} running: ${named(running)}.`);
     const here = leavingNote(profile, chats);
     if (!notes.length && here) notes.push(here);
     return notes;
@@ -2231,7 +2238,7 @@ export function Main({
   // background, so there is nothing to ask about leaving.
   const keepsLive = (liveLimit ?? 1) > 1;
   const switchConnection = (c: SavedConnection) =>
-    keepsLive || servers.some((s) => s.id === c.id && s.status !== "needs-sign-in") ? guard(() => onSwitchConnection?.(c)) : leaveConnection(c, () => onSwitchConnection?.(c));
+    keepsLive || servers.some((s) => s.id === c.id && s.status !== "needs-sign-in") ? guard(() => onSwitchConnection?.(c)) : leaveConnection(c, () => onSwitchConnection?.(c, runningNote()));
   /** What is under way on a background connection, for the question before removing it. */
   const backgroundNotes = (id: string): string[] => {
     const s = servers.find((x) => x.id === id && !x.target);

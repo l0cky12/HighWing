@@ -95,16 +95,30 @@ describe("Opening a chat link", () => {
     expect(prompts(server)).toBe(0);
   });
 
-  it("asks before leaving a profile with a reply running, and Cancel leaves everything as it was", async () => {
-    const { hermes, linkTo, open, user } = await launch();
-    let id = "";
+  it("opens a link in another profile at once while a reply is running, with a toast saying it keeps going", async () => {
+    const { hermes, linkTo, open } = await launch();
     await act(async () => {
-      id = await hermes.newChat();
+      const id = await hermes.newChat();
       await hermes.send(id, "Summarise the logs");
     });
     await open(linkTo("work", "deploy"));
+    await waitFor(() => expect(onScreen()).toBe("Deploy plan"));
+    expect(hermes.getSnapshot().profile).toBe("work");
+    expect(screen.queryByLabelText("Chat link")).toBeNull();
+    expect(screen.getByRole("status").textContent).toMatch(/A reply is still running in default/);
+  });
+
+  it("asks before leaving a profile with an Approval waiting, and Cancel leaves everything as it was", async () => {
+    const { server, hermes, linkTo, open, user } = await launch();
+    let id = "";
+    await act(async () => {
+      id = await hermes.newChat();
+      await hermes.send(id, "Clean up the logs");
+      server.askApproval(server.runtimeIdOf(id)!);
+    });
+    await open(linkTo("work", "deploy"));
     const asking = await screen.findByLabelText("Chat link");
-    expect(asking.textContent).toMatch(/A reply is still running in default.*Switch to work to open the linked chat\?/);
+    expect(asking.textContent).toMatch(/An approval is waiting in default.*Switch to work to open the linked chat\?/);
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(notice()).toBeNull();
     expect(hermes.getSnapshot().profile).toBe("default");
@@ -233,6 +247,21 @@ describe("A chat link and what the owner does meanwhile", () => {
     await act(async () => void (await hermes.idle()));
     expect(hermes.getSnapshot().profile).toBe("ops");
     expect(notice()).toBeNull();
+  });
+
+  it("names a reply started while a slow lookup ran in the toast of the switch it leads to", async () => {
+    const { server, hermes, linkTo, open } = await launch();
+    const answer = holdProfiles(server);
+    await open(linkTo("work", "deploy"));
+    await screen.findByLabelText("Chat link");
+    await act(async () => {
+      const id = await hermes.newChat();
+      await hermes.send(id, "Summarise the logs");
+    });
+    answer();
+    await waitFor(() => expect(onScreen()).toBe("Deploy plan"));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.getByRole("status").textContent).toMatch(/A reply is still running in default/);
   });
 
   it("drops a slow lookup's answer once the owner has opened another chat meanwhile", async () => {

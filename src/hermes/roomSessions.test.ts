@@ -117,6 +117,15 @@ describe("a Group room seat's session", () => {
     expect(unmatched).toBe(0);
   });
 
+  it("is left out of the Archived list, which Hermes lists hidden sessions in", async () => {
+    const { server, hermes } = await signedIn();
+    const seat = server.seatSession("default", "r1", "Hello.");
+    server.store("default")!.find((r) => r.id === seat)!.archived = true;
+    server.sessions.push(row("owner-old", 0, { title: "Group: x", source: "hermes-chat", archived: true }));
+
+    expect((await hermes.browse({ archived: "only" })).found.map((f) => f.chatId)).toEqual(["owner-old"]);
+  });
+
   it("is left out of search, which Hermes doesn't filter for hidden sessions", async () => {
     const { server, hermes } = await signedIn();
     server.seatSession("default", "r1", "The quokka census is done.");

@@ -90,6 +90,8 @@ export type ProfilesWiring = {
   persona?: PersonaApi;
   /** Told whether the open form holds a persona Hermes doesn't have, and whose, so leaving the screen asks first. */
   onPersonaDirty?: (dirty: boolean, profile: string) => void;
+  /** Bumped each time the owner discards an unsaved persona on leaving: an open form closes, dropping it. */
+  personaDiscards?: number;
   /** New's Skills and Tools (ADR 0197): read from the profile in use, applied to the new profile and read back. */
   setup?: SetupApis;
   /** Tells the owner what a create came to once its form has closed, through the app's own notice. */
@@ -955,8 +957,17 @@ export function ProfileForm({
   const soulChanged = row ? soulRead.kind === "read" && asReadBack(soul) !== asReadBack(soulRead.base.content) : !!soul.trim();
   const dirty = (row ? nameChanged : !!trimmed) || descChanged || modelTouched || lookChanged || soulChanged || choosing(capabilities.setup);
   const soulOwner = row?.name ?? (trimmed || wiring.inUse);
-  useEffect(() => reportSoul?.(soulChanged, soulOwner), [soulChanged, soulOwner, reportSoul]);
+  // Once Create has made the profile, its persona is on Hermes, even while the form shows what the create came to.
+  const soulUnsaved = soulChanged && !outcome && !madeNoModel;
+  useEffect(() => reportSoul?.(soulUnsaved, soulOwner), [soulUnsaved, soulOwner, reportSoul]);
   useEffect(() => () => reportSoul?.(false, ""), [reportSoul]);
+  const discards = useRef(wiring.personaDiscards);
+  useEffect(() => {
+    if (wiring.personaDiscards === discards.current) return;
+    discards.current = wiring.personaDiscards;
+    onClose();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new discard closes the form
+  }, [wiring.personaDiscards]);
 
   const issue = isDefault
     ? !trimmed

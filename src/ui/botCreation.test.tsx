@@ -60,6 +60,8 @@ async function open({ connected = true, rephrase = true, setup = true, seed = ()
   const done = vi.fn<(r: FormResult) => void>();
   const notified = vi.fn<(n: Notice) => void>();
   const closed = vi.fn();
+  /** What the form told the app, each time, about an unsaved persona. */
+  const personaReports: boolean[] = [];
   const at = { connected, inUse: "default" };
   const deleted = vi.fn(async () => {
     if (forgetFails) throw new Error("The drafts folder is read-only.");
@@ -76,6 +78,7 @@ async function open({ connected = true, rephrase = true, setup = true, seed = ()
     switchTo: async () => true,
     local: { pending: () => undefined, note: () => {}, clear: () => {}, renamed: async () => {}, deleted },
     copyText: async () => {},
+    onPersonaDirty: (dirty) => void personaReports.push(dirty),
     ...(rephrase &&
       connected && {
         rephrase: (p) => ({
@@ -111,7 +114,7 @@ async function open({ connected = true, rephrase = true, setup = true, seed = ()
     at.inUse = name;
     rerender(form());
   };
-  return { server, hermes, done, notified, closed, deleted, unmount, reconnect, switchProfile, user: userEvent.setup() };
+  return { server, hermes, done, notified, closed, deleted, unmount, reconnect, switchProfile, personaReports, user: userEvent.setup() };
 }
 
 const dialog = () => screen.getByRole("dialog");
@@ -502,6 +505,20 @@ describe("Skills, Tools and MCP servers", () => {
       expect(done.mock.calls).toEqual([[{ notice }]]);
       cleanup();
     }
+  });
+
+  it("stops calling the persona unsaved once Create made the profile, while the form says what didn't apply", async () => {
+    const { user, personaReports } = await open({ models: true, seed: (s) => (s.profileModelError = "Model not listed.") });
+    await named(user);
+    await user.type(persona(), ROUGH);
+    expect(personaReports.at(-1)).toBe(true);
+    const provider = within(dialog()).getByLabelText("Provider") as HTMLSelectElement;
+    await waitFor(() => expect(provider.options.length).toBeGreaterThan(1));
+    await user.selectOptions(provider, "openai");
+    await user.type(within(dialog()).getByLabelText("Model name"), "gpt-6.1");
+    await user.click(create());
+    await within(dialog()).findByText("Profile created, but Hermes didn't set the model: Model not listed.");
+    expect(personaReports.at(-1)).toBe(false);
   });
 
   it("offers Set model when Hermes didn't set the model picked, and goes on to Edit with what didn't apply", async () => {

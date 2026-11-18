@@ -340,6 +340,25 @@ describe("A chat link and what the owner does meanwhile", () => {
     expect(persona.value).toBe("You review code.\nBe blunt.");
   });
 
+  it("closes the Edit profile form when its unsaved persona is discarded, even when the link then can't open", async () => {
+    const { server, linkTo, open, user } = await launch();
+    server.souls.work = "You review code.\n";
+    await user.click(screen.getByRole("button", { name: /Settings/ }));
+    await user.click(screen.getByRole("tab", { name: /Profiles/ }));
+    const list = await screen.findByRole("listbox", { name: "Profiles" });
+    const work = await waitFor(() => within(list).getAllByRole("option").find((o) => o.getAttribute("data-profile") === "work")!);
+    await user.click(within(work).getByRole("button", { name: "Edit work" }));
+    const persona = within(screen.getByRole("dialog", { name: "Edit profile: work" })).getByLabelText<HTMLTextAreaElement>("Persona");
+    await waitFor(() => expect(persona.disabled).toBe(false));
+    await user.type(persona, "Be blunt.");
+    await open(linkTo("work", "deploy"));
+    const ask = await screen.findByRole("alertdialog", { name: "Discard your persona edit?" });
+    await open(linkTo("default", "nas", "fromanothercomputer1"));
+    await screen.findByText(/connection this computer doesn't know/);
+    await user.click(within(ask).getByRole("button", { name: "Discard edit" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Edit profile: work" })).toBeNull());
+  });
+
   it("won't switch for a link a newer one replaced while the unsaved-edit question was open", async () => {
     const { hermes, linkTo, open, user } = await launch();
     await unsavedMemory(user);

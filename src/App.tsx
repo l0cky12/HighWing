@@ -1321,6 +1321,8 @@ export function Main({
     personaDirty.current = dirty;
     setPersonaUnsaved(dirty ? profile : undefined);
   }, []);
+  // Bumped when the owner discards it, so the form closes even if what follows doesn't close it.
+  const [personaDiscards, setPersonaDiscards] = useState(0);
   // Artifacts open to edit beside the chat (artifacts.ts, ADR 0029): their drafts live in memory for this sign-in, so
   // moving around the app keeps them, and only signing out or closing the window would drop one.
   const artifacts = useMemo(
@@ -3221,6 +3223,7 @@ export function Main({
   const profilesWiring: Omit<ProfilesWiring, "showTab"> = {
     api: hermes.manageProfiles,
     onPersonaDirty,
+    personaDiscards,
     clone: hermes.profileClone,
     capabilities: hermes.capabilities,
     inUse: profile,
@@ -4091,8 +4094,10 @@ export function Main({
           }}
           onDiscard={() => {
             setLeaving(undefined);
-            if (leaving.edit === "persona") onPersonaDirty(false, "");
-            else if (leaving.edit === "memory") {
+            if (leaving.edit === "persona") {
+              onPersonaDirty(false, "");
+              setPersonaDiscards((n) => n + 1);
+            } else if (leaving.edit === "memory") {
               onMemoryDirty(false);
               setMemoryDiscards((n) => n + 1);
             } else {

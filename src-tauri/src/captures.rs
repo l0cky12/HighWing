@@ -13,7 +13,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
-/// Why a file couldn't be staged. Sent to the webview as `{ kind, message }`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, thiserror::Error)]
 #[serde(tag = "kind", content = "message", rename_all = "camelCase")]
 pub enum CaptureError {
@@ -25,7 +24,6 @@ fn failed(what: &str, e: impl std::fmt::Display) -> CaptureError {
     CaptureError::Failed(format!("{what}: {e}"))
 }
 
-/// A file staged for the composer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Capture {
     pub path: String,
@@ -104,7 +102,6 @@ fn private_dir(dir: &Path) -> Result<(), CaptureError> {
     Ok(())
 }
 
-/// A private cache folder, durable across app restarts so a failed message can still be retried with its attachments.
 pub fn default_root() -> Result<PathBuf, CaptureError> {
     #[cfg(unix)]
     let cache = std::env::var_os("XDG_CACHE_HOME")
@@ -118,8 +115,6 @@ pub fn default_root() -> Result<PathBuf, CaptureError> {
     Ok(cache.join("hermes-chat").join("captures"))
 }
 
-/// A staged image's file name without its extension: the name the app gave it (`still`, `annotation-<n>`), if it is
-/// plain enough.
 pub fn capture_stem(name: &str) -> String {
     let ok = !name.is_empty() && name.len() <= 100 && !name.starts_with('.') && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'));
     if ok {

@@ -88,7 +88,6 @@ export function TraySettings({ tray }: { tray?: TrayWiring }) {
           </div>
         )}
       </SettingRow>
-      {/* Announced only when the tray can't be used. */}
       <SettingNote className="tray-note" tone={here?.problem ? "warn" : "muted"} role={here?.problem ? "status" : undefined}>
         {here ? here.text : !tray || checked ? "The tray works only in the desktop app." : "Checking the tray…"}
       </SettingNote>

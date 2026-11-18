@@ -1,11 +1,8 @@
-// The staging desk: each chat keeps its staged files, an annotation goes only to its own chat's composer (or waits for
-// it), and every file the desk staged is deleted once nothing needs it.
 import { describe, expect, it, vi } from "vitest";
 import type { Attachment } from "./model";
 import { AttachmentDesk, type AttachmentDeskApi, type ComposerSink } from "./attachmentDesk";
 import { stagedFiles } from "./unsaved";
 
-/** A Rust side that records what it was asked to delete. */
 function fakeApi() {
   const discarded: string[] = [];
   const api: AttachmentDeskApi = { discard: async (path) => void discarded.push(path) };

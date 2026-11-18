@@ -75,7 +75,6 @@ export function moveLiveChatData(move: (key: string) => string | null | undefine
   }
 }
 
-/** Attachment paths in every connection/profile's outbox and queue, so Rust keeps the staged files they hold. */
 export function outboxAttachmentPaths(): string[] {
   const read = (k: string): unknown => {
     try {

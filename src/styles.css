@@ -1912,7 +1912,6 @@ button.settings-search-tab:hover { color: var(--text); }
 /* Why the item above it does nothing, lined up with its label (link menu, previewContext.tsx). */
 .menu-note { padding: 0 8px 4px 33px; font-size: calc(12rem / 14); color: var(--faint); }
 
-/* Keyboard Shortcuts (KeyboardSettings.tsx): the chord recorder, fixed keys and clashes. */
 .shortcut-controls { display: flex; gap: 8px; flex-shrink: 0; }
 .shortcut-key { min-width: 132px; justify-content: center; font-family: var(--mono); }
 .shortcut-key.recording { border-color: var(--accent, var(--text)); color: var(--text); }

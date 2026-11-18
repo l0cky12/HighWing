@@ -49,7 +49,6 @@ const PNG = "\x89PNG\r\n\x1a\nscreen";
 const composer = () => screen.getByPlaceholderText<HTMLTextAreaElement>("Message Hermes");
 const settle = (hermes: Hermes) => act(async () => void (await hermes.idle()));
 
-/** The Rust side of staging: a paste's bytes are saved on the fake Hermes's disk, and deleted once the desk lets go. */
 function fakeRust(server: FakeHermes) {
   const names: string[] = [];
   const discarded: string[] = [];
@@ -85,7 +84,6 @@ function fakeRust(server: FakeHermes) {
     wiring,
     names,
     discarded,
-    /** The owner pastes an image into `into`, a composer; resolves to where Rust saved it. */
     land: async (bytes = PNG, into: HTMLElement = composer()) => {
       const name = `pasted-${names.length + 1}.png`;
       names.push(name);
@@ -115,7 +113,6 @@ async function signedIn({ strict = false } = {}) {
   return { server, hermes, rust, user, view };
 }
 
-/** The pasted images staged in the composer (not the names shown on sent messages). */
 const chips = () => [...document.querySelectorAll(".composer .chip")].filter((c) => /pasted-\d+\.png/.test(c.textContent ?? ""));
 
 describe("A pasted image in the composer", () => {
@@ -136,7 +133,6 @@ describe("A pasted image in the composer", () => {
     await waitFor(() => expect(right.querySelectorAll(".chip")).toHaveLength(1));
     expect(left.querySelectorAll(".chip")).toHaveLength(1);
     expect(rust.discarded).toEqual([]);
-    // Closing a pane leaves its chat's files staged in the chat (#443).
     await user.click(within(left).getByRole("button", { name: "Close the left pane" }));
     expect(chips()).toHaveLength(1);
     expect(rust.discarded).toEqual([]);

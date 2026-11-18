@@ -1894,7 +1894,6 @@ function Composer({
   conversation?: VoiceConversation;
   started?: boolean;
   status: ConnectionStatus;
-  /** Keeps the chat's staged attachments, and hands the composer a Preview annotation. */
   desk: AttachmentDesk;
   commands?: CommandHost;
   /** The chats the message references, kept under `draftKey`. */
@@ -2102,7 +2101,6 @@ function Composer({
   const placeRef = useRef(place);
   placeRef.current = place;
 
-  // Annotations attach here while this composer is on screen.
   useEffect(() => {
     if (!autoFocus) return;
     let current = true;
@@ -2151,7 +2149,7 @@ function Composer({
     return () => void unlisten.then((stop) => stop());
   }, []);
 
-  // A pasted file, or one dropped on Windows, has no path of its own: Rust stages its bytes in the desk's private folder. One
+  // A pasted file, or one dropped on Windows, has no path of its own: Rust stages its bytes in the captures folder. One
   // too big for Hermes is refused before its bytes are read into the webview.
   const stageFiles = (incoming: File[] | Promise<File[]>, nameOf = pastedName) => busy(async () => {
     const at = anchorHere();

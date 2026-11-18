@@ -1,5 +1,3 @@
-// The real calls behind the staging desk: Rust deletes a staged file, and keeps the ones a queued or failed message
-// still holds.
 import { invoke } from "@tauri-apps/api/core";
 import { outboxAttachmentPaths, subscribeOutbox } from "./chatCache";
 import type { AttachmentDeskApi } from "./attachmentDesk";

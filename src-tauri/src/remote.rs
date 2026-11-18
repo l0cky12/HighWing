@@ -1,7 +1,7 @@
 //! A second launch hands its command line to the Hermes Chat already running, so there is only ever one.
 //!
 //! `hermes-chat --show` and `hermes-chat --toggle` are for a desktop shortcut that works while another window is
-//! focused (summon.rs). Wayland doesn't let an app listen for keys it isn't focused for, so the owner binds a key in
+//! focused (summon.rs). Not every Wayland desktop gives an app a global key (ADR 0107), so the owner binds a key in
 //! their desktop (a Hyprland `bind`, say, or a Windows shortcut's key) to run one, and the running app brings its one
 //! window forward (or, for `--toggle`, hides it when it is already in front). With none running, the app starts. A
 //! plain `hermes-chat` with one already running shows that one too.

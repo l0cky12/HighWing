@@ -293,10 +293,6 @@ export const isZoomKey = (e: KeyboardEvent | ReactKeyboardEvent) => {
   return command === "zoomIn" || command === "zoomOut" || command === "zoomReset";
 };
 
-/**
- * Each command that shares a chord with another it could both fire with (the same scope, or either app-wide), and the
- * titles of what it shares it with.
- */
 export function conflicts(b: Bindings): Map<CommandId, string[]> {
   const out = new Map<CommandId, string[]>();
   for (const id of COMMAND_IDS) {

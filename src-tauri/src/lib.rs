@@ -233,7 +233,6 @@ const fn reach_within(quick: bool) -> std::time::Duration {
     }
 }
 
-/// The private folder pasted files and annotation stills wait in (captures.rs), opened on first use.
 #[derive(Default)]
 struct Staging {
     captures: std::sync::Mutex<Option<Arc<captures::Captures>>>,
@@ -1708,7 +1707,6 @@ async fn preview_annotate_pick(app: tauri::AppHandle, key: String, still: u64, x
     page_view::annotate_pick(&app, key, still, x, y, up).await
 }
 
-/// Stages a still as annotation `n`, marked at `rect`, as an image the composer can send, and deletes the still.
 #[tauri::command]
 async fn preview_annotate_stage(
     state: State<'_, Staging>,
@@ -1871,7 +1869,6 @@ fn attach_dropped(window: &tauri::Window, event: &tauri::WindowEvent) {
     }
 }
 
-/// Starts the app. `link`: it was started to open a chat link, with no other Hermes Chat to open it (links.rs).
 pub fn run(link: Option<String>) {
     std::thread::spawn(local_stt::sweep_scratch);
     let context = tauri::generate_context!();

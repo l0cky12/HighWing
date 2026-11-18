@@ -53,7 +53,6 @@ type Waiting = { paths: string[]; words: string; to: string; live: () => boolean
 
 export class AttachmentDesk {
   private readonly listeners = new Set<() => void>();
-  /** Files the desk staged and hasn't discarded yet. */
   private readonly mine = new Set<string>();
   private waiting: Waiting[] = [];
   private readonly sending = new Set<string>();
@@ -69,7 +68,6 @@ export class AttachmentDesk {
   private lastAnnotation = 0;
   private labels: ReadonlyMap<string, AnnotationLabel> = new Map();
 
-  /** `reveal`: an annotation is waiting for the composer last on screen, which something (a Preview covering a narrow window) hides. */
   constructor(
     private readonly api: AttachmentDeskApi,
     private readonly reveal?: () => void,
@@ -81,7 +79,6 @@ export class AttachmentDesk {
     return () => void this.listeners.delete(fn);
   };
 
-  /** Files Rust staged from a paste: deleted once nothing needs them. */
   own(paths: readonly string[]) {
     if (this.disposed) return void paths.forEach((p) => void this.api.discard(p).catch(() => {}));
     for (const p of paths) this.mine.add(p);
@@ -133,7 +130,6 @@ export class AttachmentDesk {
     for (const fn of [...this.listeners]) fn();
   }
 
-  /** The composer now on screen takes annotations, and any that were waiting for it. Returns the function that stops it. */
   attachTo(sink: ComposerSink): () => void {
     this.sink = sink;
     this.last = { chat: sink.chat, key: sink.key };
@@ -268,7 +264,6 @@ export class AttachmentDesk {
     if (forgot) this.relabel();
   }
 
-  /** The app is signing out or closing: every staged file not yet sent is deleted. */
   dispose() {
     this.disposed = true;
     this.waiting = [];

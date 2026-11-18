@@ -1,4 +1,3 @@
-// The private folder pasted files and annotation stills wait in until they are sent or removed (src/captures.rs).
 use hermes_chat::captures::{self, CaptureError, Captures};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;

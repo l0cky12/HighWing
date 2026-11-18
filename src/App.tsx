@@ -1117,7 +1117,6 @@ const draftChat = (draftError?: string): Chat => ({
   updatedAt: Date.now(),
   items: draftError ? [{ kind: "error", id: "e-draft", text: draftError }] : [],
 });
-/** The real calls behind the staging desk: deleting a staged file, and keeping the ones an outbox still holds. */
 export type DeskWiring = {
   api: AttachmentDeskApi;
   syncOutbox?: () => Promise<void>;
@@ -1957,10 +1956,7 @@ export function Main({
     else splitWith(id);
   };
 
-  // Each chat's staged attachments are kept here, and an annotation goes to the composer on screen. The desk lives as
-  // long as this signed-in window: signing out deletes any staged file not yet sent. Made in a layout effect, so
-  // StrictMode's second mount gets a desk of its own before the first paint. No chat is drawn without it, as its
-  // composer keeps its files there.
+  // Made in a layout effect, so StrictMode's second mount gets a desk of its own before the first paint.
   const [desk, setDesk] = useState<AttachmentDesk>();
   const deskWiringRef = useRef(deskWiring);
   useLayoutEffect(() => {
@@ -4092,7 +4088,6 @@ function ChatView({
   onOpenTurn: (chatId: string, turn: number) => void;
   previewControls: ReactNode;
   desk: AttachmentDesk;
-  /** Rust keeps the staged files every outbox holds (tauriAttachments.ts `syncStagedOutbox`). */
   syncOutbox?: () => Promise<void>;
   voice: VoiceApi;
   /** The chats each unsent message references, by Draft key. */
@@ -4242,7 +4237,6 @@ function ChatView({
         add: (text, attachments) => {
           const why = hermes.enqueue(chat.id, text, attachments);
           if (why) return why;
-          // The queue keeps its staged files now, until they go or the owner removes the message (chatCache.ts).
           desk.hold(attachments.map((a) => a.path));
           savedDrafts.take(shownDraft);
           return undefined;

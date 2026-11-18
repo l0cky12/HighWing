@@ -90,7 +90,6 @@ import type { SkillCommands } from "../hermes/skillCommands";
 import { errorText, formatBytes } from "../hermes/values";
 
 type Tab = "general" | "appearance" | "keyboard" | "snapshots" | "model" | "providers" | "voice" | "toolsets" | "mcp" | "gateways" | "profiles" | "memory" | "skills" | "diagnostics" | "extensions";
-/** General's four groups, shown one at a time beside a sub-nav (ADR 0113); a search shows every group's sections at once. */
 type GenGroup = "connection" | "chats" | "launch" | "storage";
 /** A section of a page that shows its sections one at a time, picked under the page in the sidebar's tree. */
 type SectionItem = { id: string; label: string };

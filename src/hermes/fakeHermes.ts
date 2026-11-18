@@ -938,7 +938,11 @@ export class FakeHermes {
         this.runtime.set(sid, stored);
         const messages = shownHistory(this.transcripts[stored] ?? []);
         const inflight = { user, assistant, streaming: true };
-        return this.respond(r.id, { session_id: sid, stored_session_id: stored, message_count: messages.length, messages, info: this.sessionInfo, running: true, inflight });
+        const answer = () => this.respond(r.id, { session_id: sid, stored_session_id: stored, message_count: messages.length, messages, info: this.sessionInfo, running: true, inflight });
+        const before = this.beforeResumeAnswer;
+        if (!before) return answer();
+        // Hermes answers from another task than the app's request, so the app is waiting on it when these frames come.
+        return queueMicrotask(() => (before(sid), answer()));
       }
       const runtimeId = `rt-r${++this.resumed}`;
       this.runtime.set(runtimeId, stored);
@@ -2672,10 +2676,30 @@ export class FakeHermes {
    * (`_live_session_payload`, `_inflight_snapshot`). Off, the resume starts a new idle runtime.
    */
   reattachTurns = false;
+  /**
+   * Runs when `session.resume` reattaches a running turn, after it read the in-flight text and before it answers: the
+   * new connection is already the turn's, and Hermes's history read sits there (`_live_session_payload`).
+   */
+  beforeResumeAnswer?: (runtimeId: string) => void;
+  /** Stamps reply frames as `stream_segments.py` does (`turn_id`, a delta's `segment` and `offset`). Off: as `bf0203a`. */
+  stampTurns = false;
   /** A running turn's prompt and the reply text it has streamed, by runtime session (`inflight_turn`). */
   private readonly inflight = new Map<string, { stored: string; user: string; assistant: string }>();
+  /** Each running turn's stamp cursor, by runtime session (`TurnSegments`). */
+  private readonly segments = new Map<string, { turn_id: string; segment: number; offset: number }>();
+  private turnIds = 0;
   /** The runtime sessions the owner stopped, until their next prompt: the poller starts no wake turn in them (`_notif_claim_turn`). */
   readonly stopped = new Set<string>();
+
+  /**
+   * A delta already in the turn's in-flight text but not sent yet, as `_emit_delta` holds one between its append and
+   * its send. Returns the send.
+   */
+  heldDelta(sessionId: string, text: string): () => void {
+    const turn = this.inflight.get(sessionId);
+    if (turn) turn.assistant += text;
+    return () => this.emit(sessionId, "message.delta", { text });
+  }
 
   event(sessionId: string, type: string, payload: Record<string, unknown> = {}) {
     if (this.authority) return this.authority.event(sessionId, type, payload);
@@ -2690,7 +2714,7 @@ export class FakeHermes {
       this.turns.delete(sessionId);
       this.inflight.delete(sessionId);
     }
-    this.frame({ jsonrpc: "2.0", method: "event", params: { type, session_id: sessionId, payload } });
+    this.emit(sessionId, type, payload);
     // The goal is judged once the turn is done, and its update follows `message.complete` (`prompt_turn.py`).
     const stored = this.runtime.get(sessionId);
     if (type === "message.complete" && payload.status === "complete" && stored) {
@@ -2699,6 +2723,32 @@ export class FakeHermes {
       this.publishGoal(sessionId);
       if (next) this.goalTurn?.(sessionId, next);
     }
+  }
+
+  /** Sends a session event as `_emit` does, stamping its reply frames when `stampTurns` is on (`stamp_reply_frame`). */
+  private emit(sessionId: string, type: string, payload: Record<string, unknown>) {
+    const stamped = this.stampTurns ? this.stamp(sessionId, type, payload) : payload;
+    this.frame({ jsonrpc: "2.0", method: "event", params: { type, session_id: sessionId, payload: stamped } });
+  }
+
+  private stamp(sessionId: string, type: string, payload: Record<string, unknown>): Record<string, unknown> {
+    if (type === "message.start") {
+      const cursor = { turn_id: `turn-${++this.turnIds}`, segment: 0, offset: 0 };
+      this.segments.set(sessionId, cursor);
+      return { ...payload, turn_id: cursor.turn_id };
+    }
+    const cursor = this.segments.get(sessionId);
+    if (!cursor) return payload;
+    const { turn_id, segment, offset } = cursor;
+    if (type === "message.complete" || type === "error") this.segments.delete(sessionId);
+    if (type === "message.interim") {
+      Object.assign(cursor, { segment: segment + 1, offset: 0 });
+      return { ...payload, turn_id, segment };
+    }
+    if (type !== "message.delta" || typeof payload.text !== "string") return payload;
+    // `String.length` counts UTF-16 units, as Hermes's offset does.
+    cursor.offset += payload.text.length;
+    return { ...payload, turn_id, segment, offset };
   }
 
   /** `session.control.update` with the chat's snapshot, as Hermes sends after each goal change. */

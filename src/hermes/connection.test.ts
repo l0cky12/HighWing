@@ -216,6 +216,48 @@ describe("Reconnecting", () => {
     ]);
   });
 
+  describe.each([
+    ["with stamps", true],
+    ["without stamps", false],
+  ])("coming back to a reply that still streams, %s (#77)", (_, stamped) => {
+    const words = Array.from({ length: 12 }, (_, n) => `w${n + 1}`);
+    const reply = words.join(" ");
+
+    /** A chat whose reply streams `w1 w2 w3 w4`, then the connection drops and `w5 w6` stream while the app is away. */
+    async function droppedMidReply() {
+      const signed = await signedIn();
+      const { server, hermes } = signed;
+      server.reattachTurns = true;
+      server.stampTurns = stamped;
+      const id = await hermes.newChat();
+      await hermes.send(id, "slow 12");
+      const rt = server.runtimeIdOf(id)!;
+      const say = (from: number, to: number) => words.slice(from, to).forEach((w) => server.event(rt, "message.delta", { text: `${w} ` }));
+      server.event(rt, "message.start");
+      say(0, 4);
+      server.drop();
+      say(4, 6);
+      const back = async () => {
+        await vi.advanceTimersByTimeAsync(1_000);
+        await hermes.idle();
+      };
+      const shown = () => signed.chat(id).items.map((i) => [i.kind, "text" in i ? i.text.trim() : i.id]);
+      return { ...signed, id, rt, say, back, shown };
+    }
+
+    it("shows the deltas Hermes sends on the new connection before it answers the resume", async () => {
+      const { server, say, back, shown } = await droppedMidReply();
+      server.beforeResumeAnswer = () => say(6, 8);
+      await back();
+      say(8, 12);
+
+      expect(shown()).toEqual([
+        ["user", "slow 12"],
+        ["assistant", reply],
+      ]);
+    });
+  });
+
   it("gives up a request Hermes never answers, so the chat it was loading can load again (#473)", async () => {
     const server = new FakeHermes();
     server.sessions = [row("tg", 2, { source: "telegram" })];

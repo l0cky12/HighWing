@@ -1,0 +1,15 @@
+diff --git a/src/hermes/bots.ts b/src/hermes/bots.ts
+index e77fa65..7a1efdb 100644
+--- a/src/hermes/bots.ts
++++ b/src/hermes/bots.ts
+@@ -307,7 +307,9 @@ export class BotChats {
+   }
+ 
+   private async resolve(profile: string, name: string, expected: boolean): Promise<BotChatOpen> {
+-    const found = await this.find(profile, name, expected);
++    // A roster that named no Bot Chat makes the lookup redundant: naming the new one below is the check, since the
++    // title can be held once, and a stale roster lands on the title-in-use path.
++    const found = expected ? await this.find(profile, name, expected) : null;
+     if (found) return { registryId: found.id, openId: found.resolvedId, created: false };
+     const made = await this.sessions().open({ kind: "bot", profile, source: this.source, title: BOT_CHAT_TITLE });
+     const runtime = trimmedOrEmpty(made.runtimeId);

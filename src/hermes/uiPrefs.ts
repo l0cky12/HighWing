@@ -76,7 +76,7 @@ export type UIPrefs = {
   messageDetails: MessageDetails;
   /** Start a message with the text selected in another app when `hermes-chat --show` or `--toggle` brings the window forward (ADR 0172). */
   summonSelection: boolean;
-  /** Open the side panel's Screen once when a computer-use run starts in the chat on screen (ADR 0213). Off by default. */
+  /** Open the side panel's Screen once when a computer-use run starts in the chat on screen (ADR 0216). Off by default. */
   followScreen: boolean;
   /**
    * The keyboard shortcuts the owner changed (ui/keybindings.ts, ADR 0147): each command's chords, by command id. Only

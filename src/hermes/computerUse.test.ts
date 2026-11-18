@@ -1,5 +1,5 @@
-// Hermes's computer_use as the transcript reads it (computerUse.ts, ADR 0213), against frames recorded from a real
-// Hermes (src/hermes/fixtures/computer-use, ADR 0211).
+// Hermes's computer_use as the transcript reads it (computerUse.ts, ADR 0216), against frames recorded from a real
+// Hermes (src/hermes/fixtures/computer-use, ADR 0213).
 import { describe, expect, it } from "vitest";
 import { KEPT_CAPTURE_CHARS, foldRuns, keptResult, screenUse, stepOf, type CuRun } from "./computerUse";
 import { cuEvents, cuFixture, type CuFixture } from "./cuFixtures";

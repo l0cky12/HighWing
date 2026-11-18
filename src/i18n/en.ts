@@ -38,7 +38,7 @@ export const en = {
       hide: "Hide the message",
       show: "Show the message",
     },
-    /** A computer-use run's card, its Watch live chip, and the note when Hermes couldn't use the screen (ADR 0213). */
+    /** A computer-use run's card, its Watch live chip, and the note when Hermes couldn't use the screen (ADR 0216). */
     computerUse: {
       title: "Computer use",
       steps: (n: number) => (n === 1 ? "1 step" : `${n} steps`),

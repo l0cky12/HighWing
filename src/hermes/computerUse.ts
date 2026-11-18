@@ -1,4 +1,4 @@
-// Hermes's computer_use in the transcript (ADR 0213): one card per run of calls, a line per call. The wire's quirks are
+// Hermes's computer_use in the transcript (ADR 0216): one card per run of calls, a line per call. The wire's quirks are
 // dealt with before anything here reads an item: stored history's `tool_call` wrapper is unwrapped in transport.ts, and
 // a result is trimmed by `keptResult` before the chat keeps it. So every function here reads tool items alone, live or
 // saved, and a run is never stored: `foldRuns` derives it on each render.

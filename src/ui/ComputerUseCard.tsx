@@ -1,4 +1,4 @@
-// A computer-use run in the transcript (ADR 0213): one card with a line per action Hermes took on its Bot Desktop, who
+// A computer-use run in the transcript (ADR 0216): one card with a line per action Hermes took on its Bot Desktop, who
 // holds the screen now, and Watch live, which opens the side panel's Screen. Above the composer, a note when Hermes's
 // last step was refused because a person holds the screen. The run is `foldRuns`'s (computerUse.ts); who holds the
 // screen is the connection's ScreenControl's, through `ScreenDesk`.
@@ -200,7 +200,7 @@ function Outcome({ step, asking }: { step: CuStep; asking: boolean }) {
 
 /**
  * Above the composer while the chat's last computer_use step was refused because a person holds the screen, and one
- * still does (ADR 0213). The owner who holds it here can hand it back; one held from a dropped connection is handed back
+ * still does (ADR 0216). The owner who holds it here can hand it back; one held from a dropped connection is handed back
  * from the Screen. It goes once the lease is back with Hermes.
  */
 export function HumanHasControlBanner({ chat }: { chat: Pick<Chat, "items" | "running"> }) {

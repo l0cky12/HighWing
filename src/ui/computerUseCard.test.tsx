@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// A computer-use run as the owner sees it (ComputerUseCard.tsx, ADR 0213): recorded Hermes turns (ADR 0211) replayed
+// A computer-use run as the owner sees it (ComputerUseCard.tsx, ADR 0216): recorded Hermes turns (ADR 0213) replayed
 // through the real transport into the chat pane, one card per run with a line per action, Watch live, and the note
 // above the composer when Hermes was refused because a person holds the screen.
 import { act, cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";

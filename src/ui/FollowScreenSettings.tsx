@@ -1,4 +1,4 @@
-// Whether the side panel's Screen opens by itself when Hermes starts using its Bot Desktop (ADR 0213). Kept in the
+// Whether the side panel's Screen opens by itself when Hermes starts using its Bot Desktop (ADR 0216). Kept in the
 // display preferences (uiPrefs.ts), on this computer only.
 import { useSyncExternalStore } from "react";
 import { getUIPrefs, setUIPrefs, subscribe } from "../hermes/uiPrefs";

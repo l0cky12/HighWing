@@ -910,7 +910,7 @@ export class Hermes {
     this.checkTimes,
   );
 
-  /** Who drives the shown profile's Bot Desktop, and this connection's viewer of it (ADR 0214). */
+  /** Who drives the shown profile's Bot Desktop, and this connection's viewer of it (ADR 0217). */
   private readonly control = new ScreenControl({
     request: (method, params) => this.request(method, params),
     profile: () => this.profile,

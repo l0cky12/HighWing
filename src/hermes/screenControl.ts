@@ -1,4 +1,4 @@
-// Who drives the profile's Bot Desktop, as this connection knows it (ADR 0039, ADR 0214). Hermes keeps the lease; a
+// Who drives the profile's Bot Desktop, as this connection knows it (ADR 0039, ADR 0217). Hermes keeps the lease; a
 // viewer id minted by `display.observe` on this connection is what takes it or gives it back. This is the one place that
 // keeps that id, the latest lease and the holds this app had on connections since gone, so the Screen tab, the run
 // card, the banner and Stop agree, and the screen can be taken while the Screen tab was never opened.

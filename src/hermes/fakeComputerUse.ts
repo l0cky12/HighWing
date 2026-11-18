@@ -1,5 +1,5 @@
 // Hermes's computer_use as FakeHermes plays it (FakeHermes.computerUseTurn): each call's arguments, and the result
-// Hermes answered a recorded call like it with (src/hermes/fixtures/computer-use, ADR 0211). A scroll's success and a
+// Hermes answered a recorded call like it with (src/hermes/fixtures/computer-use, ADR 0213). A scroll's success and a
 // double click's were never recorded; theirs follow the click's shape. The screenshot is a stand-in data URL long
 // enough for the app's trim to have to drop it.
 

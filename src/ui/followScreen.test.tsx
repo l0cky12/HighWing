@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Follow mode (ADR 0213): with it on, the side panel's Screen opens once for each computer-use run that starts in the
+// Follow mode (ADR 0216): with it on, the side panel's Screen opens once for each computer-use run that starts in the
 // chat on screen; off, it opens only from a run's Watch live.
 import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";

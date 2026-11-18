@@ -100,7 +100,7 @@ const waitsIn = (b: Block) => (isItem(b) && isWaiting(b)) || (b.kind === "cu-run
 type SideBlock = { kind: "side"; id: string; question: SideQuestion };
 
 // Consecutive tool calls collapse into one group so a long run doesn't dominate the transcript, and a computer-use run
-// is one card (ADR 0213). Each side question goes after the item it was asked after (ADR 0086), so one asked during a
+// is one card (ADR 0216). Each side question goes after the item it was asked after (ADR 0086), so one asked during a
 // run of tool calls splits it; one asked during a computer-use run goes after its card.
 function toBlocks(items: Item[], side: SideQuestion[] = []): (Block | SideBlock)[] {
   const out: (Block | SideBlock)[] = [];

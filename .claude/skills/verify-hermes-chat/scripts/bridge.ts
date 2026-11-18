@@ -15,7 +15,7 @@
 //   refuses, then a write of a.txt and a patch of b.txt, with a checkpoint before them, so the reply gets the
 //   "2 files changed" chip. Checkpoints are on unless HV_CHECKPOINTS=off, which gives the chip's "checkpoints are off".
 //   a prompt with "approval" in it asks the owner to approve a command, and its reply waits for the answer.
-//   a prompt that starts with `computer use` runs FakeHermes.computerUseTurn (ADR 0213): 20 computer_use calls on the
+//   a prompt that starts with `computer use` runs FakeHermes.computerUseTurn (ADR 0216): 20 computer_use calls on the
 //   Bot Desktop, about half a second each, with screenshots in the results as Hermes sends them. A background click and
 //   a foreground type each ask a cua Approval in Hermes's shape until allowed for the chat; a foreground key is already
 //   allowed always, as the recorded profile's was. Stop ends it between calls. `computer use takeover` instead hands

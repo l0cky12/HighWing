@@ -594,7 +594,7 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
   max-height: 220px; overflow: auto; white-space: pre-wrap;
 }
 
-/* A computer-use run (ComputerUseCard.tsx, ADR 0213): one card, a line per action on the Bot Desktop, open from the start. */
+/* A computer-use run (ComputerUseCard.tsx, ADR 0216): one card, a line per action on the Bot Desktop, open from the start. */
 .cu-state { flex: none; font-size: calc(12rem / 14); font-weight: 400; color: var(--muted); }
 .cu-state.asking, .cu-state.refused { color: var(--warn); }
 .cu-state.stopped { color: var(--faint); }

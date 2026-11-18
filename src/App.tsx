@@ -1547,7 +1547,7 @@ export function Main({
     },
     [openPanel],
   );
-  // A computer-use run's Watch live, the refusal note's buttons, and follow mode (ADR 0213).
+  // A computer-use run's Watch live, the refusal note's buttons, and follow mode (ADR 0216).
   const screenDesk = useMemo<ScreenDesk>(
     () => ({ screen: screenState, onWatch: () => openPanel("screen"), onHandBack: () => hermes.screen.handBack() }),
     [screenState, openPanel, hermes],
@@ -1761,7 +1761,7 @@ export function Main({
   };
   const projectNames = (chatId: string) => listable.filter((p) => proj.chats[p.id]?.includes(chatId)).map((p) => p.name);
   useWindowTitle(windowTitle(active.chatId ? chats.find((c) => c.id === active.chatId)?.title : undefined, unreadChats.length));
-  // Follow mode (ADR 0213): the Screen opens once for each computer-use run that starts in the chat on screen.
+  // Follow mode (ADR 0216): the Screen opens once for each computer-use run that starts in the chat on screen.
   const shownUse = useMemo(() => {
     const shown = active.chatId ? chats.find((c) => c.id === active.chatId) : undefined;
     return shown && screenUse(shown);

@@ -76,6 +76,8 @@ export type UIPrefs = {
   messageDetails: MessageDetails;
   /** Start a message with the text selected in another app when `hermes-chat --show` or `--toggle` brings the window forward (ADR 0172). */
   summonSelection: boolean;
+  /** Open the side panel's Screen once when a computer-use run starts in the chat on screen (ADR 0216). Off by default. */
+  followScreen: boolean;
   /**
    * The keyboard shortcuts the owner changed (ui/keybindings.ts, ADR 0147): each command's chords, by command id. Only
    * overrides, so a command never changed takes whatever default this version gives it. Checked for shape here only;
@@ -141,6 +143,7 @@ export const DEFAULT_UI_PREFS: Readonly<UIPrefs> = Object.freeze({
   inboxAutoDismissDays: null,
   messageDetails: "time",
   summonSelection: true,
+  followScreen: false,
   keybindings: Object.freeze({}) as Record<string, string[]>,
   writingModels: Object.freeze({}) as Record<string, WritingPick>,
 });
@@ -328,6 +331,7 @@ export function readUIPrefs(doc: UIPrefsDoc, d: Readonly<UIPrefs> = DEFAULT_UI_P
         : d.inboxAutoDismissDays,
     messageDetails: MESSAGE_DETAILS.includes(doc.messageDetails as MessageDetails) ? (doc.messageDetails as MessageDetails) : d.messageDetails,
     summonSelection: typeof doc.summonSelection === "boolean" ? doc.summonSelection : d.summonSelection,
+    followScreen: typeof doc.followScreen === "boolean" ? doc.followScreen : d.followScreen,
     keybindings: toKeybindings(doc.keybindings) ?? { ...d.keybindings },
     writingModels: toWritingModels(doc.writingModels) ?? { ...d.writingModels },
   };

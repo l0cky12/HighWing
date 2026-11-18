@@ -14,6 +14,7 @@ import { FakeProjectContext } from "./fakeProjectContext";
 import { FakeCheckpoints, inlineDiff, type FakeEdit } from "./fakeCheckpoints";
 import { FakeGoals } from "./fakeGoals";
 import { FakeGroups } from "./fakeGroups";
+import { DENIED, HUMAN_HAS_CONTROL, cuApproval, type FakeCuTurn } from "./fakeComputerUse";
 import { ScheduleError, isoIn, parseSchedule, upcomingRuns } from "./schedule";
 import { skillInvocationText } from "./skillCommands";
 import { CANONICAL_READY } from "./canonicalVerbs";
@@ -3172,6 +3173,80 @@ export class FakeHermes {
     await modelCall(plan.reply);
     const final_assistant_row_id = this.transcripts[stored].at(-1)!.row_id;
     this.event(runtimeId, "message.complete", { text: plan.reply, status: "complete", usage: counters(), persisted_turn: { user_row_id, final_assistant_row_id } });
+  }
+
+  /** The computer_use actions the owner allowed beyond once (`cua:<action>:<delivery>`): always, and for a session. */
+  readonly cuGrants = { always: new Set<string>(), session: new Map<string, Set<string>>() };
+
+  /**
+   * Runs a turn of computer_use calls as Hermes does (tools/computer_use at v0.23.2): each call starts, is refused with
+   * `human_has_control` while a person holds the screen, before any Approval; an input action waits for the owner's
+   * Approval unless allowed for the session or always; and the call ends with the step's result, or Hermes's denial.
+   * The owner's Stop ends the turn between calls. Each call is stored as Hermes stores it: a `tool_call` row with the
+   * call in `args.calls`, and no result. `wait` paces each call by its seconds.
+   */
+  async computerUseTurn(runtimeId: string, turn: FakeCuTurn, wait: (seconds: number) => Promise<void> = async () => {}) {
+    const stored = this.runtime.get(runtimeId);
+    if (!stored) throw new Error(`No stored session for ${runtimeId}`);
+    const granted = (key: string) => this.cuGrants.always.has(key) || !!this.cuGrants.session.get(runtimeId)?.has(key);
+    const stopped = () => {
+      if (!this.stopped.has(runtimeId)) return false;
+      this.event(runtimeId, "message.complete", { status: "interrupted", text: "" });
+      return true;
+    };
+    this.event(runtimeId, "message.start");
+    for (const [n, step] of turn.steps.entries()) {
+      if (stopped()) return;
+      const tool_id = `call_${runtimeId}_cu${n + 1}`;
+      const action = String(step.args.action ?? "");
+      this.event(runtimeId, "tool.start", { tool_id, name: "computer_use", context: action === "type" ? String(step.args.text ?? "") : "", args: step.args });
+      this.storeMessage(stored, { role: "tool", name: "tool_call", context: "Computer Use", tool_call_id: tool_id, args: { calls: [{ name: "computer_use", arguments: step.args }] } });
+      let result = step.result;
+      const ask = cuApproval(step.args);
+      if (this.display?.lease.holder === "human") result = { ok: false, action, code: "human_has_control", error: HUMAN_HAS_CONTROL };
+      else if (ask && !granted(ask.patternKey)) {
+        const id = this.ask(runtimeId, "approval", { request_id: `cua-${runtimeId}-${n + 1}`, ...ask.params });
+        while (id && this.openRequests.has(id)) await new Promise((r) => setTimeout(r, 5));
+        if (stopped()) return;
+        const choice = this.approvalAnswers.find((a) => a.id === id)?.choice;
+        if (choice === "always") this.cuGrants.always.add(ask.patternKey);
+        if (choice === "session") this.cuGrants.session.set(runtimeId, new Set([...(this.cuGrants.session.get(runtimeId) ?? []), ask.patternKey]));
+        if (choice !== "once" && choice !== "session" && choice !== "always") result = { error: DENIED, action };
+      }
+      await wait(step.seconds ?? 0.5);
+      this.event(runtimeId, "tool.complete", { tool_id, name: "computer_use", args: step.args, duration_s: step.seconds ?? 0.5, result });
+    }
+    if (stopped()) return;
+    this.event(runtimeId, "message.delta", { text: turn.reply });
+    this.storeMessage(stored, { role: "assistant", text: turn.reply });
+    this.event(runtimeId, "message.complete", { text: turn.reply, status: "complete" });
+  }
+
+  /**
+   * Sends a recorded Hermes's frames (cuFixtures.ts) into the live session `runtimeId`, in order: each event to that
+   * session, a lease broadcast as this fake's own screen, and each `approval` request asked anew, waiting for the app's
+   * answer before going on. Answers to the recorder's own requests, and what it sent, are left out.
+   */
+  async replay(runtimeId: string, frames: readonly { dir: string; frame: Record<string, unknown> }[]) {
+    const asked = new Set<string>();
+    for (const { dir, frame } of frames) {
+      if (dir !== "in") continue;
+      const params = (frame.params ?? {}) as Record<string, unknown>;
+      if (frame.method === "approval") {
+        asked.add(String(frame.id));
+        const { session_id: _, ...ask } = params;
+        const id = this.ask(runtimeId, "approval", ask);
+        while (id && this.openRequests.has(id)) await new Promise((r) => setTimeout(r, 2));
+        continue;
+      }
+      if (frame.method !== "event") continue;
+      const { type, payload = {} } = params as { type: string; payload?: Record<string, unknown> };
+      if (type === "request.cancel" && asked.has(String(payload.id))) continue;
+      if (type === "display.lease") {
+        if (this.display) this.display.lease = payload.lease as NonNullable<FakeHermes["display"]>["lease"];
+        this.broadcast(type, { ...payload, profile_key: "/home/lena/.hermes" });
+      } else this.event(runtimeId, type, payload);
+    }
   }
 
   /** The runtime session id the server handed out for a stored session. */

@@ -5,6 +5,7 @@ import type { ChatUsage, ReplyUsage } from "./usage";
 import type { SubagentTree } from "./subagents";
 import type { DispatchedTask, RosterWork } from "./dispatched";
 import type { AgentTurn } from "./returned";
+import type { CuAsk } from "./computerUse";
 
 /**
  * `import`: a transcript file imported into Hermes (ADR 0031). Hermes Chat shows it read-only. `cron`: a Job run, the
@@ -102,6 +103,8 @@ export type Item =
       preview?: string;
       /** `stopped`: the reply was interrupted while the tool call was running. */
       status: "running" | "done" | "stopped";
+      /** When the call started, live, or its stored row's time. */
+      at?: number;
       durationS?: number;
       result?: string;
       summary?: string;
@@ -126,6 +129,8 @@ export type Item =
       choices: ApprovalChoice[];
       allowSession: boolean;
       allowPermanent: boolean;
+      /** What a computer_use action asks for, parsed from Hermes's pattern key; absent for any other command. */
+      cua?: CuAsk;
       answer?: ApprovalChoice;
       ended?: string;
     }

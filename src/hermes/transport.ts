@@ -100,7 +100,9 @@ import { providerKeys, readyProviders, SignInFailure, type ProviderSetup, type S
 import { restartHold } from "./unsaved";
 import { hostFileView, readServerFile, type FileView } from "./preview";
 import type { PathKind, ServerPath } from "./paths";
-import { parseDoctor, type CliResult, type DisplayLease, type DisplayObserve, type DisplayStatus, type ScreenApi } from "./screen";
+import { parseDoctor, type CliResult, type DisplayLease, type DisplayStatus, type ScreenApi } from "./screen";
+import { ScreenControl, type ScreenState } from "./screenControl";
+import { askOf, COMPUTER_USE } from "./computerUse";
 import { checkCommand, dockFile, foundPrograms, shellQuote } from "./screenApps";
 import { readScreenClipboard } from "./screenClipboard";
 import { agentFsEditIo } from "./artifacts";
@@ -155,8 +157,6 @@ const STORED_PAGES = 10;
 /** What this app stamped before, still shown as this app's. Hermes won't edit these chats. */
 const OLD_APP_SOURCE = "hermes-chat";
 const READY_TIMEOUT_MS = 15_000;
-/** How long leaving a connection waits for Hermes to take back the screen the owner held. */
-const SCREEN_RELEASE_MS = 1_500;
 /** Waits before each try to reconnect a dropped connection. When the last try fails the app is Offline until the
  * owner asks to reconnect, so a wrong password isn't retried for ever. */
 const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000];
@@ -588,6 +588,8 @@ export type Snapshot = {
    * `at` tells one from the next.
    */
   branchNews?: { text: string; chatId?: string; at: number };
+  /** Who drives the shown profile's Bot Desktop, once a status or an observe has said (screenControl.ts). */
+  screen?: ScreenState;
 };
 
 /**
@@ -908,23 +910,24 @@ export class Hermes {
     this.checkTimes,
   );
 
-  /** Lease changes Hermes broadcasts for the Bot Desktop (`display.lease`). */
-  private leaseListeners = new Set<(profileKey: string, lease: DisplayLease) => void>();
-  /** The viewer the owner holds the screen as, with the connection that minted it (`releaseScreen`). */
-  private heldScreen: { viewerId: string; pipe: Pipe } | undefined;
+  /** Who drives the shown profile's Bot Desktop, and this connection's viewer of it (ADR 0217). */
+  private readonly control = new ScreenControl({
+    request: (method, params) => this.request(method, params),
+    profile: () => this.profile,
+    connection: () => this.pipe,
+    publish: (screen) => this.update({ screen }),
+  });
   /** Counts profile picks, so the latest wins over one still handing back the screen. */
   private switchPick = 0;
-  /** The hand-back under way, if any. */
-  private screenRelease: Promise<void> | undefined;
 
   /**
    * The profile's Bot Desktop, the side panel's Screen (screen.ts, ADR 0039). `display.*` is scoped to the profile
    * shown, and a viewer id is good only on the connection that minted it.
    */
   readonly screen: ScreenApi = {
-    status: () => this.request("display.status", { profile: this.profile }) as Promise<DisplayStatus>,
-    start: () => this.request("display.start", { profile: this.profile }) as Promise<DisplayStatus>,
-    stop: () => this.request("display.stop", { profile: this.profile }) as Promise<DisplayStatus>,
+    status: () => this.control.status(),
+    start: async () => this.control.noteStatus((await this.request("display.start", { profile: this.profile })) as DisplayStatus),
+    stop: async () => this.control.noteStatus((await this.request("display.stop", { profile: this.profile })) as DisplayStatus),
     installBrowser: () => this.request("cli.exec", { argv: ["pm", "install", "chromium"], timeout: CLI_EXEC_TIMEOUT_S }) as Promise<CliResult>,
     doctor: async () =>
       parseDoctor((await this.request("cli.exec", { argv: ["-p", this.profile, "computer-use", "doctor", "--json"], timeout: CLI_EXEC_TIMEOUT_S })) as CliResult),
@@ -938,16 +941,9 @@ export class Hermes {
     },
     readClipboard: (where, signal) =>
       readScreenClipboard((command) => this.request("shell.exec", { command }) as Promise<{ stdout: string; stderr: string; code: number }>, where, signal),
-    observe: (viewerId) => this.request("display.observe", { profile: this.profile, ...(viewerId && { viewer_id: viewerId }) }) as Promise<DisplayObserve>,
-    takeOver: async (viewerId) => ((await this.request("display.lease.acquire", { profile: this.profile, viewer_id: viewerId })) as { lease: DisplayLease }).lease,
-    handBack: async (viewerId) => ((await this.request("display.lease.release", { profile: this.profile, viewer_id: viewerId })) as { lease: DisplayLease }).lease,
-    noteHeld: (viewerId) => {
-      this.heldScreen = viewerId && this.pipe ? { viewerId, pipe: this.pipe } : undefined;
-    },
-    onLease: (listener) => {
-      this.leaseListeners.add(listener);
-      return () => void this.leaseListeners.delete(listener);
-    },
+    observe: () => this.control.observe(),
+    takeOver: (reason) => this.control.hold(reason),
+    handBack: () => this.control.handBack(),
     openSocket: (ticket, onData, onClose) => {
       const pipe = this.pipe;
       if (!pipe || this.closing || this.snapshot.status !== "connected") return Promise.reject(new Error("Not connected to Hermes."));
@@ -955,31 +951,6 @@ export class Hermes {
       return pipe.openDisplay(ticket, onData, onClose);
     },
   };
-
-  /**
-   * Before leaving the connection on purpose, gives back the screen the owner holds, as a viewer that closes does. Its
-   * stream may already be gone, and with it the normal close that would have done this. Only the connection that
-   * minted the viewer can, so a dropped connection keeps the owner in control, as Hermes intends (ADR 0039).
-   */
-  /** Undefined when nothing is held or being handed back, so leaving waits for nothing then. */
-  private releaseScreen(): Promise<void> | undefined {
-    const held = this.heldScreen;
-    this.heldScreen = undefined;
-    if (held && held.pipe === this.pipe) {
-      const releasing: Promise<void> = Promise.race([
-        this.screen.handBack(held.viewerId).then(
-          () => {},
-          () => {},
-        ),
-        new Promise<void>((done) => setTimeout(done, SCREEN_RELEASE_MS)),
-      ]).finally(() => {
-        if (this.screenRelease === releasing) this.screenRelease = undefined;
-      });
-      this.screenRelease = releasing;
-    }
-    // A leave that comes while an earlier one hands back waits for it too, rather than closing the connection under it.
-    return this.screenRelease;
-  }
 
   /**
    * The files on the machine the dashboard runs on (remoteFiles.ts). They are the same for every profile, and can only
@@ -1832,7 +1803,7 @@ export class Hermes {
     // Handing back the screen may take a moment; a profile picked meanwhile wins, even the one already shown.
     const pick = ++this.switchPick;
     if (name === this.profile) return;
-    const releasing = this.releaseScreen();
+    const releasing = this.control.release();
     if (releasing) await releasing;
     if (pick !== this.switchPick || name === this.profile) return;
     const from = this.profile;
@@ -1883,6 +1854,7 @@ export class Hermes {
       branches: this.cache.loadBranches(name),
       branchNews: undefined,
     });
+    this.control.rescope();
     // A reconnect under way may be opening the old profile's socket.
     await this.redialing;
     if (this.profile !== name || this.closing) return;
@@ -4691,7 +4663,7 @@ export class Hermes {
    * has closed, so no late close from this Hermes can end the replacement either.
    */
   async close() {
-    const releasing = this.releaseScreen();
+    const releasing = this.control.release();
     if (releasing) await releasing;
     this.closing = true;
     this.failAbandonedSyncs();
@@ -4750,7 +4722,7 @@ export class Hermes {
     }
     if (type === "display.lease") {
       const { profile_key, lease } = payload as { profile_key?: unknown; lease?: DisplayLease };
-      if (typeof profile_key === "string" && lease && typeof lease.epoch === "number") for (const l of this.leaseListeners) l(profile_key, lease);
+      if (typeof profile_key === "string" && lease && typeof lease.epoch === "number") this.control.note(profile_key, lease);
       return;
     }
     // Broadcast when any process changes the session store (tui_gateway/change_watcher.py).
@@ -4815,6 +4787,11 @@ export class Hermes {
       const call = chat.items[runningCall(chat.items, payload.tool_id)];
       const task = call?.kind === "tool" && call.name === "kanban_create" ? parseKanbanCreate(call.args, payload.result, Date.now(), this.kanbanWatch.currentBoard()) : undefined;
       if (task) this.kanbanWatch.add(task, chat.id);
+    }
+    // The run card and the banner say who holds the screen.
+    if (type === "tool.start" && payload.name === COMPUTER_USE) {
+      const knowing = this.control.know();
+      if (knowing) this.track(knowing);
     }
     this.record(chat.id, type, payload);
     const counted = type === "message.complete" ? this.turnUsage(session_id!, payload.usage) : undefined;
@@ -4902,7 +4879,7 @@ export class Hermes {
           const args = obj(p.args);
           return type === "tool.start"
             ? { kind: "tool.start", at, id, name, ...(args && { args }) }
-            : { kind: "tool.complete", at, id, name, ...(args && { args }), ...(num(p.duration_s) !== undefined && { durationS: num(p.duration_s) }), result: toolResultText(p.result) };
+            : { kind: "tool.complete", at, id, name, ...(args && { args }), ...(num(p.duration_s) !== undefined && { durationS: num(p.duration_s) }), result: toolResultText(p.result, name) };
         }
         case "session.usage": {
           const counters = countersOf(p.usage);
@@ -5207,7 +5184,7 @@ export class Hermes {
   private detach(reason: string, keep = false) {
     const pipe = this.pipe;
     this.pipe = undefined;
-    this.heldScreen = undefined;
+    this.control.rescope();
     this.generation++;
     this.capabilities.disconnected();
     this.groupRooms.sleep();
@@ -6537,8 +6514,11 @@ const withoutLoadError = (items: Item[]) => items.filter((i) => i.id !== LOAD_ER
 function historyItems(messages: TranscriptMessage[]): Item[] {
   return messages.flatMap((m, i): Item[] => {
     const id = `h-${i}`;
+    const at = storedAt(m.timestamp);
     const thought: Item[] = m.role === "assistant" && m.reasoning?.trim() ? [{ kind: "thinking", id: `${id}-r`, text: m.reasoning.trim() }] : [];
-    if (m.role === "tool")
+    if (m.role === "tool") {
+      const calls = storedCalls(m);
+      if (calls) return calls.map((call, k) => ({ kind: "tool", id: k ? `${id}-${k}` : id, ...(m.tool_call_id && { callId: k ? `${m.tool_call_id}:${k}` : m.tool_call_id }), ...call, status: "done", ...(at && { at }) }));
       return [
         {
           kind: "tool",
@@ -6549,12 +6529,13 @@ function historyItems(messages: TranscriptMessage[]): Item[] {
           preview: m.context || undefined,
           status: "done",
           result: typeof m.content === "string" ? m.content : undefined,
+          ...(at && { at }),
           ...inlineDiffOf(obj(displayMetadata(m.display_metadata)?.tool_result_metadata)?.inline_diff),
         },
       ];
+    }
     // Assistant rows can be reasoning only; system rows are timeline notes this app doesn't show yet.
     if (!m.text?.trim()) return thought;
-    const at = storedAt(m.timestamp);
     const rowId = Number.isSafeInteger(m.row_id) ? (m.row_id as number) : undefined;
     if (m.role === "user") {
       const back = returnedItem(m.text, m.display_kind, m.display_metadata);
@@ -6567,6 +6548,30 @@ function historyItems(messages: TranscriptMessage[]): Item[] {
     return [];
   });
 }
+
+/**
+ * The calls a stored `tool_call` row holds, each as the call itself, or undefined for any other row. Hermes stores
+ * computer_use this way, under that wrapper's name, with the calls in `args.calls` and no result.
+ */
+function storedCalls(m: TranscriptMessage): { name: string; args?: Record<string, unknown> }[] | undefined {
+  if (m.name !== "tool_call" || !Array.isArray(m.args?.calls)) return undefined;
+  const calls = m.args.calls.flatMap((c) => {
+    const call = obj(c);
+    const name = optionalText(call?.name);
+    if (!call || name === undefined) return [];
+    const args = obj(typeof call.arguments === "string" ? parsedJson(call.arguments) : call.arguments);
+    return [{ name, ...(args && { args }) }];
+  });
+  return calls.length ? calls : undefined;
+}
+
+const parsedJson = (s: string): unknown => {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return undefined;
+  }
+};
 
 /** A file edit's `inline_diff`, to spread into its tool item. */
 const inlineDiffOf = (v: unknown): { inlineDiff?: string } => (typeof v === "string" && v ? { inlineDiff: v } : {});
@@ -6595,6 +6600,7 @@ function questionSummary(q: QuestionItem): string {
 function approvalItem(r: ServerRequest): ApprovalItem {
   const p = r.params;
   const offered = Array.isArray(p.choices) ? p.choices : [];
+  const cua = askOf(p);
   return {
     kind: "approval",
     id: r.id,
@@ -6605,6 +6611,7 @@ function approvalItem(r: ServerRequest): ApprovalItem {
     // A grant Hermes doesn't say it allows is ruled out.
     allowSession: p.allow_session === true,
     allowPermanent: p.allow_permanent === true,
+    ...(cua && { cua }),
   };
 }
 
@@ -6826,6 +6833,7 @@ function applyEvent(c: Chat, type: string, p: Record<string, unknown>, from?: st
         args: obj(p.args),
         preview: optionalText(p.preview),
         status: "running",
+        at: Date.now(),
       });
       return { ...c, items };
     }
@@ -6834,7 +6842,7 @@ function applyEvent(c: Chat, type: string, p: Record<string, unknown>, from?: st
       const call = items[at];
       if (call?.kind !== "tool") return c;
       // A screenshot inside the result stays on the server (ADR 0061).
-      items[at] = { ...call, status: "done", durationS: num(p.duration_s), result: toolResultText(p.result), summary: optionalText(p.summary), ...inlineDiffOf(p.inline_diff) };
+      items[at] = { ...call, status: "done", durationS: num(p.duration_s), result: toolResultText(p.result, call.name), summary: optionalText(p.summary), ...inlineDiffOf(p.inline_diff) };
       return { ...c, items };
     }
     // Every second or so while a turn runs.

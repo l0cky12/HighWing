@@ -7,6 +7,7 @@
 
 import type { ScreenDisplay } from "./screenClipboard";
 import { isObj } from "./values";
+import type { HoldOutcome } from "./screenControl";
 
 /** Who may drive the screen. The holder's viewer id never leaves Hermes; `viewer_hash` lets a holder know itself. */
 export type DisplayLease = { holder: "agent" | "human"; viewer_hash?: string | null; since: number; epoch: number; reason?: string };
@@ -135,17 +136,12 @@ export interface ScreenApi {
    * "" when it has none.
    */
   readClipboard(where: ScreenDisplay, signal?: AbortSignal): Promise<string>;
-  /** `viewerId`: one this connection minted before, so a reconnect keeps the lease it holds. */
-  observe(viewerId?: string): Promise<DisplayObserve>;
-  takeOver(viewerId: string): Promise<DisplayLease>;
-  handBack(viewerId: string): Promise<DisplayLease>;
-  /**
-   * The viewer the owner holds the screen as, or undefined. Leaving the connection on purpose (sign-out, another
-   * profile) then hands it back first, even if its stream was lost meanwhile.
-   */
-  noteHeld(viewerId: string | undefined): void;
-  /** Lease changes Hermes broadcasts, for this profile's screen and others'. */
-  onLease(listener: (profileKey: string, lease: DisplayLease) => void): () => void;
+  /** A stream ticket, as this connection's viewer (screenControl.ts), so a re-attach keeps the lease it holds. */
+  observe(): Promise<DisplayObserve>;
+  /** Takes the screen for the owner, minting a viewer when this connection has none. */
+  takeOver(reason?: string): Promise<HoldOutcome>;
+  /** Gives back the screen this connection's viewer holds. */
+  handBack(): Promise<void>;
   openSocket: OpenScreenSocket;
 }
 

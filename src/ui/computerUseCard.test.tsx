@@ -139,6 +139,13 @@ describe("A computer-use run in the chat", () => {
     expect(onAnswer).toHaveBeenCalledWith(chat.items.find((i) => i.kind === "approval")!.id, "once", undefined);
   });
 
+  it("names a foreground action's Approval without Hermes's note on the window, which the card's tag carries", async () => {
+    pane(await replayed("11-turn-foreground", (f) => f.frame.method === "approval.respond"));
+    const [card] = cards();
+    expect(card.querySelector(".approval-head")!.textContent).toBe("Hermes wants to click at (618, 777)");
+    expect(card.querySelector(".cu-step.latest .cu-tag")!.textContent).toBe("foreground");
+  });
+
   it("reads a stopped run as stopped", async () => {
     pane(await replayed("14-turn-interrupt"));
     expect(within(cards()[0]).getByRole("button", { name: /Computer use · 2 steps/ }).textContent).toContain("stopped");

@@ -121,7 +121,7 @@ const GW_GROUPS: SectionItem[] = [
 /** What each section is for, under its title. */
 const SECTION_INTRO: Record<string, string> = {
   connection: "Sign in to a Hermes server, switch to another, or sign out.",
-  chats: "What the chat list shows, what Enter does while Hermes replies, and spell checking.",
+  chats: "What the chat list shows, what Enter does while Hermes replies, whether the Screen follows computer use, and spell checking.",
   launch: "What happens when the app starts and closes, and how it updates.",
   storage: "This computer's cache, older history, imported transcripts and backups.",
   "file:memory": "What Hermes noted for itself, such as facts about your setup and projects.",

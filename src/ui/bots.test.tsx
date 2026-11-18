@@ -738,7 +738,7 @@ describe("Edit bot, Edit persona, Clone, Pin and Hide from a bot's menu", { time
     expect(server.souls.scribe).toBe("You are Scribe. Draft release notes in plain words.");
   });
 
-  it("Edit bot's Write with AI rewrites the persona in place on the bot's own Text generation model, with Undo", async () => {
+  it("Edit bot's Write with AI rewrites the persona in place on the model that writes for the bot, with Undo", async () => {
     const { server, user } = await launch((s) => {
       withSoul(s);
       s.oneshotAnswer = "You are Scribe. Draft release notes in plain words.";
@@ -748,7 +748,7 @@ describe("Edit bot, Edit persona, Clone, Pin and Hide from a bot's menu", { time
     const persona = await loaded(dialog);
     const write = within(dialog).getByRole("button", { name: /Write with AI/ });
     await waitFor(() => expect(write.getAttribute("aria-disabled")).toBeNull());
-    expect(document.getElementById(write.getAttribute("aria-describedby")!)?.textContent).toMatch(/the Text generation model of scribe,/);
+    expect(document.getElementById(write.getAttribute("aria-describedby")!)?.textContent).toMatch(/^scribe writes with openrouter · deepseek-v4-flash, its Text generation model, pinned on the server\./);
     await user.click(write);
     await waitFor(() => expect(persona.value).toBe("You are Scribe. Draft release notes in plain words."));
     expect(server.requests.filter((r) => r.method === "llm.oneshot").map((r) => [r.params.profile, r.params.input])).toEqual([["scribe", expect.stringContaining(`<persona>${SOUL}</persona>`)]]);

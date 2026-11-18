@@ -401,7 +401,8 @@ export const en = {
       descriptionOptional: "Description (optional)",
       writeForMe: "Write for me",
       writing: "Writing… this can take up to a minute",
-      writeFailed: (reason: string) => `Hermes couldn't write one: ${reason}`,
+      writeFailed: (reason: string) =>
+        `Hermes couldn't write one: ${reason.replace(/\.$/, "")}. The default profile's Profile descriptions model writes it, set in Settings → Model.`,
       writeSaved: "Hermes saved the description it wrote. Change it here and save to replace it.",
       model: "Model",
       modelOptional: "Model (optional)",
@@ -479,14 +480,10 @@ export const en = {
       /** Write with AI on the form's Persona (ADR 0197, 0206): a rewrite of what the owner typed, put in the field with Undo. */
       rephrase: {
         generate: "Write with AI",
-        runsOn: (model: string, profile: string) =>
-          `Rewritten by ${model}, the Text generation model of ${profile}, in a one-off call with no tools and no chat. It only rewrites what you typed, and Undo puts your text back. Nothing reaches Hermes until you create or save.`,
+        oneOff: "It only rewrites what you typed, in a one-off call with no tools and no chat, and Undo puts your text back. Nothing reaches Hermes until you create or save.",
         empty: "Type a rough persona first. AI rewrites what you write; it doesn't make one up.",
         notConnected: "Connect to Hermes to rewrite the persona with AI.",
         unavailable: "Rewriting with AI isn't available here.",
-        checking: "Checking which model would rewrite it…",
-        modelUnread: (why: string) => `Couldn't read the Text generation model, so it can't rewrite: ${why}`,
-        noModel: (profile: string) => `No Text generation model is set for ${profile}. Pick one in Settings → Model.`,
         asking: "Hermes is rewriting your persona…",
         stop: "Stop",
         stopHint: "Hermes can't cancel the call. Stop throws its answer away, even if it still finishes.",
@@ -601,6 +598,62 @@ export const en = {
       stillInUse: (name: string) => `Nothing was deleted: Highwing couldn't switch away from ${name}.`,
       failed: (why: string) => `The profile wasn't deleted: ${why}`,
       forgetPartly: (name: string) => `Deleted ${name} on Hermes, but some of this computer's data for it couldn't be removed.`,
+    },
+  },
+  /**
+   * Which model writes a persona or project instructions, and why it failed (writingModel.ts, ADR 0203). `model` is
+   * "provider · model".
+   */
+  writing: {
+    defaultModel: "its default model",
+    byPinText: (model: string, profile: string) => `Written by ${model}, ${profile}'s Text generation model, pinned on the server`,
+    byPinInstructions: (model: string, profile: string) => `Written by ${model}, ${profile}'s Project instructions model, pinned on the server`,
+    byApp: (model: string) => `Written by ${model}, your Writing model`,
+    byMain: (model: string, profile: string) => `Written by ${model}, ${profile}'s own model`,
+    willPinText: (model: string, profile: string) => `${profile} writes with ${model}, its Text generation model, pinned on the server.`,
+    willPinInstructions: (model: string, profile: string) => `${profile} writes with ${model}, its Project instructions model, pinned on the server.`,
+    willApp: (model: string) => `Your Writing model writes it: ${model}.`,
+    willMain: (model: string, profile: string) => `No Writing model is set, so ${profile} writes with its own model: ${model}.`,
+    checking: "Checking which model would write it…",
+    unread: (why: string) => `Couldn't check which model would write it: ${why}`,
+    noModel: (profile: string) => `${profile} has no model to write with. Pick a Writing model in Settings → Model.`,
+    /** How to fix a missing sign-in on the server, for the sentences below. */
+    signInNous: (command: string) => `Sign it in there with ${command}`,
+    signInKey: "Add an API key or sign-in for it there",
+    pinTextSignIn: (profile: string, provider: string, fix: string) =>
+      `${profile}'s Text generation model is pinned on the server to ${provider}, and Hermes has no sign-in for it. ${fix}, or change that model in Settings → Model.`,
+    pinInstructionsSignIn: (profile: string, provider: string, fix: string) =>
+      `${profile}'s Project instructions model is pinned on the server to ${provider}, and Hermes has no sign-in for it. ${fix}, or change that model in Settings → Model.`,
+    appSignIn: (profile: string, provider: string, fix: string) =>
+      `Your Writing model runs on ${provider}, and Hermes has no sign-in for it in ${profile}. ${fix}, or pick another Writing model in Settings → Model.`,
+    mainSignIn: (profile: string, model: string) =>
+      `${profile} writes with its own model, ${model}, and Hermes couldn't use it for writing. Pick a Writing model in Settings → Model.`,
+    mainNoProvider: (profile: string) => `${profile} has no model Hermes can write with. Pick a Writing model in Settings → Model.`,
+    mainOther: (profile: string, model: string, detail: string) =>
+      `${profile} writes with its own model, ${model}, and Hermes couldn't use it for writing: ${detail.replace(/\.$/, "")}. Pick a Writing model in Settings → Model.`,
+    openTextGeneration: "Open Text generation",
+    openWritingModel: "Open Writing model",
+    /** Settings → Model → Writing model (WritingModelSettings.tsx). */
+    settings: {
+      title: "Writing model",
+      intro:
+        "Writes personas and project instructions for every bot with no model pinned on the server. Kept on this computer, for this connection. Chat titles don't use it.",
+      name: "Writing model",
+      hint: "Until you pick one, each bot writes with its own main model.",
+      more: (key: string) =>
+        `Highwing copies it into a bot's config, as ${key}, the first time it writes for that bot, and again after you change it. A bot whose Text generation model is pinned on the server writes with that instead.`,
+      clear: "Use each bot's own model",
+      saveFailed: "Couldn't keep the Writing model on this computer. It holds until Highwing closes.",
+      bots: "Bots",
+      botsDisconnected: "Connect to Hermes to see which model each bot writes with.",
+      botsLoading: "Reading each bot's models…",
+      botsFailed: (why: string) => `Couldn't list the bots: ${why}`,
+      pinned: (model: string) => `Pinned on the server: ${model}, its Text generation model. The Writing model doesn't apply.`,
+      usesApp: "Uses the Writing model.",
+      ownModel: (model: string) => `Writes with its own model: ${model}.`,
+      noModel: "Has no model to write with.",
+      botUnread: (why: string) => `Couldn't read its models: ${why}`,
+      descriptions: "Profile descriptions (Write for me) are written by the server's Profile descriptions model, set on the default profile. Hermes offers no way to choose it per bot.",
     },
   },
   toolsets: {

@@ -12,6 +12,7 @@ import { SECTION_KEYS, type SectionKey } from "./sectionKeys";
 import { toTemplates, type Template } from "./templates";
 import type { TerminalKind } from "./terminal";
 import { nonEmptyText } from "./values";
+import type { WritingPick } from "./writingModel";
 
 export const UI_PREFS_KEY = "hermes-ui-prefs";
 /** The shape the document has now. Bump it, and add a step to UI_PREFS_MIGRATIONS, when a field changes meaning. */
@@ -83,6 +84,11 @@ export type UIPrefs = {
    * keybindings.ts drops an id or chord it doesn't accept.
    */
   keybindings: Record<string, string[]>;
+  /**
+   * The Writing model per connection, keyed by `connectionScope` (provider and model slugs are a server's own). No
+   * entry: not set, so a bot with no model pinned on the server writes with its own main model (ADR 0203).
+   */
+  writingModels: Record<string, WritingPick>;
 };
 
 export type FollowUp = "queue" | "steer";
@@ -142,6 +148,7 @@ export const DEFAULT_UI_PREFS: Readonly<UIPrefs> = Object.freeze({
   messageDetails: "time",
   summonSelection: true,
   keybindings: Object.freeze({}) as Record<string, string[]>,
+  writingModels: Object.freeze({}) as Record<string, WritingPick>,
 });
 
 /** A stored document as read, before its fields are checked. */
@@ -278,6 +285,24 @@ function toKeybindings(v: unknown): Record<string, string[]> | undefined {
   return Object.fromEntries(entries.slice(0, KEYBINDINGS_LIMIT));
 }
 
+const WRITING_MODELS_LIMIT = 50;
+
+function toWritingModels(v: unknown): Record<string, WritingPick> | undefined {
+  if (!isDoc(v)) return undefined;
+  return Object.fromEntries(
+    Object.entries(v)
+      .slice(-WRITING_MODELS_LIMIT)
+      .flatMap(([scope, raw]) => {
+        if (!nonEmptyText(scope, 400) || !isDoc(raw)) return [];
+        const provider = nonEmptyText(raw.provider, 200);
+        const model = nonEmptyText(raw.model, 200);
+        const apiUrl = nonEmptyText(raw.apiUrl, 2000);
+        if (provider === undefined || model === undefined) return [];
+        return [[scope, { provider, model, ...(apiUrl !== undefined && { apiUrl }) }]];
+      }),
+  );
+}
+
 /** The prefs `doc` holds, each field that is missing or not a valid value taken from `d`: the defaults, unless given. */
 export function readUIPrefs(doc: UIPrefsDoc, d: Readonly<UIPrefs> = DEFAULT_UI_PREFS): UIPrefs {
   const pick = toModelPick(doc.modelPicker);
@@ -311,6 +336,7 @@ export function readUIPrefs(doc: UIPrefsDoc, d: Readonly<UIPrefs> = DEFAULT_UI_P
     messageDetails: MESSAGE_DETAILS.includes(doc.messageDetails as MessageDetails) ? (doc.messageDetails as MessageDetails) : d.messageDetails,
     summonSelection: typeof doc.summonSelection === "boolean" ? doc.summonSelection : d.summonSelection,
     keybindings: toKeybindings(doc.keybindings) ?? { ...d.keybindings },
+    writingModels: toWritingModels(doc.writingModels) ?? { ...d.writingModels },
   };
 }
 

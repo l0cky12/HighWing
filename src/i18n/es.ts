@@ -382,7 +382,8 @@ export const es: Catalogue = {
       descriptionOptional: "Descripción (opcional)",
       writeForMe: "Escríbela por mí",
       writing: "Escribiendo… puede tardar hasta un minuto",
-      writeFailed: (reason) => `Hermes no pudo escribirla: ${reason}`,
+      writeFailed: (reason) =>
+        `Hermes no pudo escribirla: ${reason.replace(/\.$/, "")}. La escribe el modelo de Descripciones de perfil del perfil default, que se elige en Ajustes → Modelo.`,
       writeSaved: "Hermes guardó la descripción que escribió. Cámbiala aquí y guarda para reemplazarla.",
       model: "Modelo",
       modelOptional: "Modelo (opcional)",
@@ -459,14 +460,10 @@ export const es: Catalogue = {
       pictureUnconfirmed: "Hermes guardó la imagen sin confirmarlo, así que el bot aún no dice que la tiene. Vuelve a guardar.",
       rephrase: {
         generate: "Escribir con IA",
-        runsOn: (model, profile) =>
-          `Lo reescribe ${model}, el modelo de Generación de texto de ${profile}, en una llamada suelta sin herramientas ni chat. Solo reescribe lo que escribiste, y Deshacer devuelve tu texto. Nada llega a Hermes hasta que crees o guardes.`,
+        oneOff: "Solo reescribe lo que escribiste, en una llamada suelta sin herramientas ni chat, y Deshacer devuelve tu texto. Nada llega a Hermes hasta que crees o guardes.",
         empty: "Escribe primero un borrador de la persona. La IA reescribe lo que escribes; no se inventa una.",
         notConnected: "Conéctate a Hermes para reescribir la persona con IA.",
         unavailable: "Reescribir con IA no está disponible aquí.",
-        checking: "Comprobando qué modelo la reescribiría…",
-        modelUnread: (why) => `No se pudo leer el modelo de Generación de texto, así que no puede reescribirla: ${why}`,
-        noModel: (profile) => `${profile} no tiene modelo de Generación de texto. Elige uno en Ajustes → Modelo.`,
         asking: "Hermes está reescribiendo tu persona…",
         stop: "Detener",
         stopHint: "Hermes no puede cancelar la llamada. Detener descarta su respuesta, aunque llegue a terminar.",
@@ -579,6 +576,56 @@ export const es: Catalogue = {
       stillInUse: (name) => `No se borró nada: Highwing no pudo dejar ${name}.`,
       failed: (why) => `No se borró el perfil: ${why}`,
       forgetPartly: (name) => `Se borró ${name} en Hermes, pero no se pudieron quitar todos los datos de este equipo.`,
+    },
+  },
+  writing: {
+    defaultModel: "su modelo por defecto",
+    byPinText: (model, profile) => `Escrito por ${model}, el modelo de Generación de texto de ${profile}, fijado en el servidor`,
+    byPinInstructions: (model, profile) => `Escrito por ${model}, el modelo de Instrucciones de proyecto de ${profile}, fijado en el servidor`,
+    byApp: (model) => `Escrito por ${model}, tu modelo de escritura`,
+    byMain: (model, profile) => `Escrito por ${model}, el propio modelo de ${profile}`,
+    willPinText: (model, profile) => `${profile} escribe con ${model}, su modelo de Generación de texto, fijado en el servidor.`,
+    willPinInstructions: (model, profile) => `${profile} escribe con ${model}, su modelo de Instrucciones de proyecto, fijado en el servidor.`,
+    willApp: (model) => `Lo escribe tu modelo de escritura: ${model}.`,
+    willMain: (model, profile) => `No hay modelo de escritura, así que ${profile} escribe con su propio modelo: ${model}.`,
+    checking: "Comprobando qué modelo lo escribiría…",
+    unread: (why) => `No se pudo comprobar qué modelo lo escribiría: ${why}`,
+    noModel: (profile) => `${profile} no tiene modelo con el que escribir. Elige un modelo de escritura en Ajustes → Modelo.`,
+    signInNous: (command) => `Inicia sesión allí con ${command}`,
+    signInKey: "Añade allí una clave de API o una sesión para él",
+    pinTextSignIn: (profile, provider, fix) =>
+      `El modelo de Generación de texto de ${profile} está fijado en el servidor a ${provider}, y Hermes no tiene sesión para él. ${fix}, o cambia ese modelo en Ajustes → Modelo.`,
+    pinInstructionsSignIn: (profile, provider, fix) =>
+      `El modelo de Instrucciones de proyecto de ${profile} está fijado en el servidor a ${provider}, y Hermes no tiene sesión para él. ${fix}, o cambia ese modelo en Ajustes → Modelo.`,
+    appSignIn: (profile, provider, fix) =>
+      `Tu modelo de escritura funciona con ${provider}, y Hermes no tiene sesión para él en ${profile}. ${fix}, o elige otro modelo de escritura en Ajustes → Modelo.`,
+    mainSignIn: (profile, model) => `${profile} escribe con su propio modelo, ${model}, y Hermes no pudo usarlo para escribir. Elige un modelo de escritura en Ajustes → Modelo.`,
+    mainNoProvider: (profile) => `${profile} no tiene ningún modelo con el que Hermes pueda escribir. Elige un modelo de escritura en Ajustes → Modelo.`,
+    mainOther: (profile, model, detail) =>
+      `${profile} escribe con su propio modelo, ${model}, y Hermes no pudo usarlo para escribir: ${detail.replace(/\.$/, "")}. Elige un modelo de escritura en Ajustes → Modelo.`,
+    openTextGeneration: "Abrir Generación de texto",
+    openWritingModel: "Abrir Modelo de escritura",
+    settings: {
+      title: "Modelo de escritura",
+      intro:
+        "Escribe personas e instrucciones de proyecto para cada bot sin un modelo fijado en el servidor. Se guarda en este equipo, para esta conexión. Los títulos de los chats no lo usan.",
+      name: "Modelo de escritura",
+      hint: "Hasta que elijas uno, cada bot escribe con su propio modelo principal.",
+      more: (key) =>
+        `Highwing lo copia en la configuración del bot, como ${key}, la primera vez que escribe para ese bot, y de nuevo después de que lo cambies. Un bot con su modelo de Generación de texto fijado en el servidor escribe con ese.`,
+      clear: "Usar el propio modelo de cada bot",
+      saveFailed: "No se pudo guardar el modelo de escritura en este equipo. Se mantiene hasta que Highwing se cierre.",
+      bots: "Bots",
+      botsDisconnected: "Conéctate a Hermes para ver con qué modelo escribe cada bot.",
+      botsLoading: "Leyendo los modelos de cada bot…",
+      botsFailed: (why) => `No se pudieron listar los bots: ${why}`,
+      pinned: (model) => `Fijado en el servidor: ${model}, su modelo de Generación de texto. El modelo de escritura no se aplica.`,
+      usesApp: "Usa el modelo de escritura.",
+      ownModel: (model) => `Escribe con su propio modelo: ${model}.`,
+      noModel: "No tiene modelo con el que escribir.",
+      botUnread: (why) => `No se pudieron leer sus modelos: ${why}`,
+      descriptions:
+        "Las descripciones de perfil (Escríbela por mí) las escribe el modelo de Descripciones de perfil del servidor, elegido en el perfil default. Hermes no permite elegirlo por bot.",
     },
   },
   toolsets: {

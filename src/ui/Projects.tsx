@@ -12,7 +12,8 @@ import { Age, Spinner, composing, menuArrows, useDismiss, useReturnFocus } from 
 import { pick, typeNewLine } from "./keybindings";
 import { ModelControls } from "./ModelPicker";
 import { errorText } from "../hermes/values";
-import { InstructionsAI, type InstructionsWriter } from "./InstructionsAI";
+import { InstructionsAI } from "./InstructionsAI";
+import type { Writer } from "../hermes/writingModel";
 import { useSpellCheck } from "./SpellCheckSettings";
 
 const baseName = (path: string) => path.split("/").filter(Boolean).pop() ?? path;
@@ -754,7 +755,7 @@ type DefaultsProps = {
   /** Checks and keeps the defaults over revision `base`; rejects with `DefaultsConflict` if another save landed. */
   onSave: (base: number, draft: DefaultsDraft) => Promise<ProjectDefaults>;
   /** Writes or improves the instructions with Hermes (InstructionsAI.tsx); absent while Hermes isn't connected. */
-  writer?: InstructionsWriter;
+  writer?: Writer;
 };
 
 const blank = (d?: ProjectDefaults): DefaultsDraft => cleanDraft({ instructions: d?.instructions, model: d?.model, folder: d?.folder });
@@ -773,7 +774,7 @@ function DefaultsSection({ saved, project, folders, profile, connection, catalog
   const [conflict, setConflict] = useState<ProjectDefaults | null>();
   const [done, setDone] = useState(false);
   // The writer the dialog was opened with, kept while it's open: a dropped connection fails its calls instead of closing it.
-  const [writing, setWriting] = useState<InstructionsWriter>();
+  const [writing, setWriting] = useState<Writer>();
   const aiButton = useRef<HTMLButtonElement>(null);
   const unsaved = !sameDraft(draft, shown.draft);
   const tooLong = draftProblem(draft);

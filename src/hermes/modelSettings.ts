@@ -1,4 +1,5 @@
 import { textOrEmpty } from "./values";
+import type { WritingFacts, WritingPick } from "./writingModel";
 // Settings → Model: the main model, the subagent route, the auxiliary (helper task) models, and the two guardrails
 // asked before an Apply. Everything is read from and written to dashboard REST on the deployed `bf0203a` (research doc
 // "Model settings"); the legacy `/api/ws` generation has `config.set` for the main model only, and nothing for
@@ -24,6 +25,11 @@ export const TEXT_TASK = "title_generation";
  * `llm.oneshot` still reads `auxiliary.project_instructions` for it, and runs it on the main model when that's unset.
  */
 export const INSTRUCTIONS_TASK = "project_instructions";
+/**
+ * The helper task this app owns in every profile's config: a mirror of the app's Writing model (writingModel.ts,
+ * ADR 0203), never read as a setting. Hermes has no slot for it either.
+ */
+export const WRITING_TASK = "highwing_writing";
 
 /** What the catalog says a model can do (`model.options` → `providers[].capabilities[model]`). */
 export type ModelCaps = { fast: boolean; reasoning: boolean };
@@ -85,12 +91,6 @@ export type ModelSettings = {
   instructions?: AuxDraft;
   providers: CatalogProvider[];
 };
-
-/**
- * The model one call that writes project instructions runs on, and the `task` that call sends for it. `follows`: the
- * Project instructions model is unset, so the call runs on Text generation's model, which may be the main model.
- */
-export type WriterModel = { task: string; provider: string; model: string; follows?: "text" | "main" };
 
 export type SubagentDraft = {
   route: SubagentRoute;
@@ -306,16 +306,38 @@ function catalogFrom(res: unknown): CatalogProvider[] {
   });
 }
 
-/** `auxiliary.project_instructions` from `GET /api/config`: unset when missing, or its provider is empty or `auto`. */
-function instructionsFrom(config: unknown): AuxDraft | undefined {
-  const block = obj(obj(obj(config).auxiliary)[INSTRUCTIONS_TASK]);
+/** `auxiliary.<task>` from `GET /api/config`: unset when missing, or its provider is empty or `auto`. */
+function setBlock(config: unknown, task: string): Json | undefined {
+  const block = obj(obj(obj(config).auxiliary)[task]);
   const provider = textOrEmpty(block.provider).trim();
   if (!provider || provider.toLowerCase() === AUX_AUTO) return undefined;
-  return { provider, model: textOrEmpty(block.model).trim(), effort: effortFromConfig(block.reasoning_effort) || AUX_INHERIT };
+  return block;
+}
+
+function instructionsFrom(config: unknown): AuxDraft | undefined {
+  const block = setBlock(config, INSTRUCTIONS_TASK);
+  if (!block) return undefined;
+  return { provider: textOrEmpty(block.provider).trim(), model: textOrEmpty(block.model).trim(), effort: effortFromConfig(block.reasoning_effort) || AUX_INHERIT };
 }
 
 /** Endpoint keys a provider change leaves stale (`clear_model_endpoint_credentials` at `f0d9488`). */
 const CLEARED_CREDENTIALS = { api_key: "", api: "", key_env: "", api_key_env: "", api_mode: "" };
+
+/**
+ * A whole `auxiliary.<task>` block for `PUT /api/config`, which can't delete a key: undefined unsets it, writing ""
+ * for every key Hermes reads. `clear`: the provider changes, so the endpoint keys it leaves stale are written "" too,
+ * as `/api/model/set` would drop them, so one provider's key never goes to another's endpoint.
+ */
+function auxBlock(next: { provider: string; model: string; effort: string } | undefined, clear: boolean, apiUrl?: string) {
+  if (!next) return { provider: "", model: "", reasoning_effort: "", base_url: "", ...CLEARED_CREDENTIALS };
+  return {
+    provider: next.provider,
+    model: next.model,
+    reasoning_effort: next.effort,
+    ...(clear && { base_url: "", ...CLEARED_CREDENTIALS }),
+    ...(apiUrl && { base_url: apiUrl }),
+  };
+}
 
 function auxFrom(res: unknown): AuxTask[] {
   const rows = obj(res).tasks;
@@ -357,27 +379,28 @@ export class ModelSettingsApi {
   }
 
   /**
-   * The model a session-less `llm.oneshot` runs on: the Text generation task's, or the main model's when that task is
-   * left on `auto` (`followsMain`). Only `GET /api/model/auxiliary` is read, for `profile` (the profile shown if unnamed).
+   * What decides which model writes for `profile` (writingModel.ts): its main model and Text generation pin from
+   * `GET /api/model/auxiliary`, and from `GET /api/config` its Project instructions pin and the Writing model mirror,
+   * which that route doesn't list. Reports only; `writingRoute` decides.
    */
-  async textModel(profile?: string): Promise<{ provider: string; model: string; followsMain: boolean }> {
-    const aux = await this.rest("GET", `api/model/auxiliary?${this.q({}, profile)}`);
-    const task = auxFrom(aux).find((t) => t.task === TEXT_TASK);
-    if (task && task.provider !== AUX_AUTO) return { provider: task.provider, model: task.model, followsMain: false };
+  async writingFacts(profile: string): Promise<WritingFacts> {
+    const [aux, config] = await Promise.all([this.rest("GET", `api/model/auxiliary?${this.q({}, profile)}`), this.rest("GET", `api/config?${this.q({}, profile)}`)]);
     const main = obj(obj(aux).main);
-    return { provider: textOrEmpty(main.provider), model: textOrEmpty(main.model), followsMain: true };
+    const text = auxFrom(aux).find((t) => t.task === TEXT_TASK && t.provider.trim().toLowerCase() !== AUX_AUTO);
+    const instructions = instructionsFrom(config);
+    const mirror = setBlock(config, WRITING_TASK);
+    return {
+      main: { provider: textOrEmpty(main.provider), model: textOrEmpty(main.model) },
+      ...(text && { text: { provider: text.provider, model: text.model } }),
+      ...(instructions && { instructions: { provider: instructions.provider, model: instructions.model } }),
+      ...(mirror && { mirror: { provider: textOrEmpty(mirror.provider).trim(), model: textOrEmpty(mirror.model).trim(), baseUrl: textOrEmpty(mirror.base_url).trim() } }),
+    };
   }
 
-  /**
-   * The model Write with AI and Improve with AI run on: the Project instructions model, or Text generation's while it's
-   * unset. Hermes would run an unset `project_instructions` task on the main model, so then the call sends Text
-   * generation's task instead. Reads `GET /api/config`, and `GET /api/model/auxiliary` only when it follows.
-   */
-  async instructionsModel(): Promise<WriterModel> {
-    const own = instructionsFrom(await this.rest("GET", `api/config?${this.q()}`));
-    if (own) return { task: INSTRUCTIONS_TASK, provider: own.provider, model: own.model };
-    const text = await this.textModel();
-    return { task: TEXT_TASK, provider: text.provider, model: text.model, follows: text.followsMain ? "main" : "text" };
+  /** Writes the Writing model's mirror into `profile`'s config with `PUT /api/config`, the whole block every time. */
+  async mirrorWriting(profile: string, pick: WritingPick): Promise<void> {
+    const block = auxBlock({ provider: pick.provider, model: pick.model, effort: "" }, true, pick.apiUrl);
+    await this.rest("PUT", `api/config?${this.q({}, profile)}`, { config: { auxiliary: { [WRITING_TASK]: block } } });
   }
 
   /** `GET /api/model/options`, `/api/model/auxiliary`, `/api/config` and `/api/delegation/routing`. */
@@ -460,15 +483,11 @@ export class ModelSettingsApi {
    */
   async applyInstructions(saved: ModelSettings, next: AuxDraft | undefined): Promise<void> {
     const apiUrl = next && saved.providers.find((p) => p.slug === next.provider)?.apiUrl;
-    const block = next
-      ? {
-          provider: next.provider,
-          model: next.model,
-          reasoning_effort: next.effort === AUX_INHERIT ? "" : next.effort,
-          ...(next.provider !== saved.instructions?.provider && { base_url: "", ...CLEARED_CREDENTIALS }),
-          ...(apiUrl && { base_url: apiUrl }),
-        }
-      : { provider: "", model: "", reasoning_effort: "", base_url: "", ...CLEARED_CREDENTIALS };
+    const block = auxBlock(
+      next && { provider: next.provider, model: next.model, effort: next.effort === AUX_INHERIT ? "" : next.effort },
+      next?.provider !== saved.instructions?.provider,
+      apiUrl,
+    );
     await this.rest("PUT", `api/config?${this.q()}`, { config: { auxiliary: { [INSTRUCTIONS_TASK]: block } } });
   }
 

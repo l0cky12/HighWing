@@ -46,6 +46,7 @@ import { CronApi, jobRunTitle } from "./cronJobs";
 import { followsSession, nextRoster, parseKanbanCreate, sameTask, type DispatchedTask } from "./dispatched";
 import { KanbanApi, KanbanWatch } from "./kanban";
 import { ModelSettingsApi } from "./modelSettings";
+import { WritingDesk, type WritingPick } from "./writingModel";
 import { ToolsetsApi } from "./toolsets";
 import { VoiceSettingsApi } from "./voiceSettings";
 import { readBack, sendImport, type PlannedChat } from "./importTranscripts";
@@ -467,35 +468,44 @@ export class TitleModelUnavailable extends Error {
   }
 }
 
-/** How a `TitleModelUnavailable` names the model that failed, before its provider, and the setting that picks another. */
-export type UnavailableWords = { runs: string; fix: string };
-export const TEXT_GENERATION_WORDS: UnavailableWords = { runs: "Text generation runs on", fix: "or pick another Text generation model in Settings → Model." };
-
 /**
- * The `TitleModelUnavailable` a failed `llm.oneshot` stands for, if it failed for want of the provider's credentials.
- * The texts are Hermes's own at `c419cf7` (`agent/auxiliary_client.py` `_resolve_call_client`,
- * `agent/auxiliary_unavailable.py`): a pin to Nous Portal reports `Nous Portal runtime credentials unavailable: <why>`,
- * any other pinned provider `Provider '<slug>' is set in config.yaml but no API key was found` or `no credentials were
- * found`. A rate limit, a timeout or a busy provider isn't a sign-in problem, so it keeps Hermes's words.
+ * Whether Hermes's sentence says it has no credentials for a provider, and which. The texts are Hermes's own at
+ * `c419cf7` (`agent/auxiliary_client.py` `_resolve_call_client`, `agent/auxiliary_unavailable.py`): a pin to Nous Portal
+ * reports `Nous Portal runtime credentials unavailable: <why>`, any other pinned provider `Provider '<slug>' is set in
+ * config.yaml but no API key was found` or `no credentials were found`, and a task on `auto` whose main provider can't
+ * build `main provider <slug> is unavailable and no fallback_chain …`. A rate limit, a timeout or a busy provider isn't a
+ * sign-in problem.
  */
-export function titleModelUnavailable(why: string, profile: string, words = TEXT_GENERATION_WORDS): TitleModelUnavailable | undefined {
+export function missingSignIn(why: string): { provider: string } | undefined {
+  if (/Nous Portal runtime credentials unavailable/i.test(why) && !/rate.?limit|quota|temporarily|retry/i.test(why)) return { provider: "nous" };
+  const pinned = /Provider '([^']+)' is set in config\.yaml but no (?:API key|credentials) (?:was|were) found/.exec(why);
+  if (pinned) return { provider: pinned[1] };
+  const main = /main provider (\S+) is unavailable/.exec(why);
+  if (main) return { provider: main[1] };
+}
+
+/** The `TitleModelUnavailable` a failed `llm.oneshot` stands for, if it failed for want of the provider's credentials. */
+export function titleModelUnavailable(why: string, profile: string): TitleModelUnavailable | undefined {
   const detail = why.replace(/^one-shot generation failed:\s*/, "");
-  const hermes = `hermes ${profile && profile !== "default" ? `-p ${profile} ` : ""}`;
-  if (/Nous Portal runtime credentials unavailable/i.test(detail) && !/rate.?limit|quota|temporarily|retry/i.test(detail))
+  const missing = missingSignIn(detail);
+  if (!missing) return;
+  const fix = "or pick another Text generation model in Settings → Model.";
+  if (missing.provider === "nous")
     return new TitleModelUnavailable(
       "nous",
       detail,
-      `${words.runs} Nous Portal, and Hermes on the server isn't signed in to Nous Portal. Sign it in there with ` +
-        `\`${hermes}auth add nous\`, ${words.fix}`,
+      "Text generation runs on Nous Portal, and Hermes on the server isn't signed in to Nous Portal. Sign it in there with " +
+        `\`${hermesCommand(profile)}auth add nous\`, ${fix}`,
     );
-  const pinned = /Provider '([^']+)' is set in config\.yaml but no (?:API key|credentials) (?:was|were) found/.exec(detail);
-  if (pinned)
-    return new TitleModelUnavailable(
-      pinned[1],
-      detail,
-      `${words.runs} ${pinned[1]}, and Hermes on the server has no API key or sign-in for it. Add one there, ${words.fix}`,
-    );
+  return new TitleModelUnavailable(
+    missing.provider,
+    detail,
+    `Text generation runs on ${missing.provider}, and Hermes on the server has no API key or sign-in for it. Add one there, ${fix}`,
+  );
 }
+
+/** The start of a `hermes` command on the server for `profile`: `hermes ` for the default, else `hermes -p <profile> `. */
+export const hermesCommand = (profile: string) => `hermes ${profile && profile !== "default" ? `-p ${profile} ` : ""}`;
 
 /**
  * The connection dropped before Hermes answered a branch, so whether it made one can't be known yet. The chat list
@@ -1025,18 +1035,9 @@ export class Hermes {
    * Asks Hermes for an edit of an artifact with legacy `llm.oneshot` (research doc, "Artifacts"): a stateless model call
    * with no tools, which adds nothing to any chat. When the chat that made the file is live in this app, its runtime
    * session lends its own model (`lent`); otherwise Hermes uses the profile's Text generation model, as Regenerate
-   * title does. `task` runs it on another helper task's model instead, and `words` names that model when its provider's
-   * sign-in is missing, which is a `TitleModelUnavailable`.
+   * title does, and a missing sign-in for it is a `TitleModelUnavailable`.
    */
-  async askForEdit(o: {
-    profile: string;
-    chatId?: string;
-    instructions: string;
-    input: string;
-    maxTokens: number;
-    task?: string;
-    words?: UnavailableWords;
-  }): Promise<{ text: string; lent: boolean }> {
+  async askForEdit(o: { profile: string; chatId?: string; instructions: string; input: string; maxTokens: number }): Promise<{ text: string; lent: boolean }> {
     const sid = o.chatId && o.profile === this.profile ? this.snapshot.chats.find((c) => c.id === o.chatId)?.runtimeId : undefined;
     const params = {
       profile: o.profile,
@@ -1044,14 +1045,32 @@ export class Hermes {
       input: o.input,
       max_tokens: o.maxTokens,
       temperature: 0.2,
-      ...(o.task && { task: o.task }),
       ...(sid && { session_id: sid }),
     };
     const { text } = (await this.request("llm.oneshot", params).catch((e) => {
-      throw (e instanceof RpcError && titleModelUnavailable(e.message, o.profile, o.words)) || e;
+      throw (e instanceof RpcError && titleModelUnavailable(e.message, o.profile)) || e;
     })) as { text?: unknown };
     if (typeof text !== "string") throw new Error("Hermes didn't answer with text.");
     return { text, lent: !!sid };
+  }
+
+  /**
+   * Writing for this connection (writingModel.ts, ADR 0203): personas and project instructions, for any profile on it.
+   * `pick`: the app's Writing model for the connection, read at each call.
+   */
+  writingDesk(pick: () => WritingPick | undefined): WritingDesk {
+    return new WritingDesk(
+      {
+        facts: (profile) => this.modelSettings.writingFacts(profile),
+        mirror: (profile, p) => this.modelSettings.mirrorWriting(profile, p),
+        oneshot: async ({ profile, task, instructions, input, maxTokens }) => {
+          const { text } = (await this.request("llm.oneshot", { profile, task, instructions, input, max_tokens: maxTokens, temperature: 0.2 })) as { text?: unknown };
+          if (typeof text !== "string") throw new Error("Hermes didn't answer with text.");
+          return text;
+        },
+      },
+      pick,
+    );
   }
 
   constructor(

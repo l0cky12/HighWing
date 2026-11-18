@@ -38,6 +38,7 @@ import { ModelControls } from "./ModelPicker";
 import { SettingNote, SettingRow, SettingsSection } from "./SettingRows";
 import { AppliesBox, AppliesPart, HeadPart } from "./SettingsPage";
 import { errorText } from "../hermes/values";
+import { writingRoute, type WritingRoute } from "../hermes/writingModel";
 
 const EFFORT_LABEL: Record<string, string> = {
   [EFFORT_OFF]: "Off",
@@ -69,7 +70,7 @@ const list = (names: string[]) => (names.length < 2 ? names.join("") : `${names.
 const providerName = (providers: CatalogProvider[], slug: string) => providers.find((p) => p.slug === slug)?.name ?? slug;
 
 /** The catalog's providers; one Hermes has that the catalog no longer lists stays on offer. */
-function ProviderSelect({ label, value, providers, onChange }: { label: string; value: string; providers: CatalogProvider[]; onChange: (slug: string) => void }) {
+export function ProviderSelect({ label, value, providers, onChange }: { label: string; value: string; providers: CatalogProvider[]; onChange: (slug: string) => void }) {
   const listed = providers.some((p) => p.slug === value);
   return (
     <select className="select" aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}>
@@ -89,7 +90,7 @@ function ProviderSelect({ label, value, providers, onChange }: { label: string; 
 }
 
 /** The provider's models. Empty until one is picked: switching provider never keeps the old provider's model. */
-function ModelSelect({ label, value, provider, providers, onChange }: { label: string; value: string; provider: string; providers: CatalogProvider[]; onChange: (m: string) => void }) {
+export function ModelSelect({ label, value, provider, providers, onChange }: { label: string; value: string; provider: string; providers: CatalogProvider[]; onChange: (m: string) => void }) {
   const models = providers.find((p) => p.slug === provider)?.models ?? [];
   return (
     <ModelCombobox
@@ -163,10 +164,22 @@ function ApplyRow({
   );
 }
 
+/** What an unset Project instructions model leaves writing to (ADR 0203). */
+function followsLine(route: WritingRoute): string {
+  switch (route.via) {
+    case "pin":
+      return `Until you pick one, Text generation's model writes them${route.model ? `, ${route.model}` : ""}.`;
+    case "app":
+      return `Until you pick one, your Writing model writes them, ${route.model}.`;
+    case "main":
+      return `Until you pick one, the main model writes them${route.model ? `, ${route.model}` : ""}.`;
+  }
+}
+
 /**
- * The Project instructions model: what Write with AI and Improve with AI run on, and Text generation's model until one
- * is picked (ADR 0177). Written as soon as it's picked, like Text generation's. Hermes has no slot for it, so it goes
- * into the profile's config with `PUT /api/config`, where Hermes checks no price.
+ * The Project instructions model: what Write with AI and Improve with AI run on, pinned on the server (ADR 0177). Until
+ * one is picked, writing goes on as for a persona (ADR 0203). Written as soon as it's picked, like Text generation's.
+ * Hermes has no slot for it, so it goes into the profile's config with `PUT /api/config`, where Hermes checks no price.
  */
 function InstructionsModel({
   saved,
@@ -175,6 +188,7 @@ function InstructionsModel({
   catalog,
   connected,
   onSaved,
+  writingScope,
 }: {
   saved: Settings;
   api: ModelSettingsApi;
@@ -182,13 +196,15 @@ function InstructionsModel({
   catalog: ModelCatalog;
   connected: boolean;
   onSaved: (fresh: Settings) => void;
+  writingScope?: string;
 }) {
-  const { modelFavorites } = useSyncExternalStore(subscribeUIPrefs, getUIPrefs);
+  const { modelFavorites, writingModels } = useSyncExternalStore(subscribeUIPrefs, getUIPrefs);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const own = saved.instructions;
   const text = saved.auxiliary.find((t) => t.task === TEXT_TASK);
-  const followed = text && text.provider !== AUX_AUTO ? text.model : saved.main.model;
+  const textPin = text && text.provider !== AUX_AUTO ? { provider: text.provider, model: text.model } : undefined;
+  const follows = writingRoute({ main: saved.main, ...(textPin && { text: textPin }) }, "instructions", writingScope === undefined ? undefined : writingModels[writingScope]);
   const current: ModelPick | undefined = own && { provider: own.provider, model: own.model, ...(isEffort(own.effort) && { effort: own.effort }) };
 
   const write = async (next: AuxDraft | undefined) => {
@@ -210,7 +226,7 @@ function InstructionsModel({
         name="Project instructions model"
         hint={
           <>
-            Writes and improves project instructions (Write with AI). {own ? "" : `Until you pick one, it follows Text generation${followed ? `, ${followed}` : ""}.`}
+            Writes and improves project instructions (Write with AI). {own ? "" : followsLine(follows)}
           </>
         }
         more={
@@ -224,8 +240,8 @@ function InstructionsModel({
             {own && (
               <button
                 className="icon-btn small-icon"
-                title="Follow Text generation"
-                aria-label="Use the Text generation model for project instructions"
+                title="Unpin"
+                aria-label="Unpin the Project instructions model"
                 disabled={busy || !connected}
                 onClick={() => void write(undefined)}
               >
@@ -267,6 +283,7 @@ function TextGeneration({
   connected,
   onSaved,
   show,
+  writingScope,
 }: {
   saved: Settings;
   api: ModelSettingsApi;
@@ -275,6 +292,8 @@ function TextGeneration({
   onSaved: (fresh: Settings) => void;
   /** Set anew to scroll this section into view and move focus to it. */
   show?: object;
+  /** Where this connection's Writing model is kept, which an unset Project instructions model leaves writing to. */
+  writingScope?: string;
 }) {
   const { modelFavorites } = useSyncExternalStore(subscribeUIPrefs, getUIPrefs);
   const titleId = useId();
@@ -338,7 +357,7 @@ function TextGeneration({
           name="Text generation model"
           hint={
             <>
-              Used for chat titles, including Regenerate title.{" "}
+              Used for chat titles, including Regenerate title. While picked, it also writes this bot's personas and project instructions, in place of the Writing model.{" "}
               {pinned ? "" : `Until you pick one, it's the main model, ${saved.main.model || "the profile's"}.`}
             </>
           }
@@ -396,7 +415,7 @@ function TextGeneration({
           )}
         </SettingRow>
       </div>
-      <InstructionsModel saved={saved} api={api} profile={profile} catalog={catalog} connected={connected} onSaved={onSaved} />
+      <InstructionsModel saved={saved} api={api} profile={profile} catalog={catalog} connected={connected} onSaved={onSaved} writingScope={writingScope} />
     </SettingsSection>
   );
 }
@@ -406,12 +425,15 @@ export function ModelSettings({
   profile,
   connected,
   showTextGeneration,
+  writingScope,
 }: {
   api: ModelSettingsApi;
   profile: string;
   connected: boolean;
   /** Set anew to bring the Text generation model into view once the setup is read. */
   showTextGeneration?: object;
+  /** Where this connection's Writing model is kept (ADR 0203). */
+  writingScope?: string;
 }) {
   const [saved, setSaved] = useState<Settings>();
   const [draft, setDraft] = useState<Draft>();
@@ -666,6 +688,7 @@ export function ModelSettings({
         profile={profile}
         connected={connected}
         show={showTextGeneration}
+        writingScope={writingScope}
         onSaved={(fresh) => {
           setSaved(fresh);
           // The other helper tasks' edits stay drafted; this one is what Hermes now has.

@@ -213,6 +213,15 @@ describe("forgetting a deleted profile on this computer", () => {
     for (const d of SCOPED_DOCS) expect(Object.keys(JSON.parse(localStorage.getItem(d)!).scopes)).toEqual([connectionScope(other, "work")]);
     expect(renamePending(home)).toBeUndefined();
   });
+
+  it("keeps a connection's Writing model through a profile's delete, and drops it with the connection, leaving another's", async () => {
+    const pick = { provider: "openrouter", model: "deepseek/deepseek-v4-flash" };
+    setUIPrefs({ writingModels: { [connectionScope(home)]: pick, [connectionScope(other)]: pick } });
+    await forgetProfileLocally(home, "work");
+    expect(Object.keys(getUIPrefs().writingModels)).toEqual([connectionScope(home), connectionScope(other)]);
+    await forgetConnectionData(home as never);
+    expect(getUIPrefs().writingModels).toEqual({ [connectionScope(other)]: pick });
+  });
 });
 
 describe("what a removed screen kept", () => {

@@ -33,7 +33,8 @@ import { BotCapabilities, SetupOutcome, outcomeNotice, useBotSetup, type Removal
 import { Menu } from "./ChatMenu";
 import { CloneProfileDialog } from "./CloneProfile";
 import { useModal } from "./modal";
-import { RephraseButton, RephrasePanel, usePersonaRephrase, type RephraseWiring } from "./PersonaRephrase";
+import { RephraseButton, RephrasePanel, usePersonaRephrase } from "./PersonaRephrase";
+import type { Writer, WritingFailed } from "../hermes/writingModel";
 import { SettingNote, SettingsSection } from "./SettingRows";
 import { HeadPart, useInPage } from "./SettingsPage";
 
@@ -82,10 +83,12 @@ export type ProfilesWiring = {
   showTab: (tab: "memory" | "skills", name: string) => void;
   copyText: (text: string) => Promise<void>;
   /**
-   * Write with AI on the form's Persona (ADR 0197, 0206), run as `profile` on its Text generation model: the profile in
-   * use for New, the profile edited for Edit. Given only while connected.
+   * Write with AI on the form's Persona (ADR 0197, 0206), run as `profile` on the model that writes for it
+   * (writingModel.ts, ADR 0203): the profile in use for New, the profile edited for Edit. Given only while connected.
    */
-  rephrase?: (profile: string) => RephraseWiring;
+  rephrase?: (profile: string) => Writer;
+  /** Opens the setting a failed Write with AI names (ADR 0203). */
+  writingFix?: (fix: WritingFailed["fix"]) => void;
   /** Each profile's SOUL.md, which Edit reads as it opens and saves with the form (ADR 0206); without it Edit has no Persona. */
   persona?: PersonaApi;
   /** Told whether the open form holds a persona Hermes doesn't have, and whose, so leaving the screen asks first. */
@@ -887,8 +890,8 @@ export function ProfileForm({
   const soulReads = useRef(0);
   const hasPersona = !row || !!soulApi;
   // New's rewrite runs on the profile in use, as the new one doesn't exist yet; Edit's on the profile edited.
-  const writer = row ? row.name : wiring.inUse;
-  const rephrase = usePersonaRephrase({ wiring: hasPersona ? wiring.rephrase?.(writer) : undefined, connected, profile: writer, text: soul, setText: setSoul });
+  const writtenFor = row ? row.name : wiring.inUse;
+  const rephrase = usePersonaRephrase({ writer: hasPersona ? wiring.rephrase?.(writtenFor) : undefined, connected, profile: writtenFor, text: soul, setText: setSoul });
   // New only: Edit has none, so it reads nothing there.
   const capabilities = useBotSetup(row ? undefined : wiring.setup, wiring.inUse);
   // The dialog swaps the whole form for a shorter view (what a create came to, or the question before leaving). WebKit
@@ -1505,7 +1508,7 @@ export function ProfileForm({
                     </button>
                   </div>
                 )}
-                <RephrasePanel r={rephrase} hintId={rephraseHint} disabled={saving} focusBox={() => soulBox.current?.focus()} />
+                <RephrasePanel r={rephrase} hintId={rephraseHint} disabled={saving} focusBox={() => soulBox.current?.focus()} onFix={wiring.writingFix} />
                 {stateNote<string>("soul", () => f.personaChanged, (theirs) => {
                   rephrase.stop();
                   setSoul(theirs);

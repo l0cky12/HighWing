@@ -2,7 +2,6 @@ import { type ReactNode, type RefObject, Suspense, lazy, useCallback, useLayoutE
 import { createPortal, flushSync } from "react-dom";
 import { ArrowLeft, ArrowRight, Columns2, FolderCog, PanelBottom, PanelLeft, PanelRight, PanelTop, Target, X } from "lucide-react";
 import { CONNECT_STOPPED, RenameConflict, TitleModelUnavailable, connect, openSaved, readSaved, toSource, type Delivery, type Hermes, type NoticeCard, type Notify } from "./hermes/transport";
-import { TEXT_TASK } from "./hermes/modelSettings";
 import { invoke } from "@tauri-apps/api/core";
 import type { CommandHost } from "./ui/SlashCommands";
 import { STEER, type ServerCommandList } from "./hermes/commands";
@@ -11,7 +10,7 @@ import { useExtensions } from "./ui/extensionsContext";
 import type { SkillCall, SkillCommands } from "./hermes/skillCommands";
 import { CHECK_EVERY_MS } from "./hermes/otherProfiles";
 import { type Account, type Kept, type SavedSignIn, launchOpen, launchSignIn, removeConnection, savedSignIn, savedSignInOrForm, signIn, signInForm, signOutToSignIn } from "./hermes/account";
-import { CONNECTIONS_KEY, Connections, type SavedConnection, type ScopeSource, addressLabel, defaultName, keptRouteHealth, prefScope } from "./hermes/connections";
+import { CONNECTIONS_KEY, Connections, type SavedConnection, type ScopeSource, addressLabel, connectionScope, defaultName, keptRouteHealth, prefScope } from "./hermes/connections";
 import { forgetConnectionData } from "./hermes/forgetConnection";
 import { clearRename, forgetProfileLocally, noteRename, renameProfileLocally, renamePending } from "./hermes/profileLocalData";
 import { serial as makeSerial } from "./hermes/serial";
@@ -24,7 +23,7 @@ import { PROJECTS_KEY, projectLinks, projectScope } from "./hermes/projectLinks"
 import { chatContext, contextLedger, knownWindow, type ChatContexts } from "./hermes/projectContextFiles";
 import { ProjectsStore, type Project } from "./hermes/projects";
 import { instructionsMessage, modelProblem, resolveNewChat, savedDefaults, type ProjectDefaults } from "./hermes/projectDefaults";
-import { unavailableWords } from "./hermes/instructionsAI";
+import type { WritingFailed } from "./hermes/writingModel";
 import { systemSecrets } from "./hermes/tauriKeyring";
 import { appUpdates } from "./hermes/tauriUpdates";
 import { tauriSnapshots } from "./hermes/snapshots";
@@ -1332,6 +1331,8 @@ export function Main({
   useCloseGuard(memoryUnsaved || skillUnsaved || !!personaUnsaved || artifactUnsaved, (close) => guardRef.current(close, "close"));
   // A new object each time a row asks Settings to show the Text generation model; the rail's button opens it plainly.
   const [showTextGeneration, setShowTextGeneration] = useState<object>();
+  /** Set anew to open Settings → Model at the Writing model, from a failure that names it. */
+  const [showWritingModel, setShowWritingModel] = useState<object>();
   /** Set to open Settings on its Memory tab, from the context inspector. */
   const [showMemory, setShowMemory] = useState<object>();
   /** Set, each time anew, to open Settings → Diagnostics, at the capability a screen's note named. */
@@ -1733,6 +1734,7 @@ export function Main({
     setJobsOpen(false);
     setUsageOpen(false); setWorkOpen(false);
     setShowTextGeneration(undefined);
+    setShowWritingModel(undefined);
     setShowMemory(undefined);
     setShowDiagnostics(undefined);
     setShowVoice(undefined);
@@ -1802,6 +1804,11 @@ export function Main({
   workingRef.current = working;
   // Read when the restore dialog renders and again just before it writes: sends and refused writes aren't React state.
   const restoreBusy = () => restoreBlocked({ working: workingRef.current, unsaved: unsaved.size, sending: sending.size });
+  // Writing a persona or project instructions (ADR 0203): a model pinned on the server for the bot, else this
+  // connection's Writing model, else the bot's own main model.
+  const writingScope = connectionScope(connection);
+  const writing = useMemo(() => hermes.writingDesk(() => getUIPrefs().writingModels[writingScope]), [hermes, writingScope]);
+
   const stillIn = (p: string) => hermes.profile === p;
 
   // A pane moving to another chat keeps its tabs in step (Tabs.tsx `navigateTabs`).
@@ -1994,9 +2001,21 @@ export function Main({
     // One destination at a time: an earlier Memory shortcut mustn't switch Settings away from this one.
     setShowMemory(undefined);
     setShowDiagnostics(undefined);
+    setShowWritingModel(undefined);
     setShowTextGeneration({});
     setSettingsOpen(true);
   };
+  const openWritingModel = () => {
+    setProjectOpen(false);
+    setJobsOpen(false);
+    setUsageOpen(false); setWorkOpen(false);
+    setShowMemory(undefined);
+    setShowDiagnostics(undefined);
+    setShowTextGeneration(undefined);
+    setShowWritingModel({});
+    setSettingsOpen(true);
+  };
+  const openWritingFix = (fix: WritingFailed["fix"]) => (fix === "text-model" ? openTextGeneration() : openWritingModel());
   // Reveal the composer when Search, Settings, Projects, Server files or a narrow preview covers it, so the capture can
   // be reviewed.
   const takeScreenshot = (remote = false) => guard(() => {
@@ -3088,6 +3107,7 @@ export function Main({
                   setJobsOpen(false);
                   setUsageOpen(false); setWorkOpen(false);
                   setShowTextGeneration(undefined);
+                  setShowWritingModel(undefined);
                   setShowDiagnostics(undefined);
                   setShowVoice(undefined);
                   setShowMemory({});
@@ -3196,14 +3216,9 @@ export function Main({
       },
     },
     copyText,
-    // Persona's Write with AI (ADR 0197, 0206): as the profile named, on its Text generation model, only while connected.
-    rephrase:
-      status === "connected"
-        ? (p) => ({
-            ask: (c) => hermes.askForEdit({ profile: p, instructions: c.instructions, input: c.input, maxTokens: c.maxTokens, task: TEXT_TASK }).then((r) => r.text),
-            model: () => hermes.modelSettings.textModel(p),
-          })
-        : undefined,
+    // Persona's Write with AI (ADR 0197, 0206): as the profile named, on the model that writes for it, only while connected.
+    rephrase: status === "connected" ? (p) => writing.writer(p, "persona") : undefined,
+    writingFix: openWritingFix,
     persona: hermes.persona,
     setup: { skills: hermes.skills, toolsets: hermes.toolsets },
     // A command to run (a settling delete's) gets the toast's Copy; a notice of something gone wrong stays longer.
@@ -3573,13 +3588,7 @@ export function Main({
                     if (draft.folder && status === "connected") await hermes.projects.checkFolder(profile, draft.folder);
                     return projects.saveDefaults(shownProject.id, base, draft);
                   },
-                  writer:
-                    status === "connected"
-                      ? {
-                          ask: (c, m) => hermes.askForEdit({ profile, ...c, task: m.task, words: unavailableWords(m) }).then((r) => r.text),
-                          model: () => hermes.modelSettings.instructionsModel(),
-                        }
-                      : undefined,
+                  writer: status === "connected" ? writing.writer(profile, "instructions") : undefined,
                 }}
               />
             ) : settingsOpen ? (
@@ -3629,6 +3638,7 @@ export function Main({
             localStt={localStt}
             transcribe={(audio, mime, side, signal) => localStt.transcribe({ audio, mime, profile: hermes.profile, connection: hermes.connectionId, side, signal })}
             showTextGeneration={showTextGeneration}
+            writing={{ desk: status === "connected" ? writing : undefined, scope: writingScope, show: showWritingModel }}
             showMemory={showMemory}
             capabilities={hermes.capabilities}
             openGuide={openGuide}

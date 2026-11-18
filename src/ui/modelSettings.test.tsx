@@ -518,10 +518,10 @@ describe("Project instructions model (ADR 0177)", () => {
   const card = () => screen.getByRole("group", { name: "Project instructions model" });
   const textCard = () => screen.getByRole("group", { name: "Text generation model" });
 
-  it("follows Text generation until one is picked, is written to the profile's config at once, and goes back with reset", async () => {
+  it("says Text generation's pin writes until one is picked, is written to the profile's config at once, and goes back with Unpin", async () => {
     const { server, user } = await shown();
-    expect(card().textContent).toContain("Writes and improves project instructions (Write with AI). Until you pick one, it follows Text generation, deepseek/deepseek-v4-flash.");
-    expect(within(card()).queryByRole("button", { name: "Use the Text generation model for project instructions" })).toBeNull();
+    expect(card().textContent).toContain("Writes and improves project instructions (Write with AI). Until you pick one, Text generation's model writes them, deepseek/deepseek-v4-flash.");
+    expect(within(card()).queryByRole("button", { name: "Unpin the Project instructions model" })).toBeNull();
 
     await user.click(within(card()).getByRole("button", { name: /^Model:/ }));
     await user.click(await within(card()).findByRole("button", { name: /^gpt-6.1-mini/ }));
@@ -545,10 +545,10 @@ describe("Project instructions model (ADR 0177)", () => {
     expect(within(textCard()).getByRole("button", { name: "Model: deepseek/deepseek-v4-flash" })).toBeTruthy();
     expect(server.modelConfig.auxiliary.title_generation).toEqual({ provider: "openrouter", model: "deepseek/deepseek-v4-flash" });
 
-    await user.click(within(card()).getByRole("button", { name: "Use the Text generation model for project instructions" }));
+    await user.click(within(card()).getByRole("button", { name: "Unpin the Project instructions model" }));
     await waitFor(() => expect(server.modelConfig.unslottedAuxiliary.project_instructions).toMatchObject({ provider: "", model: "" }));
-    expect(await within(card()).findByText(/Until you pick one, it follows Text generation, deepseek\/deepseek-v4-flash\./)).toBeTruthy();
-    expect(within(card()).queryByRole("button", { name: "Use the Text generation model for project instructions" })).toBeNull();
+    expect(await within(card()).findByText(/Until you pick one, Text generation's model writes them, deepseek\/deepseek-v4-flash\./)).toBeTruthy();
+    expect(within(card()).queryByRole("button", { name: "Unpin the Project instructions model" })).toBeNull();
     expect(server.modelConfig.auxiliary.title_generation).toEqual({ provider: "openrouter", model: "deepseek/deepseek-v4-flash" });
   });
 

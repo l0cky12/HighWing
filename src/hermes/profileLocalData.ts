@@ -222,7 +222,7 @@ function moveConnectionValues(storage: Store, parts: readonly string[], from: st
 
 /** The display preferences kept per profile (`prefScope`), and templates tied to a project, moved or dropped. */
 function movePrefs(c: ScopeSource, walk: Walk) {
-  const { lastOpenChat, modelPicker, modelPicks, templates } = getUIPrefs();
+  const { lastOpenChat, modelPicker, modelPicks, templates, writingModels } = getUIPrefs();
   const prefMove = (k: string): string | null | undefined => {
     if (!isPrefOf(c, k)) return undefined;
     if (!walk.profile) return null;
@@ -238,12 +238,15 @@ function movePrefs(c: ScopeSource, walk: Walk) {
     return to === null ? [] : [{ ...t, project: { ...t.project!, scope: to } }];
   });
   const templatesMoved = nextTemplates.length !== templates.length || nextTemplates.some((t, i) => t !== templates[i]);
-  if (!open && !picks && pickTo === undefined && !templatesMoved) return;
+  // The Writing model is the connection's, not a profile's: only forgetting the connection drops it.
+  const writingGone = !walk.profile && Object.hasOwn(writingModels, connectionScope(c));
+  if (!open && !picks && pickTo === undefined && !templatesMoved && !writingGone) return;
   setUIPrefs({
     ...(open && { lastOpenChat: open }),
     ...(picks && { modelPicks: picks }),
     ...(pickTo !== undefined && { modelPicker: pickTo === null || !modelPicker ? null : { ...modelPicker, profile: pickTo } }),
     ...(templatesMoved && { templates: nextTemplates }),
+    ...(writingGone && { writingModels: Object.fromEntries(Object.entries(writingModels).filter(([scope]) => scope !== connectionScope(c))) }),
   });
 }
 

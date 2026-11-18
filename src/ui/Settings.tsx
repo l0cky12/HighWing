@@ -39,6 +39,7 @@ import { KeyboardSettings } from "./KeyboardSettings";
 import type { ModelSettingsApi } from "../hermes/modelSettings";
 import { ModelSettings } from "./ModelSettings";
 import { IdleCompactSettings } from "./IdleCompactSettings";
+import { WritingModelSettings } from "./WritingModelSettings";
 import type { ToolsetsApi } from "../hermes/toolsets";
 import { ToolsetSettings, type OpenChat } from "./ToolsetSettings";
 import type { MemoryApi } from "../hermes/memory";
@@ -47,6 +48,7 @@ import type { MemoryProvidersApi } from "../hermes/memoryProviders";
 import { MemoryProviderSettings } from "./MemoryProviderSettings";
 import type { SkillsApi } from "../hermes/skills";
 import { SkillSettings } from "./SkillSettings";
+import type { WritingDesk } from "../hermes/writingModel";
 import { StartupSettings } from "./StartupSettings";
 import { SummonSettings } from "./SummonSettings";
 import { ChatSectionSettings } from "./ChatSectionSettings";
@@ -255,6 +257,7 @@ export function SettingsScreen({
   showVoice,
   guard = allow,
   showTextGeneration,
+  writing,
   importer,
   backup,
   showMemory,
@@ -365,6 +368,11 @@ export function SettingsScreen({
   guard?: (go: () => void) => void;
   /** Set, each time anew, to show the Model tab at the Text generation model: from a title that couldn't be regenerated. */
   showTextGeneration?: object;
+  /**
+   * The Writing model (ADR 0203): the connection's writing desk while connected, where its pick is kept, and, set anew
+   * each time, `show` opens the Model tab at it, from a writing call that failed on it.
+   */
+  writing?: { desk?: WritingDesk; scope: string; show?: object };
   /** The saved connections (Connections.tsx `ConnectionManager`), shown first in General. */
   connectionManager?: ReactNode;
   /** Set (to a new object each time) to show the Memory tab. */
@@ -415,7 +423,7 @@ export function SettingsScreen({
     [onMemoryDirty],
   );
   const [tab, setTabNow] = useState<Tab>(
-    showTextGeneration
+    showTextGeneration || writing?.show
       ? "model"
       : showMemory && memory
         ? "memory"
@@ -495,6 +503,12 @@ export function SettingsScreen({
     setTab("model");
   // eslint-disable-next-line react-hooks/exhaustive-deps -- open the Model tab only when a new `showTextGeneration` arrives; `setTab` is rebuilt each render, so listing it would switch back to Model on every render
   }, [showTextGeneration]);
+  useEffect(() => {
+    if (!writing?.show) return;
+    setQuery("");
+    setTab("model");
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- as for `showTextGeneration` above
+  }, [writing?.show]);
   useEffect(() => {
     if (!showMemory || !memory) return;
     setQuery("");
@@ -941,11 +955,27 @@ export function SettingsScreen({
       case "extensions":
         return <ExtensionsSettings skills={extensions?.skills} />;
       case "model":
-        // A draft lives only while this tab is open, and for one profile. Idle compaction is this computer's, and shows
-        // whether or not Hermes is reachable.
+        // A draft lives only while this tab is open, and for one profile. The Writing model and Idle compaction are this
+        // computer's, and show whether or not Hermes is reachable.
         return (
           <>
-            <ModelSettings key={profile} api={modelSettings} profile={profile} connected={status === "connected"} showTextGeneration={searching ? undefined : showTextGeneration} />
+            <ModelSettings
+              key={profile}
+              api={modelSettings}
+              profile={profile}
+              connected={status === "connected"}
+              showTextGeneration={searching ? undefined : showTextGeneration}
+              writingScope={writing?.scope}
+            />
+            {writing && (
+              <WritingModelSettings
+                desk={writing.desk}
+                scope={writing.scope}
+                profiles={listProfiles ?? (async () => [profile])}
+                catalog={() => modelSettings.providers()}
+                show={searching ? undefined : writing.show}
+              />
+            )}
             <IdleCompactSettings />
           </>
         );

@@ -316,16 +316,16 @@ describe("Guardrail: a model Hermes flags as expensive", () => {
 describe("The Project instructions model (ADR 0177)", () => {
   const stored = (server: FakeHermes) => server.modelConfig.unslottedAuxiliary.project_instructions;
 
-  it("is unset at first, and Write with AI runs on Text generation's task and model", async () => {
+  it("is unset at first, so what decides the writing model is the main model and Text generation's pin", async () => {
     const { api, saved } = await setup();
     expect(saved.instructions).toBeUndefined();
-    expect(await api.instructionsModel()).toEqual({ task: "title_generation", provider: "openrouter", model: "deepseek/deepseek-v4-flash", follows: "text" });
+    expect(await api.writingFacts("default")).toEqual({ main: { provider: "openrouter", model: "z-ai/glm-5.3-flash" }, text: { provider: "openrouter", model: "deepseek/deepseek-v4-flash" } });
   });
 
-  it("follows Text generation onto the main model when that's on auto, still sending Text generation's task", async () => {
+  it("reads Text generation on auto as no pin", async () => {
     const { server, api } = await setup();
     server.modelConfig.auxiliary.title_generation = { provider: "auto", model: "" };
-    expect(await api.instructionsModel()).toEqual({ task: "title_generation", provider: "openrouter", model: "z-ai/glm-5.3-flash", follows: "main" });
+    expect(await api.writingFacts("default")).toEqual({ main: { provider: "openrouter", model: "z-ai/glm-5.3-flash" } });
   });
 
   it("is written with PUT /api/config, read back by load, and then runs Write with AI on its own task", async () => {
@@ -348,7 +348,7 @@ describe("The Project instructions model (ADR 0177)", () => {
     const fresh = await api.load();
     expect(fresh.instructions).toEqual({ provider: "openai-codex", model: "gpt-6.1-mini", effort: "low" });
     expect(fresh.auxiliary.map((t) => t.task)).not.toContain("project_instructions");
-    expect(await api.instructionsModel()).toEqual({ task: "project_instructions", provider: "openai-codex", model: "gpt-6.1-mini" });
+    expect((await api.writingFacts("default")).instructions).toEqual({ provider: "openai-codex", model: "gpt-6.1-mini" });
     // Text generation keeps its own model.
     expect(fresh.auxiliary.find((t) => t.task === "title_generation")).toMatchObject({ provider: "openrouter", model: "deepseek/deepseek-v4-flash" });
 
@@ -369,15 +369,37 @@ describe("The Project instructions model (ADR 0177)", () => {
     expect(stored(server)).toEqual({ provider: "custom:lan", model: "qwen-4", reasoning_effort: "", base_url: "http://10.0.0.5:8080/v1", api_key: "", api: "", key_env: "", api_key_env: "", api_mode: "" });
   });
 
-  it("follows Text generation again once unset, with every key it wrote emptied, and a block on auto counts as unset", async () => {
+  it("is unpinned again once unset, with every key it wrote emptied, and a block on auto counts as unset", async () => {
     const { server, api, saved } = await setup();
     await api.applyInstructions(saved, { provider: "nous", model: "hermes-5-70b", effort: "none" });
     await api.applyInstructions(await api.load(), undefined);
     expect(stored(server)).toEqual({ provider: "", model: "", reasoning_effort: "", base_url: "", api_key: "", api: "", key_env: "", api_key_env: "", api_mode: "" });
     expect((await api.load()).instructions).toBeUndefined();
-    expect((await api.instructionsModel()).task).toBe("title_generation");
+    expect((await api.writingFacts("default")).instructions).toBeUndefined();
 
     server.modelConfig.unslottedAuxiliary.project_instructions = { provider: "auto", model: "" };
     expect((await api.load()).instructions).toBeUndefined();
+  });
+});
+
+describe("The Writing model's copy in a bot's config (ADR 0203)", () => {
+  it("is written whole for the profile named, a user-defined endpoint pointed at its own URL and stale keys cleared, and read back", async () => {
+    const { server, api } = await setup();
+    server.modelConfig.unslottedAuxiliary.highwing_writing = { provider: "openrouter", model: "x", api_key: "sk-or-old" };
+    await api.mirrorWriting("work", { provider: "custom:lan", model: "qwen-4", apiUrl: "http://10.0.0.5:8080/v1" });
+    expect(writes(server)).toEqual([
+      [
+        "PUT /api/config",
+        {
+          config: {
+            auxiliary: {
+              highwing_writing: { provider: "custom:lan", model: "qwen-4", reasoning_effort: "", base_url: "http://10.0.0.5:8080/v1", api_key: "", api: "", key_env: "", api_key_env: "", api_mode: "" },
+            },
+          },
+        },
+      ],
+    ]);
+    expect(server.configWrites.map((w) => w.profile)).toEqual(["work"]);
+    expect((await api.writingFacts("work")).mirror).toEqual({ provider: "custom:lan", model: "qwen-4", baseUrl: "http://10.0.0.5:8080/v1" });
   });
 });

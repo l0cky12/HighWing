@@ -445,7 +445,14 @@ export class FakeHermes {
    * each call from what it was told and given, and the task and model it ran on.
    */
   oneshotAnswer: string | ((call: { instructions: string; input: string; task: string; model: string }) => string) = "A new title";
-  /** Providers Hermes on the server has no sign-in or key for: an `llm.oneshot` whose task runs on one fails. */
+  /** Every `llm.oneshot` that reached a model: the profile it named, the task it sent, and the model that task ran on. */
+  readonly oneshotCalls: { profile: string; task: string; model: string }[] = [];
+  /** Every `PUT /api/config` body, with the profile it named. */
+  readonly configWrites: { profile: string; config: unknown }[] = [];
+  /**
+   * Providers Hermes on the server has no sign-in or key for: an `llm.oneshot` whose task runs on one fails, in
+   * Hermes's words for a pinned provider, or for a task on `auto` its words for an unusable main provider.
+   */
   signedOut = new Set<string>();
   /**
    * The profile's Bot Desktop (`display.*`, tui_gateway/methods_display.py at v2026.9.24; ADR 0039): its status and who
@@ -1310,10 +1317,13 @@ export class FakeHermes {
       if (!String(r.params.instructions ?? "").trim() && !String(r.params.input ?? "").trim())
         return this.fail(r.id, 4030, "llm.oneshot requires a template or instructions/input");
       const task = String(r.params.task || "title_generation");
-      const runsOn = this.oneshotModel(task);
+      const profile = String(r.params.profile || "default");
+      const runsOn = this.oneshotModel(task, profile);
       const answer = () => {
         if (this.oneshotFailure !== undefined) return this.fail(r.id, 5030, `one-shot generation failed: ${this.oneshotFailure}`);
-        if (this.signedOut.has(runsOn.provider)) return this.fail(r.id, 5030, `one-shot generation failed: ${signedOutText(runsOn.provider)}`);
+        if (this.signedOut.has(runsOn.provider))
+          return this.fail(r.id, 5030, `one-shot generation failed: ${runsOn.main ? mainUnavailableText(task, runsOn.provider) : signedOutText(runsOn.provider)}`);
+        this.oneshotCalls.push({ profile, task, model: runsOn.model });
         const a = this.oneshotAnswer;
         const call = { instructions: String(r.params.instructions ?? ""), input: String(r.params.input ?? ""), task, model: runsOn.model };
         this.respond(r.id, { text: typeof a === "string" ? a : a(call) });
@@ -1724,8 +1734,8 @@ export class FakeHermes {
         }
       );
     },
-    "GET /api/model/auxiliary": () => ({
-      tasks: Object.entries(this.modelConfig.auxiliary).map(([task, a]) => ({
+    "GET /api/model/auxiliary": ({ query }) => ({
+      tasks: Object.entries(this.configOf(query.get("profile")).auxiliary).map(([task, a]) => ({
         task,
         provider: a.provider || "auto",
         model: a.model,
@@ -1733,14 +1743,14 @@ export class FakeHermes {
         reasoning_effort: a.reasoning_effort || null,
         local_endpoint: /^https?:\/\/(127\.|10\.|192\.168\.|localhost)/.test(a.base_url ?? ""),
       })),
-      main: { provider: this.modelConfig.model.provider, model: this.modelConfig.model.default },
+      main: { provider: this.configOf(query.get("profile")).model.provider, model: this.configOf(query.get("profile")).model.default },
     }),
     "GET /api/config": ({ query }) => ({
-      model: this.modelConfig.model.default,
-      auxiliary: { ...structuredClone(this.modelConfig.auxiliary), ...structuredClone(this.modelConfig.unslottedAuxiliary) },
+      model: this.configOf(query.get("profile")).model.default,
+      auxiliary: { ...structuredClone(this.configOf(query.get("profile")).auxiliary), ...structuredClone(this.configOf(query.get("profile")).unslottedAuxiliary) },
       skills: this.skills.config(query.get("profile") || "default"),
-      agent: { ...this.modelConfig.agent },
-      delegation: { ...this.modelConfig.delegation },
+      agent: { ...this.configOf(query.get("profile")).agent },
+      delegation: { ...this.configOf(query.get("profile")).delegation },
       terminal: { backend: this.terminalBackend[query.get("profile") || "default"] ?? "local" },
       dashboard: { turn_isolation: this.turnIsolation },
       goals: { max_turns: this.goals.maxTurns },
@@ -1769,13 +1779,15 @@ export class FakeHermes {
       const config = body?.config;
       if (!config || typeof config !== "object")
         throw new RestError(422, `{"detail":[{"type":"missing","loc":["body","config"],"msg":"Field required"}]}`);
+      this.configWrites.push({ profile: query.get("profile") || "default", config: structuredClone(config) });
       const c = config as { agent?: Record<string, string>; delegation?: Record<string, unknown>; auxiliary?: Record<string, Record<string, string>> };
-      Object.assign(this.modelConfig.agent, c.agent ?? {});
-      Object.assign(this.modelConfig.delegation, c.delegation ?? {});
+      const mc = this.configOf(query.get("profile"));
+      Object.assign(mc.agent, c.agent ?? {});
+      Object.assign(mc.delegation, c.delegation ?? {});
       for (const [task, block] of Object.entries(c.auxiliary ?? {})) {
-        const slots = this.modelConfig.auxiliary;
+        const slots = mc.auxiliary;
         if (slots[task]) Object.assign(slots[task], block);
-        else this.modelConfig.unslottedAuxiliary[task] = { ...this.modelConfig.unslottedAuxiliary[task], ...block };
+        else mc.unslottedAuxiliary[task] = { ...mc.unslottedAuxiliary[task], ...block };
       }
       await this.voiceProviders.mergeConfig(query.get("profile") || "default", config as Record<string, unknown>);
       return { ok: true };
@@ -1784,6 +1796,12 @@ export class FakeHermes {
 
   /** The profile's model setup, as `config.yaml` holds it, and the catalog `model.options` lists. */
   modelConfig: FakeModelConfig = fakeModelConfig();
+  /** A profile's own `config.yaml`; a profile with none here shares `modelConfig`. */
+  readonly profileModelConfigs = new Map<string, FakeModelConfig>();
+
+  private configOf(profile?: string | null): FakeModelConfig {
+    return this.profileModelConfigs.get(profile || "default") ?? this.modelConfig;
+  }
 
   /** Runtime session id -> the tool names its agent was built with, from its profile's list then (`tools.show`). */
   readonly agentTools = new Map<string, Set<string>>();
@@ -3529,11 +3547,12 @@ export class FakeHermes {
    * The model an `llm.oneshot` for `task` runs on (`_resolve_task_provider_model` at `f0d9488`): `auxiliary.<task>` for
    * any task, slot or not, and the main model when that block is missing or its provider is empty or `auto`.
    */
-  private oneshotModel(task: string): { provider: string; model: string } {
-    const block = this.modelConfig.auxiliary[task] ?? this.modelConfig.unslottedAuxiliary[task] ?? {};
+  private oneshotModel(task: string, profile: string): { provider: string; model: string; main: boolean } {
+    const mc = this.configOf(profile);
+    const block = mc.auxiliary[task] ?? mc.unslottedAuxiliary[task] ?? {};
     const provider = String(block.provider ?? "").trim();
-    if (!provider || provider.toLowerCase() === "auto") return { provider: this.modelConfig.model.provider, model: this.modelConfig.model.default };
-    return { provider, model: String(block.model ?? "").trim() };
+    if (!provider || provider.toLowerCase() === "auto") return { provider: mc.model.provider, model: mc.model.default, main: true };
+    return { provider, model: String(block.model ?? "").trim(), main: false };
   }
 
   private frame(f: unknown) {
@@ -3601,6 +3620,11 @@ export function fakeModelConfig(): FakeModelConfig {
 function signedOutText(provider: string): string {
   if (provider === "nous") return "Nous Portal runtime credentials unavailable: Hermes is not logged into Nous Portal. (code: nous_auth_missing)";
   return `Provider '${provider}' is set in config.yaml but no API key was found.`;
+}
+
+/** How Hermes refuses a task on `auto` whose main provider it can't use (seen in the live `agent.log`). */
+function mainUnavailableText(task: string, provider: string): string {
+  return `Auxiliary ${task}: main provider ${provider} is unavailable and no fallback_chain / fallback_providers is configured — refusing to guess another`;
 }
 
 /** `SessionDB.session_unread`: activity postdates the read watermark, and `null` means read. */

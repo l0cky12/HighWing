@@ -258,10 +258,11 @@ pub async fn app_restart(app: AppHandle, state: State<'_, Updates>, drafts: Stri
 }
 
 /// The arguments to start the app again with: the same, less anything that asks a running Hermes Chat for something
-/// (`--show`, `--toggle`, a chat link). Started with one, the new app would hand it to this one, which
-/// still owns the bus name as it exits, and quit (main.rs), leaving no app at all. The link was opened already.
+/// (`--show`, `--toggle`, `--stop`, a chat link). Started with one, the new app would hand it to this one, which
+/// still owns the bus name as it exits, and quit (main.rs), leaving no app at all. The link was opened already, and a
+/// Stop asked again would take the Bot Desktop from Hermes for no reason.
 fn relaunch_args(args: impl IntoIterator<Item = std::ffi::OsString>) -> Vec<std::ffi::OsString> {
-    args.into_iter().skip(1).filter(|a| a != "--show" && a != "--toggle" && !a.to_str().is_some_and(crate::links::candidate)).collect()
+    args.into_iter().skip(1).filter(|a| a != "--show" && a != "--toggle" && a != "--stop" && !a.to_str().is_some_and(crate::links::candidate)).collect()
 }
 
 /// Starts the app again, if the owner asked to restart, from the binary it started from (or the AppImage, which the
@@ -421,6 +422,12 @@ mod tests {
     #[test]
     fn restarts_without_asking_to_show_a_window() {
         let args = ["/usr/bin/hermes-chat", "--toggle", "--show", "--other"].map(std::ffi::OsString::from);
+        assert_eq!(relaunch_args(args), ["--other"]);
+    }
+
+    #[test]
+    fn restarts_without_stopping_computer_use_again() {
+        let args = ["/usr/bin/hermes-chat", "--stop", "--other"].map(std::ffi::OsString::from);
         assert_eq!(relaunch_args(args), ["--other"]);
     }
 

@@ -231,6 +231,19 @@ describe("A long transcript's window", { timeout: 30_000 }, () => {
     expect(document.querySelector(".approval:not(.answered)")).not.toBeNull();
   });
 
+  it("renders a computer-use run's waiting Approval an Inbox entry is about after the owner scrolled away from it", async () => {
+    const items: Item[] = [
+      ...longChat(400),
+      { kind: "tool", id: "cu-1", name: "computer_use", args: { action: "click", coordinate: [10, 20] }, status: "running" },
+      { kind: "approval", id: "ap-1", requestId: "req-1", command: "computer_use: click at (10, 20)", description: "Click", choices: ["once", "deny"], allowSession: true, allowPermanent: true, cua: { verb: "click", scope: "background", target: "click at (10, 20)", patternKey: "cua:click:background" } },
+    ];
+    const { scroller, again } = pane(chatOf(items, { running: true }));
+    await scrollTo(scroller, 0);
+    expect(document.querySelector(".cu-run")).toBeNull();
+    again({ reveal: { approval: true } });
+    expect(document.querySelector(".cu-run .approval:not(.answered)")).not.toBeNull();
+  });
+
   it("follows a reply streaming at the bottom of a long chat", async () => {
     blockHeight = (id) => (id === "a-live" ? 100 + 40 * reply.length : 100);
     let reply = "";

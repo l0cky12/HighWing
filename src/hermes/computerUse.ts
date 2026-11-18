@@ -4,7 +4,7 @@
 // saved, and a run is never stored: `foldRuns` derives it on each render.
 import type { Catalogue } from "../i18n/locale";
 import { agentSend } from "./agentMessages";
-import { beginsTurn, isWaiting, turnStart, type ApprovalItem, type Chat, type Item } from "./model";
+import { beginsTurn, currentTurn, isWaiting, type ApprovalItem, type Chat, type Item } from "./model";
 import { isObj } from "./values";
 
 /** Hermes's tool name (tools/computer_use, v0.23.2). */
@@ -202,7 +202,10 @@ export function foldRuns(items: readonly Item[]): (Item | CuRun)[] {
     }
     let end = i;
     for (let k = i + 1; k < items.length && absorbed(items[k]); k++) if (isCu(items[k]) || (isCuAsk(items[k]) && k === end + 1)) end = k;
-    const run = runOf(items.slice(i, end + 1), n, items[end + 1]);
+    // Reasoning after the last call may come before the reply that says how the run ended.
+    let next = end + 1;
+    while (items[next]?.kind === "thinking") next++;
+    const run = runOf(items.slice(i, end + 1), n, items[next]);
     n += run.steps;
     out.push(run);
     i = end;
@@ -242,9 +245,9 @@ function runOf(items: readonly Item[], before: number, next: Item | undefined): 
   return { kind: "cu-run", id: `cu-${first.id}`, items, lines, steps: steps.length, span: { ...(first.at !== undefined && { from: first.at }), ...(to !== undefined && { to }) }, state };
 }
 
-/** The last turn's computer_use, or undefined if it made none. */
-export function screenUse(chat: Pick<Chat, "items" | "running">): ScreenUse | undefined {
-  const turn = chat.items.slice(turnStart(chat.items));
+/** The current turn's computer_use (`currentTurn`), or undefined if it made none. */
+export function screenUse(chat: Pick<Chat, "items" | "running" | "turnAfter">): ScreenUse | undefined {
+  const turn = chat.items.slice(currentTurn(chat));
   const calls = turn.filter(isCu);
   if (!calls.length) return undefined;
   const lastRun = foldRuns(turn).filter((b): b is CuRun => b.kind === "cu-run").at(-1)!;
@@ -266,6 +269,9 @@ export function screenUse(chat: Pick<Chat, "items" | "running">): ScreenUse | un
  * …]` note taken off ("click at (619, 777)", "type 'echo …'").
  */
 export type CuAsk = { verb: string; scope: Delivery; target: string; patternKey: string };
+
+/** The scope Hermes asks for when a call keeps its window raised: it moves the focus whatever its key's delivery suffix says. */
+export const BRING_TO_FRONT = "bring_to_front";
 
 const PATTERN = /^cua:([a-z_]+):(background|foreground)$/;
 const FOREGROUND_NOTE = /\s*\[FOREGROUND\b[^\]]*\]\s*$/;

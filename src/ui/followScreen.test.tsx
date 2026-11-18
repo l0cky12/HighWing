@@ -29,20 +29,24 @@ const screenTab = () => document.getElementById("panel-tab-screen");
 async function deskChat() {
   const server = new FakeHermes();
   server.display = { status: { supported: true, installed: true, missing: [], running: false }, lease: { holder: "agent", viewer_hash: null, since: 1, epoch: 0 }, minted: new Set() };
-  server.sessions = [row("desk", 1, { pinned: true, title: "Tidy the desktop" })];
+  server.sessions = [row("desk", 1, { pinned: true, title: "Tidy the desktop" }), row("mail", 2, { pinned: true, title: "Check the mail" })];
   const hermes = await connect(server.openPipe);
   running.push(hermes);
   const user = userEvent.setup();
   render(<Main hermes={hermes} connection={connection} onSignOut={async () => {}} />);
-  await user.click(await screen.findByRole("button", { name: /Tidy the desktop/ }));
-  await settle(hermes);
-  const rid = server.runtimeIdOf("desk")!;
-  const say = async (type: string, payload: Record<string, unknown> = {}) => {
-    act(() => server.event(rid, type, payload));
+  const show = async (title: RegExp) => {
+    await user.click(await screen.findByRole("button", { name: title }));
     await settle(hermes);
   };
-  const call = (id: string) => say("tool.start", { tool_id: id, name: "computer_use", context: "", args: { action: "capture", mode: "som" } });
-  return { user, say, call };
+  await show(/Check the mail/);
+  await show(/Tidy the desktop/);
+  const sayIn = (chat: string) => async (type: string, payload: Record<string, unknown> = {}) => {
+    act(() => server.event(server.runtimeIdOf(chat)!, type, payload));
+    await settle(hermes);
+  };
+  const say = sayIn("desk");
+  const callIn = (chat: string) => (id: string) => sayIn(chat)("tool.start", { tool_id: id, name: "computer_use", context: "", args: { action: "capture", mode: "som" } });
+  return { user, say, call: callIn("desk"), show, mail: { say: sayIn("mail"), call: callIn("mail") } };
 }
 
 describe("Follow mode", () => {
@@ -62,6 +66,24 @@ describe("Follow mode", () => {
     await say("message.delta", { text: "The desktop is empty, so I'll open the file manager." });
     await call("c3");
     expect(screenTab()?.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("keeps the Screen closed on a run the owner closed it on, after visiting another chat's run", async () => {
+    setUIPrefs({ followScreen: true });
+    const { user, say, call, show, mail } = await deskChat();
+    await say("message.start");
+    await call("c1");
+    expect(screenTab()?.getAttribute("aria-selected")).toBe("true");
+    await user.click(document.getElementById("panel-tab-files")!);
+
+    await mail.say("message.start");
+    await mail.call("m1");
+    await show(/Check the mail/);
+    expect(screenTab()?.getAttribute("aria-selected")).toBe("true");
+    await user.click(document.getElementById("panel-tab-files")!);
+
+    await show(/Tidy the desktop/);
+    expect(screenTab()?.getAttribute("aria-selected")).toBe("false");
   });
 
   it("leaves the panel alone while it is off", async () => {

@@ -42,6 +42,10 @@ export const en = {
     computerUse: {
       title: "Computer use",
       steps: (n: number) => (n === 1 ? "1 step" : `${n} steps`),
+      step: (n: number) => `step ${n}`,
+      stop: "Stop",
+      stopTip: "Stop the reply and take the Bot Desktop, so Hermes can't use it until you hand it back",
+      stopping: "Stopping",
       state: { asking: "waiting for your approval", acting: "working", refused: "refused", stopped: "stopped", done: "done" },
       holder: {
         agent: "Hermes drives the screen",
@@ -76,7 +80,12 @@ export const en = {
           background: "Background input: the window keeps its place and its focus on the Bot Desktop.",
           foreground: "Foreground input: raises the window and moves the focus on the Bot Desktop.",
         },
+        raise: "Keeps the window in front",
+        raiseTip: "Raises the window and keeps it in front, which moves the focus on the Bot Desktop whichever way the input is delivered.",
         in: (app: string) => `in ${app}`,
+        yesAlways: "Yes, always allow",
+        yesSession: "Yes, allow for this chat",
+        back: "Back",
         once: "Approve once",
         session: (what: string) => `Allow ${what} for this chat…`,
         always: (what: string) => `Always allow ${what}…`,
@@ -109,6 +118,13 @@ export const en = {
         handBack: "Hand back",
         openScreen: "Open the Screen",
         failed: (why: string) => `Couldn't hand back the screen: ${why}`,
+      },
+      /** What the Stop shortcut or `hermes-chat --stop` did: the replies it stopped, and the screen. */
+      panic: {
+        stopped: (n: number) => (n === 0 ? "No reply was using the Bot Desktop." : n === 1 ? "Stopped the reply using the Bot Desktop." : `Stopped ${n} replies using the Bot Desktop.`),
+        held: "You hold the Bot Desktop now, so Hermes can't use it until you hand it back.",
+        already: "You already hold the Bot Desktop.",
+        notHeld: (why: string) => `Couldn't take the Bot Desktop: ${why}`,
       },
       follow: {
         section: "Bot Desktop",

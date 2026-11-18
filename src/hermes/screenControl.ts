@@ -21,7 +21,7 @@ export type ScreenState = { profileKey: string; holder: ScreenHolder; epoch: num
 /** What taking the screen came to. `no-screen`: it isn't running, or this Hermes has none, so nothing can drive it. */
 export type HoldOutcome = { kind: "held" } | { kind: "already" } | { kind: "no-screen"; why: string } | { kind: "failed"; why: string };
 
-type DisplayMethod = "display.status" | "display.observe" | "display.lease.acquire" | "display.lease.release";
+type DisplayMethod = "display.status" | "display.start" | "display.stop" | "display.observe" | "display.lease.acquire" | "display.lease.release";
 
 export type ScreenControlDeps = {
   request: (method: DisplayMethod, params: Record<string, unknown>) => Promise<unknown>;
@@ -35,6 +35,8 @@ export type ScreenControlDeps = {
 const RELEASE_MS = 1_500;
 
 type Viewer = { id: string; hash: string; connection: object; profile: string };
+/** The connection and the profile a request was asked on. */
+type Scope = { connection: object | undefined; profile: string };
 
 export class ScreenControl {
   private viewer?: Viewer;
@@ -43,10 +45,12 @@ export class ScreenControl {
   private held = new Set<string>();
   private minting?: Promise<DisplayObserve>;
   private releasing?: Promise<void>;
+  /** The hold on its way, and the connection and profile it was asked on. */
+  private holding?: { scope: Scope; outcome: Promise<HoldOutcome> };
   /** Broadcasts heard before the profile's screen was named, by its key. */
   private heard = new Map<string, DisplayLease>();
-  /** The connection `know` asked on. */
-  private askedOn?: object;
+  /** The connection and profile `know` last asked on. */
+  private asked?: { connection: object; profile: string };
 
   constructor(private readonly deps: ScreenControlDeps) {}
 
@@ -61,26 +65,28 @@ export class ScreenControl {
     } else if (!isOlder(this.heard.get(profileKey), lease)) this.heard.set(profileKey, lease);
   }
 
-  /** Folds in the lease a status, a start or a stop answered with, and returns that answer. */
-  noteStatus<S extends DisplayStatus>(s: S): S {
-    if (s.lease && typeof s.profile_key === "string") {
-      this.fold(s.profile_key, s.lease);
-      const heard = this.heard.get(s.profile_key);
-      this.heard.clear();
-      if (heard) this.fold(s.profile_key, heard);
-    }
-    return s;
+  /**
+   * Asks for the screen's status, or starts or stops it, and folds in the lease Hermes answers with. An answer that comes
+   * after the connection or the profile changed is for a screen no longer shown, so it is returned and not folded in.
+   */
+  async report(method: "display.status" | "display.start" | "display.stop"): Promise<DisplayStatus> {
+    const scope = this.scope();
+    return this.noteStatus((await this.ask(method)) as DisplayStatus, scope);
   }
 
   status(): Promise<DisplayStatus> {
-    return this.ask("display.status").then((s) => this.noteStatus(s as DisplayStatus));
+    return this.report("display.status");
   }
 
-  /** Asks who holds the screen, once per connection, when nothing is known of it yet. */
+  /**
+   * Asks who holds the screen, once per connection and profile. A lease kept from an earlier connection may be stale:
+   * the broadcasts that would have changed it went to no one while this app was away.
+   */
   know(): Promise<void> | undefined {
     const connection = this.deps.connection();
-    if (!connection || this.state() || this.askedOn === connection) return undefined;
-    this.askedOn = connection;
+    const profile = this.deps.profile();
+    if (!connection || (this.asked?.connection === connection && this.asked.profile === profile)) return undefined;
+    this.asked = { connection, profile };
     return this.status().then(
       () => {},
       () => {},
@@ -96,14 +102,29 @@ export class ScreenControl {
     return asking;
   }
 
-  /** Takes the screen for the owner. Idempotent: `already` when this viewer holds it, with no request. */
-  async hold(reason?: string): Promise<HoldOutcome> {
-    if (this.state()?.holder.kind === "you") return { kind: "already" };
+  /**
+   * Takes the screen for the owner. Idempotent: `already` when this viewer holds it, with no request, and a hold asked
+   * for while one is on its way on the same connection and profile shares it, so a Hand back after it stays.
+   */
+  hold(reason?: string): Promise<HoldOutcome> {
+    if (this.state()?.holder.kind === "you") return Promise.resolve({ kind: "already" });
+    const h = this.holding;
+    if (h && this.inScope(h.scope)) return h.outcome;
+    const scope = this.scope();
+    const outcome = this.acquire(scope, reason).finally(() => {
+      if (this.holding?.outcome === outcome) this.holding = undefined;
+    });
+    this.holding = { scope, outcome };
+    return outcome;
+  }
+
+  /** Acquires the lease. Its answer, like any other, is dropped when the connection or the profile changed since `scope`. */
+  private async acquire(scope: Scope, reason?: string): Promise<HoldOutcome> {
     try {
       const viewer = this.current() ?? (await this.observe(), this.current());
       if (!viewer) return { kind: "failed", why: "The connection to Hermes changed while taking the screen." };
       const { lease } = (await this.ask("display.lease.acquire", { viewer_id: viewer.id, ...(reason && { reason }) })) as { lease: DisplayLease };
-      if (this.known) this.fold(this.known.profileKey, lease);
+      if (this.known && this.inScope(scope)) this.fold(this.known.profileKey, lease);
       return { kind: "held" };
     } catch (e) {
       if (isUnavailable(e)) return { kind: "no-screen", why: "This Hermes has no Bot Desktop." };
@@ -148,14 +169,33 @@ export class ScreenControl {
   }
 
   private async observeAs(viewer: Viewer | undefined): Promise<DisplayObserve> {
-    const connection = this.deps.connection();
-    const profile = this.deps.profile();
+    const scope = this.scope();
+    const { connection, profile } = scope;
     const seen = (await this.ask("display.observe", viewer ? { viewer_id: viewer.id } : {})) as DisplayObserve;
     if (connection && viewer?.id !== seen.viewer_id) {
       const hash = await viewerHash(seen.viewer_id);
-      if (connection === this.deps.connection() && profile === this.deps.profile()) this.viewer = { id: seen.viewer_id, hash, connection, profile };
+      if (this.inScope(scope)) this.viewer = { id: seen.viewer_id, hash, connection, profile };
     }
-    return this.noteStatus(seen);
+    return this.noteStatus(seen, scope);
+  }
+
+  private scope(): Scope {
+    return { connection: this.deps.connection(), profile: this.deps.profile() };
+  }
+
+  private inScope(scope: Scope): boolean {
+    return scope.connection === this.deps.connection() && scope.profile === this.deps.profile();
+  }
+
+  /** Folds in the lease an answer asked in `scope` came with, unless the connection or the profile changed since. */
+  private noteStatus<S extends DisplayStatus>(s: S, scope: Scope): S {
+    if (this.inScope(scope) && s.lease && typeof s.profile_key === "string") {
+      this.fold(s.profile_key, s.lease);
+      const heard = this.heard.get(s.profile_key);
+      this.heard.clear();
+      if (heard) this.fold(s.profile_key, heard);
+    }
+    return s;
   }
 
   private current(): Viewer | undefined {

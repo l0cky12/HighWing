@@ -129,6 +129,7 @@ The feature guide's [What is stored where](features.md#what-is-stored-where) lis
 | --- | --- |
 | `--show` | Brings the running window forward. |
 | `--toggle` | Brings the running window forward, or hides it when it is already in front. |
+| `--stop` | Stops every reply using the Bot Desktop and takes the screen, as Ctrl+. does (ADR 0223). |
 | `hermes-chat://chat?…` | Opens that chat link. |
 
 Only one copy runs at a time. A second launch hands its arguments to the running copy and exits. On Linux it uses the session bus name `net.l0cky12.HermesChat`. On Windows it uses a named pipe (`src-tauri/src/remote/pipe.rs`). With none of these arguments, it starts the app, or brings the running copy forward.

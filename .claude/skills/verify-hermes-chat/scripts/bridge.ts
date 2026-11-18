@@ -44,6 +44,8 @@
 //   `POST /__ask?chat=<chat id>&method=<method>` with a JSON body of params asks the app something, as a Hermes tool's
 //   server request does (`preview.act`, `preview.read`), in that chat's live session (a test's control). It answers
 //   the request's id; the app's answer shows in `/__state` under `answers`.
+//   `/__state` shows the Bot Desktop's `lease`, and under `stopCalls` each `session.interrupt`, `display.observe` and
+//   `display.lease.acquire`/`release` the app sent, in order, the proof that a Stop took the screen (ADR 0223).
 //   `POST /__lease?holder=agent|human` sets who holds the Bot Desktop and broadcasts `display.lease`, as Hermes does
 //   when a viewer takes or hands back the screen; `human` is another client's viewer (a test's control).
 //   `POST /__changed[?n=<count>&gap=<ms>]` broadcasts `sessions.changed` n times (default 1), gap ms apart, as Hermes's
@@ -305,6 +307,8 @@ const dump = () =>
       gatewayRestarts: server.gateways.restarts,
       rooms: server.groups.dump(),
       roomCalls: server.groups.calls.map((c) => c.method),
+      lease: server.display?.lease,
+      stopCalls: server.requests.filter((r) => /^(session\.interrupt|display\.(observe|lease\.acquire|lease\.release))$/.test(r.method)).map((r) => r.method),
     },
     null,
     2,

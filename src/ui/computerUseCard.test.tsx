@@ -5,6 +5,7 @@
 import { act, cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { cuFixture, type CuFixture } from "../hermes/cuFixtures";
+import { CU } from "../hermes/fakeComputerUse";
 import { FakeHermes } from "../hermes/fakeHermes";
 import type { ApprovalChoice, Chat, Item } from "../hermes/model";
 import type { ScreenState } from "../hermes/screenControl";
@@ -50,11 +51,11 @@ async function replayed(name: CuFixture, upTo?: (f: { frame: Record<string, unkn
   return chat();
 }
 
-function pane(chat: Chat, desk: ScreenDesk = {}, onAnswer: (id: string, c: ApprovalChoice, confirmed?: boolean) => void = () => {}) {
-  const el = (d: ScreenDesk) => (
+function pane(chat: Chat, desk: ScreenDesk = {}, onAnswer: (id: string, c: ApprovalChoice, confirmed?: boolean) => void = () => {}, onStop: () => void = () => {}) {
+  const el = (d: ScreenDesk, c = chat) => (
     <ScreenDeskProvider value={d}>
       <ChatPane
-        chat={chat}
+        chat={c}
         status="connected"
         draft=""
         draftKey="draft"
@@ -66,14 +67,14 @@ function pane(chat: Chat, desk: ScreenDesk = {}, onAnswer: (id: string, c: Appro
         onDismiss={() => {}}
         onAttach={async () => ({ attachments: [], refused: [] })}
         onSend={() => {}}
-        onStop={() => {}}
+        onStop={onStop}
         onAnswer={onAnswer}
         onQuestion={() => {}}
       />
     </ScreenDeskProvider>
   );
   const r = render(el(desk));
-  return { desk: (d: ScreenDesk) => act(() => r.rerender(el(d))) };
+  return { desk: (d: ScreenDesk) => act(() => r.rerender(el(d))), chat: (c: Chat) => act(() => r.rerender(el(desk, c))) };
 }
 
 const cards = () => Array.from(document.querySelectorAll<HTMLElement>(".cu-run"));
@@ -131,7 +132,7 @@ describe("A computer-use run in the chat", () => {
     const chat = await replayed("10-turn-approve", (f) => f.frame.method === "approval.respond");
     pane(chat, {}, onAnswer);
     const [card] = cards();
-    expect(within(card).getByRole("button", { name: /Computer use · 3 steps/ }).textContent).toContain("waiting for your approval");
+    expect(within(card).getByRole("button", { name: /Computer use · step 3 · 0:00/ }).textContent).toContain("waiting for your approval");
     expect(card.querySelector(".cu-step.latest > .tool-line")!.textContent).toBe("3click at (619, 777)desktopwaiting for your approval");
     expect(card.querySelector(".approval-head")!.textContent).toBe("Hermes wants to click at (619, 777)");
     fireEvent.click(within(card).getByRole("button", { name: "Approve once" }));
@@ -170,6 +171,16 @@ describe("A computer-use run in the chat", () => {
     expect(within(cards()[0]).getByRole("button", { name: /Computer use · 2 steps/ }).textContent).toContain("stopped");
     expect(lines(cards()[0])[1]).toBe("2wait 2swaited 2.00s · not confirmed2s");
   });
+
+  it("reads a run as stopped once the reply after its last call is interrupted", async () => {
+    const stopped = await replayed("14-turn-interrupt");
+    const before = { ...stopped, items: stopped.items.map((i) => (i.kind === "assistant" && i.interrupted ? { ...i, interrupted: false } : i)) };
+    const shown = pane(before);
+    const head = () => within(cards()[0]).getByRole("button", { name: /Computer use · 2 steps/ }).textContent;
+    expect(head()).toContain("done");
+    shown.chat(stopped);
+    expect(head()).toContain("stopped");
+  });
 });
 
 describe("The note when a person holds the screen", () => {
@@ -197,5 +208,105 @@ describe("The note when a person holds the screen", () => {
   it("shows nothing when the last step went through", async () => {
     pane(await replayed("10-turn-approve"), { screen: holding({ kind: "someone", since: 1 }) });
     expect(document.querySelector(".cu-banner")).toBeNull();
+  });
+});
+
+/** A computer-use turn under way, paused in its first capture. */
+async function live(): Promise<Chat> {
+  const server = new FakeHermes();
+  const hermes = await connect(server.openPipe);
+  running.push(hermes);
+  const id = await hermes.newChat();
+  await hermes.send(id, "Tidy the desktop");
+  void server.computerUseTurn(server.runtimeIdOf(id)!, { steps: [CU.capture(), CU.capture()], reply: "never" }, () => new Promise(() => {}));
+  const chat = () => hermes.getSnapshot().chats.find((c) => c.id === id)!;
+  await waitFor(() => expect(chat().items.some((i) => i.kind === "tool")).toBe(true));
+  return chat();
+}
+
+/** A reply that made one computer_use call, as `at` the server's events: between two calls, or after a dropped connection. */
+async function midTurn(at: "between calls" | "dropped"): Promise<Chat> {
+  const server = new FakeHermes();
+  const hermes = await connect(server.openPipe);
+  running.push(hermes);
+  const id = await hermes.newChat();
+  await hermes.send(id, "Tidy the desktop");
+  const rid = server.runtimeIdOf(id)!;
+  const chat = () => hermes.getSnapshot().chats.find((c) => c.id === id)!;
+  const { args, result } = CU.capture();
+  server.event(rid, "message.start");
+  server.event(rid, "tool.start", { tool_id: "c1", name: "computer_use", args });
+  if (at === "between calls") server.event(rid, "tool.complete", { tool_id: "c1", name: "computer_use", args, duration_s: 0.7, result });
+  else server.drop();
+  await waitFor(() => expect(at === "dropped" ? !chat().running : chat().items.some((i) => i.kind === "tool" && i.status === "done")).toBe(true));
+  return chat();
+}
+
+describe("A run's counter and Stop", () => {
+  afterEach(() => vi.useRealTimers());
+  const title = () => cards()[0].querySelector(".returned-title")!.textContent;
+
+  it("keeps Stop and the counter going between two calls while the reply runs", async () => {
+    const chat = await midTurn("between calls");
+    const at = chat.items.find((i) => i.kind === "tool")!.at!;
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"], now: at + 5_000 });
+    pane(chat);
+    expect(title()).toBe("Computer use · step 1 · 0:05");
+    act(() => vi.advanceTimersByTime(1000));
+    expect(title()).toBe("Computer use · step 1 · 0:06");
+    expect(within(cards()[0]).getByRole("button", { name: "Stop" })).toBeTruthy();
+    expect(cards()[0].querySelector(".cu-state")!.textContent).toBe("working");
+  });
+
+  it("stops counting and offers no Stop once the reply isn't running, though its call never ended", async () => {
+    const chat = await midTurn("dropped");
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"], now: Date.now() + 5_000 });
+    pane(chat);
+    expect(title()).toBe("Computer use · 1 step");
+    act(() => vi.advanceTimersByTime(1000));
+    expect(title()).toBe("Computer use · 1 step");
+    expect(within(cards()[0]).queryByRole("button", { name: "Stop" })).toBeNull();
+  });
+
+  it("counts the step under way and the time since the first, once a second, while the run is live", async () => {
+    const chat = await live();
+    const at = chat.items.find((i) => i.kind === "tool")!.at!;
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"], now: at + 64_400 });
+    pane(chat);
+    expect(title()).toBe("Computer use · step 1 · 1:04");
+    act(() => vi.advanceTimersByTime(1000));
+    expect(title()).toBe("Computer use · step 1 · 1:05");
+  });
+
+  it("says how many steps and how long once the run is over", async () => {
+    pane(await replayed("14-turn-interrupt"));
+    expect(title()).toBe("Computer use · 2 steps · 0:02");
+  });
+
+  it("stops the reply from a live run", async () => {
+    const onStop = vi.fn();
+    pane(await live(), { screen: holding({ kind: "agent" }) }, undefined, onStop);
+    fireEvent.click(within(cards()[0]).getByRole("button", { name: "Stop" }));
+    expect(onStop).toHaveBeenCalledOnce();
+  });
+
+  it("offers Hand back on the stopped run while the owner holds the screen", async () => {
+    const onHandBack = vi.fn(async () => {});
+    const { desk } = pane(await replayed("14-turn-interrupt"), { screen: holding({ kind: "agent" }), onHandBack });
+    expect(within(cards()[0]).queryByRole("button", { name: "Hand back" })).toBeNull();
+    desk({ screen: holding({ kind: "you", since: 1 }), onHandBack });
+    expect(within(cards()[0]).getByText("You hold the screen")).toBeTruthy();
+    fireEvent.click(within(cards()[0]).getByRole("button", { name: "Hand back" }));
+    await waitFor(() => expect(onHandBack).toHaveBeenCalledOnce());
+  });
+
+  it("offers no Hand back on a run that finished", async () => {
+    pane(await replayed("10-turn-approve"), { screen: holding({ kind: "you", since: 1 }), onHandBack: async () => {} });
+    expect(within(cards()[0]).queryByRole("button", { name: "Hand back" })).toBeNull();
+  });
+
+  it("has no Stop once the run is over", async () => {
+    pane(await replayed("10-turn-approve"));
+    expect(within(cards()[0]).queryByRole("button", { name: "Stop" })).toBeNull();
   });
 });

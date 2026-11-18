@@ -34,6 +34,7 @@ import { deadline } from "./hermes/remoteFiles";
 import { desktopSummon, type SummonApi, type Summoned } from "./hermes/summon";
 import { SelectionWatch, quoted, untilFocused } from "./hermes/selection";
 import { syncStagedOutbox, tauriAttachments } from "./hermes/tauriAttachments";
+import { onDesktopStop } from "./hermes/tauriStop";
 import { AtConnectionLimit, ConnectionManager, DisconnectConnection, RailConnections, RemoveConnection, SwitchConnection, atLimitText, liveCounts } from "./ui/Connections";
 import { chordLabel, pickApp, useBindings } from "./ui/keybindings";
 
@@ -1153,6 +1154,7 @@ export function Main({
   serverPages = tauriServerPages,
   deskWiring = tauriDeskWiring,
   summon = desktopSummon,
+  desktopStop = onDesktopStop,
   onSignOut,
   updates = appUpdates,
   link,
@@ -1246,6 +1248,11 @@ export function Main({
   localStt?: LocalSttApi;
   /** Tells the window `hermes-chat --show` or `--toggle` brought it forward; none outside the desktop app. */
   summon?: SummonApi;
+  /**
+   * Calls its function whenever `hermes-chat --stop` asks to stop computer use (ADR 0223); returns its unsubscribe.
+   * Main listens only while the composer target is connected.
+   */
+  desktopStop?: (fn: () => void) => () => void;
   onSignOut: () => Promise<void>;
   updates?: Updater;
   /**
@@ -1766,12 +1773,15 @@ export function Main({
     const shown = active.chatId ? chats.find((c) => c.id === active.chatId) : undefined;
     return shown && screenUse(shown);
   }, [chats, active.chatId]);
-  const followed = useRef<string | undefined>(undefined);
+  // Every run followed, by connection, profile and chat, so coming back to a run's chat doesn't open the Screen again.
+  const followed = useRef(new Set<string>());
   useEffect(() => {
-    if (!followScreen || !shownUse?.running || followed.current === shownUse.key) return;
-    followed.current = shownUse.key;
+    if (!followScreen || !shownUse?.running || !active.chatId) return;
+    const run = JSON.stringify([scope, active.chatId, shownUse.key]);
+    if (followed.current.has(run)) return;
+    followed.current.add(run);
     openPanel("screen");
-  }, [followScreen, shownUse?.running, shownUse?.key, openPanel]);
+  }, [followScreen, shownUse?.running, shownUse?.key, active.chatId, scope, openPanel]);
 
   const listedFromHermes = hermes.hasListed();
   // Clears from the Inbox were kept on this computer until clearing a chat settled it (ADR 0090). Once Hermes has
@@ -2010,6 +2020,20 @@ export function Main({
     if (!previewFits) setPanelHidden(true);
     focusPane(active.key);
   };
+
+  // The panic Stop, from the shortcut or `hermes-chat --stop` (ADR 0223): it says what it stopped and whether it got the screen.
+  const panicStop = () =>
+    void hermes.stopScreen().then(({ stopped, hold }) => {
+      const l = words.chat.computerUse.panic;
+      const screen = hold.kind === "held" ? l.held : hold.kind === "already" ? l.already : l.notHeld(hold.why);
+      setToast({ text: `${l.stopped(stopped.length)} ${screen}`, at: Date.now() });
+    });
+  const panicStopRef = useRef(panicStop);
+  panicStopRef.current = panicStop;
+  const desktopStopRef = useRef(desktopStop);
+  // Rust keeps `hermes-chat --stop` while nothing listens, so one asked for before Hermes is connected stops once it is.
+  const connected = status === "connected";
+  useEffect(() => (connected ? desktopStopRef.current(() => panicStopRef.current()) : undefined), [connected]);
 
   // The pane left takes the whole width and becomes the active one.
   const closePane = (key: string) => {
@@ -2844,6 +2868,10 @@ export function Main({
       const onChat = !covering && !previewCovers && !projectScreenOpen && !searchOpen;
       const command = pickApp(e);
       switch (command) {
+        case "stopScreen":
+          e.preventDefault();
+          if (!e.repeat) panicStop();
+          return;
         case "chatBelow":
         case "chatAbove": {
           // A select keeps Alt+Down to open.

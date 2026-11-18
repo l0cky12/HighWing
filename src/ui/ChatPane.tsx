@@ -15,8 +15,8 @@ import type { AttachmentDesk } from "../hermes/attachmentDesk";
 import type { Reference, ReferenceDesk } from "../hermes/chatReferences";
 import { ReferenceChips } from "./ReferenceChips";
 import { ApprovalCard } from "./ApprovalCard";
-import { ComputerUseCard, HumanHasControlBanner } from "./ComputerUseCard";
-import { foldRuns, type CuRun } from "../hermes/computerUse";
+import { ComputerUseCard, HumanHasControlBanner, RunStopProvider } from "./ComputerUseCard";
+import { foldRuns, screenUse, type CuRun } from "../hermes/computerUse";
 import { QuestionCard } from "./QuestionCard";
 import { Menu, PinItem, type ChatPin } from "./ChatMenu";
 import { agentSend, type AgentSend } from "../hermes/agentMessages";
@@ -98,6 +98,9 @@ const isItem = (b: Block): b is Exclude<Item, ToolItem> => b.kind !== "tools" &&
 /** A block with a Question still waiting in it: a Question's card, or a computer-use run with an Approval under a step. */
 const waitsIn = (b: Block) => (isItem(b) && isWaiting(b)) || (b.kind === "cu-run" && b.state === "asking");
 type SideBlock = { kind: "side"; id: string; question: SideQuestion };
+/** Whether the item `id` shows in this block: as the block itself, in a group of tool calls, or in a computer-use run. */
+const holds = (b: Block | SideBlock, id: string | undefined) =>
+  b.id === id || (b.kind === "tools" && b.tools.some((t) => t.id === id)) || (b.kind === "cu-run" && b.items.some((i) => i.id === id));
 
 // Consecutive tool calls collapse into one group so a long run doesn't dominate the transcript, and a computer-use run
 // is one card (ADR 0216). Each side question goes after the item it was asked after (ADR 0086), so one asked during a
@@ -140,12 +143,13 @@ function mayMatch(block: Block, finds: RegExp) {
   return (block.kind === "user" || block.kind === "thinking") && finds.test(block.text);
 }
 
-// A group is rebuilt on every render, so it counts as unchanged when it holds the same tool calls.
+// A group is rebuilt on every render, so it counts as unchanged when it holds the same tool calls. A run's state also
+// reads the reply after it, so a run with the same calls changes when that reply is stopped.
 const sameBlock = (a: Block, b: Block) =>
   a === b ||
   (a.kind === "tools" && b.kind === "tools" && a.tools.length === b.tools.length && a.tools.every((t, i) => t === b.tools[i])) ||
   (a.kind === "sent" && b.kind === "sent" && a.tool === b.tool) ||
-  (a.kind === "cu-run" && b.kind === "cu-run" && a.items.length === b.items.length && a.items.every((x, i) => x === b.items[i]));
+  (a.kind === "cu-run" && b.kind === "cu-run" && a.state === b.state && a.items.length === b.items.length && a.items.every((x, i) => x === b.items[i]));
 // A side question's block is rebuilt too, so it counts as unchanged when it holds the same question.
 const sameChunkBlock = (a: Block | SideBlock, b: Block | SideBlock) =>
   a.kind === "side" ? b.kind === "side" && a.question === b.question : b.kind !== "side" && sameBlock(a, b);
@@ -612,6 +616,12 @@ export function ChatPane({
     (approvalId: string, choice: ApprovalChoice, confirmed?: boolean) => onAnswerRef.current(approvalId, choice, confirmed),
     [],
   );
+  const onStopRef = useRef(onStop);
+  onStopRef.current = onStop;
+  const stopping = !!chat.stopping;
+  const replying = !!chat.running;
+  const lastRun = screenUse(chat)?.key;
+  const runStop = useMemo(() => ({ onStop: () => onStopRef.current(), stopping, running: replying, lastRun }), [stopping, replying, lastRun]);
   const onQuestionRef = useRef(onQuestion);
   onQuestionRef.current = onQuestion;
   const question = useCallback((itemId: string, a: QuestionAnswer) => onQuestionRef.current(itemId, a), []);
@@ -920,7 +930,7 @@ export function ChatPane({
   const revealChunk = useMemo(() => {
     if (!reveal?.itemId && !reveal?.approval) return undefined;
     const id = reveal.itemId ?? chat.items.find(isWaiting)?.id;
-    const at = chunks.findIndex((c) => c.some((b) => b.id === id || (b.kind === "tools" && b.tools.some((t) => t.id === id))));
+    const at = chunks.findIndex((c) => c.some((b) => holds(b, id)));
     return at < 0 ? undefined : at;
   }, [reveal, chunks, chat.items]);
   // Find marks and counts its matches in the DOM, so it renders the whole chat.
@@ -1072,6 +1082,7 @@ export function ChatPane({
       >
         <JumpContext.Provider value={jumpTo}>
         <PathsIn folder={chat.folder} session={chat.id}>
+        <RunStopProvider value={runStop}>
         <div className="transcript-inner">
           {policy.readOnly === "jobRun" ? (
             <div className="imported-note">
@@ -1167,6 +1178,7 @@ export function ChatPane({
             </div>
           )}
         </div>
+        </RunStopProvider>
         </PathsIn>
         </JumpContext.Provider>
       </div>
@@ -1177,7 +1189,7 @@ export function ChatPane({
         approvalWaiting={waiting?.kind}
         onGoToApproval={() => {
           const id = chat.items.find(isWaiting)?.id;
-          shown.reveal(chunks.findIndex((c) => c.some((b) => b.id === id || (b.kind === "cu-run" && b.items.some((i) => i.id === id)))));
+          shown.reveal(chunks.findIndex((c) => c.some((b) => holds(b, id))));
           const card = id && rootRef.current?.querySelector<HTMLElement>(`.approval[data-item="${CSS.escape(id)}"]`);
           if (!card) return;
           card.scrollIntoView({ block: "center" });

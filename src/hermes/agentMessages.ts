@@ -52,11 +52,12 @@ export function agentSend(tool: { name: string; args?: Record<string, unknown>; 
   return { to: ack?.kind === "queued" ? ack.to : targets.map((t) => `@${t}`).join(", "), text: message, ...(ack && { ack }) };
 }
 
+const DELIVERY_STATUSES = ["settled", "cancelled", "pending", "ambiguous", "failed"] as const;
 /** How a delivery ended, as its runner reports it. `pending` is Hermes's `queued`, `claimed` and `pending`. */
-export type DeliveryStatus = "settled" | "cancelled" | "pending" | "ambiguous" | "failed";
+export type DeliveryStatus = (typeof DELIVERY_STATUSES)[number];
+export const isDeliveryStatus = (v: unknown): v is DeliveryStatus => DELIVERY_STATUSES.includes(v as DeliveryStatus);
 
-const STATUSES: Record<string, DeliveryStatus> = { settled: "settled", cancelled: "cancelled", queued: "pending", claimed: "pending", pending: "pending", ambiguous: "ambiguous" };
-const statusOf = (v: unknown): DeliveryStatus => (typeof v === "string" && Object.hasOwn(STATUSES, v) ? STATUSES[v] : "failed");
+const statusOf = (v: unknown): DeliveryStatus => (v === "queued" || v === "claimed" ? "pending" : isDeliveryStatus(v) ? v : "failed");
 
 /**
  * The answer a delivery brought back. `outcome`: Hermes's own sentence for it (`bot_mode_dm_outcome.outcome_line`:
@@ -93,6 +94,10 @@ export function deliveryAnswer(notice: string): DeliveryAnswer | undefined {
     ...(reply && { reply }),
   };
 }
+
+/** A delivery's answer as a notice `deliveryAnswer` reads back, so an exported chat imports as the same row. */
+export const answerNotice = (a: DeliveryAnswer) =>
+  `[IMPORTANT: Background process completed.\nOutput:\n${JSON.stringify({ outcome: a.outcome, ...(a.reply && { reply: a.reply }), status: a.status, delivery_id: a.deliveryId })}\n]`;
 
 const SIGNED = /^Message from 🤖 (.+?) \(@([^\s():]+)\): ([\s\S]*)$/;
 

@@ -11,6 +11,7 @@ import { LOAD_ERROR_ID } from "./transport";
 import type { ImagePage } from "./exportImage";
 import { snapshotPage } from "./snapshotPage";
 import { sentNames } from "./sentImages";
+import { storedReturned } from "./returned";
 import type { ChatUsage } from "./usage";
 
 /** Shows the Save dialog for `format` and writes `text` where the owner picks. The path saved to, or `null` if cancelled. */
@@ -261,13 +262,7 @@ function jsonSession(chat: Chat, exportedAt: Date, choice: Omit<ExportChoice, "r
       }
       case "returned":
         flushThought();
-        messages.push({
-          role: "user",
-          content: text(i.body),
-          ...time(i.at),
-          display_kind: i.process ? "process_complete" : "async_delegation_complete",
-          ...(i.title && { display_metadata: { display_text: text(i.title) } }),
-        });
+        messages.push({ role: "user", ...storedReturned(i, text), ...time(i.at) });
         break;
       case "assistant":
         assistant({ content: text(i.text), ...time(i.at) });
@@ -361,8 +356,12 @@ function block(i: Item, attachments: boolean): string[] {
       const files = names.length ? [`_Attached, not included in this file:_ ${names.map(code).join(", ")}`] : [];
       return [["**You:**", message(i.text), ...files].filter(Boolean).join("\n\n")];
     }
-    case "returned":
-      return [[`**Returned${i.process ? " (process)" : ""}:**${i.title ? ` ${oneLine(i.title)}` : ""}`, i.process ? fenced(i.body) : message(i.body)].filter(Boolean).join("\n\n")];
+    case "returned": {
+      // A teammate's message keeps who sent it in the title's place, which is all Markdown has for it.
+      const from = i.agent?.kind === "from" ? i.agent.teammate : undefined;
+      const title = i.title ?? (from && `Message from ${from.name} (@${from.handle})`);
+      return [[`**Returned${i.process ? " (process)" : ""}:**${title ? ` ${oneLine(title)}` : ""}`, i.process ? fenced(i.body) : message(i.body)].filter(Boolean).join("\n\n")];
+    }
     case "assistant":
       return [[`**Hermes:**${i.interrupted ? " _(stopped before it finished)_" : ""}`, message(i.text)].filter(Boolean).join("\n\n")];
     case "thinking":

@@ -1,4 +1,5 @@
-import { deliveryAnswer, teammateMessage, type DeliveryStatus, type Teammate } from "./agentMessages";
+import { answerNotice, deliveryAnswer, isDeliveryStatus, signed, teammateMessage, type DeliveryStatus, type Teammate } from "./agentMessages";
+import { isObj } from "./values";
 // A Returned result (ADR 0175): the stored user row that begins a turn Hermes runs by itself. Hermes marks it with a
 // display kind and a one-line title (`display_metadata.display_text`), and its text is the model-facing notice
 // (`tools/process_registry_notifications.py` at `bf0203a`). The owner is shown the title and the result only, as the
@@ -10,6 +11,15 @@ import { deliveryAnswer, teammateMessage, type DeliveryStatus, type Teammate } f
  * as, and a notice with no signature is Hermes's own. `answer`: the row is the answer to a message this bot sent.
  */
 export type AgentTurn = { kind: "from"; teammate?: Teammate } | { kind: "answer"; deliveryId: string; status: DeliveryStatus };
+
+/** An `AgentTurn` read back from the Saved copy, or undefined for anything else. */
+export function agentTurnOf(v: unknown): AgentTurn | undefined {
+  if (!isObj(v)) return undefined;
+  if (v.kind === "answer") return typeof v.deliveryId === "string" && isDeliveryStatus(v.status) ? { kind: "answer", deliveryId: v.deliveryId, status: v.status } : undefined;
+  if (v.kind !== "from") return undefined;
+  const t = v.teammate;
+  return { kind: "from", ...(isObj(t) && typeof t.name === "string" && typeof t.handle === "string" && { teammate: { name: t.name, handle: t.handle } }) };
+}
 
 export type Returned = { title?: string; body: string; process: boolean; agent?: AgentTurn };
 
@@ -88,4 +98,18 @@ export function returnedItem(text: string, displayKind: unknown, metadata: unkno
   // With a reply, Hermes's sentence for the outcome is the title. Without one it is all there is to read.
   if (answer) return { ...(answer.reply && { title: answer.outcome }), body: answer.reply ?? answer.outcome, process: false, agent: { kind: "answer", deliveryId: answer.deliveryId, status: answer.status } };
   return { ...(title && { title }), body: resultBody(notice) ?? notice.trim(), process: KINDS[displayKind] };
+}
+
+/**
+ * A Returned result as the stored row `returnedItem` reads it from, for an export in Hermes's session format: a
+ * teammate's message under Hermes's signature, a delivery's answer as its runner's output. `text` redacts each part.
+ */
+export function storedReturned(r: Returned, text: (s: string) => string = (s) => s): { content: string; display_kind: string; display_metadata?: { display_text: string } } {
+  const title = r.title && { display_metadata: { display_text: text(r.title) } };
+  if (r.agent?.kind === "answer") {
+    const answer = { deliveryId: r.agent.deliveryId, status: r.agent.status, outcome: text(r.title ?? r.body), ...(r.title && { reply: text(r.body) }) };
+    return { content: answerNotice(answer), display_kind: "process_complete" };
+  }
+  if (r.agent) return { content: r.agent.teammate ? signed(r.agent.teammate, text(r.body)) : text(r.body), display_kind: "internal_notification", ...title };
+  return { content: text(r.body), display_kind: r.process ? "process_complete" : "async_delegation_complete", ...title };
 }

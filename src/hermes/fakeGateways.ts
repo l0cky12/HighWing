@@ -164,8 +164,11 @@ export class FakeGateways {
       this.refuseRestart = undefined;
       throw answered(r.status, r.detail);
     }
-    if (this.action && this.action.exit === undefined && this.action.profile !== profile)
-      throw answered(500, "Failed to restart gateway: gateway restart already in progress for another profile");
+    // A restart still running is reused for its own profile, as Hermes reuses the live child.
+    if (this.action && this.action.exit === undefined) {
+      if (this.action.profile !== profile) throw answered(500, "Failed to restart gateway: gateway restart already in progress for another profile");
+      return { ok: true, pid: this.action.pid, name: "gateway-restart" };
+    }
     this.action = { pid: this.nextPid++, profile, plan: this.restartPlan, pollsLeft: this.restartPolls };
     if (this.action.pollsLeft <= 0) this.finish();
     return { ok: true, pid: this.action.pid, name: "gateway-restart" };

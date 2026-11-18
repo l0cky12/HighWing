@@ -1,4 +1,4 @@
-// The question before Settle all clears the Inbox (issue #303). It names the chats with an Approval waiting or a
+// The question before Archive all clears the Inbox (issue #303). It names the chats with an Approval waiting or a
 // failure, so nothing the owner may want to look at is cleared by surprise. Cancel has focus, so a stray Enter keeps them.
 import { useRef, type RefObject } from "react";
 import { Archive } from "lucide-react";
@@ -14,7 +14,7 @@ export function settleAllNote({ approvals, failures }: Pick<InboxSettle, "approv
     approvals > 0 && `${approvals} of them ${have(approvals)} an Approval waiting`,
     failures > 0 && `${failures} of them ${have(failures)} a failure`,
   ].filter(Boolean);
-  return `${waiting.length ? `${waiting.join(", and ")}. ` : ""}They move to the Settled drawer, and you can undo it.`;
+  return `${waiting.length ? `${waiting.join(", and ")}. ` : ""}They move to the Archived drawer, and you can undo it.`;
 }
 
 export function SettleAllDialog({
@@ -48,7 +48,7 @@ export function SettleAllDialog({
         }}
       >
         <h2 id="settle-all-title" className="leave-title">
-          <Archive size={14} aria-hidden /> Settle {chats(inbox.ids.length)} from the Inbox?
+          <Archive size={14} aria-hidden /> Archive {chats(inbox.ids.length)} from the Inbox?
         </h2>
         <p id="settle-all-note" className="muted">
           {settleAllNote(inbox)}
@@ -58,7 +58,7 @@ export function SettleAllDialog({
             Cancel
           </button>
           <button className="btn primary" onClick={onSettle}>
-            Settle all
+            Archive all
           </button>
         </div>
       </div>

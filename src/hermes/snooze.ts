@@ -6,17 +6,17 @@
 // settle it; `ClearedStore` only reads the ones left, so `heldClears` can settle them once.
 //
 // The list shows each chat in one section only, worked out from what the app already reads:
-//   1. Archived: Hermes has it archived, whatever else holds.
+//   1. Archived: the owner archived it, which settles it (ADR 0002, ADR 0202), or Hermes has it archived. It stays
+//      there whatever happens in it.
 //   2. Pinned: the owner pinned it. It stays there whatever happens in it.
-//   3. Settled: the owner settled it (ADR 0002). It stays there whatever happens in it.
-//   4. Snoozed: the owner snoozed it and it hasn't woken yet.
-//   5. Working: Hermes is writing a reply in it, or waiting on work it handed off (dispatched.ts), and isn't waiting
+//   3. Snoozed: the owner snoozed it and it hasn't woken yet.
+//   4. Working: Hermes is writing a reply in it, or waiting on work it handed off (dispatched.ts), and isn't waiting
 //      on the owner.
-//   6. Otherwise it is in the Inbox: Hermes waits for the owner's answer, or is done, or it is new.
+//   5. Otherwise it is in the Inbox: Hermes waits for the owner's answer, or is done, or it is new.
 import type { Handoff } from "./dispatched";
 import { isFailure } from "./inbox";
 import type { Chat } from "./model";
-import { isWaiting } from "./model";
+import { inArchived, isWaiting } from "./model";
 import type { SectionKey } from "./sectionKeys";
 import { migrateUIPrefs as migrateDoc, type UIPrefsDoc, type UIPrefsMigrations } from "./uiPrefs";
 import { clockTime } from "./values";
@@ -380,8 +380,8 @@ export function heldClears(chats: Chat[], snoozes: Snoozes, now: number, since: 
 /**
  * Where each chat shows in the list, in the order shown. A pinned chat (`pins`) is in Pinned, in the order it was
  * pinned, whatever happens in it, unless it is Archived. The Inbox is newest first, a chat counting as new when it woke
- * from a snooze or stopped working (`lastActive`). Working, Settled and Archived are newest first; Snoozed wakes
- * soonest first. `handoffs`: each chat's dispatched work (dispatched.ts), which keeps it in Working too.
+ * from a snooze or stopped working (`lastActive`). Working and Archived are newest first; Snoozed wakes soonest first.
+ * `handoffs`: each chat's dispatched work (dispatched.ts), which keeps it in Working too.
  */
 export function chatSections(
   chats: Chat[],
@@ -393,11 +393,10 @@ export function chatSections(
 ): ChatSections {
   const recent = (c: Chat) => lastActive(c, snoozes, now, since);
   const byRecent = (a: Chat, b: Chat) => recent(b) - recent(a);
-  const s: ChatSections = { pinned: [], inbox: [], snoozed: [], archived: [], working: [], settled: [] };
+  const s: ChatSections = { pinned: [], inbox: [], snoozed: [], archived: [], working: [] };
   for (const c of chats) {
-    if (c.archived) s.archived.push(c);
+    if (inArchived(c)) s.archived.push(c);
     else if (pins[c.id] !== undefined) s.pinned.push(c);
-    else if (c.settled) s.settled.push(c);
     else if ((snoozes[c.id] ?? 0) > now) s.snoozed.push(c);
     else if (isWorking(c, handoffs?.get(c.id))) s.working.push(c);
     else s.inbox.push(c);
@@ -405,7 +404,6 @@ export function chatSections(
   s.pinned.sort((a, b) => pins[a.id] - pins[b.id] || (a.id < b.id ? -1 : 1));
   s.inbox.sort(byRecent);
   s.working.sort(byRecent);
-  s.settled.sort((a, b) => b.updatedAt - a.updatedAt);
   s.archived.sort((a, b) => b.updatedAt - a.updatedAt);
   s.snoozed.sort((a, b) => snoozes[a.id] - snoozes[b.id]);
   return s;
@@ -416,7 +414,7 @@ const UNDER_BOT_MIN = 3;
 
 export function chatsUnderBot(s: ChatSections, shown: readonly (string | null)[]): Chat[] {
   const near = [...s.pinned, ...s.inbox, ...s.working].slice(0, UNDER_BOT_ACTIVE_MAX);
-  near.push(...s.settled.slice(0, Math.max(0, UNDER_BOT_MIN - near.length)));
+  near.push(...s.archived.slice(0, Math.max(0, UNDER_BOT_MIN - near.length)));
   const every = Object.values(s).flat();
   for (const id of shown) {
     const c = every.find((x) => x.id === id);
@@ -425,9 +423,13 @@ export function chatsUnderBot(s: ChatSections, shown: readonly (string | null)[]
   return near;
 }
 
-/** Where a chat list row dropped on the Settled drawer or the Inbox puts its chat: settled or not, or undefined when the drop would change nothing or the chat is archived (ADR 0090). */
-export const settleByDrop = (chat: Chat | undefined, on: "settled" | "inbox"): boolean | undefined =>
-  !chat || chat.archived || chat.settled === (on === "settled") ? undefined : on === "settled";
+/**
+ * Where a chat list row dropped on the Archived drawer or the Inbox puts its chat: settled or not, or undefined when
+ * the drop would change nothing (ADR 0090, ADR 0202). A chat Hermes has archived stays put: on the Inbox, unsettling it
+ * would leave it in Archived, and a drop never restores it.
+ */
+export const settleByDrop = (chat: Chat | undefined, on: "archived" | "inbox"): boolean | undefined =>
+  !chat || chat.archived || chat.settled === (on === "archived") ? undefined : on === "archived";
 
 export type InboxSettle = { ids: string[]; approvals: number; failures: number };
 

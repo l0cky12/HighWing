@@ -215,15 +215,15 @@ export type PersonaWiring = {
 
 const allow = (go: () => void) => go();
 
-/** What a pull added: the older chats in Settled, and any pinned in another Hermes client, which are Active. */
+/** What a pull added: the older chats in Archived, and any pinned in another Hermes client, which are Active. */
 function pulledText(added: Chat[]): string {
   if (!added.length) return "There were no older chats on the server.";
   const active = added.filter((c) => !c.settled).length;
   const settled = added.length - active;
   const chats = (n: number) => `${n} older ${n === 1 ? "chat" : "chats"}`;
-  if (!active) return `Added ${chats(settled)} to Settled.`;
+  if (!active) return `Added ${chats(settled)} to Archived.`;
   if (!settled) return `Added ${chats(active)} to Active: ${active === 1 ? "it's" : "they're"} pinned in another Hermes client.`;
-  return `Added ${chats(settled)} to Settled, and ${active} to Active: ${active === 1 ? "it's" : "they're"} pinned in another Hermes client.`;
+  return `Added ${chats(settled)} to Archived, and ${active} to Active: ${active === 1 ? "it's" : "they're"} pinned in another Hermes client.`;
 }
 
 export function SettingsScreen({

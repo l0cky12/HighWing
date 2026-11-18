@@ -25,7 +25,7 @@ let rowDrag: string | null = null;
 export const dragChat = (e: DragEvent, id: string) => {
   rowDrag = id;
   e.dataTransfer.setData(CHAT_DRAG, id);
-  // A drop on the Settled drawer or the Inbox is a move (Sidebar.tsx), and a browser refuses a drop whose dropEffect
+  // A drop on the Archived drawer or the Inbox is a move (Sidebar.tsx), and a browser refuses a drop whose dropEffect
   // effectAllowed doesn't allow.
   e.dataTransfer.effectAllowed = "copyMove";
 };

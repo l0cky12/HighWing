@@ -392,9 +392,9 @@ const SESSION_DROPPED_NAMES: Record<string, string> = {
   model_config: "the model settings",
   parent_session_id: "links to parent chats",
   user_id: "the platform's user",
-  pinned: "Active or Settled, Archived and hidden",
-  archived: "Active or Settled, Archived and hidden",
-  hidden: "Active or Settled, Archived and hidden",
+  pinned: "Active or Archived, and hidden",
+  archived: "Active or Archived, and hidden",
+  hidden: "Active or Archived, and hidden",
 };
 const ROLES = new Set(["user", "assistant", "tool", "system"]);
 const ATTACHMENT_PARTS = new Set(["image", "image_url", "input_image", "file", "input_file", "document"]);

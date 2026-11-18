@@ -1643,7 +1643,7 @@ export function Main({
   });
 
   // Projects are Hermes's, one store for each connection and profile; which chats are in each is kept on this computer.
-  // A project picked in the switcher narrows the list to its chats. Active, Settled and Unread work as before inside it.
+  // A project picked in the switcher narrows the list to its chats. Active, Archived and Unread work as before inside it.
   const scope = projectScope(connection, profile);
   // Troubleshooting chats started from the Jobs screen, for this app run (troubleshoot.ts, ADR 0053). The store sees
   // every change in the chats, to tell when a troubleshooting reply has ended.
@@ -2486,16 +2486,23 @@ export function Main({
     else if (chat?.runtimeId && !chat.loading) setFocusItem(undefined);
   }, [focusItem, chats]);
 
-  // Undo sends the opposite change, not a stored copy, so it also works once the list has refreshed. Settling forgets
-  // a snooze, which Undo puts back.
+  // Archiving settles the chat (ADR 0202). Unarchiving unsettles it, and restores it in Hermes if Hermes has it
+  // archived. Undo sends the opposite change, not a stored copy, so it also works once the list has refreshed: it
+  // settles an unarchived chat again, which puts it back in Archived without hiding it from other Hermes clients.
+  // Archiving forgets a snooze, which Undo puts back.
   const setSettled = (id: string, settled: boolean) => {
-    const title = chats.find((c) => c.id === id)?.title ?? "";
+    const chat = chats.find((c) => c.id === id);
     const snoozedUntil = settled && snoozeStore.isSnoozed(id) ? snoozes[id] : undefined;
     const move = (s: boolean) => void (s ? hermes.settle(id) : hermes.unsettle(id));
-    move(settled);
-    if (settled) snoozeStore.wake(id);
+    if (settled) {
+      move(true);
+      snoozeStore.wake(id);
+    } else {
+      if (chat?.settled) move(false);
+      if (chat?.archived) void hermes.restore(id);
+    }
     setToast({
-      text: `${settled ? "Settled" : "Unsettled"}: ${title}`,
+      text: `${settled ? "Archived" : "Unarchived"}: ${chat?.title ?? ""}`,
       undo: () => {
         move(!settled);
         if (snoozedUntil) snoozeStore.snooze(id, snoozedUntil);
@@ -2511,10 +2518,10 @@ export function Main({
     void hermes.settleAll(ids).then((failed) => {
       if (!stillIn(profile)) return;
       const went = ids.filter((id) => !failed.includes(id));
-      if (!went.length) return setToast({ text: `Couldn't settle ${many(ids.length)}. ${ids.length === 1 ? "It's" : "They're"} still in the Inbox.`, at: Date.now() });
+      if (!went.length) return setToast({ text: `Couldn't archive ${many(ids.length)}. ${ids.length === 1 ? "It's" : "They're"} still in the Inbox.`, at: Date.now() });
       const text = failed.length
-        ? `Settled ${many(went.length)}. ${many(failed.length)} couldn't be settled and ${failed.length === 1 ? "is" : "are"} still in the Inbox.`
-        : `Settled ${many(went.length)}`;
+        ? `Archived ${many(went.length)}. ${many(failed.length)} couldn't be archived and ${failed.length === 1 ? "is" : "are"} still in the Inbox.`
+        : `Archived ${many(went.length)}`;
       setToast({ text, undo: () => went.forEach((id) => void hermes.unsettle(id)), at: Date.now() });
     });
   };
@@ -2567,20 +2574,6 @@ export function Main({
       }
       return deleted;
     });
-  };
-
-  // Archiving hides the chat in every Hermes client and keeps its history; the toast shows once Hermes confirms it. A
-  // pane showing the chat gives way to a fresh draft, as it leaves the list. A write that didn't go in says why in the
-  // list.
-  const setArchived = (id: string, archived: boolean) => {
-    const title = chats.find((c) => c.id === id)?.title ?? "";
-    if (archived && !archivedListed) clearChat(id);
-    const done = (ok: boolean) => {
-      if (ok && archived) desk?.change({ kind: "gone", key: draftKey(connection, profile, id) });
-      if (ok && stillIn(profile))
-        setToast({ text: `${archived ? "Archived" : "Restored"}: ${title}`, undo: archived ? () => setArchived(id, false) : undefined, at: Date.now() });
-    };
-    void (archived ? hermes.archive(id) : hermes.restore(id)).then(done);
   };
 
   // A chat open in a pane that a list read leaves out is asked for. The list reaches back a month, so one older than
@@ -3230,7 +3223,6 @@ export function Main({
           onExport={(text) => setToast({ text, at: Date.now() })}
           onSnapshotSettings={openSnapshotSettings}
           onCopyLink={() => copyChatLink(chat)}
-          onArchive={(a) => setArchived(chat.id, a)}
           onNew={() => newChat()}
           onDelete={() => deleteChat(chat.id)}
           onOpenChat={(id) => openChat(id, { pane: p.key })}
@@ -3592,7 +3584,6 @@ export function Main({
           onStopWaiting={stopWaiting}
           onSnooze={(id, until) => snoozeChat(id, until)}
           onWake={(id) => snoozeChat(id, undefined)}
-          onArchive={setArchived}
           onDelete={deleteChat}
           onRename={(id, title, from) => hermes.rename(id, title, from)}
           onRegenTitle={(id) => hermes.regenerateTitle(id)}
@@ -4280,7 +4271,6 @@ function ChatView({
   onExport,
   onSnapshotSettings,
   onCopyLink,
-  onArchive,
   onNew,
   onDelete,
   onOpenChat,
@@ -4363,7 +4353,6 @@ function ChatView({
   /** Opens Settings → Snapshots, from Share snapshot. */
   onSnapshotSettings: () => void;
   onCopyLink: () => void;
-  onArchive: (archived: boolean) => void;
   onNew: () => void;
   /** Deletes the chat once the owner has confirmed it; resolves with whether Hermes deleted it. */
   onDelete: () => Promise<boolean>;
@@ -4857,7 +4846,6 @@ function ChatView({
       onSnapshotSettings={onSnapshotSettings}
       onCopyLink={started ? onCopyLink : undefined}
       onDelete={started ? () => void onDelete() : undefined}
-      onArchive={started ? onArchive : undefined}
       onOpenJob={onOpenJob}
       active={active}
       visible={visible}

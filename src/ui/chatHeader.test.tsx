@@ -43,7 +43,7 @@ describe("The chat header", () => {
     const actions = document.querySelector<HTMLElement>(".chat-head-actions")!;
     // Only these are buttons on the bar now; the rest went into More or onto the tab strip.
     expect([...actions.querySelectorAll("button")].map(named)).toEqual(["Open the side panel", "Find in chat", "More"]);
-    for (const gone of ["Export…", "Copy chat link", "Settle", "Archive", "Split into two panes"])
+    for (const gone of ["Export…", "Copy chat link", "Archive", "Split into two panes"])
       expect(actions.querySelector(`[aria-label="${gone}"], [title="${gone}"]`)).toBeNull();
     // Splitting is Ctrl+\, a tab's menu or a drag (ADR 0116), so the tab strip has no split buttons either.
     expect(document.querySelector('.tab-strip [aria-label^="Split into two panes"]')).toBeNull();
@@ -72,10 +72,10 @@ describe("The chat header", () => {
     await user.keyboard("{Enter}");
     const menu = screen.getByRole("menu", { name: "More actions for Nightly backup" });
     expect(more.getAttribute("aria-expanded")).toBe("true");
-    expect([...menu.querySelectorAll("[role=menuitem]")].map((m) => m.textContent)).toEqual(["Export…", "Share snapshot…", "Copy chat link", "PinP", "Settle", "Archive", "Delete chat…"]);
+    expect([...menu.querySelectorAll("[role=menuitem]")].map((m) => m.textContent)).toEqual(["Export…", "Share snapshot…", "Copy chat link", "PinP", "Archive", "Delete chat…"]);
     expect(document.activeElement!.textContent).toBe("Export…");
     await user.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}");
-    expect(document.activeElement!.textContent).toBe("Settle");
+    expect(document.activeElement!.textContent).toBe("Archive");
     await user.keyboard("{ArrowUp}{ArrowUp}{ArrowUp}{ArrowUp}{ArrowUp}");
     expect(document.activeElement!.textContent).toBe("Delete chat…");
     await user.keyboard("{Escape}");
@@ -86,8 +86,32 @@ describe("The chat header", () => {
     // Enter on an item runs it and closes the menu.
     await user.keyboard("{Enter}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
     expect(screen.queryByRole("menu")).toBeNull();
-    await screen.findByText("Settled", { selector: ".chat-title .badge" });
+    await screen.findByText("Archived", { selector: ".chat-title .badge" });
     expect(server.restRequests.some((r) => r.method === "PATCH" && r.body?.pinned === false)).toBe(true);
+    // Archive settles the chat; nothing hides it in every Hermes client.
+    expect(server.restRequests.some((r) => r.method === "PATCH" && r.body && "archived" in r.body)).toBe(false);
+    await user.keyboard("{Enter}");
+    const items = [...screen.getByRole("menu").querySelectorAll("[role=menuitem]")].map((m) => m.textContent);
+    expect(items).toEqual(["Export…", "Share snapshot…", "Copy chat link", "Unarchive", "Delete chat…"]);
+  });
+
+  it("shows one Archived badge, and Unarchive clears both flags, for a chat archived here and in Hermes", async () => {
+    const server = new FakeHermes();
+    server.sessions = [row("plan", 1, { pinned: false, archived: true, title: "Old plan" })];
+    const hermes = await connect(server.openPipe);
+    running.push(hermes);
+    const user = userEvent.setup();
+    render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} />);
+    await user.click(await screen.findByRole("button", { name: /^Archived/ }));
+    await user.click(await screen.findByRole("button", { name: /Old plan/ }));
+    await act(async () => void (await hermes.idle()));
+    expect([...document.querySelectorAll(".chat-title .badge")].map((b) => b.textContent)).toEqual(["Archived"]);
+    await user.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.queryByRole("menuitem", { name: /^(Archive|Restore)$/ })).toBeNull();
+    await user.click(screen.getByRole("menuitem", { name: "Unarchive" }));
+    await act(async () => void (await hermes.idle()));
+    await vi.waitFor(() => expect(server.sessions[0]).toMatchObject({ pinned: true, archived: false }));
+    expect(document.querySelector(".chat-title .badge")).toBeNull();
   });
 
   it("closes More on a second click of its button, without opening it again", async () => {

@@ -129,10 +129,10 @@ describe("Filtering in the search palette", () => {
     expect(chips.textContent).toContain("In default:");
     expect(within(palette()).getByText("Infra", { selector: ".hit-tags .tag-label" })).toBeTruthy();
 
-    await user.selectOptions(screen.getByRole("combobox", { name: /^State/ }), "Settled");
+    await user.selectOptions(screen.getByRole("combobox", { name: /^State/ }), "Archived");
     await waitFor(() => expect(hits()).toEqual([]));
     expect(within(palette()).getByText("No chats match these filters")).toBeTruthy();
-    await user.click(within(chips).getByRole("button", { name: "Remove filter State: Settled" }));
+    await user.click(within(chips).getByRole("button", { name: "Remove filter State: Archived" }));
     await waitFor(() => expect(hits()).toEqual(["NAS disks"]));
 
     await user.click(screen.getByRole("textbox", { name: "Words to search for" }));
@@ -165,13 +165,13 @@ describe("Filtering in the search palette", () => {
   it("previews a bulk tag edit; Cancel and Escape change nothing, and confirming changes only what it listed", async () => {
     const { user } = await launch();
     await makeTag(user, "Infra");
-    await user.click(screen.getByRole("button", { name: /^Settled/ }));
+    await user.click(screen.getByRole("button", { name: /^Archived/ }));
     await user.click(within(await menuOf(user, "Old notes")).getByRole("menuitemcheckbox", { name: "Infra" }));
     const before = localStorage.getItem(TAGS_KEY);
 
     await user.keyboard("{Control>}k{/Control}");
     await user.click(screen.getByRole("button", { name: "Filters" }));
-    await user.selectOptions(screen.getByRole("combobox", { name: /^State/ }), "Settled");
+    await user.selectOptions(screen.getByRole("combobox", { name: /^State/ }), "Archived");
     await waitFor(() => expect(hits()).toEqual(["Old notes", "Dependency bump"]));
     await user.click(screen.getByRole("button", { name: /Tag 2 results/ }));
     await user.click(screen.getByRole("button", { name: "Preview" }));

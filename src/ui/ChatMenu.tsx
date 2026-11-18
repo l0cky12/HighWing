@@ -28,10 +28,10 @@ export type ChatTags = { list: Tag[]; of: readonly string[]; onToggle: (tagId: s
 export type ChatSnooze = { until?: number; onSnooze: (until: number) => void; onCustom: () => void; onWake: () => void };
 
 /**
- * Settling the chat, or unsettling it (ADR 0002). Settling is also how a chat is cleared from the Inbox (ADR 0090);
- * unsettling puts it back in the Inbox.
+ * Archiving the chat, or unarchiving it (model.ts `archiveAction`, ADR 0202). Archiving is how a chat is cleared from
+ * the Inbox; unarchiving puts it back in the Inbox.
  */
-export type ChatSettle = { settled: boolean; onSettle: (settled: boolean) => void };
+export type ChatSettle = { archived: boolean; onSettle: (settled: boolean) => void };
 
 /** Pinning the chat to the top of the list, or unpinning it (snooze.ts `PinStore`, ADR 0085). */
 export type ChatPin = { pinned: boolean; onPin: (pinned: boolean) => void };
@@ -207,14 +207,14 @@ export function ChatMenu({
         <button
           role="menuitem"
           className="menu-item"
-          title={settle.settled ? "Move this chat back to the Inbox" : "Clear this chat from the Inbox into Settled"}
+          title={settle.archived ? "Move this chat back to the Inbox" : "Clear this chat from the Inbox into Archived"}
           onClick={() => {
             onClose();
-            settle.onSettle(!settle.settled);
+            settle.onSettle(!settle.archived);
           }}
         >
-          <span className="menu-icon">{settle.settled ? <ArchiveRestore size={15} /> : <Archive size={15} />}</span>
-          <span className="menu-label">{settle.settled ? "Unsettle" : "Settle"}</span>
+          <span className="menu-icon">{settle.archived ? <ArchiveRestore size={15} /> : <Archive size={15} />}</span>
+          <span className="menu-label">{settle.archived ? "Unarchive" : "Archive"}</span>
         </button>
       )}
       {snooze && (

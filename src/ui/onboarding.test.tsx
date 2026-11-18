@@ -393,7 +393,7 @@ describe("Setup from Settings", () => {
     expect(document.querySelector(".app")?.hasAttribute("inert")).toBe(true);
     // The app's shortcuts wait while setup covers it.
     await user.keyboard("{Control>}k{/Control}");
-    expect(screen.queryByPlaceholderText("Search all chats, including Settled")).toBeNull();
+    expect(screen.queryByPlaceholderText("Search all chats, including Archived")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Change connection" }));
     await user.click(screen.getByRole("button", { name: "Cancel setup" }));
     expect(dialog()).toBeNull();

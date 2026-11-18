@@ -284,7 +284,7 @@ describe("Shortcuts with two panes", () => {
     const s = await sideBySide();
     await s.user.keyboard("{Control>}1{/Control}");
     await s.user.keyboard("{Control>}k{/Control}");
-    await s.user.type(screen.getByPlaceholderText("Search all chats, including Settled"), "tunnel");
+    await s.user.type(screen.getByPlaceholderText("Search all chats, including Archived"), "tunnel");
     await waitFor(() => expect(document.querySelector(".hit-row")).toBeTruthy());
     await s.user.click(document.querySelector<HTMLElement>(".hit-row")!);
     await settle(s.hermes);

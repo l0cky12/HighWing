@@ -8,7 +8,7 @@
 // settings feature reads and writes through this module.
 
 import { fromKey, isEffort, type ModelPick } from "./models";
-import { SECTION_KEYS, isSectionKey, type SectionKey } from "./sectionKeys";
+import { SECTION_KEYS, type SectionKey } from "./sectionKeys";
 import { toTemplates, type Template } from "./templates";
 import type { TerminalKind } from "./terminal";
 import { nonEmptyText } from "./values";
@@ -146,7 +146,7 @@ export const DEFAULT_UI_PREFS: Readonly<UIPrefs> = Object.freeze({
   spellCheck: true,
   idleCompact: Object.freeze({ enabled: false, percent: 70, idleMinutes: 15 }),
   chatSectionsShown: [...SECTION_KEYS],
-  chatSectionsCollapsed: ["snoozed", "settled", "archived"] as SectionKey[],
+  chatSectionsCollapsed: ["snoozed", "archived"] as SectionKey[],
   chatListMode: "chats",
   agentOffice: "plan",
   officeQuality: "normal",
@@ -254,12 +254,14 @@ function toIdleCompact(v: unknown, d: IdleCompactPrefs): IdleCompactPrefs | unde
 }
 
 /**
- * Sections as stored, each once and in the list's order; undefined when it isn't a list. A key this version doesn't
+ * Sections as stored, each once and in the list's order; undefined when it isn't a list. Settled is read as Archived,
+ * which holds its chats since ADR 0202, so a Settled shown or collapsed stays so. Any other key this version doesn't
  * know is left out, as Unsettled is since ADR 0090.
  */
 function toSections(v: unknown): SectionKey[] | undefined {
   if (!Array.isArray(v)) return undefined;
-  return SECTION_KEYS.filter((k) => v.some((x) => isSectionKey(x) && x === k));
+  const stored = v.map((x) => (x === "settled" ? "archived" : x));
+  return SECTION_KEYS.filter((k) => stored.includes(k));
 }
 
 /** The sections shown, as stored: never none, so a list with none of them is no value at all. */

@@ -3,11 +3,11 @@
 // however old. Hermes can narrow either read by Source; Tags are kept on this computer (tags.ts), and Hermes's search
 // can't narrow by model, date or state, so those are checked here, on what Hermes answered. When Hermes answered as
 // many chats as it would, the outcome says more may match rather than claiming the list is complete.
-import type { Found, Source } from "./model";
+import { inArchived, type Found, type Source } from "./model";
 import { optionalText } from "./values";
 
-/** Which chats, by state: Active, Settled, Archived, or all of them; undefined is Active and Settled, as the list. */
-export type ChatState = "active" | "settled" | "archived" | "all";
+/** Which chats, by state: Active, or Archived (here or in Hermes, model.ts `inArchived`); undefined is all of them. */
+export type ChatState = "active" | "archived";
 
 /**
  * A chat filter. A chat matches every part given: the words (Hermes's search), every tag in `tags` (by id), any source
@@ -26,13 +26,11 @@ export type ChatFilter = {
 
 export const STATE_LABEL: Record<ChatState, string> = {
   active: "Active",
-  settled: "Settled",
   archived: "Archived",
-  all: "All, archived too",
 };
 
 const SOURCES: readonly Source[] = ["app", "telegram", "discord", "cli", "desktop", "cron", "other"];
-const STATES: readonly ChatState[] = ["active", "settled", "archived", "all"];
+const STATES: readonly ChatState[] = ["active", "archived"];
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /** The filter with blanks dropped, so the same filter saves and compares the same however it was typed. */
@@ -52,7 +50,10 @@ export function tidyFilter(f: ChatFilter): ChatFilter {
 
 export const isEmptyFilter = (f: ChatFilter) => Object.keys(tidyFilter(f)).length === 0;
 
-/** A stored filter, checked; anything that isn't one is left out. */
+/**
+ * A stored filter, checked; anything that isn't one is left out. A state saved before ADR 0202 is read as the nearest
+ * one now: Settled as Archived, and All, archived too as no state.
+ */
 export function toFilter(v: unknown): ChatFilter {
   if (typeof v !== "object" || v === null || Array.isArray(v)) return {};
   const o = v as Record<string, unknown>;
@@ -64,7 +65,7 @@ export function toFilter(v: unknown): ChatFilter {
     model: optionalText(o.model, 200),
     from: optionalText(o.from, 10),
     to: optionalText(o.to, 10),
-    state: STATES.find((s) => s === o.state),
+    state: STATES.find((s) => s === (o.state === "settled" ? "archived" : o.state)),
   });
 }
 
@@ -119,19 +120,18 @@ export async function runFilter(filter: ChatFilter, io: FilterIo, tags: TagLooku
   const f = tidyFilter(filter);
   const missingTags = (f.tags ?? []).filter((t) => !tags.exists(t));
   if (isEmptyFilter(f) || missingTags.length) return { found: [], noModel: 0, noSource: 0, missingTags };
-  const archivedWanted = f.state === "archived" || f.state === "all";
+  const archivedWanted = f.state !== "active";
   const onlyWords = Object.keys(f).every((k) => k === "text");
   const page = f.text
     ? await io.searchPage(f.text, { archived: archivedWanted, sources: f.sources, limit: onlyWords ? WORDS_SEARCH_LIMIT : FILTER_SEARCH_LIMIT })
-    : await io.browse({ archived: f.state === "archived" ? "only" : f.state === "all" ? "include" : "exclude", sources: f.sources });
+    : await io.browse({ archived: archivedWanted ? "include" : "exclude", sources: f.sources });
   const here = checkedHere(f);
   let noModel = 0;
   let noSource = 0;
   const found = page.found.filter((c) => {
     const checked = here(c);
     if (checked === "miss") return false;
-    const inState =
-      f.state === "all" ? true : f.state === "archived" ? !!c.archived : !c.archived && (f.state === undefined || (f.state === "settled") === c.settled);
+    const inState = f.state === undefined || (f.state === "archived") === inArchived(c);
     const of = f.tags?.length ? tags.of(c.chatId) : [];
     const others = inState && (f.tags ?? []).every((t) => of.includes(t));
     const sourceOk = !f.sources || (!c.sourceUnknown && f.sources.includes(c.source));

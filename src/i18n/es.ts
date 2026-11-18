@@ -197,7 +197,7 @@ export const es: Catalogue = {
       uiHint: "Todo lo que no son bloques de código ni salida de herramientas.",
       uiSize: "Tamaño de la fuente de la interfaz",
       resetUi: "Restablecer fuente de la interfaz",
-      uiSample: (searchKey: string) => `Los chats que necesitan atención quedan arriba; los resueltos esperan debajo. Pulsa ${searchKey} para buscar en todos los chats.`,
+      uiSample: (searchKey: string) => `Los chats que necesitan atención quedan arriba; los archivados esperan debajo. Pulsa ${searchKey} para buscar en todos los chats.`,
       code: "Fuente del código",
       codeHint: "Bloques de código, salida de herramientas y comandos que esperan aprobación.",
       codeSize: "Tamaño de la fuente del código",

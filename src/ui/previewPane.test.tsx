@@ -1448,7 +1448,7 @@ describe("Closing and resizing", () => {
       await user.click(screen.getByRole("menuitem", { name: "Open in a second pane" }));
     } else {
       await user.click(screen.getByRole("button", { name: "Search all chats (Ctrl+K)" }));
-      await user.type(screen.getByPlaceholderText("Search all chats, including Settled"), "Another");
+      await user.type(screen.getByPlaceholderText("Search all chats, including Archived"), "Another");
       await user.click(await within(screen.getByRole("dialog", { name: "Search chats" })).findByRole("button", { name: /Another chat/ }));
     }
     await settle(hermes);

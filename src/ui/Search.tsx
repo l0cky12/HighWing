@@ -8,7 +8,7 @@ import { ListFilter, Search, Tag as TagIcon, X } from "lucide-react";
 import { STATE_LABEL, isEmptyFilter, tidyFilter, type ChatFilter, type ChatState, type FilterOutcome } from "../hermes/chatFilter";
 import { policyOf } from "../hermes/chatKind";
 import type { EverywhereFilter, EverywhereOutcome, EverywhereRow } from "../hermes/everywhere";
-import { SOURCE_LABEL, type Found, type Hit, type Source } from "../hermes/model";
+import { SOURCE_LABEL, inArchived, type Found, type Hit, type Source } from "../hermes/model";
 import { previewBulk, type BulkPreview, type ScopeTags } from "../hermes/tags";
 import { SourceIcon, Spinner, highlight, useReturnFocus } from "./bits";
 import { useLocale } from "../i18n/locale";
@@ -201,7 +201,7 @@ export function SearchPalette({
   // Results for an earlier filter stay on screen until the new ones come, but can't be opened or tagged.
   const stale = wide ? !farOutcome : !outcome;
   const searching = !empty && !error && (wide ? !farOutcome?.done : !outcome);
-  const badgeOf = (f: Found) => (f.archived ? "Archived" : policyOf(f).readOnly === "jobRun" ? "Job run" : f.settled ? "Settled" : undefined);
+  const badgeOf = (f: Found) => (!f.archived && policyOf(f).readOnly === "jobRun" ? "Job run" : inArchived(f) ? "Archived" : undefined);
   const rows: ShownRow[] = shownFar
     ? shownFar.rows.map((r) => ({ key: `${r.ref.connection}\n${r.ref.profile}\n${r.ref.chatId}`, hit: r.hit, where: `${r.server} · ${r.ref.profile}`, open: () => everywhere?.onPick(r) }))
     : found.map((f) => ({ key: f.chatId, hit: f, badge: badgeOf(f), open: () => onPick(f) }));
@@ -244,7 +244,7 @@ export function SearchPalette({
           <input
             ref={input}
             autoFocus
-            placeholder={wide ? "Search every bot on every connected server" : "Search all chats, including Settled"}
+            placeholder={wide ? "Search every bot on every connected server" : "Search all chats, including Archived"}
             aria-label="Words to search for"
             value={filter.text ?? ""}
             onChange={(e) => set({ text: e.target.value })}
@@ -506,7 +506,7 @@ function FilterBar({
       {field(
         "State",
         <select value={filter.state ?? ""} onChange={(e) => onChange({ state: (e.target.value || undefined) as ChatState | undefined })}>
-          <option value="">Active and Settled</option>
+          <option value="">All</option>
           {(Object.keys(STATE_LABEL) as ChatState[]).map((s) => (
             <option key={s} value={s}>
               {STATE_LABEL[s]}

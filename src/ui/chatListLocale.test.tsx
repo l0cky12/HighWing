@@ -32,7 +32,6 @@ function shown(language: LanguageId, updatedAt = Date.now() - 5 * 60_000 - 5_000
         selectedId={null}
         onOpen={() => {}}
         onSettle={() => {}}
-        onArchive={() => {}}
         onDelete={() => {}}
         onRename={async () => {}}
         onRegenTitle={async () => {}}

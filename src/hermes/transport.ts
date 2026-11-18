@@ -5414,7 +5414,7 @@ export class Hermes {
           this.keepSettledHere(chatId, profile, pinned);
           return true;
         }
-        if (!running && this.profile === profile) this.update({ syncError: `Couldn't keep a chat ${pinned ? "Active" : "Settled"} on the server: ${(e as Error).message}` });
+        if (!running && this.profile === profile) this.update({ syncError: `Couldn't keep a chat ${pinned ? "Active" : "Archived"} on the server: ${(e as Error).message}` });
         return false;
       }
     });

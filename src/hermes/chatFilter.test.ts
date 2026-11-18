@@ -4,9 +4,9 @@
 import { describe, expect, it } from "vitest";
 import { FakeHermes, row } from "./fakeHermes";
 import { connect } from "./transport";
-import { runFilter, type ChatFilter, type TagLookup } from "./chatFilter";
+import { runFilter, toFilter, type ChatFilter, type TagLookup } from "./chatFilter";
 
-/** Two Active chats, one Settled, one from Telegram, one older than the list's month, and one archived. */
+/** Two Active chats; one from Telegram, one older than the list's month and one more archived here; and one archived in Hermes. */
 async function signedIn() {
   const server = new FakeHermes();
   server.sessions = [
@@ -42,30 +42,35 @@ const day = (daysAgo: number) => {
 };
 
 describe("Running a chat filter", () => {
-  it("finds a tagged chat older than the list, by listing every chat from Hermes, and leaves archived ones out", async () => {
+  it("finds a tagged chat older than the list, by listing every chat from Hermes, archived ones too", async () => {
     const { server, hermes } = await signedIn();
     expect(hermes.getSnapshot().chats.map((c) => c.id)).not.toContain("old");
-    expect(await ids(hermes, { tags: ["infra"] })).toEqual(["backup", "nas", "old"]);
+    expect(await ids(hermes, { tags: ["infra"] })).toEqual(["backup", "nas", "gone", "old"]);
     const lists = server.restRequests.filter((r) => r.path === "/api/sessions" && r.query.get("offset") === "0");
     expect(Object.fromEntries(lists.at(-1)!.query)).toMatchObject({ order: "recent", exclude_sources: "cron", limit: "100" });
   });
 
-  it("finds archived chats only when the state asks for them, with words or without", async () => {
+  it("tells Active from Archived, archived here or in Hermes, with words or without", async () => {
     const { hermes } = await signedIn();
-    expect(await ids(hermes, { tags: ["infra"], state: "archived" })).toEqual(["gone"]);
-    expect(await ids(hermes, { tags: ["infra"], state: "all" })).toEqual(["backup", "nas", "gone", "old"]);
-    expect(await ids(hermes, { text: "backup", state: "archived" })).toEqual(["gone"]);
-    expect(await ids(hermes, { text: "backup" })).toEqual(["backup", "nas", "old"]);
+    expect(await ids(hermes, { tags: ["infra"], state: "archived" })).toEqual(["nas", "gone", "old"]);
+    expect(await ids(hermes, { tags: ["infra"], state: "active" })).toEqual(["backup"]);
+    expect(await ids(hermes, { text: "backup", state: "archived" })).toEqual(["nas", "old", "gone"]);
+    expect(await ids(hermes, { text: "backup", state: "active" })).toEqual(["backup"]);
+  });
+
+  it("reads a filter saved with a state from before ADR 0202 as the nearest state now", () => {
+    expect(toFilter({ tags: ["infra"], state: "settled" })).toEqual({ tags: ["infra"], state: "archived" });
+    expect(toFilter({ tags: ["infra"], state: "all" })).toEqual({ tags: ["infra"] });
   });
 
   it("matches every part: words, tag, source, model, dates and state", async () => {
     const { hermes } = await signedIn();
     expect(await ids(hermes, { text: "backup", tags: ["infra", "home"] })).toEqual(["nas"]);
     expect(await ids(hermes, { text: "backup", sources: ["telegram"] })).toEqual(["nas"]);
-    expect(await ids(hermes, { text: "backup", model: "OPUS" })).toEqual(["backup", "old"]);
-    expect(await ids(hermes, { text: "backup", model: "opus", from: day(30) })).toEqual(["backup"]);
+    expect(await ids(hermes, { text: "backup", model: "OPUS" })).toEqual(["backup", "old", "gone"]);
+    expect(await ids(hermes, { text: "backup", model: "opus", from: day(30) })).toEqual(["backup", "gone"]);
     expect(await ids(hermes, { text: "backup", to: day(60) })).toEqual(["old"]);
-    expect(await ids(hermes, { tags: ["infra"], state: "settled" })).toEqual(["nas", "old"]);
+    expect(await ids(hermes, { tags: ["infra"], state: "archived" })).toEqual(["nas", "gone", "old"]);
     expect(await ids(hermes, { tags: ["infra"], state: "active" })).toEqual(["backup"]);
     expect(await ids(hermes, { sources: ["app"], from: day(3), to: day(0) })).toEqual(["backup", "deploy"]);
   });
@@ -90,8 +95,7 @@ describe("Running a chat filter", () => {
     server.sessions.push(...Array.from({ length: 120 }, (_, i) => row(`s${i}`, 0.1, { title: `Backup run ${i}` })));
     const o = await runFilter({ text: "backup", sources: ["app"] }, hermes, tags);
     expect(o.capped).toBe("search");
-    // Hermes's 100 count the archived chat too, which the filter then leaves out.
-    expect(o.found).toHaveLength(99);
+    expect(o.found).toHaveLength(100);
     expect((await runFilter({ text: "deploy", sources: ["app"] }, hermes, tags)).capped).toBeUndefined();
   });
 
@@ -110,7 +114,7 @@ describe("Running a chat filter", () => {
     expect(server.restRequests.length).toBe(before);
   });
 
-  it("tells an Active chat older than the list from a Settled one, with words or without", async () => {
+  it("tells an Active chat older than the list from an Archived one, with words or without", async () => {
     const { server, hermes } = await signedIn();
     server.sessions.push(row("pinnedOld", 90, { pinned: true, title: "Old pinned backup" }), row("pinnedGone", 90, { pinned: true, archived: true, title: "Archived pinned backup" }));
     server.transcripts.pinnedOld = [{ role: "user", text: "A backup from long ago." }];
@@ -119,9 +123,9 @@ describe("Running a chat filter", () => {
     await hermes.sync();
     expect(hermes.getSnapshot().chats.map((c) => c.id)).not.toContain("pinnedOld");
     expect(await ids(hermes, { text: "backup", state: "active" })).toEqual(["backup", "pinnedOld"]);
-    expect(await ids(hermes, { text: "backup", state: "settled" })).toEqual(["nas", "old"]);
+    expect(await ids(hermes, { text: "backup", state: "archived" })).toEqual(["nas", "old", "gone", "pinnedGone"]);
     expect(await ids(hermes, { state: "active", from: day(100), to: day(80) })).toEqual(["pinnedOld"]);
-    const found = (await runFilter({ text: "archived backup", state: "all" }, hermes, tags)).found;
+    const found = (await runFilter({ text: "archived backup" }, hermes, tags)).found;
     expect(found.find((c) => c.chatId === "pinnedGone")).toMatchObject({ archived: true, settled: false });
   });
 
@@ -143,12 +147,12 @@ describe("Running a chat filter", () => {
     expect(searched).toMatchObject({ found: [], noSource: 1 });
   });
 
-  it("only reads: no chat is marked read, settled, archived or added to the list", async () => {
+  it("only reads: no chat is marked read, archived or added to the list", async () => {
     const { server, hermes } = await signedIn();
     const chats = hermes.getSnapshot().chats;
     const ws = server.requests.length;
-    await runFilter({ tags: ["infra"], state: "all" }, hermes, tags);
-    await runFilter({ text: "backup", state: "all", model: "opus" }, hermes, tags);
+    await runFilter({ tags: ["infra"] }, hermes, tags);
+    await runFilter({ text: "backup", model: "opus" }, hermes, tags);
     expect(server.restRequests.filter((r) => r.method !== "GET")).toEqual([]);
     // Nothing is read over /api/ws: the roster that names the Bot Chats a filter leaves out was read on connecting (ADR 0066).
     expect(server.requests.slice(ws).map((r) => r.method)).toEqual([]);

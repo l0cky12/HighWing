@@ -517,19 +517,6 @@ describe("Attachments staged in each chat (#443)", () => {
     expect(server.sessions.some((s) => s.id === "nas")).toBe(false);
     expect(stagedFiles.getSnapshot()).toEqual([]);
   });
-
-  it("deletes a chat's captures when the chat is archived", async () => {
-    const { rust, user, hermes } = await signedIn();
-    await openChat(user, hermes, /NAS disks/);
-    await user.click(screen.getByRole("button", { name: "Attach a screenshot" }));
-    const path = await rust.land();
-    await waitFor(() => expect(chips()).toHaveLength(1));
-    await openChat(user, hermes, /Nightly backup/);
-    await user.click(within(rowOf(/NAS disks/)).getByTitle(/^Archive:/));
-    await settle(hermes);
-    await waitFor(() => expect(rust.discarded).toEqual([path]));
-    expect(stagedFiles.getSnapshot()).toEqual([]);
-  });
 });
 
 describe("A desktop without a way to take screenshots", () => {

@@ -167,7 +167,7 @@ describe("Settling and unsettling", () => {
       throw new RestError(503, "busy");
     };
     await hermes.settle("a");
-    expect(hermes.getSnapshot().syncError).toBe("Couldn't keep a chat Settled on the server: The dashboard answered 503: busy");
+    expect(hermes.getSnapshot().syncError).toBe("Couldn't keep a chat Archived on the server: The dashboard answered 503: busy");
     expect(chat("a").settled).toBe(true);
 
     delete server.rest["PATCH /api/sessions/a"];

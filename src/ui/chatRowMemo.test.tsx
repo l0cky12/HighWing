@@ -11,7 +11,7 @@ vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDr
 let rowsDrawn = 0;
 vi.mock("./bits", async (original) => {
   const bits = await original<typeof import("./bits")>();
-  return { ...bits, SettleButton: (p: ComponentProps<typeof bits.SettleButton>) => (rowsDrawn++, bits.SettleButton(p)) };
+  return { ...bits, ArchiveButton: (p: ComponentProps<typeof bits.ArchiveButton>) => (rowsDrawn++, bits.ArchiveButton(p)) };
 });
 
 beforeAll(() => {
@@ -37,7 +37,6 @@ const list = (p: Props) => (
     selectedId={null}
     onOpen={() => {}}
     onSettle={() => {}}
-    onArchive={() => {}}
     onDelete={() => {}}
     onRename={async () => {}}
     onRegenTitle={async () => {}}

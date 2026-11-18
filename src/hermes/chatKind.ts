@@ -22,7 +22,7 @@ export type ChatPolicy = {
   /** Edit and Regenerate. */
   replay: boolean;
   branch: boolean;
-  /** Pin, Settle, Archive and Delete. */
+  /** Pin, Archive and Delete. */
   manage: boolean;
   /** A chat link opens it by its id. A Bot Chat is found by its title each time, so it has none. */
   link: boolean;

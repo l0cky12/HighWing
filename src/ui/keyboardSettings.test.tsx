@@ -59,7 +59,7 @@ describe("A rebound shortcut", () => {
     await s.user.keyboard("{Control>}k{/Control}");
     expect(palette()).toBeNull();
     await s.user.keyboard("{Control>}j{/Control}");
-    expect(focused()).toBe(screen.getByPlaceholderText("Search all chats, including Settled"));
+    expect(focused()).toBe(screen.getByPlaceholderText("Search all chats, including Archived"));
     await s.user.keyboard("{Control>}j{/Control}");
     expect(palette()).toBeNull();
     expect(focused()).toBe(composer());

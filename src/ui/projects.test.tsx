@@ -35,7 +35,7 @@ const project = (id: string, name: string, folders: string[] = []): FakeProject 
   folders: folders.map((path, i) => ({ path, label: null, is_primary: i === 0, added_at: 1 })),
 });
 
-/** Three Active chats and two Settled ones, one of each unread; a project that already exists; a repo with a worktree. */
+/** Three Active chats and two Archived ones, one of each unread; a project that already exists; a repo with a worktree. */
 function server() {
   const s = new FakeHermes();
   s.sessions = [
@@ -64,7 +64,7 @@ async function launch(s: FakeHermes) {
 
 const switcher = () => document.querySelector<HTMLElement>(".project-btn")!;
 const listedTitles = () => [...document.querySelectorAll(".sidebar .row-title")].map((e) => e.textContent);
-/** The Active chats the list shows: the Inbox and Working (ADR 0063), not Settled, which is in the same scroll. */
+/** The Active chats the list shows: the Inbox and Working (ADR 0063), not Archived, the drawer at the foot. */
 const activeTitles = () =>
   [...document.querySelectorAll('.sb-scroll .row:is([data-section="inbox"], [data-section="working"]) .row-open .row-title')].map((e) => e.textContent);
 const onScreen = () => document.querySelector(".chat-title span")?.textContent;
@@ -97,33 +97,33 @@ describe("the project switcher", () => {
     await user.click(switcher());
     const options = within(screen.getByRole("listbox", { name: "Projects" })).getAllByRole("option");
     expect(options.map((o) => o.textContent)).toEqual(["All chats", "Budget Tracker"]);
-    // Two unread chats in the list: one Active, one Settled.
+    // Two unread chats in the list: one Active, one Archived.
     expect(options[0].getAttribute("aria-selected")).toBe("true");
   });
 
-  it("narrows the list to the project's chats, keeping Active, Settled and Unread", async () => {
+  it("narrows the list to the project's chats, keeping Active, Archived and Unread", async () => {
     const s = server();
     const { user, hermes } = await launch(s);
     await putInProject(user, "Nightly backup", "Budget Tracker");
-    await user.click(screen.getByRole("button", { name: /Settled/ }));
+    await user.click(screen.getByRole("button", { name: /^Archived/ }));
     await putInProject(user, "Old notes", "Budget Tracker");
-    await user.click(screen.getByRole("button", { name: /Settled/ }));
+    await user.click(screen.getByRole("button", { name: /^Archived/ }));
     await pick(user, "Budget Tracker");
     expect(switcher().textContent).toContain("Budget Tracker");
     expect(activeTitles()).toEqual(["Nightly backup"]);
-    // The Settled drawer counts and dots only the project's Settled chats.
-    const settled = screen.getByRole("button", { name: /Settled/ });
-    expect(settled.textContent).toContain("1");
-    expect(settled.querySelector(".dot")).not.toBeNull();
+    // The Archived drawer counts and dots only the project's Archived chats.
+    const archived = screen.getByRole("button", { name: /^Archived/ });
+    expect(archived.textContent).toContain("1");
+    expect(archived.querySelector(".dot")).not.toBeNull();
     // NAS disks is unread and not shown: the switcher says so.
     expect(switcher().querySelector(".dot")).not.toBeNull();
     expect(switcher().title).toContain("1 unread chat isn't shown");
 
-    // Settling inside the project works as it does in the full list.
-    await user.click(within(screen.getByRole("button", { name: /Nightly backup/ }).parentElement!).getByTitle("Settle"));
+    // Archiving inside the project works as it does in the full list.
+    await user.click(within(screen.getByRole("button", { name: /Nightly backup/ }).parentElement!).getByTitle("Archive"));
     await act(async () => void (await hermes.idle()));
     await waitFor(() => expect(activeTitles()).toEqual([]));
-    await user.click(screen.getByRole("button", { name: /Settled/ }));
+    await user.click(screen.getByRole("button", { name: /^Archived/ }));
     expect(listedTitles()).toEqual(expect.arrayContaining(["Nightly backup", "Old notes"]));
 
     await pick(user, "All chats");
@@ -188,8 +188,8 @@ describe("a chat's menu", () => {
       "Open in a second pane",
       // Pin (ADR 0085), with its key
       "PinP",
-      // Settle, which clears it from the Inbox (ADR 0090)
-      "Settle",
+      // Archive, which clears it from the Inbox (ADR 0090, ADR 0202)
+      "Archive",
       // Snooze (ADR 0036)
       "1 hour",
       "3 hours",

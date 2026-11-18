@@ -1,4 +1,5 @@
-// What the UI renders. Terms follow GLOSSARY.md: a Chat is Active or Settled, may be Archived, and has one Source.
+// What the UI renders. Terms follow GLOSSARY.md: a Chat is Active or Archived (settled here, or archived in Hermes),
+// and has one Source.
 import type { ModelPick } from "./models";
 import type { ChatUsage, ReplyUsage } from "./usage";
 import type { SubagentTree } from "./subagents";
@@ -328,6 +329,18 @@ export type Chat = {
    */
   sideQuestions?: SideQuestion[];
 };
+
+/** Whether the chat is in Archived: the owner archived it here (`settled`, ADR 0202), or Hermes has it archived. */
+export const inArchived = (c: Pick<Chat, "settled" | "archived">) => c.settled || !!c.archived;
+
+/**
+ * What the chat's Archive control does now: archive it, unarchive it, or nothing. Hermes won't restore a chat it has
+ * archived while a reply runs, so such a chat has no Unarchive until the reply ends.
+ */
+export function archiveAction(c: Pick<Chat, "settled" | "archived" | "running">): "archive" | "unarchive" | undefined {
+  if (!inArchived(c)) return "archive";
+  return c.archived && c.running ? undefined : "unarchive";
+}
 
 /**
  * A question asked with `/btw` (GLOSSARY "Side question (/btw)", ADR 0070), which Hermes answers from a snapshot of the

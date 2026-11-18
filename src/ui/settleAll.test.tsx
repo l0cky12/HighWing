@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Settle all, the Inbox header's one action for clearing every chat the Inbox shows (issue #303, ADR 0090). The list on
+// Archive all, the Inbox header's one action for clearing every chat the Inbox shows (issue #303, ADR 0090). The list on
 // its own for the question, then the whole app against a fake Hermes for what reaches the server.
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -49,7 +49,6 @@ function List({ chats, onSettleAll, snoozes, pins }: { chats: Chat[]; onSettleAl
       onOpen={() => {}}
       onSettle={() => {}}
       onSettleAll={onSettleAll}
-      onArchive={() => {}}
       onDelete={() => {}}
       onRename={async () => {}}
       onRegenTitle={async () => {}}
@@ -61,12 +60,12 @@ function List({ chats, onSettleAll, snoozes, pins }: { chats: Chat[]; onSettleAl
   );
 }
 
-const settleAllButton = () => screen.queryByRole("button", { name: "Settle all" });
+const settleAllButton = () => screen.queryByRole("button", { name: "Archive all" });
 const inboxHead = () => document.querySelector<HTMLElement>('[data-section-head="inbox"]')!;
 const titles = (section: string) =>
   [...document.querySelectorAll(`.row[data-section="${section}"]:not([hidden]) .row-open .row-title`)].map((t) => t.textContent);
 
-describe("Settle all, in the list", () => {
+describe("Archive all, in the list", () => {
   const mix = [
     chat("new", { unread: true }),
     chat("asking", { running: true, items: [waiting] }),
@@ -84,11 +83,11 @@ describe("Settle all, in the list", () => {
     const user = userEvent.setup();
     const asked: string[][] = [];
     render(<List chats={mix} snoozes={snoozes} pins={pins} onSettleAll={(ids) => asked.push(ids)} />);
-    await user.click(screen.getByRole("button", { name: "Settle all" }));
-    const dialog = screen.getByRole("alertdialog", { name: "Settle 4 chats from the Inbox?" });
-    expect(dialog.textContent).toContain("1 of them has an Approval waiting, and 1 of them has a failure. They move to the Settled drawer");
+    await user.click(screen.getByRole("button", { name: "Archive all" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Archive 4 chats from the Inbox?" });
+    expect(dialog.textContent).toContain("1 of them has an Approval waiting, and 1 of them has a failure. They move to the Archived drawer");
     expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Cancel" }));
-    await user.click(within(dialog).getByRole("button", { name: "Settle all" }));
+    await user.click(within(dialog).getByRole("button", { name: "Archive all" }));
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(asked).toHaveLength(1);
     expect([...asked[0]].sort()).toEqual(["asking", "broke", "new", "unloaded"]);
@@ -98,8 +97,8 @@ describe("Settle all, in the list", () => {
     const user = userEvent.setup();
     render(<List chats={[chat("one")]} onSettleAll={() => {}} />);
     await user.click(settleAllButton()!);
-    const note = screen.getByRole("alertdialog", { name: "Settle 1 chat from the Inbox?" }).textContent!;
-    expect(note).toContain("They move to the Settled drawer, and you can undo it.");
+    const note = screen.getByRole("alertdialog", { name: "Archive 1 chat from the Inbox?" }).textContent!;
+    expect(note).toContain("They move to the Archived drawer, and you can undo it.");
     expect(note).not.toMatch(/waiting|failure/);
   });
 
@@ -142,8 +141,8 @@ describe("Settle all, in the list", () => {
     const { rerender } = render(<List chats={chats} onSettleAll={(ids) => asked.push(ids)} />);
     await user.click(settleAllButton()!);
     rerender(<List chats={[chat("a"), chat("b", { running: true }), chat("c")]} onSettleAll={(ids) => asked.push(ids)} />);
-    expect(screen.getByRole("alertdialog", { name: "Settle 3 chats from the Inbox?" })).toBeTruthy();
-    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Settle all" }));
+    expect(screen.getByRole("alertdialog", { name: "Archive 3 chats from the Inbox?" })).toBeTruthy();
+    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Archive all" }));
     expect(asked).toEqual([["a", "c"]]);
   });
 
@@ -175,7 +174,7 @@ describe("Settle all, in the list", () => {
   });
 });
 
-describe("Settle all, in the app", () => {
+describe("Archive all, in the app", () => {
   const connection = { mode: "ssh" as const, sshTarget: "lena@hermes", url: "", username: "lena" };
   const scope = () => projectScope(connection, "default");
   async function signedIn(server: FakeHermes) {
@@ -190,8 +189,8 @@ describe("Settle all, in the app", () => {
   const pinnedWrites = (server: FakeHermes) =>
     server.restRequests.filter((r) => r.method === "PATCH" && r.body && "pinned" in r.body).map((r) => [r.path.split("/").pop(), r.body!.pinned]);
   const settleEverything = async (user: ReturnType<typeof userEvent.setup>, hermes: Hermes) => {
-    await user.click(screen.getByRole("button", { name: "Settle all" }));
-    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Settle all" }));
+    await user.click(screen.getByRole("button", { name: "Archive all" }));
+    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Archive all" }));
     await act(async () => void (await hermes.idle()));
   };
   const toastBox = () => document.querySelector<HTMLElement>(".toast")!;
@@ -222,12 +221,12 @@ describe("Settle all, in the app", () => {
       ["a", false],
       ["b", false],
     ]);
-    expect(toast()).toContain("Settled 2 chats");
+    expect(toast()).toContain("Archived 2 chats");
     expect(titles("inbox")).toEqual([]);
     expect(titles("pinned")).toEqual(["Pinned one"]);
-    expect(screen.getByRole("button", { name: /^Settled\d/ }).getAttribute("aria-expanded")).toBe("false");
-    expect(screen.getByRole("button", { name: /^Settled\d/ }).textContent).toBe("Settled3");
-    expect(screen.queryByRole("button", { name: "Settle all" })).toBeNull();
+    expect(screen.getByRole("button", { name: /^Archived\d/ }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByRole("button", { name: /^Archived\d/ }).textContent).toBe("Archived3");
+    expect(screen.queryByRole("button", { name: "Archive all" })).toBeNull();
 
     await undo(user);
     await act(async () => void (await hermes.idle()));
@@ -274,9 +273,9 @@ describe("Settle all, in the app", () => {
       throw new RestError(503, "busy");
     };
     await settleEverything(user, hermes);
-    expect(toast()).toContain("Settled 2 chats. 1 chat couldn't be settled and is still in the Inbox.");
+    expect(toast()).toContain("Archived 2 chats. 1 chat couldn't be archived and is still in the Inbox.");
     expect(titles("inbox")).toEqual(["Groceries"]);
-    expect(screen.getByRole("button", { name: /^Settled\d/ }).textContent).toBe("Settled3");
+    expect(screen.getByRole("button", { name: /^Archived\d/ }).textContent).toBe("Archived3");
 
     delete server.rest["PATCH /api/sessions/b"];
     const before = pinnedWrites(server).length;
@@ -297,16 +296,16 @@ describe("Settle all, in the app", () => {
         throw new RestError(503, "busy");
       };
     await settleEverything(user, hermes);
-    expect(toast()).toContain("Couldn't settle 2 chats. They're still in the Inbox.");
+    expect(toast()).toContain("Couldn't archive 2 chats. They're still in the Inbox.");
     expect(within(toastBox()).queryByRole("button", { name: "Undo" })).toBeNull();
     expect(titles("inbox")).toEqual(["Deploy notes", "Groceries"]);
-    expect(screen.getByRole("button", { name: "Settle all" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Archive all" })).toBeTruthy();
   });
 
   it("is absent once the Inbox is empty", async () => {
     const server = new FakeHermes();
     server.sessions = [row("old", 5, { title: "Settled one" })];
     await signedIn(server);
-    expect(screen.queryByRole("button", { name: "Settle all" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Archive all" })).toBeNull();
   });
 });

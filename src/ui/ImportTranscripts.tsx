@@ -302,7 +302,7 @@ function Preview({
         </dd>
         <dt>Goes to</dt>
         <dd>
-          the <span className="mono">{step.profile}</span> profile, Settled
+          the <span className="mono">{step.profile}</span> profile, Archived
         </dd>
         <dt>
           <label htmlFor={projectFieldId}>Project</label>

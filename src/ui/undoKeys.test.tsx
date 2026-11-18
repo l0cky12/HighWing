@@ -236,9 +236,9 @@ describe("Ctrl+Z for the notice's Undo", () => {
     const s = await launch();
     expect(titles("inbox")).toEqual(["Nightly backup", "Deploy notes"]);
     const rowFor = (title: string) => screen.getByRole("button", { name: new RegExp(title) }).parentElement!;
-    await s.user.click(within(rowFor("Deploy notes")).getByRole("button", { name: "Settle" }));
+    await s.user.click(within(rowFor("Deploy notes")).getByRole("button", { name: "Archive" }));
     await act(async () => void (await s.hermes.idle()));
-    expect(notice()?.textContent).toContain("Settled: Deploy notes");
+    expect(notice()?.textContent).toContain("Archived: Deploy notes");
     expect(titles("inbox")).toEqual(["Nightly backup"]);
     return s;
   }
@@ -257,7 +257,7 @@ describe("Ctrl+Z for the notice's Undo", () => {
     await user.click(composer());
     await user.keyboard(UNDO);
     await act(async () => void (await hermes.idle()));
-    expect(notice()?.textContent).toContain("Settled: Deploy notes");
+    expect(notice()?.textContent).toContain("Archived: Deploy notes");
     expect(titles("inbox")).toEqual(["Nightly backup"]);
   });
 
@@ -269,7 +269,7 @@ describe("Ctrl+Z for the notice's Undo", () => {
     await user.keyboard(UNDO);
     await act(async () => void (await hermes.idle()));
     expect(run).toHaveBeenCalledWith("undo");
-    expect(notice()?.textContent).toContain("Settled: Deploy notes");
+    expect(notice()?.textContent).toContain("Archived: Deploy notes");
     expect(titles("inbox")).toEqual(["Nightly backup"]);
   });
 
@@ -282,7 +282,7 @@ describe("Ctrl+Z for the notice's Undo", () => {
     await user.keyboard(UNDO);
     await act(async () => void (await hermes.idle()));
     expect(run).not.toHaveBeenCalled();
-    expect(screen.getByText("Settled: Deploy notes")).toBeTruthy();
+    expect(screen.getByText("Archived: Deploy notes")).toBeTruthy();
     expect(titles("inbox")).toEqual(["Nightly backup"]);
   });
 });

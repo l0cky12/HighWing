@@ -140,26 +140,25 @@ describe("chatSections", () => {
     chat("archived", WED, { archived: true }),
   ];
 
-  it("puts each chat in one place: Archived, Settled, Snoozed, Working, else the Inbox", () => {
+  it("puts each chat in one place: Archived (settled here or archived in Hermes), Snoozed, Working, else the Inbox", () => {
     const s = chatSections(chats, { ...snoozes, settledSnoozed: WED + HOUR }, WED);
     expect(s.inbox.map((c) => c.id)).toEqual(["woke", "done", "asking"]);
     expect(s.working.map((c) => c.id)).toEqual(["working"]);
     expect(s.snoozed.map((c) => c.id)).toEqual(["snoozed", "later"]);
-    expect(s.settled.map((c) => c.id)).toEqual(["settled", "settledSnoozed"]);
-    expect(s.archived.map((c) => c.id)).toEqual(["archived"]);
-    expect(Object.keys(s)).toEqual(["pinned", "inbox", "snoozed", "archived", "working", "settled"]);
+    expect(s.archived.map((c) => c.id)).toEqual(["settled", "settledSnoozed", "archived"]);
+    expect(Object.keys(s)).toEqual(["pinned", "inbox", "snoozed", "archived", "working"]);
   });
 
   it("puts a pinned chat in Pinned, in the order pinned, whatever happens in it, unless it is Archived", () => {
     const pins = { settled: WED - 3 * HOUR, done: WED - 2 * HOUR, working: WED - HOUR, archived: WED - 4 * HOUR };
     const s = chatSections(chats, snoozes, WED, {}, pins);
-    expect(s.pinned.map((c) => c.id)).toEqual(["settled", "done", "working"]);
-    expect(s.archived.map((c) => c.id)).toEqual(["archived"]);
+    expect(s.pinned.map((c) => c.id)).toEqual(["done", "working"]);
+    expect(s.archived.map((c) => c.id)).toEqual(["settled", "settledSnoozed", "archived"]);
     expect(s.inbox.map((c) => c.id)).toEqual(["woke", "asking"]);
     expect(s.working).toEqual([]);
     // A new message in a pinned chat leaves the order; one in an unpinned chat leaves it out of Pinned.
     const newer = chatSections(chats.map((c) => (c.id === "working" || c.id === "woke" ? { ...c, updatedAt: WED + HOUR } : c)), snoozes, WED, {}, pins);
-    expect(newer.pinned.map((c) => c.id)).toEqual(["settled", "done", "working"]);
+    expect(newer.pinned.map((c) => c.id)).toEqual(["done", "working"]);
     expect(newer.inbox.map((c) => c.id)).toEqual(["woke", "asking"]);
   });
 
@@ -269,23 +268,23 @@ describe("chatSections", () => {
 });
 
 describe("chatsUnderBot", () => {
-  const sections = (over: Partial<Record<SectionKey, Chat[]>>) => ({ pinned: [], inbox: [], snoozed: [], archived: [], working: [], settled: [], ...over });
+  const sections = (over: Partial<Record<SectionKey, Chat[]>>) => ({ pinned: [], inbox: [], snoozed: [], archived: [], working: [], ...over });
   const ids = (cs: Chat[]) => cs.map((c) => c.id);
   const many = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => chat(`${prefix}${i}`, WED - i));
 
   it("puts Pinned, Inbox and Working first, up to five", () => {
-    const s = sections({ pinned: many("p", 2), inbox: many("i", 3), working: many("w", 2), settled: many("s", 4) });
+    const s = sections({ pinned: many("p", 2), inbox: many("i", 3), working: many("w", 2), archived: many("s", 4) });
     expect(ids(chatsUnderBot(s, []))).toEqual(["p0", "p1", "i0", "i1", "i2"]);
   });
 
-  it("fills up to three with the newest Settled chats", () => {
-    expect(ids(chatsUnderBot(sections({ inbox: many("i", 1), settled: many("s", 4) }), []))).toEqual(["i0", "s0", "s1"]);
-    expect(ids(chatsUnderBot(sections({ settled: many("s", 4) }), []))).toEqual(["s0", "s1", "s2"]);
-    expect(ids(chatsUnderBot(sections({ inbox: many("i", 4), settled: many("s", 4) }), []))).toEqual(["i0", "i1", "i2", "i3"]);
+  it("fills up to three with the newest Archived chats", () => {
+    expect(ids(chatsUnderBot(sections({ inbox: many("i", 1), archived: many("s", 4) }), []))).toEqual(["i0", "s0", "s1"]);
+    expect(ids(chatsUnderBot(sections({ archived: many("s", 4) }), []))).toEqual(["s0", "s1", "s2"]);
+    expect(ids(chatsUnderBot(sections({ inbox: many("i", 4), archived: many("s", 4) }), []))).toEqual(["i0", "i1", "i2", "i3"]);
   });
 
   it("adds the chat each pane shows, from any section, once", () => {
-    const s = sections({ inbox: many("i", 1), settled: many("s", 5), snoozed: many("z", 1), archived: many("a", 1) });
+    const s = sections({ inbox: many("i", 1), snoozed: many("z", 1), archived: [...many("s", 5), ...many("a", 1)] });
     expect(ids(chatsUnderBot(s, ["s4", "z0"]))).toEqual(["i0", "s0", "s1", "s4", "z0"]);
     expect(ids(chatsUnderBot(s, ["i0", null, "a0", "gone"]))).toEqual(["i0", "s0", "s1", "a0"]);
   });

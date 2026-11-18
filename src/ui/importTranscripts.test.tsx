@@ -86,7 +86,7 @@ describe("Import transcripts", () => {
     const box = dialog();
     expect(box.textContent).toContain("/home/me/Release checklist.md");
     expect(box.textContent).toContain("1 chat, 2 messages, 0 tool calls, 1 attachment");
-    expect(box.textContent).toContain("the default profile, Settled");
+    expect(box.textContent).toContain("the default profile, Archived");
     expect(box.textContent).toMatch(/every message is dated when the file was exported, 2026-11-01 08:00 UTC/);
     expect(box.textContent).toMatch(/1 attachment is named in the file but not in it/);
     expect(box.textContent).toMatch(/Imported chats are read-only in Highwing/);

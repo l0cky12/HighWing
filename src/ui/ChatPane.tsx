@@ -1,12 +1,12 @@
-// Transcript, thinking, tool-call groups, Approval cards, find bar, composer and the Settle button, ported from the prototype.
+// Transcript, thinking, tool-call groups, Approval cards, find bar and composer, ported from the prototype.
 // Dictation and Read aloud come from Voice.tsx.
 import { createContext, Fragment, memo, type ReactNode, type RefObject, useCallback, startTransition, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
-import { Archive, ArchiveRestore, ArrowUp, AtSign, Brain, CalendarClock, PackageCheck, SquareTerminal, Camera, ChevronDown, ChevronRight, ChevronUp, CircleAlert, CloudOff, Columns2, CornerDownRight, EyeOff, FileDown, FileInput, Globe, HardDrive, Link2, ListPlus, Ellipsis, Paperclip, RotateCcw, Search, Server, Share2, Square, Trash2, Wrench, X } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowUp, AtSign, Brain, CalendarClock, PackageCheck, SquareTerminal, Camera, ChevronDown, ChevronRight, ChevronUp, CircleAlert, CloudOff, Columns2, CornerDownRight, FileDown, FileInput, Globe, HardDrive, Link2, ListPlus, Ellipsis, Paperclip, RotateCcw, Search, Server, Share2, Square, Trash2, Wrench, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { decodeString } from "micromark-util-decode-string";
 import type { ApprovalChoice, AttachCheck, Attachment, Chat, ChatQueue, ConnectionStatus, Item, OutgoingItem, QuestionAnswer, SentReference, SideQuestion, Source } from "../hermes/model";
-import { SOURCE_LABEL, isOutgoing, isWaiting } from "../hermes/model";
+import { SOURCE_LABEL, archiveAction, inArchived, isOutgoing, isWaiting } from "../hermes/model";
 import { useLocale } from "../i18n/locale";
 import type { SkillCall } from "../hermes/skillCommands";
 import { BotFace, type BotLookShown } from "./BotFace";
@@ -280,7 +280,6 @@ function MoreMenu({
   onCopyLink,
   pin,
   onSettle,
-  onArchive,
   onDelete,
 }: {
   chat: Chat;
@@ -289,13 +288,13 @@ function MoreMenu({
   onCopyLink?: () => void;
   pin?: ChatPin;
   onSettle?: (settled: boolean) => void;
-  onArchive?: (archived: boolean) => void;
   onDelete?: () => void;
 }) {
   const [at, setAt] = useState<{ x: number; y: number }>();
   const close = useCallback(() => setAt(undefined), []);
   const button = useRef<HTMLButtonElement>(null);
   const { manage, link } = policyOf(chat);
+  const archive = manage ? archiveAction(chat) : undefined;
   const [askDelete, setAskDelete] = useState(false);
   const [exporting, setExporting] = useState<ExportMode>();
   const noDelete = !onDelete;
@@ -321,7 +320,7 @@ function MoreMenu({
       <button
         ref={button}
         className={`icon-btn ${at ? "on" : ""}`}
-        title={`More actions: ${["export", "share", link && "copy link", manage && pin && "pin", manage && "settle", manage && "archive", manage && onDelete && "delete"].filter(Boolean).join(", ")}`}
+        title={`More actions: ${["export", "share", link && "copy link", manage && pin && "pin", archive, manage && onDelete && "delete"].filter(Boolean).join(", ")}`}
         aria-label="More"
         aria-haspopup="menu"
         aria-expanded={!!at}
@@ -344,14 +343,10 @@ function MoreMenu({
           {/* A Bot Chat is opened from its bot's row, found by its title (ADR 0066): no link to it by id, and nothing
               that would retire it, which would leave its bot to start another. */}
           {onCopyLink && link && item("Copy chat link", <Link2 size={15} />, onCopyLink, "Copy a link that opens this chat in Highwing on this computer")}
-          {pin && manage && !chat.archived && <PinItem pin={pin} onClose={close} />}
-          {onSettle && manage && !chat.archived && item(chat.settled ? "Unsettle" : "Settle", chat.settled ? <ArchiveRestore size={15} /> : <Archive size={15} />, () => onSettle(!chat.settled))}
-          {onArchive &&
-            manage &&
-            !chat.running &&
-            (chat.archived
-              ? item("Restore", <RotateCcw size={15} />, () => onArchive(false))
-              : item("Archive", <EyeOff size={15} />, () => onArchive(true), "Hide in every Hermes client, keeping its history"))}
+          {pin && manage && !inArchived(chat) && <PinItem pin={pin} onClose={close} />}
+          {onSettle &&
+            archive &&
+            (archive === "unarchive" ? item("Unarchive", <ArchiveRestore size={15} />, () => onSettle(false)) : item("Archive", <Archive size={15} />, () => onSettle(true)))}
           {onDelete && manage && (
             <>
               <div className="menu-sep" role="separator" />
@@ -391,11 +386,11 @@ const savedWhen = (at: number) => new Date(at).toLocaleString(undefined, { dateS
 /**
  * `alsoPostsIn`: the Telegram or Discord chat Hermes will also post its replies in. `draft`: the composer's text, kept
  * outside the pane so it survives switching chats. `onAnswer` answers an Approval card, and `onQuestion` any other
- * Question card. `onSettle`, `onArchive`, `onExport` and `onCopyLink` are left out for a chat not started yet. `onSnapshotSettings`
+ * Question card. `onSettle` (Archive and Unarchive), `onExport` and `onCopyLink` are left out for a chat not started yet. `onSnapshotSettings`
  * opens Settings → Snapshots from Share snapshot. `notLoaded`: the chat has no Saved copy and can't load until
  * Hermes is connected. `onRetry`, `onEdit` and `onDismiss` act on failed or unconfirmed messages. `modelControls`
  * contains the model picker; `footer` contains the status bar. Only the active pane answers Ctrl+F and takes focus as
- * it opens. Native drops attach to the pane under the pointer. Export, Copy chat link, Settle and Archive are in the header's More menu.
+ * it opens. Native drops attach to the pane under the pointer. Export, Copy chat link and Archive are in the header's More menu.
  * `screenshots` takes captures and keeps every chat's staged attachments; `screenshotKeys` names the shortcut.
  * `voice` supplies Dictation and Read aloud. `voiceSend` puts a Voice conversation's turn in the chat as the owner's
  * message; it is left out for a chat not started yet, where a conversation can't start (ADR 0111). `commands` runs the slash commands typed in the composer. `queue` is the
@@ -430,7 +425,6 @@ export function ChatPane({
   onQuestion,
   pin,
   onSettle,
-  onArchive,
   onExport,
   onSnapshotSettings,
   onCopyLink,
@@ -502,7 +496,6 @@ export function ChatPane({
   /** Pinning the chat to the top of the list (ADR 0085); left out for a chat not started yet. */
   pin?: ChatPin;
   onSettle?: (settled: boolean) => void;
-  onArchive?: (archived: boolean) => void;
   /** Shows the notice for a chat exported with the Export dialog. */
   onExport?: (notice: string) => void;
   onSnapshotSettings?: () => void;
@@ -941,14 +934,13 @@ export function ChatPane({
               Job run
             </span>
           ) : (
-            chat.settled && <span className="badge">Settled</span>
+            inArchived(chat) && <span className="badge">Archived</span>
           )}
-          {policy.listed && !chat.settled && !chat.archived && snoozedUntil !== undefined && (
+          {policy.listed && !inArchived(chat) && snoozedUntil !== undefined && (
             <span className="badge" title={`Snoozed until ${wakeFull(snoozedUntil)}`}>
               Snoozed
             </span>
           )}
-          {chat.archived && <span className="badge">Archived</span>}
           {projects?.map((name) => (
             <span key={name} className="badge project-badge" title={`In the project ${name}`}>
               {name}
@@ -974,8 +966,8 @@ export function ChatPane({
             >
               <Search size={16} />
             </button>
-            {(onExport || onCopyLink || (onSettle && !chat.archived) || (onArchive && !chat.running) || deleteHere) && (
-              <MoreMenu chat={chat} onExport={onExport} onSnapshotSettings={onSnapshotSettings} onCopyLink={onCopyLink} pin={pin} onSettle={onSettle} onArchive={onArchive} onDelete={deleteHere} />
+            {(onExport || onCopyLink || (onSettle && archiveAction(chat)) || deleteHere) && (
+              <MoreMenu chat={chat} onExport={onExport} onSnapshotSettings={onSnapshotSettings} onCopyLink={onCopyLink} pin={pin} onSettle={onSettle} onDelete={deleteHere} />
             )}
           </div>
         </div>

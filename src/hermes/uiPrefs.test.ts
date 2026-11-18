@@ -42,7 +42,7 @@ afterEach(() => {
 
 describe("reading", () => {
   it("is the defaults when nothing is stored", () => {
-    expect(getUIPrefs()).toEqual({ theme: "system", reopenLastChat: false, checkUpdatesOnLaunch: true, lastOpenChat: {}, modelPicker: null, modelPicks: {}, modelFavorites: [], statusBar: ["context", "model", "status"], previewWidth: null, sidebarWidth: null, zoom: 1, screenshotShortcut: "Ctrl+Shift+S", templates: [], terminalKind: "server", followUp: "queue", idleCompact: { enabled: false, percent: 70, idleMinutes: 15 }, chatSectionsShown: ["pinned", "inbox", "snoozed", "working", "settled", "archived"], chatSectionsCollapsed: ["snoozed", "settled", "archived"], chatListMode: "chats", agentOffice: "plan", officeQuality: "normal", inboxAutoDismissDays: null, messageDetails: "time", spellCheck: true, summonSelection: true, keybindings: {} });
+    expect(getUIPrefs()).toEqual({ theme: "system", reopenLastChat: false, checkUpdatesOnLaunch: true, lastOpenChat: {}, modelPicker: null, modelPicks: {}, modelFavorites: [], statusBar: ["context", "model", "status"], previewWidth: null, sidebarWidth: null, zoom: 1, screenshotShortcut: "Ctrl+Shift+S", templates: [], terminalKind: "server", followUp: "queue", idleCompact: { enabled: false, percent: 70, idleMinutes: 15 }, chatSectionsShown: ["pinned", "inbox", "snoozed", "working", "archived"], chatSectionsCollapsed: ["snoozed", "archived"], chatListMode: "chats", agentOffice: "plan", officeQuality: "normal", inboxAutoDismissDays: null, messageDetails: "time", spellCheck: true, summonSelection: true, keybindings: {} });
     expect(getUIPrefs()).toEqual(DEFAULT_UI_PREFS);
   });
 
@@ -71,7 +71,7 @@ describe("reading", () => {
         terminalKind: "laptop",
         followUp: "interrupt",
         idleCompact: { enabled: "yes", percent: 100, idleMinutes: 30 },
-        chatSectionsShown: ["settled", "bogus", "inbox", "settled"],
+        chatSectionsShown: ["archived", "bogus", "inbox", "archived"],
         chatSectionsCollapsed: "inbox",
         agentOffice: "floor",
         officeQuality: "ultra",
@@ -92,8 +92,8 @@ describe("reading", () => {
       previewWidth: null, sidebarWidth: null, zoom: 1, screenshotShortcut: "Ctrl+Shift+S", templates: [], terminalKind: "server", followUp: "queue", spellCheck: true,
       idleCompact: { enabled: false, percent: 70, idleMinutes: 30 },
       // A version 1 list gains Pinned, new in version 2.
-      chatSectionsShown: ["pinned", "inbox", "settled"],
-      chatSectionsCollapsed: ["snoozed", "settled", "archived"],
+      chatSectionsShown: ["pinned", "inbox", "archived"],
+      chatSectionsCollapsed: ["snoozed", "archived"],
       chatListMode: "chats",
       agentOffice: "plan",
       officeQuality: "normal",
@@ -379,11 +379,21 @@ describe("migration", () => {
   });
 
   it("shows Pinned, new in version 2, above the sections a version 1 document picked", () => {
-    localStorage.setItem(UI_PREFS_KEY, JSON.stringify({ v: 1, chatSectionsShown: ["settled", "inbox"], chatSectionsCollapsed: ["inbox"] }));
-    expect(getUIPrefs().chatSectionsShown).toEqual(["pinned", "inbox", "settled"]);
+    localStorage.setItem(UI_PREFS_KEY, JSON.stringify({ v: 1, chatSectionsShown: ["archived", "inbox"], chatSectionsCollapsed: ["inbox"] }));
+    expect(getUIPrefs().chatSectionsShown).toEqual(["pinned", "inbox", "archived"]);
     expect(getUIPrefs().chatSectionsCollapsed).toEqual(["inbox"]);
     localStorage.setItem(UI_PREFS_KEY, JSON.stringify({ v: 1, theme: "dark" }));
     expect(getUIPrefs().chatSectionsShown).toEqual(DEFAULT_UI_PREFS.chatSectionsShown);
+  });
+
+  it("reads a stored Settled section as Archived, which holds its chats since ADR 0202", () => {
+    const stored = (prefs: object) => localStorage.setItem(UI_PREFS_KEY, JSON.stringify({ v: UI_PREFS_VERSION, ...prefs }));
+    stored({ chatSectionsShown: ["inbox", "settled"], chatSectionsCollapsed: ["settled"] });
+    expect(getUIPrefs()).toMatchObject({ chatSectionsShown: ["inbox", "archived"], chatSectionsCollapsed: ["archived"] });
+    stored({ chatSectionsShown: ["inbox", "settled", "archived"], chatSectionsCollapsed: ["inbox"] });
+    expect(getUIPrefs()).toMatchObject({ chatSectionsShown: ["inbox", "archived"], chatSectionsCollapsed: ["inbox"] });
+    stored({ chatSectionsShown: ["inbox"], chatSectionsCollapsed: ["settled", "archived"] });
+    expect(getUIPrefs()).toMatchObject({ chatSectionsShown: ["inbox"], chatSectionsCollapsed: ["archived"] });
   });
 
   it("reads a newer version's document as it is, taking the fields this version knows", () => {

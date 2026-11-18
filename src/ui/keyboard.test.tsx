@@ -273,7 +273,7 @@ describe("Search palette by keyboard", () => {
   it("opens on Ctrl+K from the composer, and Escape closes it with focus back in the composer", async () => {
     const s = await signedIn();
     await s.user.keyboard("{Control>}k{/Control}");
-    const input = screen.getByPlaceholderText("Search all chats, including Settled");
+    const input = screen.getByPlaceholderText("Search all chats, including Archived");
     expect(focused()).toBe(input);
     await s.user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "Search chats" })).toBeNull();
@@ -376,11 +376,11 @@ describe("Chat list by keyboard", () => {
     // The project switcher sits under the profile's name, before the chats.
     await s.user.tab();
     expect(focused()).toBe(button(/All chats/));
-    // Then the Inbox section's header, which collapses it, its Settle all, and its chats.
+    // Then the Inbox section's header, which collapses it, its Archive all, and its chats.
     await s.user.tab();
     expect(focused()).toBe(document.querySelector('[data-section-head="inbox"]'));
     await s.user.tab();
-    expect(focused()).toBe(button("Settle all"));
+    expect(focused()).toBe(button("Archive all"));
     await s.user.tab();
     expect(focused()).toBe(rowButton("Nightly backup"));
     await s.user.keyboard("{Enter}");
@@ -433,7 +433,7 @@ describe("Chat list by keyboard", () => {
     expect(composer().value).toBe("");
     expect(rowButton("Nightly backup").getAttribute("aria-current")).toBeNull();
     await s.user.click(button("Search chats"));
-    expect(screen.getByPlaceholderText("Search all chats, including Settled")).toBeTruthy();
+    expect(screen.getByPlaceholderText("Search all chats, including Archived")).toBeTruthy();
   });
 
   it("opens Settings with Ctrl+Comma", async () => {
@@ -455,14 +455,12 @@ describe("Chat list by keyboard", () => {
     expect(s.server.requests.filter((r) => r.method === "session.resume")).toEqual([]);
   });
 
-  it("reaches Settle, Archive and Delete with Tab; Escape or Cancel keeps the chat with focus back on Delete", async () => {
+  it("reaches Archive and Delete with Tab; Escape or Cancel keeps the chat with focus back on Delete", async () => {
     const s = await signedIn();
     rowButton("Nightly backup").focus();
-    // Settle is how a chat is cleared from the Inbox (ADR 0090); there is no separate Clear.
+    // Archive is how a chat is cleared from the Inbox (ADR 0090, ADR 0202); there is no separate Clear.
     await s.user.tab();
-    expect(focused()).toBe(screen.getAllByRole("button", { name: "Settle" })[0]);
-    await s.user.tab();
-    expect(focused()).toBe(screen.getAllByRole("button", { name: /^Archive:/ })[0]);
+    expect(focused()).toBe(screen.getAllByRole("button", { name: "Archive" })[0]);
     await s.user.tab();
     const trash = screen.getAllByRole("button", { name: "Delete" })[0];
     expect(focused()).toBe(trash);

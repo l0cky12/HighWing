@@ -12,8 +12,8 @@ const HINT: Readonly<Record<SectionKey, string>> = {
   inbox: "Chats that need you or have finished: an Approval waiting, a failure, a reply done, something new.",
   working: "Chats with a reply running.",
   snoozed: "Chats you snoozed, until they wake.",
-  archived: "Chats hidden in every Hermes client, in a drawer under Settled. Listing them asks Hermes for them on each refresh.",
-  settled: "Chats you settled or cleared from the Inbox, in a drawer at the foot of the list.",
+  archived:
+    "Chats you archived or cleared from the Inbox, and chats archived in another Hermes client, in a drawer at the foot of the list. Listing those asks Hermes for them on each refresh.",
 };
 
 export function ChatSectionSettings() {

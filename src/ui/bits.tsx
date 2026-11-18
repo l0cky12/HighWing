@@ -1,6 +1,6 @@
 // Small shared UI bits, ported from the prototype.
 import { useEffect, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { Archive, ArchiveRestore, CalendarClock, Check, Copy, EyeOff, FileInput, Globe, Monitor, RotateCcw, Send, Terminal } from "lucide-react";
+import { Archive, ArchiveRestore, CalendarClock, Check, Copy, FileInput, Globe, Monitor, Send, Terminal } from "lucide-react";
 import type { ConnectionStatus, Source } from "../hermes/model";
 import type { Route } from "../hermes/pipe";
 import { SOURCE_LABEL } from "../hermes/model";
@@ -41,20 +41,21 @@ export function SourceIcon({ source, size = 12 }: { source: Source; size?: numbe
 }
 
 /**
- * Settles a chat, or unsettles a Settled one. Icon only, the same either way: hovering shows what it does.
+ * Archives a chat, or unarchives one in Archived (snooze.ts `archiveAction`). Icon only, the same either way: hovering
+ * shows what it does.
  */
-export function SettleButton({
-  settled,
+export function ArchiveButton({
+  archived,
   size,
   className,
   onSettle,
 }: {
-  settled: boolean;
+  archived: boolean;
   size: number;
   className: string;
   onSettle: (settled: boolean) => void;
 }) {
-  const label = settled ? "Unsettle" : "Settle";
+  const label = archived ? "Unarchive" : "Archive";
   return (
     <button
       className={className}
@@ -62,36 +63,10 @@ export function SettleButton({
       aria-label={label}
       onClick={(e) => {
         e.stopPropagation();
-        onSettle(!settled);
+        onSettle(!archived);
       }}
     >
-      {settled ? <ArchiveRestore size={size} /> : <Archive size={size} />}
-    </button>
-  );
-}
-
-/** Archives a chat in every Hermes client, or restores an archived one. */
-export function ArchiveButton({
-  archived,
-  size,
-  className,
-  onArchive,
-}: {
-  archived: boolean;
-  size: number;
-  className: string;
-  onArchive: (archived: boolean) => void;
-}) {
-  return (
-    <button
-      className={className}
-      title={archived ? "Restore" : "Archive: hide in every Hermes client, keeping its history"}
-      onClick={(e) => {
-        e.stopPropagation();
-        onArchive(!archived);
-      }}
-    >
-      {archived ? <RotateCcw size={size} /> : <EyeOff size={size} />}
+      {archived ? <ArchiveRestore size={size} /> : <Archive size={size} />}
     </button>
   );
 }

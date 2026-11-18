@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { BarChart3, Bot as BotIcon, Building2, CalendarClock, Loader, MessagesSquare, ShieldAlert, Check, ChevronDown, ChevronRight, CircleAlert, Copy, Hourglass, LockOpen, PanelLeftClose, Pin, Search, Settings, SquareKanban, SquarePen, Trash2, Webhook, FolderGit2 } from "lucide-react";
 import { waitingLabel, type Handoff } from "../hermes/dispatched";
 import type { Chat, CheckTimes, ConnectionStatus, OtherProfile, OtherProfiles } from "../hermes/model";
-import { SOURCE_LABEL, isWaiting } from "../hermes/model";
+import { SOURCE_LABEL, archiveAction, inArchived, isWaiting } from "../hermes/model";
 import { CHECK_EVERY_MS, totalUnread, type CheckTimesStore } from "../hermes/otherProfiles";
 import type { Route } from "../hermes/pipe";
 import { RenameConflict, TitleModelUnavailable, type Snapshot } from "../hermes/transport";
@@ -21,7 +21,7 @@ import { DeleteChatDialog } from "./DeleteChat";
 import { SettleAllDialog } from "./SettleAll";
 import { CloneProfileDialog } from "./CloneProfile";
 import type { ProfileCloneApi } from "../hermes/profileClone";
-import { Age, ArchiveButton, Ticking, STATUS_LABEL, SettleButton, SourceIcon, Spinner, ago, composing, routeLabel, useReturnFocus } from "./bits";
+import { Age, ArchiveButton, Ticking, STATUS_LABEL, SourceIcon, Spinner, ago, composing, routeLabel, useReturnFocus } from "./bits";
 import { en } from "../i18n/en";
 import { useLocale, type Locale } from "../i18n/locale";
 import { viaLabel } from "../hermes/routes";
@@ -364,14 +364,14 @@ function RenameRow({
 }
 
 /**
- * One chat in the list: a button that opens it, then its Settle, Archive and Delete buttons. Right-clicking it, or the
- * Menu key or Shift+F10 on it, opens its menu. The trash button, Delete chat… in the menu, and Delete or Backspace on
- * the focused row all ask before deleting (`onAskDelete`, with what focus goes back to if the owner keeps the chat).
- * An archived chat has Restore in place of Settle and Archive. A chat with
- * a reply running can't be archived, restored or deleted. `snooze`: the chat can be snoozed from its menu. A snoozed
- * chat shows when it wakes in place of its age. `section`: where the list shows it, for styling. Regenerate title in the menu shows a spinner until the new
- * title is saved, and why underneath if it isn't. When Hermes can't use the Text generation model's provider, that
- * note says how to fix it and offers the setting.
+ * One chat in the list: a button that opens it, then its Archive (or Unarchive) and Delete buttons. Right-clicking it,
+ * or the Menu key or Shift+F10 on it, opens its menu. The trash button, Delete chat… in the menu, and Delete or
+ * Backspace on the focused row all ask before deleting (`onAskDelete`, with what focus goes back to if the owner keeps
+ * the chat). `onSettle` archives the chat, or unarchives it (App.tsx). A chat with a reply running can't be deleted.
+ * `snooze`: the chat can be snoozed from its menu. A snoozed chat shows when it wakes in place of its age. `section`:
+ * where the list shows it, for styling. Regenerate title in the menu shows a spinner until the new title is saved, and
+ * why underneath if it isn't. When Hermes can't use the Text generation model's provider, that note says how to fix it
+ * and offers the setting.
  */
 const ChatRow = memo(function ChatRow({
   chat,
@@ -382,7 +382,6 @@ const ChatRow = memo(function ChatRow({
   onOpenIn,
   onOpenTab,
   onSettle,
-  onArchive,
   onAskDelete,
   onRename,
   onRegenTitle,
@@ -409,7 +408,6 @@ const ChatRow = memo(function ChatRow({
   /** Opens the chat in a new tab of the active pane. */
   onOpenTab: () => void;
   onSettle: (settled: boolean) => void;
-  onArchive: (archived: boolean) => void;
   onAskDelete: (returnTo: HTMLElement | null) => void;
   onRename: (title: string, from: string) => Promise<unknown>;
   onRegenTitle: () => Promise<unknown>;
@@ -434,6 +432,7 @@ const ChatRow = memo(function ChatRow({
   const l = useLocale();
   const [renaming, setRenaming] = useState(false);
   const waiting = !chat.running && handoff?.kind === "waiting" ? waitingLabel(handoff) : undefined;
+  const archive = archiveAction(chat);
   const [retitling, setRetitling] = useState(false);
   /** Why the title wasn't regenerated. `detail`: Hermes's own words; `settings`: the fix is the Text generation model. */
   const [retitleError, setRetitleError] = useState<{ text: string; detail?: string; settings?: boolean }>();
@@ -538,15 +537,7 @@ const ChatRow = memo(function ChatRow({
           )}
         </span>
       </button>
-      {!chat.archived && (
-        <SettleButton
-          settled={chat.settled}
-          size={14}
-          className="row-action"
-          onSettle={onSettle}
-        />
-      )}
-      {!chat.running && <ArchiveButton archived={!!chat.archived} size={14} className="row-action" onArchive={onArchive} />}
+      {archive && <ArchiveButton archived={archive === "unarchive"} size={14} className="row-action" onSettle={onSettle} />}
       {!chat.running && (
         <button
           className="row-action"
@@ -568,7 +559,7 @@ const ChatRow = memo(function ChatRow({
           y={menu.y}
           split={split}
           snooze={snooze}
-          settle={chat.archived ? undefined : { settled: chat.settled, onSettle }}
+          settle={archive && { archived: archive === "unarchive", onSettle }}
           pin={pin}
           stopWaiting={waiting && onStopWaiting ? { label: waiting, onStop: onStopWaiting } : undefined}
           onOpenIn={onOpenIn}
@@ -1005,21 +996,16 @@ function moveBetweenChats(e: KeyboardEvent<HTMLElement>) {
 }
 
 /** How many chats a drawer draws when it opens, and how many more each Show more press adds (ADR 0185). */
-export const SETTLED_FIRST = 10;
-export const SETTLED_PAGE = 25;
-
-/** The sections drawn as drawers at the list's foot, Settled above Archived (ADR 0201). */
-const DRAWERS = ["settled", "archived"] as const satisfies readonly SectionKey[];
-type DrawerKey = (typeof DRAWERS)[number];
-const isDrawer = (k: SectionKey): k is DrawerKey => (DRAWERS as readonly SectionKey[]).includes(k);
+const DRAWER_FIRST = 10;
+const DRAWER_PAGE = 25;
 
 /**
- * An open drawer's rows: the first ten, then a Show more button for 25 more at a time (ADR 0185). The drawer
+ * The open Archived drawer's rows: the first ten, then a Show more button for 25 more at a time (ADR 0185). The drawer
  * mounts this only while open, so closing and reopening it starts at ten again. The chat on screen is always drawn,
- * with the rows above it, so opening a Settled or Archived chat from a search still shows its row.
+ * with the rows above it, so opening an Archived chat from a search still shows its row.
  */
-function DrawerList({ section, chats, selectedId, row }: { section: DrawerKey; chats: Chat[]; selectedId: string | null; row: (c: Chat) => ReactNode }) {
-  const [shown, setShown] = useState(SETTLED_FIRST);
+function DrawerList({ chats, selectedId, row }: { chats: Chat[]; selectedId: string | null; row: (c: Chat) => ReactNode }) {
+  const [shown, setShown] = useState(DRAWER_FIRST);
   const upTo = Math.max(shown, chats.findIndex((c) => c.id === selectedId) + 1);
   const rest = chats.length - upTo;
   const list = useRef<HTMLDivElement>(null);
@@ -1032,20 +1018,20 @@ function DrawerList({ section, chats, selectedId, row }: { section: DrawerKey; c
     setFocusOn(undefined);
   }, [focusOn]);
   return (
-    <div className={`drawer-list ${section}-list`} ref={list}>
+    <div className="drawer-list archived-list" ref={list}>
       {chats.slice(0, upTo).map(row)}
       {rest > 0 && (
         <button
-          className="settled-more"
+          className="drawer-more"
           onClick={(e) => {
-            setShown(upTo + SETTLED_PAGE);
+            setShown(upTo + DRAWER_PAGE);
             if (e.detail === 0) setFocusOn(chats[upTo].id);
           }}
         >
-          Show {Math.min(SETTLED_PAGE, rest)} more
+          Show {Math.min(DRAWER_PAGE, rest)} more
         </button>
       )}
-      {!chats.length && <div className="empty-hint">No {SECTION_LABEL[section].toLowerCase()} chats.</div>}
+      {!chats.length && <div className="empty-hint">No archived chats.</div>}
     </div>
   );
 }
@@ -1178,16 +1164,17 @@ function NeedsYouLine({ waiting, pictures, leaving, onOpenBot, onShowBots }: Pic
 
 /**
  * The chat list, in sections (snooze.ts `chatSections`, ADR 0063): Pinned, the chats the owner pinned (ADR 0085); the
- * Inbox, the chats that need the owner or are done; Snoozed; Archived; and Working, the chats Hermes is replying in, in
- * the list's scroll. Settled is a drawer at the list's foot, outside the scroll (ADR 0090): its header stays at the
- * bottom, and opens the drawer upward with its own scroll. Settling a chat is how it is cleared from the Inbox.
- * Settings → General picks the sections shown (uiPrefs.ts `chatSectionsShown`), and each one's header collapses it,
- * remembered across restarts. A row dragged onto the drawer, open or closed, settles its chat, and a Settled one dragged
- * onto the Inbox unsettles it; each is tinted while the drop would change something (ADR 0090). The scroll's sections
+ * Inbox, the chats that need the owner or are done; Snoozed; and Working, the chats Hermes is replying in, in the
+ * list's scroll. Archived is a drawer at the list's foot, outside the scroll (ADR 0090, ADR 0201, ADR 0202): its header
+ * stays at the bottom, and opens the drawer upward with its own scroll. Archiving a chat is how it is cleared from the
+ * Inbox. Settings → General picks the sections shown (uiPrefs.ts `chatSectionsShown`), and each one's header collapses
+ * it, remembered across restarts. A row dragged onto the drawer, open or closed, archives its chat, and one the owner
+ * archived dragged onto the Inbox unarchives it; each is tinted while the drop would change something (snooze.ts
+ * `settleByDrop`). The scroll's sections
  * are one list of rows and headers, so a row that moves between them, as a reply starts or ends, keeps its menu, rename
  * box and focus; a collapsed section keeps its Active rows, hidden, for the same reason. The Custom snooze dialog
  * belongs to the list, not a row, for the same reason too.
- * Archived chats are in `chats` only while the Archived section is shown (App.tsx lists them then).
+ * Chats Hermes has archived are in `chats` only while the Archived section is shown (App.tsx lists them then).
  * `projectSwitcher` sits under the profile's name; `chats` are only the shown project's when one is picked there.
  * `projectsOf`: the projects a chat's menu offers to put it in or take it out of.
  * `bots`: bot mode, while a Bot Chat is open (ADR 0066): the bots (Bots.tsx `BotList`) under the profile's name, New
@@ -1223,7 +1210,6 @@ export function ChatList({
   onStopWaiting,
   onSnooze,
   onWake,
-  onArchive,
   onDelete,
   onRename,
   onRegenTitle,
@@ -1266,7 +1252,7 @@ export function ChatList({
   /** Opens a chat in a new tab of the active pane. */
   onOpenTab?: (id: string) => void;
   onSettle: (id: string, settled: boolean) => void;
-  /** Settles these chats at once, from the Inbox header's Settle all; without it the Inbox has no such button. */
+  /** Archives these chats at once, from the Inbox header's Archive all; without it the Inbox has no such button. */
   onSettleAll?: (ids: string[]) => void;
   /** When each snoozed chat wakes (snooze.ts). */
   snoozes?: Snoozes;
@@ -1282,7 +1268,6 @@ export function ChatList({
   onStopWaiting?: (id: string) => void;
   onSnooze?: (id: string, until: number) => void;
   onWake?: (id: string) => void;
-  onArchive: (id: string, archived: boolean) => void;
   onDelete: (id: string) => void;
   onRename: (id: string, title: string, from: string) => Promise<unknown>;
   onRegenTitle: (id: string) => Promise<unknown>;
@@ -1323,8 +1308,8 @@ export function ChatList({
   const now = useSnoozeClock(snoozes);
   const sections = chatSections(chats, snoozes, now, attentionSince, pins, handoffs);
   const [askedInbox, setAskedInbox] = useState<InboxSettle>();
-  const [dropOn, setDropOn] = useState<"settled" | "inbox" | null>(null);
-  const dropHandlers = (on: "settled" | "inbox", isTarget: (e: DragEvent<HTMLElement>) => boolean = () => true) => ({
+  const [dropOn, setDropOn] = useState<"archived" | "inbox" | null>(null);
+  const dropHandlers = (on: "archived" | "inbox", isTarget: (e: DragEvent<HTMLElement>) => boolean = () => true) => ({
     onDragOver: (e: DragEvent<HTMLElement>) => {
       if (isTarget(e) && settleByDrop(chats.find((c) => c.id === rowDragged(e)), on) !== undefined) {
         e.preventDefault();
@@ -1336,7 +1321,7 @@ export function ChatList({
     onDrop: (e: DragEvent<HTMLElement>) => {
       setDropOn((was) => (was === on ? null : was));
       const id = rowDragged(e);
-      // Settling remounts the row outside this scroll, and React never delivers dragend to a detached node.
+      // Archiving remounts the row outside this scroll, and React never delivers dragend to a detached node.
       dragChatEnd();
       const to = isTarget(e) ? settleByDrop(chats.find((c) => c.id === id), on) : undefined;
       if (id === undefined || to === undefined) return;
@@ -1347,8 +1332,8 @@ export function ChatList({
   const overInbox = (e: DragEvent<HTMLElement>) => !!(e.target as Element).closest('[data-section="inbox"], [data-section-head="inbox"]');
   const stillInbox = askedInbox ? sections.inbox.filter((c) => askedInbox.ids.includes(c.id)).map((c) => c.id) : [];
   const askedInboxGone = !!askedInbox && !stillInbox.length;
-  // The dialog closes if its chat leaves the list, or is settled or archived meanwhile (in another window or client).
-  const customGone = !!customFor && !chats.some((c) => c.id === customFor.id && !c.settled && !c.archived);
+  // The dialog closes if its chat leaves the list, or is archived meanwhile (in another window or client).
+  const customGone = !!customFor && !chats.some((c) => c.id === customFor.id && !inArchived(c));
   useEffect(() => {
     if (customGone) setCustomFor(undefined);
   }, [customGone]);
@@ -1358,15 +1343,15 @@ export function ChatList({
   useEffect(() => {
     if (askedInboxGone) setAskedInbox(undefined);
   }, [askedInboxGone]);
-  // Opening a chat in a collapsed section, say from a search, opens the section; settling or snoozing the chat on
+  // Opening a chat in a collapsed section, say from a search, opens the section; archiving or snoozing the chat on
   // screen doesn't.
   const selectedIn = shown.find((k) => sections[k].some((c) => c.id === selectedId));
   useEffect(() => {
     if (selectedIn) setCollapsed(selectedIn, false);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- open the section only when another chat is picked; listing `selectedIn` would open it when the chat on screen is settled or snoozed into a collapsed one
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- open the section only when another chat is picked; listing `selectedIn` would open it when the chat on screen is archived or snoozed into a collapsed one
   }, [selectedId]);
   const l = useLocale();
-  const latest = { chats, onOpen, onOpenIn, onOpenTab, onSettle, onArchive, onRename, onRegenTitle, onCopyLink, onTextGenerationSettings, projectsOf, tagsOf, onPin, onStopWaiting, onSnooze, onWake };
+  const latest = { chats, onOpen, onOpenIn, onOpenTab, onSettle, onRename, onRegenTitle, onCopyLink, onTextGenerationSettings, projectsOf, tagsOf, onPin, onStopWaiting, onSnooze, onWake };
   const live = useRef(latest);
   // After the commit, not during render: a render React throws away would leave its props here (#436).
   useLayoutEffect(() => {
@@ -1379,7 +1364,6 @@ export function ChatList({
       openIn: (side: number) => live.current.onOpenIn(id, side),
       openTab: () => live.current.onOpenTab(id),
       settle: (settled: boolean) => live.current.onSettle(id, settled),
-      archive: (archived: boolean) => live.current.onArchive(id, archived),
       askDelete: (from: HTMLElement | null) => {
         const c = chat();
         if (c) setDeleting({ chat: c, from });
@@ -1407,7 +1391,7 @@ export function ChatList({
     if (!on) handlers.set(c.id, (on = handlersFor(c.id)));
     const projects = projectsOf?.(c.id);
     const tags = tagsOf?.(c.id);
-    const snooze = onSnooze && onWake && !c.settled && !c.archived ? { until: snoozes[c.id], onSnooze: on.snooze, onCustom: on.customSnooze, onWake: on.wake } : undefined;
+    const snooze = onSnooze && onWake && !inArchived(c) ? { until: snoozes[c.id], onSnooze: on.snooze, onCustom: on.customSnooze, onWake: on.wake } : undefined;
     const sleepsUntil = snooze?.until !== undefined && snooze.until > now ? snooze.until : undefined;
     return (
       <ChatRow
@@ -1422,7 +1406,6 @@ export function ChatList({
         onOpenIn={on.openIn}
         onOpenTab={on.openTab}
         onSettle={on.settle}
-        onArchive={on.archive}
         onAskDelete={on.askDelete}
         onRename={on.rename}
         onRegenTitle={on.regenTitle}
@@ -1432,7 +1415,7 @@ export function ChatList({
         tags={tags && { ...tags, onToggle: on.toggleTag, onManage: on.manageTags }}
         snooze={snooze}
         sleepsUntil={sleepsUntil}
-        pin={onPin && !c.archived ? { pinned: pins[c.id] !== undefined, onPin: on.pin } : undefined}
+        pin={onPin && !inArchived(c) ? { pinned: pins[c.id] !== undefined, onPin: on.pin } : undefined}
         handoff={handoffs?.get(c.id)}
         onStopWaiting={onStopWaiting && on.stopWaiting}
       />
@@ -1456,28 +1439,22 @@ export function ChatList({
       <div key={`section-${k}`} className="section-head" data-section="inbox">
         {toggle}
         <button className="section-action" data-settle-all onClick={() => setAskedInbox(inboxSettle(list))}>
-          Settle all
+          Archive all
         </button>
       </div>
     );
   };
-  // The drawers at the list's foot, outside its scroll (ADR 0090, ADR 0201). Each can hold every chat the profile has
-  // had, so a closed one draws no rows.
-  const drawer = (k: DrawerKey) => {
-    const open = !collapsed.includes(k);
-    const settled = k === "settled";
-    return (
-      <div
-        key={k}
-        className={`foot-drawer ${k}-drawer ${open ? "open" : ""} ${settled && dropOn === "settled" ? "drop" : ""}`}
-        {...(settled ? dropHandlers("settled") : {})}
-      >
-        {header(k, sections[k], open)}
-        {open && <DrawerList section={k} chats={sections[k]} selectedId={selectedId} row={(c) => row(c, k)} />}
+  // The Archived drawer at the list's foot, outside its scroll (ADR 0090, ADR 0201). It can hold every chat the profile
+  // has had, so closed it draws no rows.
+  const drawerOpen = !collapsed.includes("archived");
+  const drawer = shown.includes("archived") && (
+    <div className="sb-foot" style={{ "--open": drawerOpen ? 1 : 0 } as CSSProperties}>
+      <div className={`foot-drawer archived-drawer ${drawerOpen ? "open" : ""} ${dropOn === "archived" ? "drop" : ""}`} {...dropHandlers("archived")}>
+        {header("archived", sections.archived, drawerOpen)}
+        {drawerOpen && <DrawerList chats={sections.archived} selectedId={selectedId} row={(c) => row(c, "archived")} />}
       </div>
-    );
-  };
-  const drawers = DRAWERS.filter((k) => shown.includes(k));
+    </div>
+  );
   const botsShown = mode?.value === "bots";
   const switcher = (
     <ProfileSwitcher
@@ -1581,7 +1558,7 @@ export function ChatList({
             {
               // One keyed array, so React keeps a row that moves from one section to another.
               shown.flatMap((k) => {
-                if (isDrawer(k)) return [];
+                if (k === "archived") return [];
                 const list = sections[k];
                 if (!list.length && !drawnEmpty(k)) return [];
                 const open = !collapsed.includes(k);
@@ -1597,11 +1574,7 @@ export function ChatList({
               })
             }
           </div>
-          {drawers.length > 0 && (
-            <div className="sb-foot" style={{ "--drawers": drawers.length, "--open": drawers.filter((k) => !collapsed.includes(k)).length } as CSSProperties}>
-              {drawers.map(drawer)}
-            </div>
-          )}
+          {drawer}
         </>
       )}
       </div>

@@ -723,7 +723,7 @@ describe("The office in the app", () => {
     await waitFor(() => expect(document.activeElement).toBe(heading()));
 
     await user.click(screen.getByRole("button", { name: "Search all chats (Ctrl+K)" }));
-    await user.type(screen.getByPlaceholderText("Search all chats, including Settled"), "Other");
+    await user.type(screen.getByPlaceholderText("Search all chats, including Archived"), "Other");
     await user.click(await within(screen.getByRole("dialog", { name: "Search chats" })).findByRole("button", { name: /Other/ }));
     await act(async () => void (await hermes.idle()));
     expect(document.querySelector(".chat-head")!.textContent).toContain("Other");

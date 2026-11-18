@@ -807,7 +807,7 @@ describe("Bots mode", () => {
   it("adds the chat in the pane, marked selected, and opens a chat from under the bot", async () => {
     const { user } = await launchMany();
     await user.keyboard("{Control>}k{/Control}");
-    await user.type(screen.getByPlaceholderText("Search all chats, including Settled"), "Settled 6");
+    await user.type(screen.getByPlaceholderText("Search all chats, including Archived"), "Settled 6");
     await waitFor(() => expect(document.querySelector(".hit-row")).toBeTruthy());
     await user.click(document.querySelector<HTMLElement>(".hit-row")!);
     await waitFor(() => expect(underTitles()).toEqual(["Backup failing", "Disk usage", "Settled 1", "Settled 6"]));
@@ -1306,7 +1306,7 @@ describe("The chat list panel's two modes", () => {
     const { user } = await launch();
     await openScribe(user);
     await user.keyboard("{Control>}k{/Control}");
-    await user.type(screen.getByPlaceholderText("Search all chats, including Settled"), "Changelog");
+    await user.type(screen.getByPlaceholderText("Search all chats, including Archived"), "Changelog");
     await waitFor(() => expect(document.querySelector(".hit-row")).toBeTruthy());
     await user.click(document.querySelector<HTMLElement>(".hit-row")!);
     await waitFor(() => expect(screen.getByText("Which wording reads better?")).toBeTruthy());

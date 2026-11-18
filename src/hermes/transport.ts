@@ -39,7 +39,6 @@ import { CheckTimesStore, noOthers, OtherProfilesCheck } from "./otherProfiles";
 import { failureMark } from "./inbox";
 // Projects are Hermes's own, read and written with legacy `projects.*` (projects.ts, research doc "Projects").
 import { projectsApi, type ProjectsApi } from "./projects";
-import { GroupRoomsStore } from "./groupRoomsStore";
 import { STEER, askSideQuestion, listServerCommands, runServerCommand, sideAnswer, type CommandDef, type CommandResult, type ServerCommandList } from "./commands";
 import { GoalBoard, GoalWriteError, controlOf, goalAction, maxTurnsOf, readControl, setGoal, type Control, type GoalAction, type GoalDraft } from "./goals";
 import { callText, offeredSkills, runSkill, skillInvocationText, type SkillCall, type SkillCommands } from "./skillCommands";
@@ -881,10 +880,6 @@ export class Hermes {
     rpc: (method, params) => this.request(method, params),
     get: (pathAndQuery) => this.rest("GET", pathAndQuery),
   });
-  readonly groupRooms = new GroupRoomsStore({
-    rpc: (method, params) => this.request(method, params),
-    ready: () => this.snapshot.status === "connected" && this.role === "target" && this.capabilities.get("groupRooms").state !== "unsupported",
-  });
   /** The titles chats had when the owner switched away from their profile, by `profile chatId`, for the inbox. */
   private titlesSeen = new Map<string, string>();
   /**
@@ -1317,10 +1312,7 @@ export class Hermes {
   setRole(role: Role) {
     if (this.role === role) return;
     this.role = role;
-    if (role === "target") {
-      this.pumpSoon();
-      this.groupRooms.wake();
-    } else this.groupRooms.sleep();
+    if (role === "target") this.pumpSoon();
     this.tellListeners();
   }
 
@@ -1423,7 +1415,6 @@ export class Hermes {
     this.track(told);
     // Checks start a little later, once the chat list has loaded (capabilities.ts).
     this.capabilities.connected(gen, profile, readyPayload, told);
-    this.groupRooms.wake();
   }
 
   /** Tries to connect again now, after a drop or from Offline, and keeps retrying on its own if that fails. */
@@ -1831,7 +1822,6 @@ export class Hermes {
       this.pipeProfile = undefined;
       // Nothing checked for the old profile's connection lands now; the new one checks again.
       this.capabilities.disconnected();
-      this.groupRooms.sleep();
       // Nor is any more of its running turns heard, until the owner comes back and they are resumed.
       this.recorder.drop(Date.now());
     }
@@ -2674,7 +2664,6 @@ export class Hermes {
    */
   setFocused(focused: boolean) {
     this.focused = focused;
-    this.groupRooms.setFocused(focused);
     if (!focused) return;
     const back = [...this.readWhenBack];
     this.readWhenBack.clear();
@@ -4707,7 +4696,6 @@ export class Hermes {
     this.abortDial?.(new Error("Closed by the app."));
     this.generation++;
     this.capabilities.disconnected();
-    this.groupRooms.sleep();
     this.kanbanWatch.stop();
     clearTimeout(this.rosterTimer);
     clearTimeout(this.retryTimer);
@@ -4765,10 +4753,6 @@ export class Hermes {
     // Broadcast when any process changes the session store (tui_gateway/change_watcher.py).
     if (type === "sessions.changed") {
       void this.sync();
-      return;
-    }
-    if (type === "groups.changed") {
-      this.groupRooms.changed(payload);
       return;
     }
     if (type === "status.update") {
@@ -5223,7 +5207,6 @@ export class Hermes {
     this.control.rescope();
     this.generation++;
     this.capabilities.disconnected();
-    this.groupRooms.sleep();
     this.kanbanWatch.stop();
     clearTimeout(this.rosterTimer);
     clearInterval(this.heartbeat);

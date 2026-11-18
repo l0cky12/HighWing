@@ -60,7 +60,6 @@ const NEW = {
   "RPC learning.detail": { ok: false },
   "RPC rollback.list": Object.assign(new Error("session not found"), { code: 4001 }),
   "RPC profiles.list": { profiles: [{ name: "default", is_default: true, canonical_session: null }] },
-  "RPC groups.list": { rooms: [], next_offset: null },
   "GET api/tools/toolsets": [],
   "GET api/profiles/default/soul": {},
   "GET api/profiles": { profiles: [] },

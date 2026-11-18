@@ -204,17 +204,6 @@ A bot's threads (ADR 0211) need the same methods and three more behaviours, none
 
 **Bot messaging** (the **Bots message each other** switch, ADR 0207) needs `profiles.configure` with `ui_meta_expected_revisions`, as Pin and Hide do, and Hermes 0.21.6 or later. Every release tag from v0.21.6 to v0.23.2 has `message_agent` in a Bot Chat behind the same Bot Mode block gate; no older tag was available to check. A Hermes without the tool would still store the block the switch writes, and no answer of its would say so. So here the app goes by the version number, as it does for questions before 0.21.3: the switch is off, with that reason, when Hermes names a version older than 0.21.6. A Hermes that names no version, such as a git checkout, isn't treated as older. Checked against Hermes 0.23.2.
 
-## Group rooms
-
-Needs the `groups.*` methods on `/api/ws` (`groups.list`, `groups.state`, `groups.log`, `groups.create`, `groups.send`, `groups.stop`, `groups.approve`, `groups.rename` and `groups.disband`), and Hermes's room worker, which a standalone `hermes dashboard` starts by itself. Checked with `groups.list {limit: 1}`, a read. The app never sends `groups.capabilities`, because its first call writes a secret file on the server (ADR 0210). Hermes has rooms from `v2026.8.31`; `bf0203a`, `f0d94882` and `ae2a81cc` all serve them. Without them, Bots mode has no Group rooms section.
-
-Two things differ between builds, and the app reads each from what Hermes says rather than from its version:
-
-- **Continue.** `groups.continue` is in Hermes from `ae2a81cc`. The app offers Continue only when `groups.state` reports `max_continues`. On `bf0203a` and `f0d94882` a discussion that paused at its cap goes on only with a new message, so the pause offers Carry on, which fills the composer and sends nothing.
-- **Change events.** `ae2a81cc` pushes `groups.changed` when a room moves, and says so with `change_events` in `groups.state`. The older builds do neither. The app always polls, and reads less often only after a `groups.changed` frame has arrived on the connection.
-
-On a dashboard, a bot that calls `clarify` in a room waits about 90 seconds with its question shown nowhere, then goes on without an answer. That is Hermes's behaviour at every build checked. The room says which bot is waiting.
-
 ## Subagents
 
 Needs the `subagent.*` events on a chat's session (`spawn_requested`, `start`, `progress`, `tool`, `thinking`, `complete`, with `subagent_id` and `parent_id`), and `subagent.list`, `subagent.tail`, `subagent.steer` and `subagent.interrupt` on `/api/ws`. Hermes `f0d94882` has all of them. These methods need a chat's live session, so diagnostics can't check them by reading. The capability is unknown until a chat opened on the connection lists its subagents. Without `subagent.list`, the Subagents panel still shows what the events say, says that it can't check what happened while the app was disconnected, and has no Steer or Stop. A Hermes whose events carry no `subagent_id` shows its subagents side by side, by their `delegate_task` call, without Steer or Stop.

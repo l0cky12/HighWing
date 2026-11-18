@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# A real Hermes dashboard for verify runs: a fresh isolated home with the bots ada, bram and cleo, a model stub whose
-# replies name no one (room-model.py), and `hermes dashboard` from the venv the SKILL names. See ../SKILL.md.
+# A real Hermes dashboard for verify runs: a fresh isolated home with the bots ada, bram and cleo, an OpenAI-compatible
+# model stub that answers every prompt (model-stub.py; STUB_DELAY_S=<seconds> holds each reply that long), and
+# `hermes dashboard` from the venv the SKILL names. See ../SKILL.md.
 #   real-hermes up <dir>     make <dir> fresh, start the stub and the dashboard, print `export RH_DIR=<dir>` and the URL
 #   real-hermes down         stop what `up` started in $RH_DIR (by PID); the dir and its logs stay
-#   real-hermes turns <text> which bots Hermes gave a turn, and which answered, for the owner message <text>
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -34,7 +34,7 @@ EOF
   for p in "ada:Plans the work" "bram:Reviews code" "cleo:Writes the docs"; do
     hermes_env "$VENV/bin/hermes" profile create "${p%%:*}" --clone --no-alias --description "${p#*:}" >>"$RH_DIR/setup.log" 2>&1
   done
-  setsid python3 -I "$HERE/room-model.py" $model_host "$model_port" "$RH_DIR/model-requests.jsonl" >"$RH_DIR/stub.log" 2>&1 </dev/null &
+  setsid python3 -I "$HERE/model-stub.py" $model_host "$model_port" "$RH_DIR/model-requests.jsonl" >"$RH_DIR/stub.log" 2>&1 </dev/null &
   echo $! >"$RH_DIR/stub.pid"
   setsid env -i PATH=/usr/bin:/bin HOME="$RH_DIR/home" HERMES_HOME="$RH_DIR/home/.hermes" HERMES_WEB_DIST="$RH_DIR/web" \
     HERMES_DASHBOARD_BASIC_AUTH_USERNAME=verify HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=verify-pass \
@@ -68,6 +68,5 @@ down() {
 case ${1:-} in
   up) shift; up "$@" ;;
   down) down ;;
-  turns) shift; [ -n "${RH_DIR:-}" ] || die "RH_DIR is unset"; python3 -I "$HERE/room-turns.py" "$RH_DIR/home/.hermes/shared-state.db" "$@" ;;
-  *) die "usage: real-hermes up <dir> | down | turns <owner text>" ;;
+  *) die "usage: real-hermes up <dir> | down" ;;
 esac

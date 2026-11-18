@@ -68,8 +68,8 @@
 //   AI, Regenerate title) answers: `answer` its text, `failure` Hermes's failure reason (null clears it), `signedOut`
 //   the providers with no sign-in on the server, and `hold: true` keeps each answer until `POST /__oneshot?release=1`
 //   (a test's control). `/__state` lists each profile's SOUL.md under `souls` and every call's params under `oneshots`.
-// HV_ROOMS=1 adds three bots to seat, the profiles `ada`, `bram` and `cleo`, each with a Bot Chat.
-// HV_SEAT=1 stores a Group room seat's session in `default`, as Hermes stores one: source `bot_room`, hidden, titled
+// HV_BOTS=1 adds three bots, the profiles `ada`, `bram` and `cleo`, each with a Bot Chat.
+// HV_SEAT=1 stores a room seat's session in `default`, as Hermes stores one: source `bot_room`, hidden, titled
 //   "Group: r1", holding the word "quokka", and listed as working in `session.active_list`.
 // HV_INBOX=1 gives the `work` profile two Unread chats for the Rail inbox: one last active 3 days ago, one an hour ago.
 // HV_EVERYWHERE=1 gives `work` a chat about the backup and adds a third profile, `ops`, with another, so an Everywhere
@@ -214,7 +214,7 @@ if (process.env.HV_EVERYWHERE === "1") {
   server.storeMessage("snapshots", { role: "user", text: "How often do we snapshot the volumes?" });
   server.storeMessage("snapshots", { role: "assistant", text: "Hourly snapshots, kept for two days, then the nightly backup takes over." });
 }
-if (process.env.HV_ROOMS === "1")
+if (process.env.HV_BOTS === "1")
   for (const [profile, color] of Object.entries({ ada: "#f59e0b", bram: "#3b82f6", cleo: "#a855f7" })) {
     server.otherProfiles[profile] = [row(`${profile}-bot`, 1, { title: "Bot Chat", hidden: true })];
     server.profileMeta[profile] = { ui_meta: { "hermes-bots": { title: profile[0].toUpperCase() + profile.slice(1), color } } };

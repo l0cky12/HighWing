@@ -160,7 +160,6 @@ const OLD_APP_SOURCE = "hermes-chat";
  * `tui_gateway/hosted_room_driver.py` at v0.22.6 and v0.23.2). Such a session is hidden plumbing.
  */
 const ROOM_SEAT_SOURCE = "bot_room";
-const ROOM_SEAT_TITLE_PREFIX = "Group: ";
 const READY_TIMEOUT_MS = 15_000;
 /** Waits before each try to reconnect a dropped connection. When the last try fails the app is Offline until the
  * owner asks to reconnect, so a wrong password isn't retried for ever. */
@@ -1903,7 +1902,7 @@ export class Hermes {
         const res = obj(await this.request("session.active_list", {}));
         if (gen !== this.generation) return;
         this.closeUnwaited(shown, Array.isArray(res?.sessions) ? res.sessions : []);
-        const sessions = (Array.isArray(res?.sessions) ? res.sessions : []).flatMap((r): (LiveSession & { key: string; seatTitle: boolean })[] => {
+        const sessions = (Array.isArray(res?.sessions) ? res.sessions : []).flatMap((r): (LiveSession & { key: string })[] => {
           const row = obj(r);
           const status = row?.status === "waiting" ? "waiting" : row?.status === "working" || row?.status === "starting" ? "working" : undefined;
           const chatId = typeof row?.session_key === "string" ? row.session_key : "";
@@ -1911,16 +1910,16 @@ export class Hermes {
           const mine = typeof row?.id === "string" ? this.runtimeOwners.get(row.id) : undefined;
           const at = typeof row?.last_active === "number" ? row.last_active * 1000 : 0;
           const key = `${typeof row?.id === "string" ? row.id : ""} ${chatId}`;
-          const seatTitle = typeof row?.title === "string" && row.title.startsWith(ROOM_SEAT_TITLE_PREFIX);
-          return status && chatId ? [{ chatId, status, at, key, seatTitle, ...(mine?.chatId === chatId && { profile: mine.profile }) }] : [];
+          return status && chatId ? [{ chatId, status, at, key, ...(mine?.chatId === chatId && { profile: mine.profile }) }] : [];
         });
         // Answers about sessions no longer live are dropped.
         const live = new Set(sessions.map((s) => s.key));
         for (const m of [this.sessionOwners, this.ownerTried]) for (const k of m.keys()) if (!live.has(k)) m.delete(k);
-        // Rows don't say their profile or source.
+        // Rows don't say their profile or source. Each other session is looked up by its id in every profile, a few per
+        // check, the ones tried longest ago first.
         const unknown = sessions
           .filter((s) => !s.profile && !this.sessionOwners.has(s.key))
-          .sort((a, b) => (this.ownerTried.get(a.key) ?? 0) - (this.ownerTried.get(b.key) ?? 0) || Number(b.seatTitle) - Number(a.seatTitle))
+          .sort((a, b) => (this.ownerTried.get(a.key) ?? 0) - (this.ownerTried.get(b.key) ?? 0))
           .slice(0, LOOKUPS_PER_CHECK);
         const profiles = unknown.length ? await this.profiles().catch(() => undefined) : undefined;
         for (const s of profiles ? unknown : []) {
@@ -1929,11 +1928,11 @@ export class Hermes {
           if (owner !== undefined) this.sessionOwners.set(s.key, owner);
         }
         if (gen !== this.generation) return;
-        const placed = sessions.flatMap(({ key, seatTitle, ...s }): LiveSession[] => {
+        const placed = sessions.flatMap(({ key, ...s }): LiveSession[] => {
           if (s.profile) return [s];
           const owner = this.sessionOwners.get(key);
-          // Until its lookup has run, any row may be a seat's: Hermes titles a seat's live row from its prompt.
-          if (owner === "seat" || (owner === undefined && (seatTitle || !this.ownerTried.has(key)))) return [];
+          // Until its lookup has run, any row may be a seat's, whatever its title.
+          if (owner === "seat" || (owner === undefined && !this.ownerTried.has(key))) return [];
           return [owner ? { ...s, ...owner } : s];
         });
         this.checkTimes.set({ live: Date.now() });

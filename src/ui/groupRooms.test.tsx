@@ -594,6 +594,7 @@ describe("A room's seats and the chats", () => {
     await say(user, "Hello team");
     await act(async () => void server.groups.begin("crew"));
     await waitFor(() => expect(floor().dataset.floor).toBe("speaking"));
+    server.otherProfiles.ada.push(row("group-crew-ada", 0, { source: "bot_room", hidden: true, title: "Group: crew" }));
     server.liveSessions = [{ id: "rt-ops", session_key: "elsewhere", status: "working", last_active: Date.now() / 1000, title: "Deploy log" }];
     const before = { rpc: server.requests.length };
     vi.useFakeTimers({ toFake: ["Date"] });

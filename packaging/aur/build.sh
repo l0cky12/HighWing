@@ -12,6 +12,6 @@ set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$here/build"
-cp "$here/PKGBUILD" "$here/hermes-chat.desktop" "$here/build/"
+cp "$here/PKGBUILD" "$here/build/"
 cd "$here/build"
 exec makepkg "$@"

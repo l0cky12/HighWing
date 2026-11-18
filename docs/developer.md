@@ -49,7 +49,7 @@ The app needs a Hermes Agent server with its dashboard running. [`compatibility.
 
 | Command | What it does |
 | --- | --- |
-| `npm run app` | Runs `tauri dev` with `WEBKIT_DISABLE_DMABUF_RENDERER=1` and `HERMES_CHAT_NEW_INSTANCE=1`. |
+| `npm run app` | Runs `tauri dev` with `HERMES_CHAT_NEW_INSTANCE=1`. |
 | `npm run dev` | Runs only the Vite dev server on port 1420. The page can't reach Hermes outside the Tauri window. |
 | `npm run build` | Type-checks all three `tsconfig` files, runs `oxlint --deny-warnings`, and builds the frontend into `dist/`. |
 | `npm run lint` | Runs `oxlint --deny-warnings`. |
@@ -92,7 +92,7 @@ Run these in `src-tauri/`. `tauri::generate_context!` needs `dist/` to exist at 
 
 | Variable | Read by | Effect |
 | --- | --- | --- |
-| `WEBKIT_DISABLE_DMABUF_RENDERER=1` | WebKitGTK | Prevents a blank window on some Wayland setups. The desktop launcher and `npm run app` set it. |
+| `WEBKIT_DISABLE_DMABUF_RENDERER=1` | WebKitGTK | Prevents a blank window on some Wayland setups. On Linux, `main.rs` sets it to `1` when it is unset, and keeps a value you set. |
 | `HERMES_CHAT_NEW_INSTANCE=1` | `src-tauri/src/remote.rs` | Starts this copy beside a running one instead of bringing that one forward. `npm run app` and an update's restart set it. |
 | `HTTP_PROXY`, `HTTPS_PROXY` | Rust HTTP client | Apply to dashboard HTTP requests. The WebSocket ignores them and connects directly. |
 | `HERMES_LIVE_DASHBOARD`, `HERMES_LIVE_USER`, `HERMES_LIVE_PASSWORD` | `src/hermes/*.live.test.ts` | Run the live tests against a real dashboard. Without `HERMES_LIVE_DASHBOARD`, those tests skip. Each file's header lists the other variables it reads. |

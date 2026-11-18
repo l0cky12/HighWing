@@ -31,7 +31,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 const noCaptures = (discard = vi.fn(async (_path: string) => {})) => {
-  const desk = new ScreenshotDesk({ capture: async () => Promise.reject(new Error("no captures here")), discard });
+  const desk = new ScreenshotDesk({ discard });
   desks.push(desk);
   return desk;
 };

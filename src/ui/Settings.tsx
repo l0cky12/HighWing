@@ -1,7 +1,7 @@
 // The Settings screen (ADR 0160): fifteen pages in a sidebar tree that takes the chat list's column, in three groups (App,
 // Agent, Server), each page under one header (SettingsPage.tsx); a narrow window has a bar that opens the tree as a sheet.
 // General, ported from the prototype: the connection and Sign out, what shows on
-// launch, screenshots, updates, the local cache, older history, importing transcripts, and backups. Appearance: how the app looks on this
+// launch, updates, the local cache, older history, importing transcripts, and backups. Appearance: how the app looks on this
 // computer (AppearanceSettings.tsx). Keyboard Shortcuts: every command and its keys, changed here (KeyboardSettings.tsx).
 // Snapshots: the bucket Share snapshot publishes to, and the snapshots in it (SnapshotSettings.tsx, ADR 0123).
 // Model: the profile's models on Hermes (ModelSettings.tsx), and Idle compaction on this computer
@@ -62,10 +62,8 @@ import { VoiceProviderSettings } from "./VoiceProviderSettings";
 import { LocalSttSettings } from "./LocalSttSettings";
 import type { LocalSttApi } from "../hermes/localStt";
 import type { SttSide, HeardTranscript } from "../hermes/sttRoute";
-import { ScreenshotSettings } from "./ScreenshotSettings";
 import { TraySettings } from "./TraySettings";
 import type { TrayWiring } from "../hermes/tauriTray";
-import type { ScreenshotSupport } from "../hermes/tauriScreenshot";
 import { UpdateSettings } from "./UpdateSettings";
 import { SnapshotSettings } from "./SnapshotSettings";
 import type { SnapshotApi } from "../hermes/snapshots";
@@ -92,18 +90,14 @@ import type { SkillCommands } from "../hermes/skillCommands";
 import { errorText, formatBytes } from "../hermes/values";
 
 type Tab = "general" | "appearance" | "keyboard" | "snapshots" | "model" | "providers" | "voice" | "toolsets" | "mcp" | "gateways" | "profiles" | "memory" | "skills" | "diagnostics" | "extensions";
-/**
- * General's five groups, shown one at a time beside a sub-nav (ADR 0113); a search shows every group's sections at once.
- * Voice moved to its own tab with the speech providers (ADR 0115), so the third group holds screenshots.
- */
-type GenGroup = "connection" | "chats" | "launch" | "screenshots" | "storage";
+/** General's four groups, shown one at a time beside a sub-nav (ADR 0113); a search shows every group's sections at once. */
+type GenGroup = "connection" | "chats" | "launch" | "storage";
 /** A section of a page that shows its sections one at a time, picked under the page in the sidebar's tree. */
 type SectionItem = { id: string; label: string };
 const GEN_GROUPS: SectionItem[] = [
   { id: "connection", label: "Connection" },
   { id: "chats", label: "Chats" },
   { id: "launch", label: "Launch, tray & updates" },
-  { id: "screenshots", label: "Screenshots" },
   { id: "storage", label: "Storage & data" },
 ];
 /** Diagnostics' two groups (ADR 0087): what the connected Hermes supports, and the logs. */
@@ -128,7 +122,6 @@ const SECTION_INTRO: Record<string, string> = {
   connection: "Sign in to a Hermes server, switch to another, or sign out.",
   chats: "What the chat list shows, what Enter does while Hermes replies, and spell checking.",
   launch: "What happens when the app starts and closes, and how it updates.",
-  screenshots: "Attach a screenshot of a region or a window to the message you're writing.",
   storage: "This computer's cache, older history, imported transcripts and backups.",
   "file:memory": "What Hermes noted for itself, such as facts about your setup and projects.",
   "file:profile": "What Hermes noted about you, such as your preferences and how you work.",
@@ -222,7 +215,6 @@ export function SettingsScreen({
   cacheBytes,
   appearance,
   listFonts,
-  checkScreenshots,
   tray,
   snapshots,
   showSnapshots,
@@ -292,8 +284,6 @@ export function SettingsScreen({
   appearance: AppearanceStore;
   /** The installed font families, for the font pickers. */
   listFonts: () => Promise<Fonts>;
-  /** How screenshots are taken on this desktop; left out where there is no desktop app to ask. */
-  checkScreenshots?: () => Promise<ScreenshotSupport>;
   /** The tray icon and Close to tray; left out where there is no desktop app to ask. */
   tray?: TrayWiring;
   /** Where Share snapshot publishes, and what it published (ADR 0123); without it there is no Snapshots tab. */
@@ -777,11 +767,6 @@ export function SettingsScreen({
         <UpdateSettings />
       </>
     ),
-    screenshots: (
-      <>
-        <ScreenshotSettings checkSupport={checkScreenshots} />
-      </>
-    ),
     storage: (
       <>
         <SettingsSection title="Local cache">
@@ -865,7 +850,6 @@ export function SettingsScreen({
       {generalGroups.connection}
       {generalGroups.chats}
       {generalGroups.launch}
-      {generalGroups.screenshots}
       {generalGroups.storage}
     </>
   ) : (

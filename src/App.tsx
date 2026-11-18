@@ -33,9 +33,8 @@ import { ReferenceDesk } from "./hermes/chatReferences";
 import { deadline } from "./hermes/remoteFiles";
 import { desktopSummon, type SummonApi, type Summoned } from "./hermes/summon";
 import { SelectionWatch, quoted, untilFocused } from "./hermes/selection";
-import { onDesktopScreenshot, screenshotSupport, showWindow, syncScreenshotOutbox, tauriScreenshots, type ScreenshotSupport } from "./hermes/tauriScreenshot";
+import { syncScreenshotOutbox, tauriScreenshots } from "./hermes/tauriScreenshot";
 import { AtConnectionLimit, ConnectionManager, DisconnectConnection, RailConnections, RemoveConnection, SwitchConnection, atLimitText, liveCounts } from "./ui/Connections";
-import { checkShortcut, shortcutLabel, shortcutOf } from "./ui/shortcut";
 import { chordLabel, pickApp, useBindings } from "./ui/keybindings";
 
 import { reachRoute, tauriPipe, tauriProbe, tauriReach, type SignInDetails } from "./hermes/tauriPipe";
@@ -1118,30 +1117,12 @@ const draftChat = (draftError?: string): Chat => ({
   updatedAt: Date.now(),
   items: draftError ? [{ kind: "error", id: "e-draft", text: draftError }] : [],
 });
-/** What the desktop is told when a desktop shortcut's screenshot is attached while Hermes Chat isn't focused. */
-const SCREENSHOT_ATTACHED = { title: "Screenshot attached", body: "Review it in Highwing before you send it." };
-
-/** The real screenshot calls, and what a desktop shortcut does once its screenshot is attached. */
+/** The real calls behind the staging desk: deleting a staged file, and keeping the ones an outbox still holds. */
 export type Screenshots = {
   api: ScreenshotApi;
   syncOutbox?: () => Promise<void>;
-  /** Calls `fn` whenever a desktop shortcut asks for a screenshot; returns the function that stops it. */
-  onDesktopShortcut: (fn: () => void) => () => void;
-  /** A desktop shortcut's screenshot was attached: bring the window forward, and say so if it still isn't focused. */
-  attached: () => void;
-  /** How screenshots are taken on this desktop, for Settings. */
-  support?: () => Promise<ScreenshotSupport>;
 };
-const tauriScreenshotWiring: Screenshots = {
-  api: tauriScreenshots,
-  syncOutbox: syncScreenshotOutbox,
-  onDesktopShortcut: onDesktopScreenshot,
-  support: screenshotSupport,
-  attached: () =>
-    void showWindow().then(() => {
-      if (!document.hasFocus()) void desktopNotify(SCREENSHOT_ATTACHED).catch(() => {});
-    }),
-};
+const tauriScreenshotWiring: Screenshots = { api: tauriScreenshots, syncOutbox: syncScreenshotOutbox };
 
 /** Each profile's chat on screen in this run, by prefScope; null: the New chat pane. */
 type ShownThisRun = Map<string, string | null>;
@@ -1537,7 +1518,7 @@ export function Main({
   // The model pick is sticky: new chats start on it, in this profile, until the owner picks another. It is kept on this
   // computer only and never becomes the profile's default. Picked in another profile, it gives way to this profile's
   // own model. A chat on screen shows the model it runs on, and a pick there switches that chat alone.
-  const { modelPicker, modelPicks, modelFavorites, previewWidth, sidebarWidth, screenshotShortcut, inboxAutoDismissDays, summonSelection, chatListMode } = useSyncExternalStore(subscribeUIPrefs, getUIPrefs);
+  const { modelPicker, modelPicks, modelFavorites, previewWidth, sidebarWidth, inboxAutoDismissDays, summonSelection, chatListMode } = useSyncExternalStore(subscribeUIPrefs, getUIPrefs);
   const keys = useBindings();
   const catalog = models?.profile === profile ? models : undefined;
   const sticky: ModelPick | undefined = modelPicks[pref] ?? (modelPicker?.profile === pref ? withoutProfile(modelPicker) : catalog?.defaultPick);
@@ -1976,16 +1957,15 @@ export function Main({
     else splitWith(id);
   };
 
-  // Screenshots go to the composer on screen, and each chat's staged attachments are kept here. The desk lives as long
-  // as this signed-in window: signing out deletes any capture not yet sent. Made in a layout effect, so StrictMode's
-  // second mount gets a desk of its own before the first paint. No chat is drawn without it, as its composer keeps its
-  // files there.
+  // Each chat's staged attachments are kept here, and an annotation goes to the composer on screen. The desk lives as
+  // long as this signed-in window: signing out deletes any staged file not yet sent. Made in a layout effect, so
+  // StrictMode's second mount gets a desk of its own before the first paint. No chat is drawn without it, as its
+  // composer keeps its files there.
   const [desk, setDesk] = useState<ScreenshotDesk>();
   const screenshotsRef = useRef(screenshots);
   useLayoutEffect(() => {
     const d = new ScreenshotDesk(
       screenshotsRef.current.api,
-      (remote) => remote && screenshotsRef.current.attached(),
       () => revealComposerRef.current(),
       (key) => savedDrafts.get(key),
     );
@@ -2012,30 +1992,12 @@ export function Main({
     setShowTextGeneration({});
     setSettingsOpen(true);
   };
-  // Reveal the composer when Search, Settings, Projects, Server files or a narrow preview covers it, so the capture can
-  // be reviewed.
-  const takeScreenshot = (remote = false) => guard(() => {
-    if (!desk) return;
-    flushSync(() => {
-      setSettingsOpen(false);
-      setProjectOpen(false);
-      setJobsOpen(false);
-      setUsageOpen(false); setWorkOpen(false);
-      setSearchOpen(false);
-      if (!previewFits) setPanelHidden(true);
-    });
-    focusPane(active.key);
-    void desk.capture({ remote });
-  });
   // An annotation added while the Preview covers the chat (a narrow window) goes to the chat's composer, which shows.
   const revealComposerRef = useRef(() => {});
   revealComposerRef.current = () => {
     if (!previewFits) setPanelHidden(true);
     focusPane(active.key);
   };
-  const takeScreenshotRef = useRef(takeScreenshot);
-  takeScreenshotRef.current = takeScreenshot;
-  useEffect(() => (desk ? screenshotsRef.current.onDesktopShortcut(() => takeScreenshotRef.current(true)) : undefined), [desk]);
 
   // The pane left takes the whole width and becomes the active one.
   const closePane = (key: string) => {
@@ -2866,11 +2828,6 @@ export function Main({
         }
         return;
       }
-      if (screenshotShortcut && shortcutOf(e) === screenshotShortcut && !checkShortcut(screenshotShortcut).error) {
-        e.preventDefault();
-        if (!e.repeat) takeScreenshot();
-        return;
-      }
       if (e.defaultPrevented) return;
       const onChat = !covering && !previewCovers && !projectScreenOpen && !searchOpen;
       const command = pickApp(e);
@@ -3064,7 +3021,6 @@ export function Main({
           referenceDesk={referenceDesk}
           onTextGenerationSettings={openTextGeneration}
           screenshotWiring={screenshots}
-          screenshotKeys={screenshotShortcut ? shortcutLabel(screenshotShortcut) : undefined}
           voice={voice}
           catalog={catalog}
           sticky={sticky}
@@ -3676,7 +3632,6 @@ export function Main({
             extensions={{ skills: () => hermes.skillCommands() }}
             onSkillDirty={onSkillDirty}
             skillDiscards={skillDiscards}
-            checkScreenshots={screenshots.support}
             tray={tray}
             snapshots={tauriSnapshots}
             showSnapshots={showSnapshots}
@@ -3874,7 +3829,7 @@ export function Main({
           onSave={(name, f) => tagsStore.saveFilter(name, f)}
           onBulk={(p) => tagsStore.applyBulk(p)}
           onManageTags={() => openTags()}
-          passKey={(e) => pickApp(e) === "search" || (!!screenshotShortcut && shortcutOf(e.nativeEvent) === screenshotShortcut)}
+          passKey={(e) => pickApp(e) === "search"}
           everywhere={
             everywhere && {
               run: everywhere.run,
@@ -4065,7 +4020,6 @@ function ChatView({
   previewControls,
   screenshots,
   screenshotWiring,
-  screenshotKeys,
   voice,
   referenceDesk,
   onTextGenerationSettings,
@@ -4139,7 +4093,6 @@ function ChatView({
   previewControls: ReactNode;
   screenshots: ScreenshotDesk;
   screenshotWiring: Screenshots;
-  screenshotKeys?: string;
   voice: VoiceApi;
   /** The chats each unsent message references, by Draft key. */
   referenceDesk: ReferenceDesk;
@@ -4605,7 +4558,6 @@ function ChatView({
       visible={visible}
       split={split}
       screenshots={screenshots}
-      screenshotKeys={screenshotKeys}
       voice={voice}
       // A Voice conversation's turn goes straight to the chat, as a slash command's message does: what the owner has
       // typed stays in the composer, and a failure is a Failed message (ADR 0111).

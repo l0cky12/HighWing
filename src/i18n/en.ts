@@ -113,7 +113,7 @@ export const en = {
     },
     /** Each page's one-line description, under its title. */
     pages: {
-      general: "Connections, the chat list, launch and tray, screenshots, and this computer's data.",
+      general: "Connections, the chat list, launch and tray, and this computer's data.",
       appearance: "How Highwing looks on this computer.",
       keyboard: "Click a shortcut, press the new keys, then Save. Ctrl means Ctrl or Cmd.",
       snapshots: "The bucket Share snapshot publishes chat pages to, and the snapshots in it.",

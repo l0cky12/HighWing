@@ -111,7 +111,6 @@ export async function boot(opts: BootOptions = {}) {
     update_install_kind: () => ({ kind: "unmanaged", version: "0.0.0" }),
     local_stt_state: () => ({ onThisComputer: false }),
     tray_inbox: () => undefined,
-    screenshot_pending_request: () => null,
     screenshot_sync_outbox: () => undefined,
     restart_drafts_read: () => ({ kind: "none" }),
     window_hidden: () => false,

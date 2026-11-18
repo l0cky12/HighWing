@@ -1,7 +1,7 @@
 // Transcript, thinking, tool-call groups, Approval cards, find bar and composer, ported from the prototype.
 // Dictation and Read aloud come from Voice.tsx.
 import { createContext, Fragment, memo, type HTMLAttributes, type ReactNode, type RefObject, useCallback, startTransition, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
-import { Archive, ArchiveRestore, ArrowUp, AtSign, Bot, Brain, CalendarClock, PackageCheck, Reply, Send, SquareTerminal, Camera, ChevronDown, ChevronRight, ChevronUp, CircleAlert, CloudOff, Columns2, CornerDownRight, FileDown, FileInput, Globe, HardDrive, Link2, ListPlus, Ellipsis, Paperclip, RotateCcw, Search, Server, Share2, Square, Trash2, Wrench, X } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowUp, AtSign, Bot, Brain, CalendarClock, PackageCheck, Reply, Send, SquareTerminal, ChevronDown, ChevronRight, ChevronUp, CircleAlert, CloudOff, Columns2, CornerDownRight, FileDown, FileInput, Globe, HardDrive, Link2, ListPlus, Ellipsis, Paperclip, RotateCcw, Search, Server, Share2, Square, Trash2, Wrench, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { decodeString } from "micromark-util-decode-string";
@@ -398,7 +398,7 @@ const savedWhen = (at: number) => new Date(at).toLocaleString(undefined, { dateS
  * Hermes is connected. `onRetry`, `onEdit` and `onDismiss` act on failed or unconfirmed messages. `modelControls`
  * contains the model picker; `footer` contains the status bar. Only the active pane answers Ctrl+F and takes focus as
  * it opens. Native drops attach to the pane under the pointer. Export, Copy chat link and Archive are in the header's More menu.
- * `screenshots` takes captures and keeps every chat's staged attachments; `screenshotKeys` names the shortcut.
+ * `screenshots` keeps every chat's staged attachments.
  * `voice` supplies Dictation and Read aloud. `voiceSend` puts a Voice conversation's turn in the chat as the owner's
  * message; it is left out for a chat not started yet, where a conversation can't start (ADR 0111). `commands` runs the slash commands typed in the composer. `queue` is the
  * chat's queue of messages waiting to go after its reply, and `queueApi` changes it; it is left out for a chat not
@@ -444,7 +444,6 @@ export function ChatPane({
   voice,
   voiceSend,
   screenshots,
-  screenshotKeys,
   projects,
   server,
   bot,
@@ -517,7 +516,6 @@ export function ChatPane({
   voice?: VoiceApi;
   voiceSend?: (text: string) => Promise<{ delivery: Delivery; itemId?: string }>;
   screenshots: ScreenshotDesk;
-  screenshotKeys?: string;
   /** The names of the projects the chat is in, or a new chat will be put in. */
   projects?: string[];
   /** The server and profile the chat is on, shown while more than one connection is live (ADR 0125). */
@@ -1229,7 +1227,6 @@ export function ChatPane({
         started={!!voiceSend}
         status={status}
         screenshots={screenshots}
-        screenshotKeys={screenshotKeys}
         commands={commands}
         references={references}
         followUp={compare ? undefined : followUp}
@@ -1859,7 +1856,6 @@ function Composer({
   started = false,
   status,
   screenshots,
-  screenshotKeys,
   commands,
   references,
   followUp,
@@ -1898,9 +1894,8 @@ function Composer({
   conversation?: VoiceConversation;
   started?: boolean;
   status: ConnectionStatus;
-  /** Screenshots come from here, and it keeps the chat's staged attachments. */
+  /** Keeps the chat's staged attachments, and hands the composer a Preview annotation. */
   screenshots: ScreenshotDesk;
-  screenshotKeys?: string;
   commands?: CommandHost;
   /** The chats the message references, kept under `draftKey`. */
   references?: ComposerReferences;
@@ -2107,12 +2102,7 @@ function Composer({
   const placeRef = useRef(place);
   placeRef.current = place;
 
-  // Screenshots attach here while this composer is on screen.
-  const shot = useSyncExternalStore(screenshots.subscribe, screenshots.getSnapshot);
-  // A new screenshot replaces the notes about the last thing attached.
-  useEffect(() => {
-    if (shot.capturing) setRefused([]);
-  }, [shot.capturing]);
+  // Annotations attach here while this composer is on screen.
   useEffect(() => {
     if (!autoFocus) return;
     let current = true;
@@ -2161,7 +2151,7 @@ function Composer({
     return () => void unlisten.then((stop) => stop());
   }, []);
 
-  // A pasted file, or one dropped on Windows, has no path of its own: Rust stages its bytes with the screenshots. One
+  // A pasted file, or one dropped on Windows, has no path of its own: Rust stages its bytes in the desk's private folder. One
   // too big for Hermes is refused before its bytes are read into the webview.
   const stageFiles = (incoming: File[] | Promise<File[]>, nameOf = pastedName) => busy(async () => {
     const at = anchorHere();
@@ -2409,11 +2399,6 @@ function Composer({
           }}
         />
       )}
-      {shot.capturing && (
-        <div className="capture-note" role="status">
-          Taking a screenshot: select a region or window, or press Esc to cancel.
-        </div>
-      )}
       {refused.map((r, i) => (
         <div key={i} className="attach-note" role="alert">
           {r}
@@ -2534,15 +2519,6 @@ function Composer({
               }}
             />
           )}
-          <button
-            className="icon-btn"
-            title={screenshotKeys ? `Attach a screenshot (${screenshotKeys})` : "Attach a screenshot"}
-            aria-label="Attach a screenshot"
-            disabled={shot.capturing}
-            onClick={() => void screenshots.capture()}
-          >
-            <Camera size={16} />
-          </button>
           {modelControls}
           {!dictation.active && (
             <span className="composer-keys" title={steerWhy && `Can't steer now: ${steerWhy}`}>

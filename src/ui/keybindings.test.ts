@@ -91,7 +91,7 @@ describe("Writing a key press down as a chord", () => {
 
 describe("Stored overrides", () => {
   it("fall back to the defaults for an unknown command, a string that isn't a chord, or a chord the command refuses", () => {
-    const b = bindingsOf({ search: ["Ctrl+J"], gone: ["Ctrl+G"], newChat: ["ctrl+n"], find: ["K"], toggleList: ["Ctrl+Shift+B", "nope", "Ctrl+V"] }, "Ctrl+Shift+S");
+    const b = bindingsOf({ search: ["Ctrl+J"], gone: ["Ctrl+G"], newChat: ["ctrl+n"], find: ["K"], toggleList: ["Ctrl+Shift+B", "nope", "Ctrl+V"] });
     expect(b.search).toEqual(["Ctrl+J"]);
     expect(b.newChat).toEqual(DEFAULT_BINDINGS.newChat);
     expect(b.find).toEqual(DEFAULT_BINDINGS.find);
@@ -101,12 +101,11 @@ describe("Stored overrides", () => {
     expect(isCustom(b, "newChat")).toBe(false);
   });
 
-  it("never put a bare key, or the screenshot shortcut, on an app-wide command", () => {
-    const b = bindingsOf({ search: ["J"], newChat: ["Shift+N"], settings: ["Ctrl+Shift+S"] }, "Ctrl+Shift+S");
+  it("never put a bare key on an app-wide command", () => {
+    const b = bindingsOf({ search: ["J"], newChat: ["Shift+N"], settings: ["Ctrl+Shift+S"] });
     expect(b.search).toEqual(["Ctrl+K"]);
     expect(b.newChat).toEqual(["Ctrl+N"]);
-    expect(b.settings).toEqual(["Ctrl+,"]);
-    expect(bindingsOf({ settings: ["Ctrl+Shift+S"] }, null).settings).toEqual(["Ctrl+Shift+S"]);
+    expect(b.settings).toEqual(["Ctrl+Shift+S"]);
   });
 
   it("are written as a diff from the defaults, and a rebind back to the default forgets the override", () => {
@@ -162,25 +161,20 @@ describe("Which command a key press is", () => {
 
 describe("Bindings that clash", () => {
   it("are two with one chord in the same scope, or one of them app-wide; different local scopes don't", () => {
-    expect(conflicts(DEFAULT_BINDINGS, "Ctrl+Shift+S")).toEqual(new Map());
-    const b = bindingsOf({ toggleList: ["Ctrl+K"], findNext: ["Ctrl+Enter"], paletteClose: ["Ctrl+B"] }, "Ctrl+Shift+S");
-    expect(conflicts(b, "Ctrl+Shift+S")).toEqual(
+    expect(conflicts(DEFAULT_BINDINGS)).toEqual(new Map());
+    const b = bindingsOf({ toggleList: ["Ctrl+K"], findNext: ["Ctrl+Enter"], paletteClose: ["Ctrl+B"] });
+    expect(conflicts(b)).toEqual(
       new Map([
         ["search", [COMMANDS.toggleList.title]],
         ["toggleList", [COMMANDS.search.title]],
       ]),
     );
-    expect(conflicts(bindingsOf({ findNext: ["Ctrl+Enter"] }, null), null)).toEqual(new Map());
-  });
-
-  it("include the screenshot shortcut, with Super read as Ctrl", () => {
-    const b = bindingsOf({ send: ["Ctrl+S"] }, null);
-    expect(conflicts(b, "Super+S")).toEqual(new Map([["send", ["the screenshot shortcut"]]]));
+    expect(conflicts(bindingsOf({ findNext: ["Ctrl+Enter"] }))).toEqual(new Map());
   });
 });
 
 describe("Chords a command refuses", () => {
-  const ok = (id: keyof typeof COMMANDS, s: string) => checkChord(id, chord(s), "Ctrl+Shift+S");
+  const ok = (id: keyof typeof COMMANDS, s: string) => checkChord(id, chord(s));
 
   it("a printable key without Ctrl or Alt, which typing would set off", () => {
     expect(ok("send", "K")).toMatch(/Typing K would run it/);
@@ -209,12 +203,6 @@ describe("Chords a command refuses", () => {
     expect(ok("search", "Ctrl+Alt+C")).toBeUndefined();
     expect(ok("search", "Ctrl+Alt+F2")).toMatch(/text console/);
     expect(ok("search", "Alt+F4")).toMatch(/closes the window/);
-  });
-
-  it("the screenshot shortcut as it is now", () => {
-    expect(ok("search", "Ctrl+Shift+S")).toMatch(/screenshot shortcut/);
-    expect(checkChord("search", chord("Ctrl+Shift+S"), "Super+Shift+S")).toMatch(/screenshot shortcut/);
-    expect(checkChord("search", chord("Ctrl+Shift+S"), null)).toBeUndefined();
   });
 
   it("never a clash with another command, which is saved and warned about", () => {

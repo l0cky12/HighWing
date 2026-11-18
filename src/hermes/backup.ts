@@ -315,7 +315,7 @@ const grouping = (part: unknown): ScopeLinks | undefined => {
 };
 
 /** The display and startup settings a backup holds. Each profile's chat to reopen isn't: it's a copy of the server's list. */
-const SETTINGS_FIELDS = ["theme", "reopenLastChat", "checkUpdatesOnLaunch", "modelPicker", "modelFavorites", "statusBar", "screenshotShortcut", "previewWidth", "sidebarWidth", "zoom", "terminalKind", "keybindings"];
+const SETTINGS_FIELDS = ["theme", "reopenLastChat", "checkUpdatesOnLaunch", "modelPicker", "modelFavorites", "statusBar", "previewWidth", "sidebarWidth", "zoom", "terminalKind", "keybindings"];
 const prefsDoc = (s: BackupStorage): Record<string, unknown> => {
   try {
     const d: unknown = JSON.parse(s.getItem(UI_PREFS_KEY) ?? "{}");
@@ -344,7 +344,7 @@ const templatesRaw = (s: BackupStorage) => stable(prefsDoc(s).templates ?? null)
 export const CATEGORIES = {
   settings: {
     label: "Settings",
-    holds: "Theme, appearance and custom themes, startup and display choices, the model pick and favorites, status bar, screenshot shortcut, terminal target and which computer it opens on",
+    holds: "Theme, appearance and custom themes, startup and display choices, the model pick and favorites, status bar, terminal target and which computer it opens on",
     scoped: false,
     async load({ storage }) {
       const doc = currentPrefsDoc(storage);

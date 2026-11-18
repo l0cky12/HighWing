@@ -145,8 +145,8 @@ const shots: { server: FakeHermes; hermes: typeof hermes; openInbox?: () => void
   selection: {},
 };
 (window as unknown as { shots: unknown }).shots = shots;
-// Settings → General's desktop parts, as the desktop app wires them: two saved connections, the tray and screenshots. The
-// tray and screenshot answers are made up, as Rust would give them on a desktop that shows tray icons.
+// Settings → General's desktop parts, as the desktop app wires them: two saved connections and the tray. The tray's
+// answers are made up, as Rust would give them on a desktop that shows tray icons.
 const current = { id: "conn-home-0001", name: "Home server", mode: "ssh" as const, sshTarget: "lena@hermes", url: "", username: "lena", addedAt: 0, lastUsedAt: Date.now() - 60e3 };
 const saved = [current, { id: "conn-work-0002", name: "Work lab", mode: "url" as const, sshTarget: "", url: "https://hermes.lab.example.net", username: "lena", addedAt: 0, lastUsedAt: Date.now() - 3 * 86400e3 }];
 let tray = { closeToTray: false, tray: "shown" as const };
@@ -158,12 +158,7 @@ const trayWiring = {
   onOpenInbox: (fn: () => void) => ((shots.openInbox = fn), () => {}),
   reportInbox: () => {},
 };
-const screenshots = {
-  api: { capture: () => Promise.reject(new Error("No screenshots in the browser harness")), discard: async () => {} },
-  onDesktopShortcut: () => () => {},
-  attached: () => {},
-  support: async () => ({ ok: true, summary: "Screenshots use the desktop portal (xdg-desktop-portal-hyprland): pick a region or a window." }),
-};
+const screenshots = { api: { discard: async () => {} } };
 createRoot(document.getElementById("root")!).render(
   <Main
     hermes={hermes}

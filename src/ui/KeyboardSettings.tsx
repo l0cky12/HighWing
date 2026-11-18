@@ -1,15 +1,13 @@
 // Settings, the Keyboard Shortcuts tab: every command of the app (keybindings.ts, ADR 0147) under its group, with the
 // condition its keys work under, its chords as key chips, and a way to change it: click the chips, press the new keys,
 // Save. A changed command shows Custom and a Reset; two commands on one chord show a warning naming the other. Keys
-// that stay as they are (undo, the screenshot shortcut, Escape in a dialog) are listed so they can be found. Changes
+// that stay as they are (undo, Escape in a dialog) are listed so they can be found. Changes
 // are kept in the display preferences (uiPrefs.ts), on this computer only, and apply at once.
-import { type KeyboardEvent, memo, useState, useSyncExternalStore } from "react";
+import { type KeyboardEvent, memo, useState } from "react";
 import { ChevronRight, CircleAlert, RotateCcw } from "lucide-react";
-import { getUIPrefs, subscribe } from "../hermes/uiPrefs";
 import { composing } from "./bits";
 import { SettingNote, SettingRow, SettingsSection } from "./SettingRows";
 import { HeadPart, useInPage } from "./SettingsPage";
-import { onlyModifiers, shortcutLabel } from "./shortcut";
 import {
   COMMANDS,
   COMMAND_IDS,
@@ -21,6 +19,7 @@ import {
   chordParts,
   conflicts,
   isCustom,
+  onlyModifiers,
   parseChord,
   rebind,
   resetAll,
@@ -48,8 +47,7 @@ function KeyChips({ parts }: { parts: readonly string[] }) {
 /** Memoized: a Settings search re-renders every searched tab on each key typed, and nothing here reads the query. */
 export const KeyboardSettings = memo(function KeyboardSettings() {
   const bindings = useBindings();
-  const { screenshotShortcut } = useSyncExternalStore(subscribe, getUIPrefs);
-  const clashes = conflicts(bindings, screenshotShortcut);
+  const clashes = conflicts(bindings);
   const [capture, setCapture] = useState<Capture>();
   const anyCustom = COMMAND_IDS.some((id) => isCustom(bindings, id));
 
@@ -61,7 +59,7 @@ export const KeyboardSettings = memo(function KeyboardSettings() {
     if (onlyModifiers(e)) return;
     if (e.key === "Escape" && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) return setCapture(undefined);
     const chord = chordOf(e);
-    if (chord) setCapture({ id, chord, problem: checkChord(id, chord, screenshotShortcut) });
+    if (chord) setCapture({ id, chord, problem: checkChord(id, chord) });
   };
 
   const row = (id: CommandId) => {
@@ -88,7 +86,7 @@ export const KeyboardSettings = memo(function KeyboardSettings() {
               <button className="btn shortcut-key recording" aria-label={`New shortcut for ${title}`} autoFocus onKeyDown={record(id)}>
                 {pressed ? <KeyChips parts={chordParts(pressed)} /> : "Press the shortcut…"}
               </button>
-              <button className="btn" onClick={() => setCapture({ id, chord: ESCAPE, problem: checkChord(id, ESCAPE, screenshotShortcut) })}>
+              <button className="btn" onClick={() => setCapture({ id, chord: ESCAPE, problem: checkChord(id, ESCAPE) })}>
                 Use Esc
               </button>
               <button className="btn" disabled={!pressed || !!capture.problem} onClick={() => (rebind(id, pressed!), setCapture(undefined))}>
@@ -128,7 +126,7 @@ export const KeyboardSettings = memo(function KeyboardSettings() {
     );
   };
 
-  const fixedRow = (title: string, when: string, keys: readonly string[][], hint?: string) => (
+  const fixedRow = (title: string, when: string, keys: readonly string[][]) => (
     <SettingRow
       key={title}
       name={
@@ -138,12 +136,7 @@ export const KeyboardSettings = memo(function KeyboardSettings() {
         </>
       }
       about={title}
-      hint={
-        <>
-          <code className="key-when">{when}</code>
-          {hint && <> · {hint}</>}
-        </>
-      }
+      hint={<code className="key-when">{when}</code>}
       control={
         <span className="shortcut-fixed">
           {keys.map((parts, i) => (
@@ -165,12 +158,7 @@ export const KeyboardSettings = memo(function KeyboardSettings() {
   const section = (group: Group) => {
     const { title } = GROUPS.find((g) => g.id === group)!;
     const ids = COMMAND_IDS.filter((id) => COMMANDS[id].group === group);
-    const fixed = [
-      ...FIXED.filter((f) => f.group === group).map((f) => fixedRow(f.title, f.when, f.keys.map(chordParts))),
-      ...(group === "chat"
-        ? [fixedRow("Take a screenshot for the composer", "Always", [screenshotShortcut ? shortcutLabel(screenshotShortcut).split("+") : ["Off"]], "Changed under Settings → General → Screenshots.")]
-        : []),
-    ];
+    const fixed = FIXED.filter((f) => f.group === group).map((f) => fixedRow(f.title, f.when, f.keys.map(chordParts)));
     return (
       <SettingsSection
         key={group}

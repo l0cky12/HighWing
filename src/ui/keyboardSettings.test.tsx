@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Keyboard shortcuts the owner changed, driven through the signed-in app against a fake Hermes: a rebound chord works
 // and the old one doesn't, two commands on one chord run one, an IME never fires one, the Keyboard Shortcuts page
-// changes, keeps, resets and warns, hints show the current chord, and the screenshot recorder follows the table.
+// changes, keeps, resets and warns, and hints show the current chord.
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -28,7 +28,7 @@ const button = (name: string | RegExp) => screen.getByRole("button", { name });
 const rowButton = (title: string) => screen.getByRole("button", { name: new RegExp(`^${title}`) });
 const palette = () => screen.queryByRole("dialog", { name: "Search chats" });
 const prompts = (server: FakeHermes) => server.requests.filter((r) => r.method === "prompt.submit");
-const stored = () => JSON.parse(localStorage.getItem(UI_PREFS_KEY) ?? "{}") as { keybindings?: Record<string, string[]>; screenshotShortcut?: string | null };
+const stored = () => JSON.parse(localStorage.getItem(UI_PREFS_KEY) ?? "{}") as { keybindings?: Record<string, string[]> };
 const settle = (hermes: Hermes) => act(async () => void (await hermes.idle()));
 
 /** Signed in with two Active chats and the draft on screen, focus in its composer; `keybindings` as if from a restart. */
@@ -167,8 +167,7 @@ describe("The Keyboard Shortcuts page", () => {
     expect(screen.getByText(/No key answers an Approval/)).toBeTruthy();
     expect(screen.queryByText("Custom")).toBeNull();
     expect(button("Reset all").hasAttribute("disabled")).toBe(true);
-    expect(screen.getByText("Take a screenshot for the composer")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /^Change Take a screenshot/ })).toBeNull();
+    expect(screen.queryByText("Take a screenshot for the composer")).toBeNull();
     for (const fixed of [
       "Move between a menu's items",
       "Close a menu, back to its button",
@@ -223,8 +222,6 @@ describe("The Keyboard Shortcuts page", () => {
     expect(button("Save").hasAttribute("disabled")).toBe(true);
     await s.user.keyboard("{Control>}v{/Control}");
     expect(screen.getByRole("alert").textContent).toBe("Ctrl+V pastes while you type.");
-    await s.user.keyboard("{Control>}{Shift>}s{/Shift}{/Control}");
-    expect(screen.getByRole("alert").textContent).toMatch(/screenshot shortcut/);
     await s.user.keyboard("{Escape}");
     expect(screen.queryByRole("alert")).toBeNull();
     expect(button(/^Change Search all chats/).getAttribute("aria-label")).toBe("Change Search all chats (Ctrl+K)");
@@ -310,23 +307,5 @@ describe("Hints", () => {
     await s.user.click(button("Save"));
     expect(button("New chat (Ctrl+Shift+N)")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "New chat (Ctrl+N)" })).toBeNull();
-  });
-});
-
-describe("The screenshot recorder", () => {
-  it("accepts Ctrl+K once Search moved off it", async () => {
-    const s = await signedIn({ search: ["Ctrl+J"] });
-    await s.user.click(button("Settings"));
-    await screen.findByRole("heading", { name: "Settings" });
-    await s.user.click(within(screen.getByRole("group", { name: "General: sections" })).getByRole("button", { name: "Screenshots" }));
-    const key = button("Screenshot shortcut");
-    const shortcutRow = within(key.closest<HTMLElement>(".set-row")!);
-    await s.user.click(key);
-    await s.user.keyboard("{Control>}j{/Control}");
-    expect(shortcutRow.getByRole("alert").textContent).toContain("Ctrl+J already runs Search all chats");
-    await s.user.keyboard("{Control>}k{/Control}");
-    expect(shortcutRow.queryByRole("alert")).toBeNull();
-    expect(key.textContent).toContain("Ctrl+K");
-    expect(stored().screenshotShortcut).toBe("Ctrl+K");
   });
 });

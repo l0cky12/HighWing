@@ -42,7 +42,7 @@ afterEach(() => {
 
 describe("reading", () => {
   it("is the defaults when nothing is stored", () => {
-    expect(getUIPrefs()).toEqual({ theme: "system", reopenLastChat: false, checkUpdatesOnLaunch: true, lastOpenChat: {}, modelPicker: null, modelPicks: {}, modelFavorites: [], statusBar: ["context", "model", "status"], previewWidth: null, sidebarWidth: null, zoom: 1, screenshotShortcut: "Ctrl+Shift+S", templates: [], terminalKind: "server", followUp: "queue", idleCompact: { enabled: false, percent: 70, idleMinutes: 15 }, chatSectionsShown: ["pinned", "inbox", "snoozed", "working", "archived"], chatSectionsCollapsed: ["snoozed", "archived"], chatListMode: "chats", inboxAutoDismissDays: null, messageDetails: "time", spellCheck: true, summonSelection: true, keybindings: {}, writingModels: {} });
+    expect(getUIPrefs()).toEqual({ theme: "system", reopenLastChat: false, checkUpdatesOnLaunch: true, lastOpenChat: {}, modelPicker: null, modelPicks: {}, modelFavorites: [], statusBar: ["context", "model", "status"], previewWidth: null, sidebarWidth: null, zoom: 1, templates: [], terminalKind: "server", followUp: "queue", idleCompact: { enabled: false, percent: 70, idleMinutes: 15 }, chatSectionsShown: ["pinned", "inbox", "snoozed", "working", "archived"], chatSectionsCollapsed: ["snoozed", "archived"], chatListMode: "chats", inboxAutoDismissDays: null, messageDetails: "time", spellCheck: true, summonSelection: true, keybindings: {}, writingModels: {} });
     expect(getUIPrefs()).toEqual(DEFAULT_UI_PREFS);
   });
 
@@ -89,7 +89,7 @@ describe("reading", () => {
       modelPicks: {},
       modelFavorites: ["openai/gpt-5", "anthropic/claude-opus-5-5"],
       statusBar: ["model", "tokens"],
-      previewWidth: null, sidebarWidth: null, zoom: 1, screenshotShortcut: "Ctrl+Shift+S", templates: [], terminalKind: "server", followUp: "queue", spellCheck: true,
+      previewWidth: null, sidebarWidth: null, zoom: 1, templates: [], terminalKind: "server", followUp: "queue", spellCheck: true,
       idleCompact: { enabled: false, percent: 70, idleMinutes: 30 },
       // A version 1 list gains Pinned, new in version 2.
       chatSectionsShown: ["pinned", "inbox", "archived"],
@@ -347,6 +347,15 @@ describe("migration", () => {
     }
   });
 
+  it("reads a document saved while the screenshot shortcut existed, with its other settings kept", () => {
+    for (const screenshotShortcut of ["Ctrl+Shift+S", "Super+PrintScreen", null]) {
+      localStorage.setItem(UI_PREFS_KEY, JSON.stringify({ v: UI_PREFS_VERSION, screenshotShortcut, theme: "dark", zoom: 1.25, keybindings: { search: ["Ctrl+J"] } }));
+      const prefs = getUIPrefs();
+      expect(prefs).toMatchObject({ theme: "dark", zoom: 1.25, keybindings: { search: ["Ctrl+J"] } });
+      expect(prefs).not.toHaveProperty("screenshotShortcut");
+    }
+  });
+
   it("starts on a new chat from version 5, whatever an older document held, and keeps reopening turned on since", () => {
     for (const [v, saved, read] of [
       [0, true, false],
@@ -528,19 +537,6 @@ describe("the last open chat", () => {
     rememberOpenChat("default", "c1");
     rememberOpenChat("work", null);
     expect(fn).not.toHaveBeenCalled();
-  });
-  it("keeps a screenshot shortcut in its stored shape, or none", () => {
-    for (const ok of ["Alt+F12", "Ctrl+Alt+Shift+Super+9", "PrintScreen", "Super+PrintScreen"]) {
-      setUIPrefs({ screenshotShortcut: ok });
-      expect(getUIPrefs().screenshotShortcut).toBe(ok);
-    }
-    setUIPrefs({ screenshotShortcut: null });
-    expect(getUIPrefs().screenshotShortcut).toBeNull();
-    // Out of order, unknown keys and lowercase letters aren't stored shapes; the last good value stays.
-    for (const bad of ["Shift+Ctrl+S", "Ctrl+s", "Ctrl+Tab", "Ctrl+", "F25", 7]) {
-      setUIPrefs({ screenshotShortcut: bad as string });
-      expect(getUIPrefs().screenshotShortcut).toBeNull();
-    }
   });
 
 });

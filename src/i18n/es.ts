@@ -105,7 +105,7 @@ export const es: Catalogue = {
       server: "Servidor",
     },
     pages: {
-      general: "Conexiones, la lista de chats, el inicio y la bandeja, las capturas de pantalla y los datos de este equipo.",
+      general: "Conexiones, la lista de chats, el inicio y la bandeja, y los datos de este equipo.",
       appearance: "Cómo se ve Highwing en este equipo.",
       keyboard: "Haz clic en un atajo, pulsa las teclas nuevas y Guarda. Ctrl es Ctrl o Cmd.",
       snapshots: "El bucket donde Compartir instantánea publica las páginas de los chats, y las instantáneas que hay en él.",

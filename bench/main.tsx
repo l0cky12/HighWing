@@ -15,7 +15,7 @@ import { REPLIES, hostile } from "./hostile";
 
 const root = createRoot(document.getElementById("root")!);
 let setChat: (c: Chat) => void = () => {};
-const screenshots = new ScreenshotDesk({ capture: () => Promise.reject(new Error("No screenshots in the bench")), discard: async () => {} });
+const screenshots = new ScreenshotDesk({ discard: async () => {} });
 
 function Host({ initial }: { initial: Chat }) {
   const [chat, set] = useState(initial);

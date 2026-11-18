@@ -140,7 +140,7 @@ describe("Searching Settings", () => {
     expect(screen.queryByText(/Global shortcut/i)).toBeNull();
     await user.click(box());
     await user.paste("toggle");
-    await waitFor(() => expect(showing("Screenshots")).toBe(true));
+    await waitFor(() => expect(showing("Brought forward")).toBe(true));
     expect(showing("Tray")).toBe(false);
     expect(screen.getAllByText("hermes-chat --toggle").length).toBeGreaterThan(0);
   });

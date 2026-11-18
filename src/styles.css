@@ -1313,7 +1313,6 @@ div.route-result { display: flex; flex-direction: column; gap: 6px; }
 .attach-note { font-size: calc(12rem / 14); color: var(--muted); padding: 0 6px 8px; }
 .offline-note { font-size: calc(12rem / 14); color: var(--muted); padding: 0 6px 8px; }
 .composer-hint { font-size: calc(12rem / 14); color: var(--warn); padding: 0 6px 8px; }
-.capture-note { font-size: calc(12rem / 14); color: var(--muted); padding: 0 6px 8px; }
 /* Slash commands (src/ui/SlashCommands.tsx): in the flow above the composer, so they fit a narrow or split pane. */
 .cmd-menu, .cmd-help, .cmd-note, .cmd-confirm {
   background: var(--raised); border: 1px solid var(--line-2); border-radius: var(--radius); margin-bottom: 8px; font-size: calc(12.5rem / 14);
@@ -1913,7 +1912,7 @@ button.settings-search-tab:hover { color: var(--text); }
 /* Why the item above it does nothing, lined up with its label (link menu, previewContext.tsx). */
 .menu-note { padding: 0 8px 4px 33px; font-size: calc(12rem / 14); color: var(--faint); }
 
-/* Screenshot settings: the shortcut recorder and the desktop shortcut examples. */
+/* Keyboard Shortcuts (KeyboardSettings.tsx): the chord recorder, fixed keys and clashes. */
 .shortcut-controls { display: flex; gap: 8px; flex-shrink: 0; }
 .shortcut-key { min-width: 132px; justify-content: center; font-family: var(--mono); }
 .shortcut-key.recording { border-color: var(--accent, var(--text)); color: var(--text); }

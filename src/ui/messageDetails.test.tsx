@@ -13,7 +13,7 @@ import { AppearanceSettings } from "./AppearanceSettings";
 import { storedTime } from "./bits";
 import { ChatPane } from "./ChatPane";
 
-const noScreenshots: ScreenshotApi = { capture: () => Promise.reject(new Error("no screenshots in this test")), discard: async () => {} };
+const noScreenshots: ScreenshotApi = { discard: async () => {} };
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }));
 

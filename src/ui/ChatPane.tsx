@@ -98,6 +98,9 @@ const isItem = (b: Block): b is Exclude<Item, ToolItem> => b.kind !== "tools" &&
 /** A block with a Question still waiting in it: a Question's card, or a computer-use run with an Approval under a step. */
 const waitsIn = (b: Block) => (isItem(b) && isWaiting(b)) || (b.kind === "cu-run" && b.state === "asking");
 type SideBlock = { kind: "side"; id: string; question: SideQuestion };
+/** Whether the item `id` shows in this block: as the block itself, in a group of tool calls, or in a computer-use run. */
+const holds = (b: Block | SideBlock, id: string | undefined) =>
+  b.id === id || (b.kind === "tools" && b.tools.some((t) => t.id === id)) || (b.kind === "cu-run" && b.items.some((i) => i.id === id));
 
 // Consecutive tool calls collapse into one group so a long run doesn't dominate the transcript, and a computer-use run
 // is one card (ADR 0216). Each side question goes after the item it was asked after (ADR 0086), so one asked during a
@@ -921,7 +924,7 @@ export function ChatPane({
   const revealChunk = useMemo(() => {
     if (!reveal?.itemId && !reveal?.approval) return undefined;
     const id = reveal.itemId ?? chat.items.find(isWaiting)?.id;
-    const at = chunks.findIndex((c) => c.some((b) => b.id === id || (b.kind === "tools" && b.tools.some((t) => t.id === id))));
+    const at = chunks.findIndex((c) => c.some((b) => holds(b, id)));
     return at < 0 ? undefined : at;
   }, [reveal, chunks, chat.items]);
   // Find marks and counts its matches in the DOM, so it renders the whole chat.
@@ -1178,7 +1181,7 @@ export function ChatPane({
         approvalWaiting={waiting?.kind}
         onGoToApproval={() => {
           const id = chat.items.find(isWaiting)?.id;
-          shown.reveal(chunks.findIndex((c) => c.some((b) => b.id === id || (b.kind === "cu-run" && b.items.some((i) => i.id === id)))));
+          shown.reveal(chunks.findIndex((c) => c.some((b) => holds(b, id))));
           const card = id && rootRef.current?.querySelector<HTMLElement>(`.approval[data-item="${CSS.escape(id)}"]`);
           if (!card) return;
           card.scrollIntoView({ block: "center" });

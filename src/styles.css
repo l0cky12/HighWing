@@ -4168,7 +4168,6 @@ button.budget-chat:hover { text-decoration: underline; }
 .budget-chat-amount { grid-column: 2; grid-row: 1; font-variant-numeric: tabular-nums; color: var(--text-2); text-align: right; }
 .budget-notes ul { padding-left: 18px; display: grid; gap: 4px; }
 
-/* Group rooms (ADR 0205): the section above the bots in Bots mode, the New room dialog, and the room's pane. */
 .rooms-section { margin: 0 0 8px; padding: 0 0 6px; border-bottom: 1px solid var(--line); }
 .rooms-title { display: flex; align-items: center; gap: 6px; margin: 0; padding: 4px 8px 4px 6px; color: var(--faint); font-size: calc(12rem / 14); font-weight: 500; }
 .rooms-faces { flex: none; display: flex; align-items: center; min-width: 34px; height: 34px; }

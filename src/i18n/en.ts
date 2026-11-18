@@ -307,7 +307,6 @@ export const en = {
     reading: "Reading the group rooms…",
     notConnected: "Not connected to Hermes.",
     tooFewBots: "A room needs at least 2 bots.",
-    /** "Ada, Bram and Cleo". */
     names: (names: string[]) => (names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`),
     rowLabel: (parts: string[]) => parts.join(". "),
     rowKind: "Group room",
@@ -394,7 +393,6 @@ export const en = {
       next: (names: string) => `next: ${names}`,
       starting: "A bot is about to answer…",
       stop: "Stop",
-      /** "Cleo, then Ada, wait behind this." */
       behind: (names: string[]) => (names.length === 1 ? `${names[0]} waits behind this.` : `${names.join(", then ")}, wait behind this.`),
       approvalFor: (name: string) => `${name} wants to run a command`,
       clarify: (name: string) => `${name} is asking through a tool a room can't show. Hermes moves on in about 90 seconds.`,
@@ -424,7 +422,6 @@ export const en = {
     bots: "Bots",
     inbox: (n: number) => `${n} in the Inbox`,
     needYou: (n: number) => (n === 1 ? "1 bot needs you" : `${n} bots need you`),
-    /** Bots and group rooms counted together. */
     needYouInBots: (n: number) => (n === 1 ? "1 needs you" : `${n} need you`),
     replying: (n: number) => (n === 1 ? "1 bot is replying" : `${n} bots are replying`),
     tabLabel: (mode: string, waits: string) => `${mode}, ${waits}`,

@@ -1,10 +1,3 @@
-// The one owner of Group room state in the app, and the only caller of `groups.*` (groupRooms.ts, ADR 0205). Built once
-// for each `Hermes` (transport.ts, beside `projects`) and kept across profile switches: a room is the connection's, so
-// a switch only pauses the reads while the socket opens again.
-//
-// A screen gets three reads (`list`, `room`, `subscribe`), `watch`, and intents. Behind them: seq cursors and paging,
-// the consistent read of state then log, when to read next, the unsent messages and their retry keys, the thread a
-// message goes on, the approval's tuple, the read marks and the wording of refusals.
 import type { AppMethod } from "./canonicalVerbs";
 import {
   EMPTY_LOG,
@@ -31,9 +24,7 @@ import {
 import { errorText } from "./values";
 
 export type GroupRoomsIO = {
-  /** `Hermes.request`: rejects when not connected, and refuses a write while the capability is unsupported. */
   rpc(method: AppMethod, params: Record<string, unknown>): Promise<unknown>;
-  /** The socket is connected, and this Hermes isn't known to lack rooms. */
   ready(): boolean;
   now?: () => number;
   uuid?: () => string;
@@ -44,7 +35,6 @@ export type RoomMarks = { load(): Record<string, number>; save(marks: Record<str
 
 export const ROOM_MARKS_PREFIX = "hermes-chat.group-rooms-read.";
 
-/** Read marks kept in `storage` for one connection (`scope`: inbox.ts `inboxScope`). A damaged record is as good as none. */
 export function roomMarks(storage: Pick<Storage, "getItem" | "setItem">, scope: string): RoomMarks {
   const key = ROOM_MARKS_PREFIX + scope;
   return {
@@ -52,61 +42,42 @@ export function roomMarks(storage: Pick<Storage, "getItem" | "setItem">, scope: 
       try {
         const read: unknown = JSON.parse(storage.getItem(key) ?? "{}");
         if (typeof read === "object" && read !== null) return Object.fromEntries(Object.entries(read).filter((e): e is [string, number] => typeof e[1] === "number"));
-      } catch {
-        // Nothing read.
-      }
+      } catch {}
       return {};
     },
     save: (marks) => {
       try {
         storage.setItem(key, JSON.stringify(marks));
-      } catch {
-        // Kept in memory.
-      }
+      } catch {}
     },
   };
 }
 
-/**
- * Why an intent didn't happen, in the owner's words. `gone`: the room, pause or approval is no longer there.
- * `workerDown`: Hermes's room worker isn't running. `unsupported`: this Hermes has no such method.
- */
 export class GroupRoomError extends Error {
   constructor(
     readonly why: "offline" | "unsupported" | "workerDown" | "gone" | "refused",
     message: string,
-    /** Hermes's JSON-RPC error code, when it answered with one. */
     readonly code?: number,
   ) {
     super(message);
   }
 }
 
-/** How long until a room is read again. Which rooms are busy is `FLOOR_SURFACE`'s to say. */
 export const FOLLOW_MS = {
-  /** A busy room on screen; Hermes's own desktop reads at this rate. */
   watchedBusy: 2_000,
   watchedIdle: 10_000,
   /** A busy room nobody is looking at: an Approval shows only in `groups.state`, so it is still read. */
   unwatchedBusy: 5_000,
-  /** `groups.list`: finds a room another client woke (its `latest_seq` moved), and new or disbanded rooms. */
   list: 30_000,
-  /** Every interval above is this many times longer once a `groups.changed` frame has arrived on this connection. */
   pushSlowdown: 5,
 } as const;
 
-/**
- * When a room is read next; undefined for an idle room off screen, which the list read covers. `pushProven`: a
- * `groups.changed` frame arrived on this connection. Hermes saying `change_events` is not enough: `f0d9488` behind a
- * messaging gateway says it and never delivers, and then the fast rate must stay.
- */
 export function nextReadIn(room: { watched: boolean; busy: boolean }, pushProven: boolean): number | undefined {
   if (!room.watched && !room.busy) return undefined;
   const ms = room.watched ? (room.busy ? FOLLOW_MS.watchedBusy : FOLLOW_MS.watchedIdle) : FOLLOW_MS.unwatchedBusy;
   return ms * (pushProven ? FOLLOW_MS.pushSlowdown : 1);
 }
 
-/** How many of a room's newest events are read when it is first seen, and when it is opened. */
 export const TAIL = { seen: 50, open: 500 } as const;
 const PAGE = 500;
 const NO_SUCH_METHOD = -32601;
@@ -120,7 +91,6 @@ type Tracked = {
   id: string;
   listed?: ListedRoom;
   log: RoomLog;
-  /** Every event folded into `log`, kept to fold again from further back ("Earlier messages"). */
   events: LogEvent[];
   live?: RoomLive;
   outgoing: Outgoing[];
@@ -142,14 +112,13 @@ export class GroupRoomsStore {
   private marks: Record<string, number> = {};
   private kept?: RoomMarks;
   private summaries?: readonly RoomSummary[];
-  /** Goes up at every wake and sleep: an answer from before either is dropped. */
   private gen = 0;
   private awake = false;
+  private unsupported = false;
   private pushProven = false;
   private listDueAt?: number;
   private listRead?: Promise<void>;
   private listAgain = false;
-  /** `groups.list` has answered on some connection, so `list()` is what Hermes has, or had. */
   private listed = false;
   private cancelTimer?: () => void;
   private continuing = new Map<string, Promise<void>>();
@@ -165,10 +134,6 @@ export class GroupRoomsStore {
       });
   }
 
-  /**
-   * Where the read marks are kept: the seq the owner has read each room up to, on this computer, for the connection.
-   * Hermes keeps none. Until the app says where, they last as long as the store.
-   */
   keepMarks(kept: RoomMarks): void {
     this.kept = kept;
     this.marks = { ...kept.load(), ...this.marks };
@@ -176,10 +141,6 @@ export class GroupRoomsStore {
     this.emit();
   }
 
-  /**
-   * Rooms are read only while someone listens: the first listener starts the reads, and the last to leave stops them.
-   * So a connection with no screen on it asks Hermes nothing about rooms.
-   */
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     if (this.listeners.size === 1) this.follow();
@@ -189,21 +150,14 @@ export class GroupRoomsStore {
     };
   };
 
-  /** The rooms, by name. The same array until something changes. Undefined until `groups.list` first answers. */
   list = (): readonly RoomSummary[] | undefined => this.summaries;
 
-  /** Undefined until the room's first read lands. The same object until something changes. */
   room = (id: string): RoomView | undefined => this.rooms.get(id)?.view;
 
-  /** Whether `id` is one of the connection's rooms, as last listed. */
   has(id: string): boolean {
     return this.rooms.has(id);
   }
 
-  /**
-   * The room is on screen until the returned function is called: it is read now with its last `TAIL.open` events,
-   * followed at the watched rate, and marked read up to what is shown. Counted, so two panes on one room are fine.
-   */
   watch(id: string): () => void {
     const room = this.track(id);
     room.watchers += 1;
@@ -218,7 +172,6 @@ export class GroupRoomsStore {
     };
   }
 
-  /** Resolves with the room's id once it is listed. Safe to call again with the same draft after a failure. */
   async create(draft: RoomDraft): Promise<string> {
     await this.write("groups.create", roomParams.create(draft));
     this.track(draft.id);
@@ -226,11 +179,6 @@ export class GroupRoomsStore {
     return draft.id;
   }
 
-  /**
-   * The owner speaks. It goes on the latest discussion's thread, so while bots talk this is stepping in: Hermes cancels
-   * the queued turns and answers the owner first. It shows at once, and a send that fails stays, marked failed, for
-   * `retry`.
-   */
   say(roomId: string, text: string): void {
     const room = this.rooms.get(roomId);
     if (!room || !text.trim()) return;
@@ -240,7 +188,6 @@ export class GroupRoomsStore {
     this.send(room, message.eventId);
   }
 
-  /** Sends a failed message again under its own event id, so Hermes posts it once whatever became of the first try. */
   retry(roomId: string, eventId: string): void {
     const room = this.rooms.get(roomId);
     if (!room?.outgoing.some((o) => o.eventId === eventId && o.state === "failed")) return;
@@ -248,7 +195,6 @@ export class GroupRoomsStore {
     this.send(room, eventId);
   }
 
-  /** Takes a failed message back; nothing is sent. */
   discard(roomId: string, eventId: string): void {
     const room = this.rooms.get(roomId);
     if (!room) return;
@@ -256,7 +202,6 @@ export class GroupRoomsStore {
     this.publish(room);
   }
 
-  /** Gives the paused discussion one more budget. A second press while one is on its way is the same grant. */
   continue(roomId: string): Promise<void> {
     const held = this.continuing.get(roomId);
     if (held) return held;
@@ -270,26 +215,22 @@ export class GroupRoomsStore {
     return going;
   }
 
-  /**
-   * What Carry on puts in the composer on a Hermes without Continue: the handles the last round named. Nothing is
-   * sent; the owner's next message is what carries the discussion on.
-   */
   carryOn(roomId: string): string {
     return this.rooms.get(roomId)?.view?.carryOn ?? "";
   }
 
-  /** Stops queued and running turns. Fine to call when nothing runs. */
   async stop(roomId: string): Promise<void> {
     await this.write("groups.stop", roomParams.stop(roomId, this.uuid()));
     await this.tickById(roomId);
   }
 
-  /** Answers the Approval `key` names. One Hermes no longer waits on resolves too: the view has moved on. */
   async answer(roomId: string, key: string, choice: RoomChoice): Promise<void> {
-    await this.write("groups.approve", roomParams.approve(roomId, key, choice)).catch((e: unknown) => {
-      if (!(e instanceof GroupRoomError) || e.code !== NOT_PENDING) throw e;
-    });
+    const pending = () => this.rooms.get(roomId)?.live?.approvals.find((a) => a.key === key);
+    const approval = pending();
+    const failed = approval && (await this.write("groups.approve", roomParams.approve(roomId, approval.request, choice)).then(() => undefined, (e: unknown) => e));
     await this.tickById(roomId);
+    // Hermes answers 5119 for every approve failure, so it means "already answered" only once the approval is gone.
+    if (failed && !(failed instanceof GroupRoomError && failed.code === NOT_PENDING && !pending())) throw failed;
   }
 
   async rename(roomId: string, name: string): Promise<void> {
@@ -297,22 +238,20 @@ export class GroupRoomsStore {
     await Promise.all([this.readList(), this.tickById(roomId)]);
   }
 
-  /** For good, in every Hermes client. The screen asks first. */
   async disband(roomId: string): Promise<void> {
     await this.write("groups.disband", roomParams.disband(roomId));
     await Promise.all([this.readList(), this.tickById(roomId)]);
   }
 
-  /** Reads the `TAIL.open` events before the oldest one shown. */
   async earlier(roomId: string): Promise<void> {
     const room = this.rooms.get(roomId);
     if (room?.log.from) await this.extend(room, Math.max(0, room.log.from - TAIL.open));
   }
 
-  /** The socket is connected (first, again, or after a profile switch): the list is read and following resumes. */
   wake(): void {
     this.gen += 1;
     this.awake = true;
+    this.unsupported = false;
     this.pushProven = false;
     for (const room of this.rooms.values()) room.ticking = undefined;
     this.listRead = undefined;
@@ -333,10 +272,9 @@ export class GroupRoomsStore {
   }
 
   private reading(): boolean {
-    return this.awake && this.listeners.size > 0 && this.io.ready();
+    return this.awake && !this.unsupported && this.listeners.size > 0 && this.io.ready();
   }
 
-  /** The socket dropped: reads stop, every view is as last seen, and pushes must prove themselves again. */
   sleep(): void {
     this.gen += 1;
     this.awake = false;
@@ -352,9 +290,8 @@ export class GroupRoomsStore {
     this.emit();
   }
 
-  /** A `groups.changed` frame's payload. It only brings a read forward: the rooms it names are read now. */
   changed(payload: Record<string, unknown>): void {
-    if (!this.awake) return;
+    if (!this.awake || this.unsupported) return;
     this.pushProven = true;
     const ids = changedRooms(payload);
     const known = ids?.flatMap((id) => this.rooms.get(id) ?? []) ?? [...this.rooms.values()];
@@ -373,7 +310,6 @@ export class GroupRoomsStore {
     return room ? this.tick(room) : Promise.resolve();
   }
 
-  /** A write, with Hermes's refusal put in the owner's words. */
   private async write(method: AppMethod, params: Record<string, unknown>): Promise<unknown> {
     if (!this.io.ready()) throw new GroupRoomError("offline", "Not connected to Hermes.");
     try {
@@ -392,7 +328,6 @@ export class GroupRoomsStore {
     if (!message) return;
     this.write("groups.send", roomParams.send(room.id, eventId, room.log, message.text)).then(
       (answer) => {
-        // Kept until the log holds it, so the message never blinks out between the answer and the next read.
         this.setOutgoing(room, eventId, { landedSeq: sentSeq(answer) ?? room.log.seq + 1 });
         void this.tick(room);
       },
@@ -405,7 +340,6 @@ export class GroupRoomsStore {
     this.publish(room);
   }
 
-  /** One list read at a time: a read asked for meanwhile runs once more after, so it sees what was just written. */
   private readList(): Promise<void> {
     if (!this.reading()) return Promise.resolve();
     if (this.listRead) {
@@ -435,7 +369,6 @@ export class GroupRoomsStore {
       const ids = new Set(listed.map((r) => r.id));
       for (const [id, room] of this.rooms) {
         if (ids.has(id)) continue;
-        // A room on screen stays, as gone, until its pane closes; any other is simply no longer listed.
         if (room.watchers && room.live) room.live = { ...room.live, disbanded: true };
         else if (!room.watchers) this.rooms.delete(id);
         room.listed = undefined;
@@ -451,16 +384,10 @@ export class GroupRoomsStore {
       this.listed = true;
       this.emit();
     } catch (e) {
-      // A Hermes without rooms answers "method not found": the list stays unread, and nothing is asked again.
-      if (gen === this.gen && codeOf(e) === NO_SUCH_METHOD) this.awake = false;
+      if (gen === this.gen && codeOf(e) === NO_SUCH_METHOD) this.unsupported = true;
     }
   }
 
-  /**
-   * One consistent read of one room: `groups.state`, then `groups.log` from the cursor, paged, folded only up to that
-   * state's `latest_seq`, then one publish. So a view never shows a bot writing beside the reply it already posted.
-   * One read a room at a time: a read asked for meanwhile runs once more after.
-   */
   private tick(room: Tracked): Promise<void> {
     if (!this.reading()) return Promise.resolve();
     if (room.ticking) {
@@ -487,7 +414,6 @@ export class GroupRoomsStore {
       const live = parseState(await this.io.rpc("groups.state", roomParams.state(room.id)));
       if (gen !== this.gen || !live) return;
       let { log, events } = room;
-      // The log is shorter than what was read: Hermes's store was replaced. What was read is no longer its history.
       const reset = live.seq < log.seq;
       if (reset || !room.live) {
         log = logAfter(Math.max(0, live.seq - (room.watchers ? TAIL.open : TAIL.seen)));
@@ -497,7 +423,6 @@ export class GroupRoomsStore {
       while (cursor < live.seq) {
         const page = parseLog(await this.io.rpc("groups.log", roomParams.log(room.id, cursor, PAGE)));
         if (gen !== this.gen) return;
-        // Events past the state read wait for the next one, which reads them again from this cursor.
         const fresh = page.events.filter((e) => e.seq > cursor && e.seq <= live.seq);
         if (!fresh.length) break;
         events = [...events, ...fresh];
@@ -508,7 +433,6 @@ export class GroupRoomsStore {
       Object.assign(room, { live, log, events, readAt: this.now(), stale: false });
       this.markRead(room);
       this.publish(room);
-      // Opened after it was first seen from its short tail: the rest of the open window is read once.
       const openFrom = Math.max(0, live.seq - TAIL.open);
       if (room.watchers && log.from > openFrom) await this.extend(room, openFrom);
     } catch (e) {
@@ -519,7 +443,6 @@ export class GroupRoomsStore {
     }
   }
 
-  /** Reads the events in `(since, log.from]` and folds the room again from `since`. */
   private async extend(room: Tracked, since: number): Promise<void> {
     const gen = this.gen;
     const until = room.log.from;
@@ -537,9 +460,7 @@ export class GroupRoomsStore {
       room.events = [...older, ...room.events];
       room.log = foldRoom(logAfter(since), room.events, room.live.seats, room.log.seq);
       this.publish(room);
-    } catch {
-      // The older events stay behind "Earlier messages"; what is shown is still true.
-    }
+    } catch {}
   }
 
   private markRead(room: Tracked) {
@@ -577,7 +498,6 @@ export class GroupRoomsStore {
     this.schedule();
   }
 
-  /** Sets the one timer to the soonest read due: any room's, or the list's. */
   private schedule() {
     this.cancelTimer?.();
     this.cancelTimer = undefined;

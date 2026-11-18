@@ -1,7 +1,3 @@
-// A real room's log: evidence/room-probe-1.log of the group-rooms design, read with `groups.log` from a standalone
-// `hermes dashboard` at `ae2a81cc` on 2026-11-17 (stub model; Ada, Bram and Cleo seated). The probe printed four payload
-// fields an event, and cut each reply's text. The turn coordinates Hermes writes on every event (`thread_id`,
-// `member_id`, and the owner event's id, which is the discussion's) are put back as its source writes them.
 export const ROOM_PROBE_SEATS = [
   { id: "ada", profile: "ada", handle: "ada", name: "Ada" },
   { id: "bram", profile: "bram", handle: "bram", name: "Bram" },

@@ -36,9 +36,10 @@ describe("FakeGroups rosters", () => {
     expect(ok(g, "groups.create", { room_id: "six", name: "Six", members: six }).room.members).toHaveLength(6);
   });
 
-  it("makes one room for a repeated room_id", () => {
+  it("makes one room for a repeated room_id, and refuses the id for a different room", () => {
     const g = room();
     expect(ok(g, "groups.create", { room_id: "r1", name: "Crew", members: TRIO }).room.idempotent).toBe(true);
+    expect(refused(g, "groups.create", { room_id: "r1", name: "Crew", members: TRIO.slice(0, 2) })?.message).toBe("room_id already exists with different state");
     expect(ok(g, "groups.list", { limit: 1 }).rooms.map((r: { room_id: string }) => r.room_id)).toEqual(["r1"]);
   });
 

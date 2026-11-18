@@ -1,6 +1,3 @@
-// New room (ADR 0205): pick 2 to 6 bots for a Group room. The order they are picked in is the order they answer in, so
-// each picked bot shows its number. The room's id is made once, when the dialog opens: Create pressed twice, or again
-// after a failure, makes one room (`groups.create` is a no-op on a repeated id).
 import { useId, useMemo, useRef, useState, type RefObject } from "react";
 import type { Bot } from "../hermes/bots";
 import { ROOM_NAME_MAX, SEATS_MAX, isDraft, roomDraft, type RoomDraft } from "../hermes/groupRooms";
@@ -9,6 +6,8 @@ import { useLocale } from "../i18n/locale";
 import { BotFace, lookShown } from "./BotFace";
 import { composing } from "./bits";
 import { useModal } from "./modal";
+
+const newRoomId = () => `room-${crypto.randomUUID()}`;
 
 export function NewRoomDialog({
   bots,
@@ -20,7 +19,6 @@ export function NewRoomDialog({
   bots: readonly Bot[];
   pictures: Readonly<Record<string, string>>;
   returnTo?: RefObject<HTMLElement | null>;
-  /** Resolves once Hermes has the room; the dialog closes then. */
   onCreate: (draft: RoomDraft) => Promise<unknown>;
   onClose: () => void;
 }) {
@@ -30,10 +28,9 @@ export function NewRoomDialog({
   const keys = useModal(box, returnTo);
   const titleId = useId();
   const introId = useId();
-  const [roomId] = useState(() => `room-${crypto.randomUUID()}`);
-  /** The picked profiles, in the order picked. */
+  // A retry of the same draft reuses its id, so Hermes makes one room; a changed draft needs a new id, or Hermes refuses it.
+  const [roomId, setRoomId] = useState(newRoomId);
   const [picked, setPicked] = useState<string[]>([]);
-  /** The name the owner typed; until they type one, the name is the picked bots'. */
   const [typed, setTyped] = useState<string>();
   const [creating, setCreating] = useState(false);
   const [failed, setFailed] = useState<string>();
@@ -42,10 +39,12 @@ export function NewRoomDialog({
   const name = typed ?? l.groupRooms.names(seated.map((b) => b.name));
   const draft = roomDraft(roomId, name, seated);
   const full = picked.length >= SEATS_MAX;
-  // Nothing is wrong with a room nobody has picked for yet.
   const problem = !isDraft(draft) && (picked.length > 0 || typed !== undefined) ? w.problem[draft.problem] : undefined;
 
-  const toggle = (profile: string) => setPicked((now) => (now.includes(profile) ? now.filter((p) => p !== profile) : now.length < SEATS_MAX ? [...now, profile] : now));
+  const toggle = (profile: string) => {
+    setRoomId(newRoomId());
+    setPicked((now) => (now.includes(profile) ? now.filter((p) => p !== profile) : now.length < SEATS_MAX ? [...now, profile] : now));
+  };
   const create = () => {
     if (!isDraft(draft) || creating) return;
     setCreating(true);
@@ -113,7 +112,10 @@ export function NewRoomDialog({
         </fieldset>
         <label className="room-name">
           <span>{w.name}</span>
-          <input value={name} maxLength={ROOM_NAME_MAX} disabled={creating} onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !composing(e) && create()} />
+          <input value={name} maxLength={ROOM_NAME_MAX} disabled={creating} onChange={(e) => {
+              setRoomId(newRoomId());
+              setTyped(e.target.value);
+            }} onKeyDown={(e) => e.key === "Enter" && !composing(e) && create()} />
         </label>
         <p className="field-hint err" role="alert">
           {failed ?? problem ?? ""}

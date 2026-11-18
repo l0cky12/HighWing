@@ -24,7 +24,6 @@ export type InboxEntry = {
   kind: InboxKind;
   profile: string;
   chatId: string;
-  /** The Group room the entry is about (groupRooms.ts). A room is no chat and in no profile: both are "" then. */
   roomId?: string;
   title: string;
   /** When it happened, Unix ms; 0 when that isn't known. A dismissed entry shows again only once this is later. */
@@ -74,7 +73,6 @@ export type InboxSources = {
   seen?: Map<string, number>;
   /** Each chat's dispatched work (dispatched.ts `handoffs`). */
   handoffs?: ReadonlyMap<string, Handoff>;
-  /** The connection's Group rooms, each with what its floor asks of the owner (groupRooms.ts `attentionOf`). */
   rooms?: readonly RoomSummary[];
 };
 

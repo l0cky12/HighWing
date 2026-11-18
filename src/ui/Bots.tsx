@@ -104,7 +104,6 @@ export function useBotActions({
   shown: boolean;
   onRefresh: () => void;
   onNote: (text: string) => void;
-  /** More buttons for the head, before New bot: New room (ADR 0205). */
   headExtra?: ReactNode;
 }) {
   const l = useLocale();

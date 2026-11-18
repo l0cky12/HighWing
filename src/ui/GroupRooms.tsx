@@ -1,6 +1,3 @@
-// Group rooms in the chat list's Bots mode (ADR 0205): a section above the bots with one row a room (its bots' faces,
-// its name, and whose move it is), and the line that says a room needs the owner while Chats mode shows. What a row
-// says comes from the room's `Floor` through `FLOOR_SURFACE` (groupRooms.ts), as the pane's strip and the Rail inbox do.
 import { useEffect, useSyncExternalStore } from "react";
 import { Loader, ShieldAlert, UsersRound } from "lucide-react";
 import type { Bot } from "../hermes/bots";
@@ -13,27 +10,22 @@ import { BotFace, type BotLookShown } from "./BotFace";
 const NO_SUBSCRIBE = () => () => {};
 const NO_ROOMS = () => undefined;
 
-/** The connection's rooms while `on`. Off, nothing listens, so the store asks Hermes nothing (groupRoomsStore.ts). */
 export function useGroupRooms(store: GroupRoomsStore, on: boolean): readonly RoomSummary[] | undefined {
   return useSyncExternalStore(on ? store.subscribe : NO_SUBSCRIBE, on ? store.list : NO_ROOMS);
 }
 
-/** The room `id` while this is mounted: watching it is what reads it at the on-screen rate and marks it read. */
 export function useGroupRoom(store: GroupRoomsStore, id: string): RoomView | undefined {
   useEffect(() => store.watch(id), [store, id]);
   return useSyncExternalStore(store.subscribe, () => store.room(id));
 }
 
-/** A seat's face: its bot's look when the roster has that profile, else its own name's initial. */
 export const seatLook = (seat: Seat, bots: readonly Bot[], pictures: Readonly<Record<string, string>>): BotLookShown => {
   const bot = bots.find((b) => b.profile === seat.profile);
   return { name: bot?.name ?? seat.name, color: bot?.color, picture: pictures[seat.profile] };
 };
 
-/** The name a seat goes by: its bot's, as the roster has it now. */
 export const seatName = (seat: Seat | undefined, bots: readonly Bot[], fallback: string): string => (seat ? (bots.find((b) => b.profile === seat.profile)?.name ?? seat.name) : fallback);
 
-/** Whose move it is, in a few words, for a room's row. */
 export function floorWords(l: Locale, floor: Floor | undefined, bots: readonly Bot[]): string {
   const w = l.groupRooms.floor;
   const name = (seat?: Seat) => seatName(seat, bots, w.aBot);
@@ -57,7 +49,6 @@ export function floorWords(l: Locale, floor: Floor | undefined, bots: readonly B
   }
 }
 
-/** The rooms that count as needing the owner, for the Bots tab's badge and the Needs-you line. */
 export const roomsWaiting = (rooms: readonly RoomSummary[] | undefined): RoomSummary[] => (rooms ?? []).filter((r) => r.attention?.needsOwner);
 
 export function GroupRoomList({
@@ -123,7 +114,6 @@ export function GroupRoomList({
   );
 }
 
-/** While Chats mode shows: the rooms that need the owner, one line, which opens the room, or Bots mode for several. */
 export function RoomsNeedYou({ rooms, bots, onOpen, onShowBots }: { rooms: readonly RoomSummary[]; bots: readonly Bot[]; onOpen: (id: string) => void; onShowBots: () => void }) {
   const l = useLocale();
   const w = l.groupRooms;

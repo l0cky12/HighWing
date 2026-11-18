@@ -1,23 +1,12 @@
-// FakeHermes's Group rooms (groupRooms.ts, ADR 0205): `groups.*` as a standalone `hermes dashboard` serves them, with
-// the limits and refusals seen live at `ae2a81cc` on 2026-11-17 and read from the source at `bf0203a` and `f0d9488`
-// (`tui_gateway/methods_groups.py`, `gateway/hosted_rooms.py`, `gateway/hosted_room_discussion.py`): 2 to 6 seats,
-// unique profiles, `thread_id` required, idempotent `room_id` and `event_id`, one turn at a time, `@handle` narrowing,
-// a bot's mention pulling a teammate into the next round, 3 rounds or 10 messages a budget, 5 continues, supersede on
-// the same thread, approvals of once or deny, and the `clarify` stall. Turns never run by themselves unless `auto` is
-// set: a test calls `step()`, so who is speaking is exact.
-
 export type GroupsAnswer = { result: unknown } | { error: { code: number; message: string; data?: unknown } };
 
-/** What a stand-in bot does on its turn. A `@handle` in what it says pulls that teammate into the next round. */
 export type FakeTurn =
   | { say: string; tool?: string }
   | { pass: true }
   | { fail: string }
   | { approval: { command: string; description: string }; then: string }
-  /** The bot calls `clarify`, which a dashboard room can't show; `then` is its reply once Hermes gives up. */
   | { clarify: true; then: string };
 
-/** `index`: the bot's seat, 0 first. `handles`: the roster's, in seat order. `said`: this round's replies so far. */
 export type TurnContext = { roomId: string; member: string; name: string; index: number; handles: readonly string[]; round: number; ownerText: string; said: readonly string[] };
 
 type Member = { member_id: string; profile: string; handle: string; display_name?: string; target?: Record<string, unknown> };
@@ -36,7 +25,6 @@ const MENTION = /@([A-Za-z0-9][A-Za-z0-9._:-]*)/g;
 const NO_METHOD = -32601;
 const WORKER_DOWN = "Group Chat worker is unavailable. Restart the Hermes gateway and try again.";
 const DRIVER_DOWN = "hosted room driver is unavailable";
-/** The error codes of `tui_gateway/methods_groups.py`: a room error (4xxx), no worker, and anything else. */
 const CODES = {
   "groups.create": { room: 4110, service: 4123 },
   "groups.send": { room: 4111, service: 4123 },
@@ -54,19 +42,12 @@ type Method = keyof typeof CODES;
 class RoomRefusal extends Error {}
 type Outcome = { say: string } | { pass: true } | { fail: string };
 
-/** A Hermes build, as far as rooms differ between them. */
 export type GroupsBuild = {
-  /** No `groups.*` at all: every one answers "method not found". */
   absent: boolean;
-  /** `groups.continue`, and `max_continues` in `groups.state`. Only `ae2a81cc` has them. */
   continues: boolean;
-  /** `member_activity` rows say their thread, round, start and tool. `bf0203a` says only who and their status. */
   activityDetail: boolean;
-  /** `groups.state` says `change_events: true`. */
   saysPush: boolean;
-  /** `groups.changed` is really sent (`onChange`). `f0d9488` behind a messaging gateway says it pushes and doesn't. */
   pushes: boolean;
-  /** The room worker runs. False: `groups.state` has no `driver_status`, and the execution methods are refused. */
   worker: boolean;
 };
 
@@ -78,20 +59,15 @@ export const GROUPS_BUILDS = {
 
 export class FakeGroups {
   build: GroupsBuild = { ...GROUPS_BUILDS.ae2a81cc };
-  /** What each bot does on its turn. The default names nobody, so a discussion settles after round 0. */
   script: (turn: TurnContext) => FakeTurn = (t) => ({ say: `${t.name} here.` });
-  /** FakeHermes sets it to broadcast `groups.changed`. Called only while `build.pushes`. */
   onChange?: (roomIds: string[]) => void;
-  /** Every `groups.*` request received, in order. */
   readonly calls: { method: string; params: Record<string, unknown> }[] = [];
-  /** Set, turns run by themselves: a bot starts `delayMs` after the last change and finishes `delayMs` later. */
   auto?: { delayMs: number; clarifyMs: number };
   now: () => number = () => Date.now() / 1000;
   private readonly rooms = new Map<string, Room>();
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private ids = 0;
 
-  /** Every `groups.*` request: FakeHermes forwards here. `groups.capabilities` throws: the app must never send it. */
   handle(method: string, params: Record<string, unknown>): GroupsAnswer {
     this.calls.push({ method, params: structuredClone(params) });
     // Its first call writes a secret file on a real server (`gateway/hosted_room_peer.py`).
@@ -108,25 +84,18 @@ export class FakeGroups {
     }
   }
 
-  /** Seeds a room as if made in another Hermes client. */
   seed(room: { id: string; name: string; members: { profile: string; name?: string }[] }) {
     this["groups.create"]({ room_id: room.id, name: room.name, members: room.members.map((m) => ({ member_id: m.profile, profile: m.profile, handle: m.profile, ...(m.name && { display_name: m.name }) })) });
   }
 
-  /** Every room as Hermes holds it: its name, roster and log (the verify stand-in's `/__state`). */
   dump(): Record<string, { name: string; members: string[]; disbanded: boolean; events: readonly RoomEvent[] }> {
     return Object.fromEntries([...this.rooms].map(([id, r]) => [id, { name: r.name, members: r.members.map((m) => m.profile), disbanded: r.disbanded_at !== undefined, events: r.events }]));
   }
 
-  /** The room's log as Hermes holds it. */
   log(roomId: string): readonly RoomEvent[] {
     return this.room(roomId, true).events;
   }
 
-  /**
-   * Runs the next turn to its end, or to its approval or `clarify` wait. A bot waiting in `clarify` gives up and
-   * replies. False when nothing can move: nothing is queued, or a bot waits on an approval.
-   */
   step(roomId: string): boolean {
     const room = this.room(roomId, true);
     const running = room.tasks.find((t) => t.status === "running");
@@ -138,7 +107,6 @@ export class FakeGroups {
     return true;
   }
 
-  /** Marks the next turn running without finishing it, so `member_activity` shows who is writing. */
   begin(roomId: string): boolean {
     const room = this.room(roomId, true);
     if (!this.start(room)) return false;
@@ -146,12 +114,10 @@ export class FakeGroups {
     return true;
   }
 
-  /** Steps until nothing can move. */
   settle(roomId: string) {
     while (this.step(roomId)) continue;
   }
 
-  /** The sessions the seats answer in, as `session.active_list` lists them while a turn runs. */
   liveRows(): { id: string; session_key: string; status: string; last_active: number; title: string }[] {
     return [...this.rooms.values()].flatMap((room) =>
       room.tasks
@@ -219,6 +185,7 @@ export class FakeGroups {
     if (new Set(handles).size !== handles.length || handles.some((h) => h === "all" || h === "everyone")) throw new RoomRefusal("member handles must be unique and cannot reserve @all or @everyone");
     const existing = this.rooms.get(id);
     if (existing?.disbanded_at !== undefined) throw new RoomRefusal("room_id is permanently retired");
+    if (existing && (existing.name !== name || JSON.stringify(existing.members) !== JSON.stringify(seats))) throw new RoomRefusal("room_id already exists with different state");
     if (existing) return { room: this.rowOf(existing, true) };
     const at = this.now();
     const room: Room = { room_id: id, name, members: seats, created_at: at, updated_at: at, revision: 1, events: [], tasks: [], discussions: [] };
@@ -276,7 +243,6 @@ export class FakeGroups {
     const stored = room.events.find((e) => e.event_id === id);
     if (stored) return answer(stored, true);
     const event = this.append(room, "message.user", { kind: "user", id: "dashboard" }, { text: payload.text, thread_id: payload.thread_id }, id);
-    // A newer message on a running discussion's thread supersedes it: its queued and running turns are cancelled.
     for (const d of room.discussions.filter((d) => d.thread === payload.thread_id && d.status !== "over")) {
       this.cancel(room, (t) => t.discussion === d, "superseded_by_newer_user_event");
       d.status = "over";
@@ -351,7 +317,6 @@ export class FakeGroups {
     return { tombstone: { room_id: room.room_id, disbanded_at: room.disbanded_at } };
   }
 
-  /** `resolve_mentions`: the roster members a text names, in roster order; everyone for `@all`, or when it names nobody and `defaultAll`. */
   private mentioned(texts: readonly string[], members: readonly Member[], defaultAll: boolean): Member[] {
     const named = new Set(texts.flatMap((t) => [...t.matchAll(MENTION)].map((m) => m[1].toLowerCase())));
     const some = members.filter((m) => named.has(m.handle.toLowerCase()));
@@ -375,7 +340,6 @@ export class FakeGroups {
     return { discussion_event_id: t.discussion.id, member_id: t.member.member_id, member_index: room.members.indexOf(t.member), round_index: t.round, task_id: t.id, thread_id: t.discussion.thread, turn_id: `${t.discussion.id}.r${t.round}.${t.member.member_id}` };
   }
 
-  /** Starts the next queued turn, into its approval or `clarify` wait if that is what the bot does. */
   private start(room: Room): Task | undefined {
     const task = room.tasks[0];
     if (task?.status !== "queued") return undefined;
@@ -411,7 +375,6 @@ export class FakeGroups {
     this.changed(room);
   }
 
-  /** `decide`: the round is over. A round that named nobody settles; a budget spent pauses; else the named go next. */
   private decide(room: Room, d: Discussion) {
     const next = this.mentioned(d.said, room.members, false);
     const budget = d.continues + 1;
@@ -431,11 +394,6 @@ export class FakeGroups {
   }
 }
 
-/**
- * What the verify stand-in's bots do, by what the owner wrote. `pingpong`: the first two bots name each other, and the
- * rest name the first, so the discussion runs to its cap. `approve`: the last bot asks to run a command. `clarify`: the
- * second bot calls `clarify`. Anything else gets one round of short replies.
- */
 export function standInScript(t: TurnContext): FakeTurn {
   if (/pingpong/i.test(t.ownerText)) return { say: `${t.name} here, pingpong. @${t.handles[t.index === 0 ? 1 : 0]} your turn.` };
   if (/approve/i.test(t.ownerText) && t.index === t.handles.length - 1) return { approval: { command: "rm -rf /srv/tmp/build-cache", description: "delete in root path" }, then: `${t.name} ran it: the build cache is gone.` };

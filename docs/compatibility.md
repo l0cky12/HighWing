@@ -209,20 +209,9 @@ Needs the `groups.*` methods on `/api/ws` (`groups.list`, `groups.state`, `group
 Two things differ between builds, and the app reads each from what Hermes says rather than from its version:
 
 - **Continue.** `groups.continue` is in Hermes from `ae2a81cc`. The app offers Continue only when `groups.state` reports `max_continues`. On `bf0203a` and `f0d94882` a discussion that paused at its cap goes on only with a new message, so the pause offers Carry on, which fills the composer and sends nothing.
-- **Change events.** `ae2a81cc` pushes `groups.changed` when a room moves. The older builds don't, and `f0d94882` behind a messaging gateway can say `change_events: true` and never deliver. The app always polls, and reads less often only after a `groups.changed` frame has arrived on the connection.
+- **Change events.** `ae2a81cc` pushes `groups.changed` when a room moves, and says so with `change_events` in `groups.state`. The older builds do neither. The app always polls, and reads less often only after a `groups.changed` frame has arrived on the connection.
 
 On a dashboard, a bot that calls `clarify` in a room waits about 90 seconds with its question shown nowhere, then goes on without an answer. That is Hermes's behaviour at every build checked. The room says which bot is waiting.
-
-## Group rooms
-
-Needs the `groups.*` methods on `/api/ws` (`groups.list`, `groups.state`, `groups.log`, `groups.create`, `groups.send`, `groups.stop`, `groups.approve`, `groups.rename` and `groups.disband`), and Hermes's room worker, which a standalone `hermes dashboard` starts by itself. Checked with `groups.list {limit: 1}`, a read. The app never sends `groups.capabilities`, because its first call writes a secret file on the server (ADR 0205). Hermes has rooms from `v2026.8.31`; `bf0203a`, `f0d94882` and `ae2a81cc` all serve them. Without them, Bots mode has no Group rooms section.
-
-Two things differ between builds, and the app reads each from what Hermes says, not from its version:
-
-- **Continue.** `groups.continue` is in Hermes from `ae2a81cc`. The app offers Continue only when `groups.state` reports `max_continues`. On `bf0203a` and `f0d94882` a discussion that paused at its cap goes on only with a new message, so the pause offers Carry on, which fills the composer and sends nothing.
-- **Change events.** `ae2a81cc` pushes `groups.changed` when a room moves. The older builds don't, and `f0d94882` behind a messaging gateway can say `change_events: true` and never deliver. The app always polls, and reads less often only after a `groups.changed` frame has arrived on the connection.
-
-On a dashboard, a bot that calls `clarify` in a room waits about 90 seconds with its question shown nowhere, then goes on without an answer. Every build checked does this. The room says which bot is waiting.
 
 ## Subagents
 

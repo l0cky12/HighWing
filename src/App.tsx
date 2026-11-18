@@ -1522,7 +1522,6 @@ export function Main({
   const [inboxOpen, setInboxOpen] = useState(false);
   const [arrival, setArrival] = useState<Arrival>();
   const [visit, setVisit] = useState<BotVisit>();
-  // The Group room shown in place of the chat pane (ADR 0205). A room is the connection's, so it changes no profile.
   const [openRoom, setOpenRoom] = useState<string>();
   const [newRoom, setNewRoom] = useState(false);
   const newRoomBtn = useRef<HTMLButtonElement>(null);

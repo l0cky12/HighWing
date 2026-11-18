@@ -1,7 +1,4 @@
 // @vitest-environment jsdom
-// Group rooms in the running app (ADR 0205), against a fake Hermes whose `groups.*` answer as a standalone dashboard's
-// do (fakeGroups.ts): making a room, watching turns, stepping in, the cap with and without Continue, an approval, and
-// the seats' hidden sessions staying out of the chats.
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -31,7 +28,6 @@ afterEach(async () => {
 const BOTS = ["ada", "bram", "cleo", "dov", "eve", "finn"];
 const TRIO = BOTS.slice(0, 3).map((profile) => ({ profile, name: profile[0].toUpperCase() + profile.slice(1) }));
 const pingpong = (t: TurnContext): FakeTurn => ({ say: `${t.name} here, pingpong. @${t.handles[t.index === 0 ? 1 : 0]} your turn.` });
-/** Longer than a watched, busy room goes between reads without a push (`FOLLOW_MS.watchedBusy`). */
 const POLL = { timeout: 5_000 };
 
 let launches = 0;
@@ -49,7 +45,6 @@ async function launch({ build = GROUPS_BUILDS.ae2a81cc, script, room = false }: 
   render(<Main hermes={hermes} tray={tray} connection={{ mode: "ssh", sshTarget: `lena@hermes-rooms-${++launches}`, url: "", username: "lena" }} onSignOut={async () => {}} />);
   await waitFor(() => expect(hermes.hasListed()).toBe(true));
   await act(async () => void (await hermes.idle()));
-  // The check that finds rooms runs two seconds after connecting; this is Diagnostics' Check again.
   await act(async () => void (await hermes.capabilities.refresh()));
   const user = userEvent.setup();
   await user.click(document.querySelector<HTMLElement>('.sidebar [role=tab][data-mode="bots"]')!);
@@ -68,7 +63,6 @@ async function say(user: ReturnType<typeof userEvent.setup>, text: string) {
   await user.type(composer(), text);
   await user.keyboard("{Enter}");
 }
-/** Runs the stand-in's next turn; its `groups.changed` push, or the store's next poll, brings it to the screen. */
 const step = (server: FakeHermes, times = 1) => act(async () => void Array.from({ length: times }, () => server.groups.step("crew")));
 
 describe("Making a Group room", () => {
@@ -124,6 +118,22 @@ describe("Making a Group room", () => {
     await waitFor(() => expect(pane()).toBeTruthy());
     const ids = sent(server, "groups.create").map((p) => p.room_id);
     expect([ids.length, new Set(ids).size]).toEqual([2, 1]);
+  });
+
+  it("makes the room under a new id when the picks change after Hermes turned the first try down", async () => {
+    const { server, user } = await launch();
+    server.groups.build.worker = false;
+    await user.click(screen.getByRole("button", { name: "New room" }));
+    const dialog = screen.getByRole("dialog", { name: "New group room" });
+    for (const bot of ["Ada", "Bram"]) await user.click(within(dialog).getByRole("checkbox", { name: bot }));
+    await user.click(within(dialog).getByRole("button", { name: "Create room" }));
+    await within(dialog).findByRole("alert");
+    server.groups.build.worker = true;
+    await user.click(within(dialog).getByRole("checkbox", { name: "Cleo" }));
+    await user.click(within(dialog).getByRole("button", { name: "Create room" }));
+    await waitFor(() => expect(pane()).toBeTruthy());
+    const ids = sent(server, "groups.create").map((p) => p.room_id);
+    expect([ids.length, new Set(ids).size]).toEqual([2, 2]);
   });
 });
 
@@ -323,7 +333,6 @@ describe("A room's seats and the chats", () => {
     await waitFor(() => expect(floor().dataset.floor).toBe("speaking"));
     server.liveSessions = [{ id: "rt-ops", session_key: "elsewhere", status: "working", last_active: Date.now() / 1000, title: "Deploy log" }];
     const before = { rest: server.restRequests.length, rpc: server.requests.length };
-    // A live check asked for within 15 seconds of the last one is skipped, so the clock moves past that.
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(Date.now() + 20_000);
     await act(async () => void (await hermes.checkLive()));

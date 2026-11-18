@@ -400,7 +400,6 @@ export const APP_VERBS: AppVerb[] = [
     unprobed: "added after the recording; its route and answer are from the source at bf0203a",
   },
 
-  // Group rooms (ADR 0205). The authority serves them itself (`GROUP_METHODS`), with the params the dashboard takes.
   { method: "groups.list", params: () => ({ limit: 500 }), route: "authority", answer: "ok", unprobed: ROOMS },
   { method: "groups.state", params: () => ({ room_id: "room-none" }), route: "authority", answer: "ok", unprobed: ROOMS },
   { method: "groups.log", params: () => ({ room_id: "room-none", since_seq: 0, limit: 500 }), route: "authority", answer: "ok", unprobed: ROOMS },

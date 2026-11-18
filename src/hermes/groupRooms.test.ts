@@ -29,7 +29,6 @@ const members = seats.map((s) => ({ member_id: s.id, profile: s.profile, handle:
 const page = (rows: readonly Record<string, unknown>[], latest = 100) => parseLog({ events: rows, cursor: rows.at(-1)?.seq ?? 0, latest_seq: latest, has_more: false });
 const probe = page(ROOM_PROBE_LOG).events;
 
-/** A `groups.state` answer as `ae2a81cc` writes one, quiet unless `driver` says otherwise. */
 const state = (seq: number, driver: Record<string, unknown> = {}, room: Record<string, unknown> = {}) =>
   parseState({
     room: { room_id: "probe", name: "Probe", members, latest_seq: seq, ...room },
@@ -142,8 +141,8 @@ describe("the floor", () => {
   it("puts an approval before the bot that is waiting on it", () => {
     const floor = floorAt(67, { member_activity: [running("cleo", { tool: "terminal" }), queued("ada")], pending_actions: [approval] });
     expect(floor).toMatchObject({ kind: "approval", seat: seats[2], next: [seats[0]], approval: { seat: "cleo", command: "rm -rf /srv/tmp", description: "delete in root path", timeoutS: 300 } });
-    const key = (floor as Extract<Floor, { kind: "approval" }>).approval.key;
-    expect(roomParams.approve("probe", key, "once")).toEqual({ room_id: "probe", member_id: "cleo", task_id: "t9", execution_generation: 2, choice: "once", request_id: "rq-1" });
+    const { request } = (floor as Extract<Floor, { kind: "approval" }>).approval;
+    expect(roomParams.approve("probe", request, "once")).toEqual({ room_id: "probe", member_id: "cleo", task_id: "t9", execution_generation: 2, choice: "once", request_id: "rq-1" });
   });
 
   it("calls a bot inside clarify stuck, never speaking", () => {

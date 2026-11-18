@@ -18,7 +18,6 @@ const seed = (script?: (t: TurnContext) => FakeTurn, room = true) => (s: FakeHer
   if (room) s.groups.seed({ id: "crew", name: "Launch crew", members: ["ada", "bram", "cleo"].map((profile) => ({ profile, name: title(profile) })) });
 };
 
-/** Signed in, in Bots mode, once the app has found that this Hermes has rooms (its check runs 2 s after connecting). */
 async function start(script?: (t: TurnContext) => FakeTurn, room = true) {
   const { app, server } = await boot({ seed: seed(script, room) });
   const panel = app.getByRole("complementary");
@@ -113,7 +112,7 @@ it("asks the owner to approve a bot's command, and the bot goes on once approved
   await say("Bram, clear the build cache");
   server.groups.step("crew");
   server.groups.step("crew");
-  const card = strip.getByRole("group", { name: "Hermes wants to run a command" });
+  const card = strip.getByRole("group", { name: "Bram wants to run a command" });
   await expect.element(card.getByText("rm -rf /srv/tmp/build-cache")).toBeVisible();
   await expect.element(strip.getByText("Cleo waits behind this.")).toBeVisible();
   await expect.element(panel.getByRole("button", { name: /Bram needs your approval/ })).toBeVisible();

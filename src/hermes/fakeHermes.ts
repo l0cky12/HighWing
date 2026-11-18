@@ -490,7 +490,6 @@ export class FakeHermes {
   readonly runtimeProfile = new Map<string, string>();
   /** Goals (fakeGoals.ts, ADR 0187). `standingMissions` false: a Hermes without `session.control`, "method not found". */
   readonly goals = new FakeGoals();
-  /** Group rooms (fakeGroups.ts, ADR 0205): every `groups.*` request, unless a test put its own handler in `handlers`. */
   readonly groups = new FakeGroups();
   standingMissions = true;
   /** Starts the turn that follows a goal's turn at once, as Hermes does; none in tests, which send turns themselves. */
@@ -2889,7 +2888,6 @@ export class FakeHermes {
     const status = this.turnIsolation ? "working" : "waiting";
     const rows = this.liveSessions.map((l) => (asking.has(l.id) ? { ...l, status } : l));
     for (const [sid, stored] of asking) if (!rows.some((l) => l.id === sid)) rows.push({ id: sid, session_key: stored, status, last_active: Date.now() / 1000 });
-    // Each seat of a Group room answers in a hidden session of its own, live while its turn runs.
     rows.push(...this.groups.liveRows());
     return rows;
   }

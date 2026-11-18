@@ -367,6 +367,21 @@ describe("the rooms store's intents", () => {
     await expect(store.answer("r1", floor.approval.key, "deny"), "answered already: no error").resolves.toBeUndefined();
   });
 
+  it("says so when Hermes refuses an answer and the approval is still waiting", async () => {
+    const asks = (t: TurnContext): FakeTurn => (t.member === "cleo" ? { approval: { command: "rm -rf /srv/tmp", description: "delete in root path" }, then: "Cleo ran it." } : { say: `${t.name} here.` });
+    const { groups, store } = await withRoom(GROUPS_BUILDS.bf0203a, asks);
+    store.say("r1", "Cleo approve-me please");
+    await flush();
+    groups.settle("r1");
+    await vi.advanceTimersByTimeAsync(FOLLOW_MS.unwatchedBusy);
+    const floor = store.room("r1")!.floor;
+    if (floor.kind !== "approval") throw new Error(`floor is ${floor.kind}`);
+    const handle = groups.handle.bind(groups);
+    groups.handle = (method, params) => handle(method, method === "groups.approve" ? { ...params, execution_generation: 2 } : params);
+    await expect(store.answer("r1", floor.approval.key, "once"), "a 5119 with the approval still pending is a failure").rejects.toThrow(/no longer pending/);
+    expect(store.room("r1")!.floor.kind).toBe("approval");
+  });
+
   it("stops the room with a cancel id of its own each press", async () => {
     const { groups, store } = await withRoom();
     store.say("r1", "hi");

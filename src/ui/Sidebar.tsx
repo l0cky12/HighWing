@@ -991,7 +991,6 @@ export type ListModes = {
   onOpenBot: (bot: Bot) => void;
   /** All N chats under the shown bot: Chats, on the bot's profile. */
   onAllChats: () => void;
-  /** Group rooms that need the owner (ADR 0205): how many, for the Bots tab's badge, and their line for Chats mode. */
   rooms?: { waiting: number; line: (onShowBots: () => void) => ReactNode };
 };
 

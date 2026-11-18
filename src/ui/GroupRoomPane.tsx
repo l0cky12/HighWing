@@ -1,7 +1,3 @@
-// A Group room's pane (ADR 0205), in place of the chat pane while a room is open: who is seated, the room's log as
-// whole replies under each bot's face, the strip that says whose move it is, and a composer that is always live. A
-// reply never streams into a room, and a room has no model, attachments or queue, so this is not `ChatPane`. What the
-// strip and the composer's hint say comes from the room's `Floor` (groupRooms.ts), as its row and the Rail inbox do.
 import { useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { ArrowUp, Ellipsis, PenLine, Square, Trash2, UsersRound } from "lucide-react";
 import type { Bot } from "../hermes/bots";
@@ -22,7 +18,6 @@ import { useModal } from "./modal";
 
 type Faces = { bots: readonly Bot[]; pictures: Readonly<Record<string, string>> };
 
-/** The one adapter to the chat's Approval card: a room offers once and deny, never a broader grant. */
 const approvalItem = (a: RoomApproval): ApprovalItem => ({ kind: "approval", id: a.key, requestId: a.key, command: a.command, description: a.description, choices: ["once", "deny"], allowSession: false, allowPermanent: false });
 
 export function GroupRoomPane({ store, roomId, bots, pictures, offline }: { store: GroupRoomsStore; roomId: string; offline: boolean } & Faces) {
@@ -40,13 +35,11 @@ export function GroupRoomPane({ store, roomId, bots, pictures, offline }: { stor
   const atEnd = useRef(true);
 
   const shown = (view?.entries.length ?? 0) + (view?.outgoing.length ?? 0);
-  // New messages keep the end in view, unless the owner scrolled up to read.
   useLayoutEffect(() => {
     const el = scroller.current;
     if (el && atEnd.current) el.scrollTop = el.scrollHeight;
   }, [shown, view?.floor.kind]);
 
-  /** Runs an intent, and says why under the strip if Hermes turned it down. */
   const act = (intent: () => Promise<unknown>) => {
     setFailed(undefined);
     intent().catch((e: unknown) => setFailed(errorText(e)));
@@ -195,7 +188,6 @@ export function GroupRoomPane({ store, roomId, bots, pictures, offline }: { stor
   );
 }
 
-/** The log's rows. A "Round 2" rule goes above the first reply of each round after a discussion's first. */
 function Entries({ entries, seats, faces }: { entries: readonly RoomEntry[]; seats: readonly Seat[]; faces: Faces }) {
   const w = useLocale().groupRooms.pane;
   const rows: ReactNode[] = [];
@@ -286,7 +278,6 @@ function OutgoingRow({ message: o, onRetry, onDiscard }: { message: Outgoing; on
   );
 }
 
-/** Whose move it is, in words and buttons, directly above the composer. Every `Floor` kind has its case. */
 function FloorStrip({
   floor,
   faces,
@@ -396,16 +387,11 @@ function FloorStrip({
   );
 }
 
-/** The `@` word the caret is in, if any: where it starts, and what is typed of it. */
 function mentionAt(text: string, caret: number): { from: number; typed: string } | undefined {
   const m = /(^|\s)@([A-Za-z0-9._:-]*)$/.exec(text.slice(0, caret));
   return m ? { from: caret - m[2].length - 1, typed: m[2].toLowerCase() } : undefined;
 }
 
-/**
- * A text box whose placeholder says what sending does now: while bots talk, the owner steps in. `@` completes the
- * seats' handles and `@all`. Enter sends, Shift+Enter breaks the line.
- */
 function RoomComposer({
   box,
   seats,
@@ -434,14 +420,12 @@ function RoomComposer({
   }, [mention, seats, w.everyone]);
   const picked = Math.min(at, Math.max(0, options.length - 1));
 
-  /** Where the caret goes once a completed handle is in the box. */
   const caretAfter = useRef<number | undefined>(undefined);
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
-    // Set as the new text lands, not a frame later: a key typed meanwhile would go in at the old place.
     if (caretAfter.current !== undefined) el.setSelectionRange(caretAfter.current, caretAfter.current);
     caretAfter.current = undefined;
   }, [draft, box]);
@@ -489,7 +473,6 @@ function RoomComposer({
               role="option"
               aria-selected={i === picked}
               className={`menu-item${i === picked ? " is-on" : ""}`}
-              // Keeps the caret in the box: a click that took focus would close the list first.
               onMouseDown={(e) => {
                 e.preventDefault();
                 complete(o.handle);
@@ -517,7 +500,6 @@ function RoomComposer({
           setClosed(false);
           setAt(0);
         }}
-        // The caret also moves with no change: an arrow key, Home, a click.
         onKeyUp={(e) => setCaret(e.currentTarget.selectionStart)}
         onClick={(e) => setCaret(e.currentTarget.selectionStart)}
         onKeyDown={onKeyDown}
@@ -532,7 +514,6 @@ function RoomComposer({
   );
 }
 
-/** Rename, or the question before Disband, which closes the room for good in every Hermes client. */
 function RoomDialog({ kind, name, returnTo, onClose, onDone }: { kind: "rename" | "disband"; name: string; returnTo: RefObject<HTMLElement | null>; onClose: () => void; onDone: (name: string) => Promise<unknown> }) {
   const w = useLocale().groupRooms.pane;
   const box = useRef<HTMLDivElement>(null);

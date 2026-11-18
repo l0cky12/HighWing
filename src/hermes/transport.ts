@@ -39,7 +39,6 @@ import { CheckTimesStore, noOthers, OtherProfilesCheck } from "./otherProfiles";
 import { failureMark } from "./inbox";
 // Projects are Hermes's own, read and written with legacy `projects.*` (projects.ts, research doc "Projects").
 import { projectsApi, type ProjectsApi } from "./projects";
-// Group rooms are the connection's, not a profile's, so they are kept beside the snapshot, never in it (ADR 0205).
 import { memberSessionRoom } from "./groupRooms";
 import { GroupRoomsStore } from "./groupRoomsStore";
 import { STEER, askSideQuestion, listServerCommands, runServerCommand, sideAnswer, type CommandDef, type CommandResult, type ServerCommandList } from "./commands";
@@ -862,7 +861,6 @@ export class Hermes {
     rpc: (method, params) => this.request(method, params),
     get: (pathAndQuery) => this.rest("GET", pathAndQuery),
   });
-  /** The connection's Group rooms (groupRoomsStore.ts, ADR 0205). Only the composer target reads them. */
   readonly groupRooms = new GroupRoomsStore({
     rpc: (method, params) => this.request(method, params),
     ready: () => this.snapshot.status === "connected" && this.role === "target" && this.capabilities.get("groupRooms").state !== "unsupported",
@@ -1913,7 +1911,6 @@ export class Hermes {
         this.closeUnwaited(shown, Array.isArray(res?.sessions) ? res.sessions : []);
         const sessions = (Array.isArray(res?.sessions) ? res.sessions : []).flatMap((r): (LiveSession & { key: string })[] => {
           const row = obj(r);
-          // A Group room's seat answers in a hidden session of its own. The room shows that work, not a chat.
           const room = memberSessionRoom(row?.title);
           if (room !== undefined && this.groupRooms.has(room)) return [];
           const status = row?.status === "waiting" ? "waiting" : row?.status === "working" || row?.status === "starting" ? "working" : undefined;
@@ -4530,7 +4527,6 @@ export class Hermes {
       void this.sync();
       return;
     }
-    // A Group room moved. The frame names no session, and only brings the store's next read forward.
     if (type === "groups.changed") {
       this.groupRooms.changed(payload);
       return;

@@ -167,7 +167,7 @@ Needs the cron routes under `/api/cron/`. Checked with `GET /api/cron/jobs`. To 
 
 ## Automations
 
-Needs the webhook routes under `/api/webhooks`. Checked with `GET /api/webhooks`. The Automations screen is gone (ADR 0203). The capability stays because extensions can name `automations` in `needs` (ADR 0126): without the routes, such an extension shows what is missing instead of running.
+Needs the webhook routes under `/api/webhooks`. Checked with `GET /api/webhooks`. The Automations screen is gone (ADR 0204). The capability stays because extensions can name `automations` in `needs` (ADR 0126): without the routes, such an extension shows what is missing instead of running.
 
 ## Outputs
 

@@ -90,7 +90,7 @@ export const NOT_PER_PROFILE: Record<string, string> = {
 
 /**
  * Deletes what this computer kept for a screen that is gone, so it isn't kept forever: the Outputs index (ADR 0170),
- * and the Repository screen's folders and worktree chats (ADR 0203).
+ * and the Repository screen's folders and worktree chats (ADR 0204).
  */
 export function dropRetiredData(storage: Pick<Storage, "removeItem"> = localStorage) {
   try {

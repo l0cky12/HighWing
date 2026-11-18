@@ -389,7 +389,6 @@ function FloorStrip({
   );
 }
 
-/** What to say under the composer: not a plain mention, not the word the picker is offering rows for, once for each kind and word. */
 function notesShown<S>(mentions: readonly Mention<S>[], pickingAt: number | undefined): readonly MentionNote<S>[] {
   const seen = new Set<string>();
   const notes: MentionNote<S>[] = [];
@@ -403,6 +402,7 @@ function notesShown<S>(mentions: readonly Mention<S>[], pickingAt: number | unde
 }
 
 const NOTES_SHOWN = 3;
+const STILL_ROUTED: Record<MentionNote<unknown>["kind"], boolean> = { inCode: true, glued: true, trailing: false, unknown: false };
 
 function noteWords(w: Locale["groupRooms"]["goesTo"], n: MentionNote<SeatShown>): string {
   const mention = `@${n.raw}`;
@@ -419,12 +419,7 @@ function noteWords(w: Locale["groupRooms"]["goesTo"], n: MentionNote<SeatShown>)
   }
 }
 
-/**
- * Who the message will go to, worked out the way Hermes will, and what to know about each @ in it. Only who it goes to is
- * a live region: a live region has to be on the page before its text changes to be announced, so it is always mounted,
- * and its text changes only when the answer does. The notes sit outside it, because a note about a name still being
- * typed changes with every key; the composer is described by both.
- */
+// A live region has to be on the page before its text changes to be announced, so the status is always mounted.
 function GoesToLine({ id, shown, goes, pickingAt }: { id: string; shown: boolean; goes: GoesTo<SeatShown>; pickingAt: number | undefined }) {
   const w = useLocale().groupRooms.goesTo;
   const notes = notesShown(goes.mentions, pickingAt);
@@ -456,7 +451,7 @@ function GoesToLine({ id, shown, goes, pickingAt }: { id: string; shown: boolean
       </p>
       <div id={`${id}-notes`}>
         {shown && notes.slice(0, NOTES_SHOWN).map((n) => (
-          <p key={`${n.kind}:${n.raw}`} className={"target" in n ? "is-routed" : "is-dropped"}>
+          <p key={`${n.kind}:${n.raw}`} className={STILL_ROUTED[n.kind] ? "is-routed" : "is-dropped"}>
             {noteWords(w, n)}
           </p>
         ))}

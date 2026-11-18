@@ -1,7 +1,4 @@
 // @vitest-environment jsdom
-// The room composer is a converted screen (ADR 0100): the picker's words, the Goes-to line and every note under it come
-// from the catalogue. The app runs under the pseudo-locale, which marks each catalogue string, so a literal left in
-// stands out. Bot names, handles, descriptions and what the owner typed are data. All data is synthetic.
 import { act, cleanup, render, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";

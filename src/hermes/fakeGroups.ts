@@ -60,11 +60,6 @@ export const GROUPS_BUILDS = {
   bf0203a: { absent: false, continues: false, activityDetail: false, saysPush: false, pushes: false, worker: true },
 } as const satisfies Record<string, GroupsBuild>;
 
-/**
- * Hermes's `resolve_mentions` (gateway/hosted_room_discussion.py), ported from its source and kept apart from the
- * client's reader in roomMentions.ts: the stand-in must not agree with the client by construction. Both are held to
- * the vectors in roomMentionVectors.json.
- */
 export function resolveMentions<M extends { handle: string }>(texts: readonly string[], members: readonly M[], defaultAll: boolean): M[] {
   const byHandle = new Set(members.map((m) => casefold(m.handle)));
   const mentioned = new Set<string>();

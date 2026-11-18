@@ -450,7 +450,7 @@ export const es: Catalogue = {
       everyoneAbout: "Responden todos los bots",
     },
     goesTo: {
-      label: "Va para",
+      label: "Se envía a",
       everyone: "todos",
       nobodyNamed: "(ningún bot nombrado)",
       inCode: (mention: string, who: string) => `${mention} está dentro de código, pero Hermes lo envía igualmente a ${who}`,

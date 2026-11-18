@@ -3,7 +3,7 @@
 Hermes decides who answers a room message with `_MENTION_RE` and `resolve_mentions` in
 gateway/hosted_room_discussion.py. This script lifts those two nodes out by `ast` (the package itself does not import
 without Hermes's dependencies), runs them over a hand-picked and a seeded random corpus, and writes
-src/hermes/roomMentionVectors.json. src/hermes/roomMentionVectors.test.ts replays the file against the client's reader
+src/hermes/roomMentionVectors.json. src/hermes/roomMentions.vectors.test.ts replays the file against the client's reader
 (roomMentions.ts) and against the stand-in server (fakeGroups.ts), so a drift from Hermes fails the build.
 
     python3 -I scripts/room-mention-vectors.py <hermes-src> [--commit <sha>]    write the vectors
@@ -134,7 +134,6 @@ HAND += [
 
 
 def lift(source: str, where: str):
-    """The two nodes Hermes routes with, as source text, plus a namespace that runs them."""
     tree = ast.parse(source)
     nodes = []
     for node in tree.body:

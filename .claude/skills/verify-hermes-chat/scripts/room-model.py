@@ -8,7 +8,7 @@ import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-LOG = sys.argv[3]
+HOST, PORT, LOG = sys.argv[1], int(sys.argv[2]), sys.argv[3]
 
 
 def text_of(content):
@@ -61,4 +61,4 @@ class H(BaseHTTPRequestHandler):
         pass
 
 
-ThreadingHTTPServer((sys.argv[1], int(sys.argv[2])), H).serve_forever()
+ThreadingHTTPServer((HOST, PORT), H).serve_forever()

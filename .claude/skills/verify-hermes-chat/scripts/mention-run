@@ -57,8 +57,6 @@ step "sign in"
 "$S/wd.mjs" wait '[role=dialog]' "Model providers" 30000 >/dev/null
 "$S/wd.mjs" click button Skip >/dev/null
 "$S/wd.mjs" gone '[role=dialog]' "" 20000 >/dev/null
-# The private bus has no keyring, so saving the password after sign-in raises a toast that sits over the composer
-# until it times out. It comes after the dialog closes, so wait for it to come and then to go.
 "$S/wd.mjs" wait .toast "system keyring" 30000 >/dev/null || fail "no keyring toast after sign-in; this harness has a keyring now, so drop this wait"
 "$S/wd.mjs" gone .toast "" 60000 >/dev/null || fail "the keyring toast never cleared"
 
@@ -72,7 +70,6 @@ for b in Ada Bram Cleo; do "$S/wd.mjs" click '[data-room-dialog] input[type=chec
 "$S/wd.mjs" gone '[role=dialog]' "" 30000 >/dev/null
 "$S/wd.mjs" wait "$P" "Ada, Bram and Cleo" 30000 >/dev/null
 
-# check <shot> <expected bots> <text the line must contain>... : the line before Enter, then Hermes's records after it.
 check() {
   local shot=$1 expect=$2 sent want
   shift 2

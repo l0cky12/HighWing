@@ -1,13 +1,12 @@
 """Which bots a real Hermes gave a turn for one owner message in a Group room, read from Hermes's own records.
 
-    python3 -I room-turns.py <shared-state.db> <owner text> [--expect ada,bram] [--wait <seconds>]
-
 Two independent records name the bots. `hosted_room_driver_tasks` is the queue Hermes's room driver ran turns from (its turn_id starts d<seq>.),
 and `hosted_room_events` is the room's log (`message.member` replies, `turn.*` outcomes). Both are filtered to the
 discussion that the owner's `message.user` event started. With --expect, it exits 1 unless the bots Hermes queued a
 turn for, the bots with a turn outcome, and the bots that replied all equal the expected set, and the discussion has
 settled. --wait polls until the discussion settles or the time runs out.
 """
+import argparse
 import json
 import sqlite3
 import sys
@@ -17,7 +16,6 @@ TURN_KINDS = ("turn.settled", "turn.failed", "turn.cancelled", "turn.deferred")
 
 
 def read(db, text):
-    """The turns for the newest owner message with this exact text; with text None, for the newest owner message."""
     conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     try:
         rows = conn.execute(
@@ -51,19 +49,15 @@ def read(db, text):
     }
 
 
-def main(argv):
-    db, text = argv[1], argv[2]
-    expect = wait = None
-    rest = argv[3:]
-    while rest:
-        flag, value, rest = rest[0], rest[1], rest[2:]
-        if flag == "--expect":
-            expect = sorted(value.split(","))
-        elif flag == "--wait":
-            wait = float(value)
-        else:
-            sys.exit(f"room-turns: unknown option {flag}")
-    deadline = time.time() + (wait or 0)
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("db", help="the dashboard's shared-state.db")
+    parser.add_argument("text", help="the owner message, exactly as sent")
+    parser.add_argument("--expect", type=lambda v: sorted(v.split(",")), help="comma-separated member ids, e.g. ada,bram")
+    parser.add_argument("--wait", type=float, default=0, help="seconds to wait for the discussion to settle")
+    args = parser.parse_args()
+    db, text, expect = args.db, args.text, args.expect
+    deadline = time.time() + args.wait
     while True:
         found = read(db, text)
         if found and found["settled"] or time.time() >= deadline:
@@ -86,4 +80,4 @@ def main(argv):
     print(f"room-turns: ok: only {','.join(expect)} took a turn")
 
 
-main(sys.argv)
+main()

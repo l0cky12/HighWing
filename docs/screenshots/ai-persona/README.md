@@ -2,7 +2,7 @@
 
 Evidence for ADR 0199: Write with AI on Settings → Persona.
 
-A historical record: [ADR 0204](../../adr/0204-a-persona-is-edited-only-in-the-profile-form-and-write-with-ai-rewrites-it-in-place.md) removed Settings → Persona and this panel, and its `persona-ai` e2e feature with them.
+A historical record: [ADR 0205](../../adr/0205-a-persona-is-edited-only-in-the-profile-form-and-write-with-ai-rewrites-it-in-place.md) removed Settings → Persona and this panel, and its `persona-ai` e2e feature with them.
 
 ## Where the screenshots come from
 

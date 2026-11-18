@@ -25,14 +25,11 @@ export function NewChatSettingsView({
   where,
   profile,
   problem,
-  worktree,
 }: {
   settings: NewChatSettings;
   where?: string;
   profile: string;
   problem?: string;
-  /** The worktree the chat starts in (ADR 0043), and how to start it elsewhere instead. */
-  worktree?: { branch: string; path: string; onDrop: () => void };
 }) {
   const { model, effort, instructions, folder, project } = settings;
   const row = (label: string, value: React.ReactNode, from: Origin) => (
@@ -59,19 +56,6 @@ export function NewChatSettingsView({
             <>Hermes's default folder for the {profile} profile</>
           ),
           folder.from,
-        )}
-        {worktree && (
-          <div className="start-row">
-            <dt>Worktree</dt>
-            <dd>
-              <span className="start-value">
-                <span className="mono">{worktree.branch}</span>, a worktree made in the Repository screen
-              </span>{" "}
-              <button type="button" className="btn small" onClick={worktree.onDrop}>
-                Don't start it there
-              </button>
-            </dd>
-          </div>
         )}
         {row(
           "Instructions",

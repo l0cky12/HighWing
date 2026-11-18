@@ -30,8 +30,6 @@ sha2 = "0.10"
 # Comes with url; decodes a relayed path the way the dashboard will before routing it.
 percent-encoding = "2"
 base64 = "0.22"
-# Already in the tree (through tauri-plugin-updater): deflates the Repository helper so it fits one ssh argument (repo_git.rs).
-flate2 = "1"
 tauri-plugin-dialog = "2"
 # Already comes with tauri-plugin-updater: backups are zips of stored JSON files (backup.rs).
 zip = { version = "9", default-features = false, features = ["deflate-flate2"] }

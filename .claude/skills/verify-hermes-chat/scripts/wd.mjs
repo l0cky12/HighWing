@@ -7,9 +7,7 @@
 //   wd.mjs wait  <css> [text] [ms]   wait until an element matching css (and containing text) is displayed
 //   wd.mjs gone  <css> [text] [ms]   wait until no displayed element matches
 //   wd.mjs click <css> [text]        click the first displayed match (real pointer input through WebKit automation)
-//   wd.mjs wheel <css> [text] -- <dy> [below]   turn the scroll wheel by dy pixels over the match's middle, or `below`
-//                                    pixels under it (negative dy: away from you, which zooms the office in toward that
-//                                    point; `below` reaches the character under an office name tag)
+//   wd.mjs wheel <css> [text] -- <dy>   turn the scroll wheel by dy pixels over the match's middle
 //   wd.mjs drag <css> [text] -- <x0> <y0> <x1> <y1>   press at (x0, y0) from the match's top-left, move to (x1, y1) in
 //                                    steps, and release, as WebDriver pointer input
 //   wd.mjs rightclick <css> [text]   right-click the match with real X input (xdotool), which opens a context menu
@@ -136,9 +134,8 @@ try {
       if (dashdash < 0) die("wheel needs `-- <dy>`");
       const middle = "const r = arguments[0].getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)];";
       const [x, y] = await exec(middle, [{ [ELEMENT]: await one(css, text) }]);
-      const below = Number(args[dashdash + 2] ?? 0);
       await wd("POST", s("/actions"), {
-        actions: [{ type: "wheel", id: "wheel", actions: [{ type: "scroll", origin: "viewport", x, y: y + below, deltaX: 0, deltaY: Number(args[dashdash + 1]) }] }],
+        actions: [{ type: "wheel", id: "wheel", actions: [{ type: "scroll", origin: "viewport", x, y, deltaX: 0, deltaY: Number(args[dashdash + 1]) }] }],
       });
       await wd("DELETE", s("/actions"));
       console.log("scrolled");

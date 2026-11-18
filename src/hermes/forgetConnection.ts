@@ -15,7 +15,7 @@ export const REMOVED_LOCALLY = [
   "drafts, Failed messages and Queued messages, with the screenshots waiting in them",
   "the chat lists and Saved copies kept for reading offline, and which profile was shown",
   "which chats are in each project, and the projects' defaults for new chats",
-  "tags, Saved filters, pins, snoozes, branch origins, the imports record, and which chats were started in a worktree",
+  "tags, Saved filters, pins, snoozes, branch origins and the imports record",
   "persona edits and versions an earlier Highwing kept",
   "inbox dismissals, the chat to reopen, the model pick, and the terminal's SSH target",
 ] as const;

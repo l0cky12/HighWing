@@ -181,13 +181,13 @@ export function singleRoute(d: SignInDetails, r: RouteDetails): SignInDetails {
   };
 }
 
-/** The connection's SSH target, for the Terminal, the Repository screen and server pages: its first SSH route's. */
+/** The connection's SSH target, for the Terminal and server pages: its first SSH route's. */
 export function sshRouteOf(routes: SavedRoute[]): string | undefined {
   return (routes.find((r) => r.kind === "ssh" && !r.off) ?? routes.find((r) => r.kind === "ssh"))?.target.trim() || undefined;
 }
 
 /**
- * What a connection says about reaching its server over ssh, for the Terminal and the Repository (terminal.ts): an SSH
+ * What a connection says about reaching its server over ssh, for the Terminal (terminal.ts): an SSH
  * route's target if it has one, else its first route's web address, whose host the Terminal then uses (ADR 0055).
  */
 export function sshAddressOf(c: Address & { routes?: SavedRoute[] }): { mode: "ssh" | "url"; sshTarget: string; url?: string } {

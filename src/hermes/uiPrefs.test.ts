@@ -42,7 +42,7 @@ afterEach(() => {
 
 describe("reading", () => {
   it("is the defaults when nothing is stored", () => {
-    expect(getUIPrefs()).toEqual({ theme: "system", reopenLastChat: false, checkUpdatesOnLaunch: true, lastOpenChat: {}, modelPicker: null, modelPicks: {}, modelFavorites: [], statusBar: ["context", "model", "status"], previewWidth: null, sidebarWidth: null, zoom: 1, screenshotShortcut: "Ctrl+Shift+S", templates: [], terminalKind: "server", followUp: "queue", idleCompact: { enabled: false, percent: 70, idleMinutes: 15 }, chatSectionsShown: ["pinned", "inbox", "snoozed", "working", "archived"], chatSectionsCollapsed: ["snoozed", "archived"], chatListMode: "chats", agentOffice: "plan", officeQuality: "normal", inboxAutoDismissDays: null, messageDetails: "time", spellCheck: true, summonSelection: true, keybindings: {} });
+    expect(getUIPrefs()).toEqual({ theme: "system", reopenLastChat: false, checkUpdatesOnLaunch: true, lastOpenChat: {}, modelPicker: null, modelPicks: {}, modelFavorites: [], statusBar: ["context", "model", "status"], previewWidth: null, sidebarWidth: null, zoom: 1, screenshotShortcut: "Ctrl+Shift+S", templates: [], terminalKind: "server", followUp: "queue", idleCompact: { enabled: false, percent: 70, idleMinutes: 15 }, chatSectionsShown: ["pinned", "inbox", "snoozed", "working", "archived"], chatSectionsCollapsed: ["snoozed", "archived"], chatListMode: "chats", inboxAutoDismissDays: null, messageDetails: "time", spellCheck: true, summonSelection: true, keybindings: {} });
     expect(getUIPrefs()).toEqual(DEFAULT_UI_PREFS);
   });
 
@@ -95,8 +95,6 @@ describe("reading", () => {
       chatSectionsShown: ["pinned", "inbox", "archived"],
       chatSectionsCollapsed: ["snoozed", "archived"],
       chatListMode: "chats",
-      agentOffice: "plan",
-      officeQuality: "normal",
       inboxAutoDismissDays: null,
       messageDetails: "time",
       summonSelection: true,
@@ -333,19 +331,18 @@ describe("migration", () => {
     expect(migrateUIPrefs({ v: 1.5, theme: "dark" })).toEqual({ v: UI_PREFS_VERSION });
   });
 
-  it("shows the floor plan, new in version 4, to whoever had the building, the Desks or the Scene, and keeps the building picked since", () => {
-    for (const [v, saved, read] of [
-      [2, "desks", "plan"],
-      [2, "scene", "plan"],
-      [2, "list", "list"],
-      [2, "off", "off"],
-      [3, "building", "plan"],
-      [3, "list", "list"],
-      [4, "building", "building"],
-      [4, "board", "board"],
+  it("reads a document saved while the agent office existed, with its other settings kept", () => {
+    for (const [v, agentOffice] of [
+      [2, "desks"],
+      [3, "building"],
+      [4, "board"],
+      [5, "off"],
     ] as const) {
-      localStorage.setItem(UI_PREFS_KEY, JSON.stringify({ v, agentOffice: saved }));
-      expect(getUIPrefs().agentOffice).toBe(read);
+      localStorage.setItem(UI_PREFS_KEY, JSON.stringify({ v, agentOffice, officeQuality: "low", theme: "dark", chatListMode: "bots", zoom: 1.25 }));
+      const prefs = getUIPrefs();
+      expect(prefs).toMatchObject({ theme: "dark", chatListMode: "bots", zoom: 1.25 });
+      expect(prefs).not.toHaveProperty("agentOffice");
+      expect(prefs).not.toHaveProperty("officeQuality");
     }
   });
 
@@ -361,13 +358,6 @@ describe("migration", () => {
     ] as const) {
       localStorage.setItem(UI_PREFS_KEY, JSON.stringify({ v, reopenLastChat: saved }));
       expect(getUIPrefs().reopenLastChat).toBe(read);
-    }
-  });
-
-  it("keeps the office's quality, and reads one it doesn't know as Normal", () => {
-    for (const [saved, read] of [["low", "low"], ["normal", "normal"], ["ultra", "normal"], [3, "normal"]]) {
-      localStorage.setItem(UI_PREFS_KEY, JSON.stringify({ v: UI_PREFS_VERSION, officeQuality: saved }));
-      expect(getUIPrefs().officeQuality).toBe(read);
     }
   });
 

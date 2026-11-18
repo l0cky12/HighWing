@@ -1,4 +1,4 @@
-// Write with AI on the profile form's Persona (ADR 0197, 0204): what the stateless `llm.oneshot` call is told and given,
+// Write with AI on the profile form's Persona (ADR 0197, 0205): what the stateless `llm.oneshot` call is told and given,
 // and how its answer is read. No I/O here. It only rewrites what the owner typed: an empty field sends nothing, and the
 // answer replaces the field's text, never saved on its own.
 import type { Call } from "./instructionsAI";

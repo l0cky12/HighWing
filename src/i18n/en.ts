@@ -453,7 +453,7 @@ export const en = {
       contended: "Hermes kept changing this bot while it saved, so nothing was written. Try again.",
       noCheck: "This Hermes can't check a bot's settings for changes made elsewhere, so nothing was sent. Updating Hermes adds the check.",
       pictureUnconfirmed: "Hermes stored the picture without confirming it, so the bot doesn't say it has one yet. Save again.",
-      /** Write with AI on the form's Persona (ADR 0197, 0204): a rewrite of what the owner typed, put in the field with Undo. */
+      /** Write with AI on the form's Persona (ADR 0197, 0205): a rewrite of what the owner typed, put in the field with Undo. */
       rephrase: {
         generate: "Write with AI",
         runsOn: (model: string, profile: string) =>

@@ -1,6 +1,6 @@
 //! The arguments of every `ssh` this app starts: the sign-in tunnel, a server page's tunnel and the listing of the
-//! server's ports, Repository Git, and the Terminal. Each gets every option that only takes something away from ssh,
-//! and differs from the others only where its job needs it, as `Kind` names.
+//! server's ports, the Screen's app install, and the Terminal. Each gets every option that only takes something away
+//! from ssh, and differs from the others only where its job needs it, as `Kind` names.
 //!
 //! ssh keeps the first value it reads for an option, and reads the command line before the owner's ~/.ssh/config, so
 //! none of these can be undone there.
@@ -58,7 +58,7 @@ pub enum Kind<'a> {
     /// and the owner answers. Host keys and agent, X11 and port forwarding are the owner's config's, as from any terminal.
     /// `folder`: where the shell starts, in place of the home folder.
     Terminal { folder: Option<Folder<'a>> },
-    /// `remote` run in the background (ADR 0110), forwarding nothing.
+    /// `remote` run in the background, forwarding nothing.
     Command { remote: &'a [&'a str] },
     /// One forward from `local` on this computer to `far_end` (`host:port`) as the server sees it, and no command, in
     /// the background.

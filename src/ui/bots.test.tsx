@@ -3,7 +3,7 @@
 // that a row opens the bot's Bot Chat in its profile and keeps it out of the chat list, that the pen starts an ordinary
 // chat there, that /new in a Bot Chat compacts it, that the chat list panel shows the chats or the bots as the owner
 // picks with the switch at its top (ADR 0195), that a Hermes without Bot Mode has no switch, New bot and Reload above
-// the bots, and each bot's menu (ADR 0194, ADR 0203): Chat, Settings (Edit bot), Edit persona… (ADR 0204), Clone, Pin,
+// the bots, and each bot's menu (ADR 0194, ADR 0203): Chat, Settings (Edit bot), Edit persona… (ADR 0205), Clone, Pin,
 // Hide and Delete.
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";

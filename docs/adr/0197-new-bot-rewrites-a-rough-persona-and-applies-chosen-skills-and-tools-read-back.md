@@ -1,6 +1,6 @@
 # New bot rewrites a rough persona and applies chosen skills and tools, read back
 
-> **Partly superseded by [ADR 0204](0204-a-persona-is-edited-only-in-the-profile-form-and-write-with-ai-rewrites-it-in-place.md).** Generate with AI is now Write with AI, on New and Edit, and puts its answer in the Persona field with Undo instead of a suggestion box with Replace persona and Discard; Create waits only while it runs. Edit has the Persona field itself, not a link to Settings → Persona, which is gone. The rest of this ADR stands.
+> **Partly superseded by [ADR 0205](0205-a-persona-is-edited-only-in-the-profile-form-and-write-with-ai-rewrites-it-in-place.md).** Generate with AI is now Write with AI, on New and Edit, and puts its answer in the Persona field with Undo instead of a suggestion box with Replace persona and Discard; Create waits only while it runs. Edit has the Persona field itself, not a link to Settings → Persona, which is gone. The rest of this ADR stands.
 >
 > **Accepted.** It adds to ADR 0164 (New bot is the New profile form) and follows ADR 0074's clone stages and ADR 0152's one-off calls. The form is `ProfileForm` in `src/ui/ProfileSettings.tsx`, with `src/ui/PersonaRephrase.tsx` and `src/ui/BotCapabilities.tsx`. The calls are `src/hermes/personaRephrase.ts` and `src/hermes/botSetup.ts`. The relay rule `profile_create_allowed` in `src-tauri/src/transport.rs` is unchanged. Tested in `src/hermes/personaRephrase.test.ts`, `src/hermes/botSetup.test.ts`, `src/ui/botCreation.test.tsx` and `src/ui/bots.test.tsx`.
 

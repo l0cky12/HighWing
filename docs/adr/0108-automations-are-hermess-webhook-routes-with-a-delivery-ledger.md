@@ -1,5 +1,7 @@
 # Automations are Hermes's webhook routes; their history needs a delivery ledger on the server
 
+> **Superseded by [ADR 0204](0204-the-repository-automations-and-office-screens-are-removed.md)**. The Automations screen and its writes to Hermes's webhook routes are gone. Routes already on a Hermes server keep running there, and their sessions still show as chats from another platform.
+
 An Automation is a Hermes webhook route in one profile. Hermes's gateway receives the outside service's event,
 verifies its signature, filters it and runs the task, so automations work while Hermes Chat is closed. The app only
 sets routes up and inspects them, over dashboard REST `/api/webhooks*`, naming the profile on every call and reading

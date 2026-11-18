@@ -1,5 +1,7 @@
 # The agent office is desks drawn from the inbox and the subagent trees, read-only
 
+> **Superseded by [ADR 0204](0204-the-repository-automations-and-office-screens-are-removed.md)**. The agent office is gone, with its rail button and its setting. Nothing in the app draws desks from the inbox and the subagent trees any more.
+
 > **Partly superseded by [ADR 0161](0161-the-office-is-a-flat-floor-plan-with-a-design-menu-and-profiles-as-a-filter.md)** (#569). `agentOffice` has five values, default `plan`. The rules on state below still hold in every design.
 >
 > **Partly superseded by [ADR 0122](0122-the-office-is-a-3d-building-with-a-floor-per-profile-and-a-room-per-state.md)** (#281). The office is now a full view in place of the chat panes, not a panel beside the rail, and its views are a 3D building and List; the Desks view is gone, and `agentOffice` is `building`, `list` or `off`. "A room per chat, a desk per agent" as a drawing no longer holds: the building has rooms by state, and each chat is a team in one color. What `officeRooms` works out, where its states come from, "as last seen", Finished only on Hermes's word, and that the office reads and starts nothing still stand.

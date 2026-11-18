@@ -44,7 +44,6 @@ import { callText, offeredSkills, runSkill, skillInvocationText, type SkillCall,
 import { CronApi, jobRunTitle } from "./cronJobs";
 import { followsSession, nextRoster, parseKanbanCreate, sameTask, type DispatchedTask } from "./dispatched";
 import { KanbanApi, KanbanWatch } from "./kanban";
-import { AutomationsApi } from "./automations";
 import { ModelSettingsApi } from "./modelSettings";
 import { ToolsetsApi } from "./toolsets";
 import { VoiceSettingsApi } from "./voiceSettings";
@@ -181,10 +180,7 @@ const CLI_EXEC_TIMEOUT_S = 600;
 const CLI_EXEC_ANSWER_MS = (CLI_EXEC_TIMEOUT_S + 60) * 1000;
 /** Checking another profile for Unread chats reads one page of its most recent ones. */
 const OTHER_PAGE_SIZE = 50;
-/**
- * A `session.active_list` check asked for sooner than this after the last one, on the same connection, is skipped. The
- * office asks this often.
- */
+/** A `session.active_list` check asked for sooner than this after the last one, on the same connection, is skipped. */
 export const LIVE_MIN_GAP_MS = 15_000;
 /** A check asked for on a LIVE_MIN_GAP_MS timer can come a little early by the clock; it isn't skipped for that. */
 const LIVE_SLACK_MS = 1_000;
@@ -1146,9 +1142,6 @@ export class Hermes {
 
   /** Hermes's scheduled jobs, each call naming its profile (cronJobs.ts). Hermes runs them; this only manages them. */
   readonly cron = new CronApi((method, pathAndQuery, body) => this.rest(method, pathAndQuery, body));
-
-  /** Hermes's webhook routes, each call naming its profile (automations.ts). Hermes receives and runs the events. */
-  readonly automations = new AutomationsApi((method, pathAndQuery, body) => this.rest(method, pathAndQuery, body));
 
   /** Hermes's kanban board, read for the tasks the shown profile's chats dispatched (kanban.ts, issue #287). */
   readonly kanban = new KanbanApi((method, pathAndQuery, body) => this.rest(method, pathAndQuery, body));
@@ -2231,38 +2224,6 @@ export class Hermes {
     if (row?.id !== chatId) return null;
     const listed = profile === this.profile ? this.snapshot.chats.find((c) => c.id === chatId) : undefined;
     return { ...this.toFound(profile, { ...row, archived: !!row.archived } as SearchRow, listed, !row.pinned), snippet: [] };
-  }
-
-  /**
-   * The chats Hermes has working in `path` or a folder inside it, in every profile, from any Hermes client
-   * (`GET /api/sessions?cwd_prefix=`, archived ones included). Only rows whose own `cwd` is inside `path` count. Rejects
-   * when a profile can't be asked: a removal must not go ahead on a partial answer (ADR 0043).
-   */
-  async chatsWorkingIn(path: string): Promise<{ id: string; title: string; profile: string; cwd: string; active: boolean }[]> {
-    const root = path.replace(/\/+$/, "");
-    const within = (cwd: string) => cwd === root || cwd.startsWith(`${root}/`);
-    const PAGE = 100;
-    // A removal must not go ahead on part of the list: every page is read, and too many to read is a refusal.
-    const MAX_PAGES = 50;
-    const profiles = await this.profiles();
-    const pages = await Promise.all(
-      profiles.map(async (profile) => {
-        const rows = new Map<string, SessionRow>();
-        for (let offset = 0, n = 0; ; offset += PAGE, n++) {
-          if (n >= MAX_PAGES) throw new Error(`The ${profile} profile has more than ${MAX_PAGES * PAGE} chats in this folder, too many to check.`);
-          const q = new URLSearchParams({ cwd_prefix: root, archived: "include", limit: String(PAGE), offset: String(offset), profile });
-          const page = (await this.rest("GET", `api/sessions?${q}`)) as SessionPage;
-          if (!Array.isArray(page?.sessions) || typeof page.total !== "number") throw new Error(`Hermes's answer for the ${profile} profile wasn't a list of chats.`);
-          // Pinned rows come with every page: each chat counts once.
-          for (const r of page.sessions) rows.set(r.id, r);
-          if (offset + PAGE >= page.total) break;
-        }
-        return [...rows.values()].flatMap((r) =>
-          typeof r.cwd === "string" && within(r.cwd) ? [{ id: r.id, title: r.title || r.preview || "Untitled chat", profile, cwd: r.cwd, active: !!r.is_active }] : [],
-        );
-      }),
-    );
-    return pages.flat();
   }
 
   /** Puts a found chat in the list, if it isn't there yet, so it can be opened (`open`). */

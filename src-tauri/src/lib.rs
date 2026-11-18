@@ -31,7 +31,6 @@ pub mod page_view;
 mod private_file;
 pub mod project_context;
 pub mod remote;
-pub mod repo_git;
 pub mod saved_password;
 mod screen_apps;
 pub mod screenshot;
@@ -1897,32 +1896,11 @@ fn display_close(displays: State<'_, display::Displays>, id: u64) {
     displays.close(id);
 }
 
-/// One Git operation on the server for the Repository screen: the helper run through `ssh` to `target` (the sign-in's
-/// SSH target, or one the owner gave), with `request` on its stdin (repo_git.rs, ADR 0110).
-#[tauri::command]
-async fn repo_git(target: String, request: repo_git::Request) -> Result<serde_json::Value, repo_git::RepoError> {
-    repo_git::run_over_ssh(&target, &request).await
-}
-
 /// Installs a terminal, a text editor and xclip for the Screen's Bot Desktop on the server, through `ssh` to `target`
 /// (screen_apps.rs, ADR 0193). `password`: the owner's sudo password, which goes only on ssh's stdin.
 #[tauri::command]
 async fn screen_apps_install(target: String, password: Option<String>) -> screen_apps::Outcome {
     screen_apps::install_over_ssh(&target, password.as_deref()).await
-}
-
-/// `repo_git`, for a request that reports progress as it goes (creating a worktree and running its setup, removing
-/// one): each progress line goes to `on_progress` as the helper prints it (ADR 0043).
-#[tauri::command]
-async fn repo_git_stream(
-    target: String,
-    request: repo_git::Request,
-    on_progress: Channel<serde_json::Value>,
-) -> Result<serde_json::Value, repo_git::RepoError> {
-    repo_git::run_over_ssh_streaming(&target, &request, move |line| {
-        let _ = on_progress.send(line);
-    })
-    .await
 }
 
 /// Tauri tells the webview about the drop before this runs, but the webview's next IPC call is handled on this same
@@ -2131,8 +2109,6 @@ pub fn run(screenshot: bool, link: Option<String>) {
             screenshot_show_window,
             chat_link_take,
             terminal_open,
-            repo_git,
-            repo_git_stream,
             screen_apps_install,
             terminal_write,
             terminal_resize,

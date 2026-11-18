@@ -20,13 +20,6 @@ const get = () => hidden;
 /** The window is hidden to the tray now. */
 export const useWindowHidden = () => useSyncExternalStore(subscribe, get, get);
 
-const subscribeVisibility = (fn: () => void) => {
-  document.addEventListener("visibilitychange", fn);
-  return () => document.removeEventListener("visibilitychange", fn);
-};
-/** The page can't be seen, as when the window is minimized: the webview's own word, apart from the tray. */
-export const usePageHidden = () => useSyncExternalStore(subscribeVisibility, () => document.visibilityState === "hidden");
-
 /** The composer to type in once the window is back: the active pane's, or the only one showing. */
 const composer = (doc: Document) =>
   doc.querySelector<HTMLElement>(".pane.active [data-composer]") ?? doc.querySelector<HTMLElement>(".pane:not(.hidden) [data-composer]");
@@ -66,14 +59,3 @@ export async function followWindowVisibility(): Promise<void> {
     // Outside the desktop app there is no window to hide.
   }
 }
-
-const subscribeFocus = (fn: () => void) => {
-  window.addEventListener("focus", fn);
-  window.addEventListener("blur", fn);
-  return () => {
-    window.removeEventListener("focus", fn);
-    window.removeEventListener("blur", fn);
-  };
-};
-/** The window has the keyboard focus: the owner is in this app, not another one. */
-export const useWindowFocused = () => useSyncExternalStore(subscribeFocus, () => document.hasFocus());

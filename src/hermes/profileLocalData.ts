@@ -25,11 +25,10 @@ import { CLEARED_KEY, PINS_KEY, SNOOZE_KEY, STOP_WAITING_KEY } from "./snooze";
 import { moveTagScopes, type TagsFile } from "./tags";
 import { getUIPrefs, setUIPrefs } from "./uiPrefs";
 import { sending, unsaved } from "./unsaved";
-import { WORKTREE_CHATS_KEY } from "./worktrees";
 import { isObj } from "./values";
 
 /**
- * Settings → Persona's unsaved edits and replaced versions. Nothing writes them since the page went (ADR 0204), but
+ * Settings → Persona's unsaved edits and replaced versions. Nothing writes them since the page went (ADR 0205), but
  * copies an earlier version kept still go with their profile or connection.
  */
 const PERSONA_PREFIX = "hermes-chat.persona.";
@@ -60,6 +59,7 @@ export const RENAMES_KEY = "hermes-chat.profile-renames";
 
 /** Where the Outputs screen kept its index, every connection and profile in one document, until ADR 0170 removed it. */
 const RETIRED_OUTPUTS_KEY = "hermes-chat.outputs";
+const RETIRED_REPO_KEYS = ["hermes-chat.repo-path", "hermes-chat.repo-recent", "hermes-chat.repo-target", "hermes-chat.worktree-chats"];
 
 /** Documents `{scopes: {[scope]: …}}` with a scope for each connection and profile. */
 export const SCOPED_DOCS: readonly string[] = [
@@ -69,7 +69,6 @@ export const SCOPED_DOCS: readonly string[] = [
   PINS_KEY,
   STOP_WAITING_KEY,
   IMPORTS_KEY,
-  WORKTREE_CHATS_KEY,
   CONTEXT_LEDGER_KEY,
   BUDGETS_KEY,
 ];
@@ -84,9 +83,6 @@ export const NOT_PER_PROFILE: Record<string, string> = {
   "hermes-chat.connections": "The saved connections themselves",
   "hermes-chat.sign-in": "The single sign-in kept before saved connections, moved into them once",
   "hermes-chat.connection-refs": "Which connection a chat link names, per connection",
-  "hermes-chat.repo-path": "The Repository screen's folder, on this computer",
-  "hermes-chat.repo-recent": "The Repository screen's recent folders, on this computer",
-  "hermes-chat.repo-target": "The Repository screen's SSH target, on this computer",
   "hermes-chat.terminal-target": "The terminal's SSH target, per connection",
   "hermes-chat.tags": "The tags file's stand-in outside the app: moved as a file (`files.tags`)",
   "hermes-chat.project-defaults": "The project defaults file's stand-in outside the app: moved as a file (`files.defaults`)",
@@ -94,12 +90,16 @@ export const NOT_PER_PROFILE: Record<string, string> = {
   "hermes-ui-prefs": "Display preferences: its per-profile parts are moved by `movePrefs`",
   [RENAMES_KEY]: "Renames waiting to move this computer's data, per connection",
   [RETIRED_OUTPUTS_KEY]: "The Outputs screen's index, from before the screen was removed: deleted at launch (`dropRetiredData`)",
+  ...Object.fromEntries(RETIRED_REPO_KEYS.map((k) => [k, "The Repository screen's, from before the screen was removed: deleted at launch (`dropRetiredData`)"])),
 };
 
-/** Deletes what this computer kept for a screen that is gone, so it isn't kept forever: the Outputs index (ADR 0170). */
+/**
+ * Deletes what this computer kept for a screen that is gone, so it isn't kept forever: the Outputs index (ADR 0170),
+ * and the Repository screen's folders and worktree chats (ADR 0204).
+ */
 export function dropRetiredData(storage: Pick<Storage, "removeItem"> = localStorage) {
   try {
-    storage.removeItem(RETIRED_OUTPUTS_KEY);
+    for (const k of [RETIRED_OUTPUTS_KEY, ...RETIRED_REPO_KEYS]) storage.removeItem(k);
   } catch {
     // Storage that can't be written now is tried again at the next launch.
   }
@@ -305,7 +305,7 @@ async function walkAll(c: ScopeSource, walk: Walk, { storage = localStorage as S
 /**
  * Moves everything this computer keeps for profile `from` of connection `c` to profile `to`: drafts, queued and
  * Failed messages, the chat list and Saved copies, branches, persona edits and versions, project membership and
- * defaults, tags and Saved filters, pins, snoozes, inbox dismissals, imports, worktree chats, which profile
+ * defaults, tags and Saved filters, pins, snoozes, inbox dismissals, imports, which profile
  * was shown, and the chat to reopen and the model pick. Run only after Hermes renamed it. Another connection's
  * profile of the same name is left alone.
  */

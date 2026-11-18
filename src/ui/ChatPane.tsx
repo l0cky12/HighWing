@@ -23,7 +23,6 @@ import { DeleteChatDialog } from "./DeleteChat";
 import { ExportChatDialog, type ExportMode } from "./ExportChat";
 import { QueuePanel, type QueueApi } from "./Queue";
 import { SubagentsPanel, type SubagentsApi } from "./Subagents";
-import type { SubagentId } from "../hermes/subagents";
 import { SideQuestionPair } from "./SideQuestions";
 import { Markdown } from "./Markdown";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -451,7 +450,6 @@ export function ChatPane({
   queue,
   queueApi,
   subagents,
-  showSubagent,
   commands,
   references,
   onDismissSideQuestion,
@@ -532,8 +530,6 @@ export function ChatPane({
   queueApi?: QueueApi;
   /** Steer, Stop and output for the chat's Subagents; without it the panel only shows them. */
   subagents?: SubagentsApi;
-  /** A subagent to open in the Subagents panel, from the agent office. */
-  showSubagent?: { id: SubagentId; at: number };
   commands?: CommandHost;
   references?: ComposerReferences;
   /** Takes away the card of one of the chat's side questions (ADR 0070). */
@@ -1137,7 +1133,6 @@ export function ChatPane({
         tree={chat.subagents}
         api={subagents}
         approvalWaiting={waiting?.kind}
-        show={showSubagent}
         onGoToApproval={() => {
           const id = chat.items.find(isWaiting)?.id;
           shown.reveal(chunks.findIndex((c) => c.some((b) => b.id === id)));

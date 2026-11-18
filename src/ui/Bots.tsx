@@ -3,7 +3,7 @@
 // A row opens the bot's Bot Chat, found by title every time (bots.ts); the pen beside it starts an ordinary chat in the
 // bot's profile. Above the rows, New bot makes a profile through Settings → Profiles' New profile form, and the new
 // bot's row is shown once the roster is read again (ADR 0164); Reload reads the roster now. A right-click on a row
-// opens its menu (ADR 0194): Chat, Settings, Edit persona (ADR 0204), Clone, Pin, Hide and Delete, through Settings →
+// opens its menu (ADR 0194): Chat, Settings, Edit persona (ADR 0205), Clone, Pin, Hide and Delete, through Settings →
 // Profiles' own dialogs and `Hermes.editBot`, which never writes over a change made elsewhere (ADR 0189). Every word
 // comes from the catalogue (ADR 0100).
 import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from "react";
@@ -49,7 +49,7 @@ async function dialogOn(profiles: Omit<ProfilesWiring, "showTab">, botEdit: BotE
  * What Bots mode does besides opening a bot (ADR 0203). `head` goes above the rows: New bot, Reload, and why the last
  * read of the roster failed. `onMenu` is `BotList`'s, for a right-click, Shift+F10 or the Menu key on a row, as the
  * panel's chat rows have (ADR 0194). Chat opens the bot as its row does. Settings is Edit bot, and Edit persona is
- * Edit bot with focus in Persona (ADR 0204). Settings, Edit persona and Delete read the profile from
+ * Edit bot with focus in Persona (ADR 0205). Settings, Edit persona and Delete read the profile from
  * `GET /api/profiles` as they open; only the entry picked last opens. `element`, the menu and every dialog, is drawn
  * outside Bots mode, so a delete that switches away from the open bot's profile runs to its end.
  *

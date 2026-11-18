@@ -1771,7 +1771,6 @@ dependencies = [
  "base64 0.22.1",
  "cairo-rs",
  "dbus",
- "flate2",
  "futures-util",
  "gdkx11",
  "getrandom 0.3.4",

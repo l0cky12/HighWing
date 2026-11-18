@@ -367,38 +367,38 @@ describe("the note in place of a screen", () => {
   it("shows the screen while its feature is supported, unknown or couldn't be checked", () => {
     const store = scriptedStore(NEW);
     render(
-      <CapabilityGate store={store} id="automations" openGuide={() => {}}>
+      <CapabilityGate store={store} id="scheduledJobs" openGuide={() => {}}>
         <p>the screen</p>
       </CapabilityGate>,
     );
     expect(screen.getByText("the screen")).toBeTruthy();
     act(() => store.connected(1, "default", {}, Promise.resolve({})));
-    act(() => store.observe(1, { route: "api/webhooks" }, new RestError(503, `{"detail":"down"}`)));
+    act(() => store.observe(1, { route: "api/cron/jobs" }, new RestError(503, `{"detail":"down"}`)));
     expect(screen.getByText("the screen")).toBeTruthy();
   });
 
   it("opens as the note alone when Hermes already lacks the feature, linking to diagnostics and the guide", async () => {
     const store = scriptedStore(NEW);
     act(() => store.connected(1, "default", {}, Promise.resolve({})));
-    act(() => store.observe(1, { route: "api/webhooks?profile=default" }, new RestError(404, `{"detail":"Not Found"}`)));
+    act(() => store.observe(1, { route: "api/cron/jobs?profile=default" }, new RestError(404, `{"detail":"Not Found"}`)));
     const openGuide = vi.fn();
     const onDiagnostics = vi.fn();
     render(
-      <CapabilityGate store={store} id="automations" openGuide={openGuide} onDiagnostics={onDiagnostics} onClose={() => {}}>
-        <button>New automation</button>
+      <CapabilityGate store={store} id="scheduledJobs" openGuide={openGuide} onDiagnostics={onDiagnostics} onClose={() => {}}>
+        <button>New job</button>
       </CapabilityGate>,
     );
     // The screen, and anything in it that could write, isn't there.
-    expect(screen.queryByRole("button", { name: "New automation" })).toBeNull();
-    const note = screen.getByRole("region", { name: /This Hermes server doesn't support Automations/ });
-    expect(note.textContent).toMatch(/Automations needs the webhook routes under \/api\/webhooks/);
+    expect(screen.queryByRole("button", { name: "New job" })).toBeNull();
+    const note = screen.getByRole("region", { name: /This Hermes server doesn't support Scheduled jobs/ });
+    expect(note.textContent).toMatch(/Scheduled jobs needs the cron routes under \/api\/cron\//);
     expect(note.textContent).toMatch(/Updating Hermes on the server adds it\. Checked just now/);
     const user = userEvent.setup();
     await user.click(within(note).getByRole("button", { name: "Connection diagnostics" }));
-    expect(onDiagnostics).toHaveBeenCalledWith("automations");
-    await user.click(within(note).getByRole("button", { name: "Compatibility guide: Automations" }));
-    expect(openGuide).toHaveBeenCalledWith(guideUrl("automations"));
-    expect(screen.getByRole("heading", { level: 1, name: "Automations" })).toBeTruthy();
+    expect(onDiagnostics).toHaveBeenCalledWith("scheduledJobs");
+    await user.click(within(note).getByRole("button", { name: "Compatibility guide: Scheduled jobs" }));
+    expect(openGuide).toHaveBeenCalledWith(guideUrl("scheduledJobs"));
+    expect(screen.getByRole("heading", { level: 1, name: "Scheduled jobs" })).toBeTruthy();
   });
 
   it("keeps a screen already open, with what it typed, and puts the note above it", async () => {

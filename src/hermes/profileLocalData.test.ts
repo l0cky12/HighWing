@@ -224,4 +224,14 @@ describe("what a removed screen kept", () => {
     dropRetiredData();
     expect(Object.keys(localStorage)).toEqual(["hermes-chat.projects"]);
   });
+
+  it("deletes the Repository screen's folders, target and worktree chats an older version kept", () => {
+    localStorage.setItem("hermes-chat.repo-path", "/srv/app");
+    localStorage.setItem("hermes-chat.repo-recent", '["/srv/app"]');
+    localStorage.setItem("hermes-chat.repo-target", "lena@hermes");
+    localStorage.setItem("hermes-chat.worktree-chats", doc({ [connectionScope(home, "work")]: { "chat-1": { path: "/srv/app-wt" } } }));
+    localStorage.setItem("hermes-chat.terminal-target", "lena@hermes");
+    dropRetiredData();
+    expect(Object.keys(localStorage)).toEqual(["hermes-chat.terminal-target"]);
+  });
 });

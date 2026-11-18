@@ -3,7 +3,7 @@
 // rail's foot. Right-clicking a chat opens its menu (ChatMenu.tsx).
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore, type DragEvent, type CSSProperties, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { BarChart3, Bot as BotIcon, Building2, CalendarClock, Loader, MessagesSquare, ShieldAlert, Check, ChevronDown, ChevronRight, CircleAlert, Copy, Hourglass, LockOpen, PanelLeftClose, Pin, Search, Settings, SquareKanban, SquarePen, Trash2, Webhook, FolderGit2 } from "lucide-react";
+import { BarChart3, Bot as BotIcon, CalendarClock, Loader, MessagesSquare, ShieldAlert, Check, ChevronDown, ChevronRight, CircleAlert, Copy, Hourglass, LockOpen, PanelLeftClose, Pin, Search, Settings, SquareKanban, SquarePen, Trash2 } from "lucide-react";
 import { waitingLabel, type Handoff } from "../hermes/dispatched";
 import type { Chat, CheckTimes, ConnectionStatus, OtherProfile, OtherProfiles } from "../hermes/model";
 import { SOURCE_LABEL, archiveAction, inArchived, isWaiting } from "../hermes/model";
@@ -42,20 +42,14 @@ export function Rail({
   onToggleList,
   onNew,
   onSearch,
-  onOffice,
-  officeOpen = false,
   onWork,
   workOpen = false,
   onSettings,
   settingsOpen = false,
   onJobs,
   jobsOpen = false,
-  onAutomations,
-  automationsOpen = false,
   onUsage,
   usageOpen = false,
-  onRepo,
-  repoOpen = false,
   updateWaiting = false,
   connectionsMenu,
   connectionName,
@@ -70,9 +64,6 @@ export function Rail({
   onToggleList: () => void;
   onNew: () => void;
   onSearch: () => void;
-  /** Opens or closes the agent office (Office.tsx, ADR 0077); none while Settings turns it off. */
-  onOffice?: () => void;
-  officeOpen?: boolean;
   /** Opens or closes the Work page, the kanban board of bot work (Work.tsx, ADR 0171); none when this Hermes has no kanban plugin. */
   onWork?: () => void;
   workOpen?: boolean;
@@ -81,15 +72,9 @@ export function Rail({
   /** Opens Scheduled jobs: Hermes's jobs for the profile, which it runs on the server. */
   onJobs?: () => void;
   jobsOpen?: boolean;
-  /** Opens Automations: Hermes's webhook routes for the profile, which start tasks on the server (Automations.tsx). */
-  onAutomations?: () => void;
-  automationsOpen?: boolean;
   /** Opens Usage analytics: tokens and recorded cost across chats, models, projects and profiles (UsageAnalytics.tsx). */
   onUsage?: () => void;
   usageOpen?: boolean;
-  /** Opens or closes the Repository screen: a Git checkout on the server, through the owner's ssh (Repository.tsx). */
-  onRepo?: () => void;
-  repoOpen?: boolean;
   /** An update is ready to install or restart into (Settings → Updates). */
   updateWaiting?: boolean;
   /** The recent-connection picker (Connections.tsx `RailConnections`), above the connection's status. */
@@ -112,19 +97,9 @@ export function Rail({
   const connLabel = [STATUS_LABEL[status], connNote].filter(Boolean).join(" · ");
   const { shown, bind, hide, tipProps, descriptions } = useRailTip();
   const server = [
-    onRepo && (
-      <button key="repo" className={`icon-btn ${repoOpen ? "on" : ""}`} aria-label="Repository" aria-pressed={repoOpen} onClick={onRepo} {...bind("repo", { label: "Repository", note: "Git changes on the server" })}>
-        <FolderGit2 size={18} />
-      </button>
-    ),
     onJobs && (
       <button key="jobs" className={`icon-btn ${jobsOpen ? "on" : ""}`} aria-label="Scheduled jobs" aria-pressed={jobsOpen} onClick={onJobs} {...bind("jobs", { label: "Scheduled jobs", note: "Tasks Hermes runs on a schedule" })}>
         <CalendarClock size={18} />
-      </button>
-    ),
-    onAutomations && (
-      <button key="automations" className={`icon-btn ${automationsOpen ? "on" : ""}`} aria-label="Automations" aria-pressed={automationsOpen} onClick={onAutomations} {...bind("automations", { label: "Automations", note: "Tasks started by GitHub events" })}>
-        <Webhook size={18} />
       </button>
     ),
     onUsage && (
@@ -146,17 +121,6 @@ export function Rail({
         <button className="icon-btn rail-primary" aria-label={`Search all chats (${label("search")})`} aria-keyshortcuts={ariaKeys(keys.search)} onClick={onSearch} {...bind("search", { label: "Search all chats", keys: label("search") })}>
           <Search size={18} />
         </button>
-        {onOffice && (
-          <button
-            className={`icon-btn rail-primary office-btn ${officeOpen ? "on" : ""}`}
-            aria-label="Office"
-            aria-expanded={officeOpen}
-            onClick={onOffice}
-            {...bind("office", { label: "Office", note: "Every agent at work, in the building or a list" })}
-          >
-            <Building2 size={18} />
-          </button>
-        )}
         {onWork && (
           <button
             className={`icon-btn rail-primary ${workOpen ? "on" : ""}`}

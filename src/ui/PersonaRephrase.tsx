@@ -1,4 +1,4 @@
-// Write with AI on the profile form's Persona (ADR 0197, 0204). It rewrites only what the owner typed, on an explicit
+// Write with AI on the profile form's Persona (ADR 0197, 0205). It rewrites only what the owner typed, on an explicit
 // click, through one stateless `llm.oneshot` on a profile's Text generation model, and puts the answer in the field
 // itself; Undo puts the owner's text back. Nothing reaches Hermes's SOUL.md until the form's Create or Save.
 // Hermes has no cancel: Stop, a newer ask, closing the dialog and a switch of profile only drop the answer when it comes.

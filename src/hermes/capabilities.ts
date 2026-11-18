@@ -459,13 +459,12 @@ export const CAPABILITIES: readonly CapabilitySpec[] = [
   {
     id: "automations",
     label: "Automations",
-    usedBy: "The Automations screen",
+    usedBy: "Extensions that list automations in their needs",
     needs: "The webhook routes under /api/webhooks.",
-    without: "The Automations screen explains what is missing, and reads or writes nothing.",
+    without: "An extension that needs it shows what is missing instead of running.",
     anchor: "automations",
     probe: { kind: "rest", path: (profile) => `api/webhooks?${new URLSearchParams({ profile })}`, maxBytes: 2 * 1024 * 1024, shape: (b) => isObj(b) && isList(b.subscriptions) },
     routes: [/^api\/webhooks$/],
-    writeRoutes: [/^api\/webhooks(\/|$)/],
   },
   {
     id: "outputs",

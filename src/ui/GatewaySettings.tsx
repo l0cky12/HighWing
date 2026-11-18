@@ -9,7 +9,7 @@ import { AlertTriangle, ExternalLink, Info, KeyRound, RefreshCw, Trash2, Undo2 }
 import { SettingNote, SettingRow, SettingsSection } from "./SettingRows";
 import { AppliesBox, EditingProfile, HeadPart, useInPage } from "./SettingsPage";
 import { Spinner } from "./bits";
-import { RestartGateway } from "./RestartGateway";
+import { RestartGateway, useRestartMarks } from "./RestartGateway";
 import type { GatewayRestartApi } from "../hermes/gatewayRestart";
 import {
   type Draft,
@@ -131,8 +131,8 @@ export function GatewaySettings({
   const [notes, setNotes] = useState<Partial<Record<PlatformId, Note>>>({});
   const [checks, setChecks] = useState<Partial<Record<PlatformId, StatusCheck>>>({});
   const [busy, setBusy] = useState<Partial<Record<PlatformId, "save" | "check">>>({});
-  // The platforms saved since the screen read them whose change the running gateway keeps out until it restarts.
-  const [unapplied, setUnapplied] = useState<Partial<Record<PlatformId, boolean>>>({});
+  // The platforms saved whose change the running gateway keeps out until it restarts.
+  const marks = useRestartMarks(restart, profile);
   const live = useRef(true);
   // Every answer is for the profile asked; one that comes back after a switch is dropped.
   const shown = useRef(profile);
@@ -278,12 +278,16 @@ export function GatewaySettings({
     setBusy((all) => ({ ...all, [id]: "save" }));
     setNotes((all) => ({ ...all, [id]: undefined }));
     const r = await api.save(p, g, draft);
+    // Kept for the profile saved, though the screen has moved on.
+    if (r.kind === "saved" && restart) {
+      if (r.restart) restart.mark(p, `gateways:${id}`);
+      else restart.unmark(p, `gateways:${id}`);
+    }
     if (!mine(p)) return;
     setBusy((all) => ({ ...all, [id]: undefined }));
     if (r.list) setList(r.list);
     // A typed token goes once Hermes may have it; a refusal or a conflict keeps the draft to fix and send again.
     if (r.kind === "saved" || r.kind === "unconfirmed") setDrafts((all) => ({ ...all, [id]: undefined }));
-    if (r.kind === "saved") setUnapplied((all) => ({ ...all, [id]: r.restart }));
     setChecks((all) => ({ ...all, [id]: undefined }));
     setNotes((all) => ({ ...all, [id]: saveNote(r, g) }));
   };
@@ -417,11 +421,10 @@ export function GatewaySettings({
                   key={g.id}
                   api={restart}
                   profile={profile}
-                  needed={g.gatewayRunning && (!!unapplied[g.id] || g.state === "pending_restart")}
+                  needed={g.gatewayRunning && (marks.has(`gateways:${g.id}`) || g.state === "pending_restart")}
                   connected={connected}
                   onRestarted={() => {
                     const id = g.id;
-                    setUnapplied((all) => ({ ...all, [id]: false }));
                     setNotes((all) => ({ ...all, [id]: undefined }));
                     void load();
                   }}

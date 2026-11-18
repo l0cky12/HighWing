@@ -1,10 +1,10 @@
 // The Restart gateway button (ADR 0203), shown beside a change the profile's running gateway picks up only once it
 // restarts: a Telegram or Discord change Hermes didn't hot-serve (Settings → Gateways), and an MCP server edited in place
 // (Settings → MCP servers). A restart cuts off running replies, so it asks first when Hermes says any are running.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { AlertTriangle } from "lucide-react";
 import { Spinner } from "./bits";
-import type { GatewayRestartApi } from "../hermes/gatewayRestart";
+import type { GatewayRestartApi, RestartMark } from "../hermes/gatewayRestart";
 import { plural } from "../hermes/values";
 
 type State =
@@ -15,6 +15,14 @@ type State =
   | { kind: "done"; others: string[] }
   | { kind: "failed"; why: string }
   | { kind: "unconfirmed"; why: string };
+
+const noMarks: ReadonlySet<RestartMark> = new Set();
+const noSubscribe = () => () => {};
+
+/** The profile's changes waiting for a gateway restart, as `api` keeps them across screens. */
+export function useRestartMarks(api: GatewayRestartApi | undefined, profile: string): ReadonlySet<RestartMark> {
+  return useSyncExternalStore(api?.subscribe ?? noSubscribe, () => api?.marksOf(profile) ?? noMarks);
+}
 
 const alsoServes = (others: string[]) => (others.length ? ` The same gateway serves ${others.join(", ")}, so those bots reconnect too.` : "");
 
@@ -34,7 +42,7 @@ export function RestartGateway({
   /** What waits for the restart, in one line, shown before the button. */
   why?: string;
   /** Hermes reads the gateway back as running after the restart. */
-  onRestarted: () => void;
+  onRestarted?: () => void;
 }) {
   const [state, setState] = useState<State>({ kind: "idle" });
   const live = useRef(true);
@@ -55,7 +63,7 @@ export function RestartGateway({
     if (!live.current) return;
     if (r.kind === "restarted") {
       setState({ kind: "done", others });
-      onRestarted();
+      onRestarted?.();
     } else setState(r);
   };
 

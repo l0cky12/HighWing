@@ -49,17 +49,18 @@ async function quickRestart(s: FakeHermes) {
   return new GatewayRestartApi(rest, { ...clock, pollMs: 100, commandLimitMs: 2000, backLimitMs: 500 });
 }
 
-async function shown({ s = server(), profile = "default" } = {}) {
+async function shown({ s = server(), profile = "default", restart = undefined as GatewayRestartApi | undefined } = {}) {
   const hermes = await connect(s.openPipe, "default");
   running.push(hermes);
   const user = userEvent.setup();
+  restart ??= await quickRestart(s);
   const view = render(
     <StrictMode>
-      <GatewaySettings api={hermes.gateways} restart={await quickRestart(s)} profile={profile} connected openUrl={vi.fn()} />
+      <GatewaySettings api={hermes.gateways} restart={restart} profile={profile} connected openUrl={vi.fn()} />
     </StrictMode>,
   );
   await screen.findByRole("heading", { name: "Telegram" });
-  return { s, hermes, user, view };
+  return { s, hermes, user, view, restart };
 }
 
 const rowOf = (name: string) => screen.getByText(name, { selector: ".set-name, .set-name *" }).closest(".set-row") as HTMLElement;
@@ -354,6 +355,17 @@ describe("Settings → Gateways: Restart gateway", () => {
     expect(restartButton()).toBeNull();
     // The save's note about the old settings goes with the restart.
     expect(within(commit()).queryByText(/until it restarts/)).toBeNull();
+  });
+
+  it("keeps the button for a saved change after the screen closes and opens again", async () => {
+    const { s, user, view, restart } = await shown({ s: live() });
+    await replaceToken(user);
+    await within(commit()).findByText(/until it restarts/);
+    view.unmount();
+    await shown({ s, restart });
+    // Telegram still reads back connected: only the save says the running gateway has the old token.
+    expect(within(rowOf("Status")).getByText("Connected")).toBeTruthy();
+    expect(restartButton()).toBeTruthy();
   });
 
   it("asks first when replies are running, and Cancel restarts nothing", async () => {

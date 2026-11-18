@@ -430,6 +430,20 @@ describe("Settings → MCP servers: Restart gateway", () => {
     expect(restartIn("fs")).toBeNull();
   });
 
+  it("clears every edited server's button once a restart from one of them applied them all", async () => {
+    const s = server();
+    s.mcp.servers.default.git = { command: "git-mcp" };
+    s.gateways.gateway.default = { running: true, platforms: {} };
+    const { user } = await shown({ s });
+    await editCommand(user, "fs", "bunx");
+    await editCommand(user, "git", "gitx");
+    await waitFor(() => expect(restartIn("git")).toBeTruthy());
+    await user.click(restartIn("fs")!);
+    await within(rowOf("fs")).findByText("Gateway restarted.");
+    expect(s.gateways.restarts).toEqual({ default: 1 });
+    expect(restartIn("git")).toBeNull();
+  });
+
   it("shows nothing for an added server, which the gateway picks up by itself", async () => {
     const s = server();
     s.gateways.gateway.default = { running: true, platforms: {} };

@@ -26,6 +26,11 @@ export type GatewayStatus = {
   sharedWith: string[];
 };
 
+/** A change saved on a profile that its running gateway picks up only once it restarts: a platform, or an MCP server by name. */
+export type RestartMark = `gateways:${string}` | `mcp:${string}`;
+
+const NO_MARKS: ReadonlySet<RestartMark> = new Set();
+
 export type RestartOutcome = { kind: "restarted" } | { kind: "failed"; why: string } | { kind: "unconfirmed"; why: string };
 
 export type RestartTiming = {
@@ -96,11 +101,38 @@ const lastLines = (lines: string[]) =>
 export class GatewayRestartApi {
   /** Each profile's last restart: its pid, and when Hermes answered with it. */
   private last = new Map<string, { pid: number; at: number }>();
+  /**
+   * Each profile's changes waiting for a restart, kept here for the whole connection: Hermes can't tell this app about
+   * an MCP server edited in place, or a token replaced on a platform that stays connected. Never changed in place.
+   */
+  private marks = new Map<string, ReadonlySet<RestartMark>>();
+  private listeners = new Set<() => void>();
 
   constructor(
     private rest: GatewayRestartRest,
     private timing: RestartTiming = RESTART_TIMING,
   ) {}
+
+  marksOf = (profile: string): ReadonlySet<RestartMark> => this.marks.get(profile) ?? NO_MARKS;
+
+  subscribe = (listener: () => void) => {
+    this.listeners.add(listener);
+    return () => void this.listeners.delete(listener);
+  };
+
+  mark(profile: string, mark: RestartMark) {
+    if (!this.marksOf(profile).has(mark)) this.setMarks(profile, new Set([...this.marksOf(profile), mark]));
+  }
+
+  unmark(profile: string, mark: RestartMark) {
+    if (this.marksOf(profile).has(mark)) this.setMarks(profile, new Set([...this.marksOf(profile)].filter((m) => m !== mark)));
+  }
+
+  private setMarks(profile: string, marks: ReadonlySet<RestartMark>) {
+    if (marks.size) this.marks.set(profile, marks);
+    else this.marks.delete(profile);
+    for (const l of this.listeners) l();
+  }
 
   async status(profile: string): Promise<GatewayStatus> {
     return statusOf(await this.rest("GET", `api/status?${q(profile)}`));
@@ -111,15 +143,21 @@ export class GatewayRestartApi {
     return Promise.race([request, this.timing.sleep(Math.max(0, ms)).then((): typeof LATE => LATE)]);
   }
 
-  /** Restarts the profile's gateway and waits until Hermes reads it back as running, or says why not. */
+  /**
+   * Restarts the profile's gateway and waits until Hermes reads it back as running, or says why not. A restart applies
+   * every change saved before it was asked for, so once it's confirmed those marks go.
+   */
   async restart(profile: string): Promise<RestartOutcome> {
     const { sleep, now, pollMs } = this.timing;
     const seconds = (ms: number) => Math.round(ms / 1000);
     const before = this.last.get(profile);
     if (before) await sleep(Math.max(0, before.at + COOLDOWN_MS - now()));
     let pid: number | undefined;
+    // The changes saved before the restart is asked for; one saved while it runs may come too late for it.
+    let applies = NO_MARKS;
     // A restart asked inside Hermes's cooldown gets the last one back; it has a new pid only once the cooldown is over.
     for (let tries = 0; ; tries++) {
+      applies = this.marksOf(profile);
       try {
         const res = await this.within(this.rest("POST", `api/gateway/restart?${q(profile)}`), this.timing.commandLimitMs);
         if (res === LATE) return { kind: "unconfirmed", why: `Hermes didn't answer the restart request within ${seconds(this.timing.commandLimitMs)} seconds.` };
@@ -176,7 +214,11 @@ export class GatewayRestartApi {
       const s = await this.within(this.status(profile).catch(() => undefined), by - now());
       if (s !== LATE && s) {
         last = s;
-        if (s.running && s.state === "running") return { kind: "restarted" };
+        if (s.running && s.state === "running") {
+          const left = [...this.marksOf(profile)].filter((m) => !applies.has(m));
+          if (left.length < this.marksOf(profile).size) this.setMarks(profile, new Set(left));
+          return { kind: "restarted" };
+        }
       }
       await sleep(pollMs);
     } while (now() < by);

@@ -10,7 +10,7 @@ import { AlertTriangle, BookOpen, CheckCircle2, CircleAlert, Info, Pencil, Plus,
 import { SettingNote, SettingRow, SettingsSection } from "./SettingRows";
 import { AppliesBox, AppliesPart, EditingProfile, HeadPart, MetaChip, useInPage } from "./SettingsPage";
 import { Spinner } from "./bits";
-import { RestartGateway } from "./RestartGateway";
+import { RestartGateway, useRestartMarks } from "./RestartGateway";
 import type { GatewayRestartApi } from "../hermes/gatewayRestart";
 import { useModal } from "./modal";
 import {
@@ -95,14 +95,7 @@ export function McpSettings({
   const [dialog, setDialog] = useState<Dialog>();
   const [listNote, setListNote] = useState<Note>();
   // Servers edited in place whose old settings the running gateway still holds.
-  const [unapplied, setUnapplied] = useState<Set<string>>(new Set());
-  const setUnappliedOne = (name: string, on: boolean) =>
-    setUnapplied((all) => {
-      const next = new Set(all);
-      if (on) next.add(name);
-      else next.delete(name);
-      return next;
-    });
+  const marks = useRestartMarks(restart, profile);
   const live = useRef(true);
   // Every answer is for the profile asked; one that comes back after a switch is dropped.
   const shown = useRef(profile);
@@ -166,7 +159,7 @@ export function McpSettings({
     setOne(setBusy, name, kind);
     setOne(setNotes, name, undefined);
     setListNote(undefined);
-    setUnappliedOne(name, false);
+    restart?.unmark(p, `mcp:${name}`);
     try {
       settle(p, name, await go(), what);
     } finally {
@@ -273,13 +266,13 @@ export function McpSettings({
    */
   const editedInPlace = async (was: string, name: string, l: McpList | undefined) => {
     const p = profile;
-    setUnappliedOne(was, false);
+    restart?.unmark(p, `mcp:${was}`);
     if (!restart || was !== name || !l?.servers.find((s) => s.name === name)?.enabled) return;
     const running = await restart.status(p).then(
       (s) => s.running,
       () => false,
     );
-    if (mine(p) && running) setUnappliedOne(name, true);
+    if (running) restart.mark(p, `mcp:${name}`);
   };
 
   const names = list?.servers.map((s) => s.name) ?? [];
@@ -394,10 +387,9 @@ export function McpSettings({
           <RestartGateway
             api={restart}
             profile={profile}
-            needed={unapplied.has(s.name)}
+            needed={marks.has(`mcp:${s.name}`)}
             connected={connected}
             why={`Chats on Telegram and Discord keep ${s.name}'s old settings until the gateway restarts.`}
-            onRestarted={() => setUnappliedOne(s.name, false)}
           />
         )}
         {confirmRemove === s.name ? (

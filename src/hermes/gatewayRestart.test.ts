@@ -2,11 +2,10 @@
 // (fakeGateways.ts): a restart counts only once Hermes reads the gateway back as running, and every other ending says why.
 import { describe, expect, it } from "vitest";
 import { FakeHermes } from "./fakeHermes";
+import { fakeClock } from "./fakeGateways";
 import { connect } from "./transport";
 import { GatewayRestartApi, type RestartTiming } from "./gatewayRestart";
 import type { RestMethod } from "./pipe";
-
-const FAST: RestartTiming = { sleep: () => Promise.resolve(), pollMs: 100, commandLimitMs: 2000, backLimitMs: 500 };
 
 async function setUp() {
   const server = new FakeHermes();
@@ -17,7 +16,9 @@ async function setUp() {
   fake.gateway.default = { running: true, platforms: {} };
   const pipe = await server.openPipe(() => {}, "default");
   const rest = async (m: RestMethod, p: string, b?: unknown) => JSON.parse(await pipe.request(m, p, b === undefined ? undefined : JSON.stringify(b)));
-  return { server, fake, api: new GatewayRestartApi(rest, FAST) };
+  const clock = fakeClock();
+  const timing: RestartTiming = { ...clock, pollMs: 100, commandLimitMs: 2000, backLimitMs: 500 };
+  return { server, fake, rest, clock, timing, api: new GatewayRestartApi(rest, timing) };
 }
 
 describe("Gateway restart: status", () => {
@@ -105,5 +106,12 @@ describe("Gateway restart: restart", () => {
     const { fake, api } = await setUp();
     fake.restartPolls = 1000;
     expect(await api.restart("default")).toEqual({ kind: "unconfirmed", why: "The restart was still running after 2 seconds." });
+  });
+
+  it("stops waiting on a read Hermes never answers, once the limit has passed", async () => {
+    const { rest, clock, timing } = await setUp();
+    const stalled: typeof rest = (m, p, b) => (p.startsWith("api/actions/gateway-restart/status") ? new Promise(() => {}) : rest(m, p, b));
+    expect(await new GatewayRestartApi(stalled, timing).restart("default")).toEqual({ kind: "unconfirmed", why: "Hermes didn't say how the restart went within 2 seconds." });
+    expect(clock.now()).toBeLessThanOrEqual(2100);
   });
 });

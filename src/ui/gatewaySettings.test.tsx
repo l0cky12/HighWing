@@ -11,6 +11,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { FakeHermes } from "../hermes/fakeHermes";
 import { connect, type Hermes } from "../hermes/transport";
 import { GatewayRestartApi } from "../hermes/gatewayRestart";
+import { fakeClock } from "../hermes/fakeGateways";
 import type { RestMethod } from "../hermes/pipe";
 import { appearanceStore } from "./appearance";
 import { GatewaySettings } from "./GatewaySettings";
@@ -43,7 +44,8 @@ function server() {
 async function quickRestart(s: FakeHermes) {
   const pipe = await s.openPipe(() => {}, "default");
   const rest = async (m: RestMethod, p: string, b?: unknown) => JSON.parse(await pipe.request(m, p, b === undefined ? undefined : JSON.stringify(b)));
-  return new GatewayRestartApi(rest, { sleep: () => Promise.resolve(), pollMs: 100, commandLimitMs: 2000, backLimitMs: 500 });
+  const clock = fakeClock();
+  return new GatewayRestartApi(rest, { ...clock, pollMs: 100, commandLimitMs: 2000, backLimitMs: 500 });
 }
 
 async function shown({ s = server(), profile = "default" } = {}) {

@@ -56,6 +56,31 @@ export type GatewayRuntime = { running: boolean; platforms: Record<string, Runti
 /** How the next restart command ends: its exit code, its last output, and whether the gateway runs afterwards. */
 export type RestartPlan = { exit: number; lines?: string[]; comesBack: boolean };
 
+/**
+ * A clock for tests of the restart's waits: `sleep` resolves in time order, each one only once the requests already
+ * under way have had their turn, and moves `now` to its end; nothing waits in real time.
+ */
+export function fakeClock() {
+  let t = 0;
+  const timers: { at: number; wake: () => void }[] = [];
+  const tick = () => {
+    timers.sort((a, b) => a.at - b.at);
+    const next = timers.shift();
+    if (!next) return;
+    t = Math.max(t, next.at);
+    next.wake();
+    if (timers.length) setTimeout(tick, 0);
+  };
+  return {
+    now: () => t,
+    sleep: (ms: number) =>
+      new Promise<void>((wake) => {
+        if (!timers.length) setTimeout(tick, 0);
+        timers.push({ at: t + ms, wake });
+      }),
+  };
+}
+
 export class FakeGateways {
   /** Each profile's `.env`. */
   env: Record<string, Record<string, string>> = {};

@@ -30,6 +30,8 @@ export type RestartOutcome = { kind: "restarted" } | { kind: "failed"; why: stri
 
 export type RestartTiming = {
   sleep: (ms: number) => Promise<void>;
+  /** Milliseconds on a clock that only goes forward; the limits below are measured on it. */
+  now: () => number;
   /** Between two reads. */
   pollMs: number;
   /** How long the restart command may run before the outcome is called unconfirmed. */
@@ -40,6 +42,7 @@ export type RestartTiming = {
 
 export const RESTART_TIMING: RestartTiming = {
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  now: () => performance.now(),
   pollMs: 1000,
   commandLimitMs: 90_000,
   backLimitMs: 30_000,
@@ -73,6 +76,8 @@ function commandOf(v: unknown): Command {
   };
 }
 
+const LATE: unique symbol = Symbol("late");
+
 const lastLines = (lines: string[]) =>
   clean(
     lines
@@ -92,11 +97,19 @@ export class GatewayRestartApi {
     return statusOf(await this.rest("GET", `api/status?${q(profile)}`));
   }
 
+  /** The request's answer, or LATE once `ms` have passed without one: the REST call itself may wait for minutes. */
+  private within<T>(request: Promise<T>, ms: number): Promise<T | typeof LATE> {
+    return Promise.race([request, this.timing.sleep(Math.max(0, ms)).then((): typeof LATE => LATE)]);
+  }
+
   /** Restarts the profile's gateway and waits until Hermes reads it back as running, or says why not. */
   async restart(profile: string): Promise<RestartOutcome> {
+    const { sleep, now, pollMs } = this.timing;
+    const seconds = (ms: number) => Math.round(ms / 1000);
     let pid: number | undefined;
     try {
-      const res = await this.rest("POST", `api/gateway/restart?${q(profile)}`);
+      const res = await this.within(this.rest("POST", `api/gateway/restart?${q(profile)}`), this.timing.commandLimitMs);
+      if (res === LATE) return { kind: "unconfirmed", why: `Hermes didn't answer the restart request within ${seconds(this.timing.commandLimitMs)} seconds.` };
       pid = isObj(res) && typeof res.pid === "number" ? res.pid : undefined;
     } catch (e) {
       const f = failureOf(e);
@@ -104,27 +117,27 @@ export class GatewayRestartApi {
         return { kind: "failed", why: "This Hermes server has no gateway restart route (/api/gateway/restart). Updating Hermes adds it." };
       return { kind: "failed", why: clean(f.reason) };
     }
-    const { sleep, pollMs } = this.timing;
-    const tries = (ms: number) => Math.max(1, Math.ceil(ms / pollMs));
 
     if (pid !== undefined) {
       let done: Command | undefined;
-      let replaced = false;
-      for (let i = 0; i < tries(this.timing.commandLimitMs) && !done; i++) {
+      let heard: Command | undefined;
+      const by = now() + this.timing.commandLimitMs;
+      while (!done && now() < by) {
         await sleep(pollMs);
-        let c: Command;
-        try {
-          c = commandOf(await this.rest("GET", "api/actions/gateway-restart/status"));
-        } catch {
-          continue;
-        }
-        replaced = c.pid !== pid;
-        if (!replaced && !c.running) done = c;
+        const c = await this.within(this.rest("GET", "api/actions/gateway-restart/status").then(commandOf, () => undefined), by - now());
+        if (c === LATE || !c) continue;
+        heard = c;
+        if (c.pid === pid && !c.running) done = c;
       }
       if (!done)
-        return replaced
-          ? { kind: "unconfirmed", why: "Another gateway restart started on the server while this one ran, so Hermes can't say how this one went." }
-          : { kind: "unconfirmed", why: `The restart was still running after ${Math.round(this.timing.commandLimitMs / 1000)} seconds.` };
+        return {
+          kind: "unconfirmed",
+          why: !heard
+            ? `Hermes didn't say how the restart went within ${seconds(this.timing.commandLimitMs)} seconds.`
+            : heard.pid !== pid
+              ? "Another gateway restart started on the server while this one ran, so Hermes can't say how this one went."
+              : `The restart was still running after ${seconds(this.timing.commandLimitMs)} seconds.`,
+        };
       if (done.exitCode !== undefined && done.exitCode !== 0) {
         const said = lastLines(done.lines);
         return { kind: "failed", why: `The restart command failed (exit ${done.exitCode})${said ? `: ${said}` : "."}` };
@@ -140,15 +153,15 @@ export class GatewayRestartApi {
     }
 
     let last: GatewayStatus | undefined;
-    for (let i = 0; i < tries(this.timing.backLimitMs); i++) {
-      try {
-        last = await this.status(profile);
-        if (last.running && last.state === "running") return { kind: "restarted" };
-      } catch {
-        // Read again on the next try.
+    const by = now() + this.timing.backLimitMs;
+    do {
+      const s = await this.within(this.status(profile).catch(() => undefined), by - now());
+      if (s !== LATE && s) {
+        last = s;
+        if (s.running && s.state === "running") return { kind: "restarted" };
       }
       await sleep(pollMs);
-    }
+    } while (now() < by);
     const state = last ? (last.running ? `it reports "${last.state ?? "unknown"}"` : "it isn't running") : "its state couldn't be read";
     return { kind: "unconfirmed", why: `The restart command finished, but the gateway doesn't read back as running: ${state}.` };
   }

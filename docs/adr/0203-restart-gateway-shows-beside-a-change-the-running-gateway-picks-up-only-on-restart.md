@@ -23,7 +23,7 @@ Hermes restarts a gateway with `POST /api/gateway/restart?profile=`, no body. It
   - A nonzero exit is a failure, with the command's last lines, redacted.
   - A refusal (500: the system service needs passwordless sudo, or another profile's restart is running) is a failure, with Hermes's reason.
   - A Hermes without the route (404) is a failure that says updating Hermes adds it.
-  - A command still running after 90 seconds, a record taken over by another restart, or a gateway that doesn't read back as running within 30 seconds is "Hermes didn't confirm the restart", with the reason. The button stays, to try again.
+  - A command still running after 90 seconds, a record taken over by another restart, or a gateway that doesn't read back as running within 30 seconds is "Hermes didn't confirm the restart", with the reason. The button stays, to try again. The limits are elapsed time, and a request Hermes doesn't answer in what's left of one counts as a failed read.
 - **A restart that read back hides the button and says "Gateway restarted."** Settings → Gateways reads the platforms again, so Restart needed clears. Settings → MCP servers clears the server's mark.
 - **The relay passes the one route.** `transport::gateway_write` lets `POST api/gateway/restart` through with no body, the profile in the query. The gateway's other lifecycle routes (`start`, `stop`) and a restart with a body stay refused. Its status and action reads are `GET`s, which the relay passes already.
 

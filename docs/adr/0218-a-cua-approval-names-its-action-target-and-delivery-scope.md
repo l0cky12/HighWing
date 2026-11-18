@@ -1,6 +1,6 @@
 # A cua Approval names its action, target and delivery scope
 
-> **Accepted.** Phase 3 of computer use (issue #43). Builds on [ADR 0213](0213-a-computer-use-run-reads-as-one-card-and-the-transcript-keeps-a-trimmed-result.md), whose card places an Approval under the step it gates, and on the recordings of [ADR 0211](0211-computer-use-shapes-are-recorded-from-a-real-hermes-and-kept-as-fixtures.md).
+> **Accepted.** Phase 3 of computer use (issue #43). Builds on [ADR 0216](0216-a-computer-use-run-reads-as-one-card-and-the-transcript-keeps-a-trimmed-result.md), whose card places an Approval under the step it gates, and on the recordings of [ADR 0213](0213-computer-use-shapes-are-recorded-from-a-real-hermes-and-kept-as-fixtures.md).
 
 Hermes asks the owner before each `computer_use` input action, and the answers are the ones every Approval has: once, for the chat, always, deny. The card read like a terminal command: `computer_use: click at (619, 777)`, with the delivery mode buried in a trailing `[FOREGROUND — …]` note. Hermes grants by a pattern key, `cua:<action>:<background|foreground>`, so "Allow for this chat" covers one action in one delivery mode, and the other mode asks again. The card said none of that. An owner who allowed background clicks could not tell that a foreground click, which raises the window and moves the focus, would still ask. Until this phase a computer-use Approval was told apart by its command starting with `computer_use: `.
 

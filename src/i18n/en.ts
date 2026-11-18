@@ -68,7 +68,7 @@ export const en = {
       capture: (size: string | undefined, app: string | undefined, elements: number | undefined) =>
         [size, app, elements === undefined ? undefined : elements === 1 ? "1 element" : `${elements} elements`].filter(Boolean).join(" · "),
       details: { thought: "Reasoning", hint: "Hermes's advice", args: "Arguments", result: "Result" },
-      /** A cua Approval (ADR 0215): the action in Hermes's words, how it would be delivered, and what each grant covers. */
+      /** A cua Approval (ADR 0218): the action in Hermes's words, how it would be delivered, and what each grant covers. */
       ask: {
         heading: (action: string) => `Hermes wants to ${action}`,
         scope: { background: "Background input", foreground: "Foreground input" },

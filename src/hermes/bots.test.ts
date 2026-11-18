@@ -3,7 +3,7 @@
 // (no stored pointer) and new-compact-guard. The transport's side (hidden from the list and search, the open) is in
 // botsTransport.test.ts.
 import { describe, expect, it } from "vitest";
-import { BOT_CHAT_TITLE, BotChats, BotModeUnsupportedError, botActivity, botName, botsWaiting, isBotChat, isBotChatOnScreen, isBotChatTitle, namedByProfile, newInBotChatNote, rosterOf, type Bot, type BotActivity, type BotRpc } from "./bots";
+import { BOT_CHAT_TITLE, BotChats, BotModeUnsupportedError, botActivity, botName, botsWaiting, isBotChat, isBotChatOnScreen, isBotChatTitle, namedByProfile, newInBotChatNote, rosterOf, agentMessaging, messagingStep, rosterRows, type Bot, type BotActivity, type BotRpc } from "./bots";
 
 type Call = { method: string; params: Record<string, unknown> };
 
@@ -158,7 +158,7 @@ describe("the roster", () => {
       bot_mode_protocol: true,
     });
     expect(bots).toEqual([
-      { profile: "default", name: "Hermes", description: "", isDefault: true, hasAvatar: false, hidden: false, pinned: false, botChat: null, lastActive: 0 },
+      { profile: "default", name: "Hermes", description: "", isDefault: true, hasAvatar: false, hidden: false, pinned: false, block: "none", botChat: null, lastActive: 0 },
       {
         profile: "scribe",
         name: "Scribe",
@@ -168,6 +168,7 @@ describe("the roster", () => {
         color: "#44aa77",
         hidden: false,
         pinned: true,
+        block: "held",
         botChat: { id: "root", resolvedId: "tip", preview: "Draft the notes", lastActive: 200_000, messageCount: 3 },
         lastActive: 200_000,
       },
@@ -254,6 +255,7 @@ describe("what waits in the other bots", () => {
     description: "",
     isDefault: false,
     hasAvatar: false,
+    block: "none",
     hidden: false,
     pinned: false,
     botChat: null,
@@ -292,5 +294,77 @@ describe("a bot named only by its profile", () => {
     expect(namedByProfile("Hermes", "default")).toBe(false);
     expect(namedByProfile("Quill", "writer")).toBe(false);
     expect(namedByProfile("Hermes Chat 2", "hermes-chat")).toBe(false);
+  });
+});
+
+describe("Bot messaging, read from the roster (ADR 0205)", () => {
+  const row = (name: string, block?: Record<string, unknown>, revision = 0) => ({
+    name,
+    is_default: name === "default",
+    canonical_session: null,
+    ui_meta_revisions: revision ? { "hermes-bots": revision } : {},
+    ...(block && { ui_meta: { "hermes-bots": block } }),
+  });
+  const messaging = (rows: Record<string, unknown>[]) => agentMessaging(rosterOf({ profiles: rows }));
+
+  it("is off while no profile has a Bot Mode block", () => {
+    expect(messaging([row("default"), row("quill")])).toEqual({ on: false });
+    expect(messaging([row("default"), { ...row("quill"), ui_meta: { "another-app": { pinned: true } } }])).toEqual({ on: false });
+  });
+
+  it("is on with an empty block, which nothing keeps on", () => {
+    expect(messaging([row("default", {}, 1), row("quill")])).toEqual({ on: true, keptOnBy: [] });
+  });
+
+  it("is on, and kept on, by a bot whose block holds something", () => {
+    const now = messaging([row("default"), row("quill", { pinned: true }, 1), row("scout", { groups: [] }, 1)]);
+    expect(now.on && now.keptOnBy.map((b) => b.profile)).toEqual(["quill", "scout"]);
+  });
+
+  describe("the next step toward on or off", () => {
+    it("turns it on with one empty block on the default profile, checked against its revision", () => {
+      expect(messagingStep([row("quill"), row("default", undefined, 4)], true)).toEqual({
+        kind: "write",
+        requests: [{ name: "default", ui_meta: { "hermes-bots": {} }, ui_meta_expected_revisions: { "hermes-bots": 4 } }],
+      });
+    });
+
+    it("has nothing to do when any block is there already", () => {
+      expect(messagingStep([row("default"), row("quill", { hidden: true }, 1)], true)).toEqual({ kind: "done" });
+      expect(messagingStep([row("default"), row("quill")], false)).toEqual({ kind: "done" });
+    });
+
+    it("turns it off by deleting each empty block at its revision", () => {
+      expect(messagingStep([row("default", {}, 1), row("quill", {}, 3), row("scout")], false)).toEqual({
+        kind: "write",
+        requests: [
+          { name: "default", ui_meta: { "hermes-bots": null }, ui_meta_expected_revisions: { "hermes-bots": 1 } },
+          { name: "quill", ui_meta: { "hermes-bots": null }, ui_meta_expected_revisions: { "hermes-bots": 3 } },
+        ],
+      });
+    });
+
+    it("keeps it on, and writes nothing, while a block holds something", () => {
+      expect(messagingStep([row("default", {}, 1), row("quill", { pinned: false }, 2)], false)).toEqual({ kind: "kept", by: ["quill"] });
+    });
+
+    it("writes nothing to a Hermes whose rows report no revisions", () => {
+      const blind = ({ ui_meta_revisions: _, ...rest }: ReturnType<typeof row>) => rest;
+      expect(messagingStep([blind(row("default"))], true)).toEqual({ kind: "noCheck" });
+      expect(messagingStep([blind(row("default", {}))], false)).toEqual({ kind: "noCheck" });
+    });
+
+    it("has nothing left to do once its writes are applied", () => {
+      for (const want of [true, false]) {
+        const rows = [row("default", want ? undefined : {}, 1), row("quill", want ? undefined : {}, 1)];
+        const step = messagingStep(rows, want);
+        if (step.kind !== "write") throw new Error(`expected a write, got ${step.kind}`);
+        const after = rows.map((r) => {
+          const write = step.requests.find((q) => q.name === r.name);
+          return write ? row(r.name, (write.ui_meta as Record<string, Record<string, unknown> | null>)["hermes-bots"] ?? undefined, 2) : r;
+        });
+        expect(messagingStep(rosterRows({ profiles: after })!, want)).toEqual({ kind: "done" });
+      }
+    });
   });
 });

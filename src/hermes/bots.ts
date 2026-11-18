@@ -1,6 +1,7 @@
 import { errorText, isObj } from "./values";
 import type { AppMethod } from "./canonicalVerbs";
 import type { Same } from "./fieldMerge";
+import type { ProfileFailure } from "./profiles";
 // Hermes's Bot Mode (ADR 0066, research doc "Bot Mode"). Each bot is a Hermes profile with a persistent identity, and
 // each has one Bot Chat: the profile's session titled exactly "Bot Chat". That title is the chat's only identity. It is
 // looked up by title on every open (`session.list {title, include_hidden: true}`), never by a session id kept here,
@@ -32,6 +33,13 @@ export type BotChatRow = {
   messageCount: number;
 };
 
+/**
+ * What a profile's Bot Mode block (`ui_meta['hermes-bots']`) holds. `none`: no block. `empty`: a block with no keys,
+ * which is what Bot messaging's switch writes. `held`: a block with any key: a name, colour, pin or hide from this
+ * app, or what Hermes's desktop keeps there.
+ */
+export type BlockHolds = "none" | "empty" | "held";
+
 /** One bot: a profile on the server, as `profiles.list` reports it. */
 export type Bot = {
   /** The profile's name, which is its identity on the server. */
@@ -46,6 +54,7 @@ export type Bot = {
   /** Hidden from Hermes's own bot list by the owner. It keeps working. */
   hidden: boolean;
   pinned: boolean;
+  block: BlockHolds;
   /** Its Bot Chat, or none yet. */
   botChat: BotChatRow | null;
   /** When it last did anything: its Bot Chat or its newest other chat. Unix ms, 0 when never. */
@@ -83,6 +92,11 @@ function botMeta(uiMeta: unknown): Record<string, unknown> | undefined {
   const meta = isObj(uiMeta) ? uiMeta["hermes-bots"] : undefined;
   return isObj(meta) ? meta : undefined;
 }
+
+const holdsOf = (row: Record<string, unknown>): BlockHolds => {
+  const meta = botMeta(row.ui_meta);
+  return !meta ? "none" : Object.keys(meta).length ? "held" : "empty";
+};
 
 /** A `canonical_session`, or null for none or one that doesn't name its row. */
 function botChatOf(v: unknown): BotChatRow | null {
@@ -122,6 +136,7 @@ export function rosterOf(result: unknown): Bot[] {
       ...(/^#[0-9a-f]{3,8}$/i.test(color) && { color }),
       hidden: meta?.hidden === true,
       pinned: meta?.pinned === true,
+      block: holdsOf(r),
       botChat,
       lastActive: Math.max(botChat?.lastActive ?? 0, last),
     };
@@ -220,11 +235,47 @@ export function blockFor(server: BotBlock, write: Partial<BotBlockLook>, picture
 /**
  * The only builder of `profiles.configure` params. Its revision is required and branded, so a write without an
  * expected revision can't be typed. It sends the Bot Mode key alone, and no param Hermes's contract lacks: `f0d94882`
- * refuses the whole request for one.
+ * refuses the whole request for one. A `null` block deletes the key, under the same check (`_configure_ui_meta`).
  */
-export function configureParams(profile: string, block: Record<string, unknown>, revision: Revision): Record<string, unknown> {
+export function configureParams(profile: string, block: Record<string, unknown> | null, revision: Revision): Record<string, unknown> {
   return { name: profile, ui_meta: { "hermes-bots": block }, ui_meta_expected_revisions: { "hermes-bots": revision } };
 }
+
+/**
+ * Bot messaging (ADR 0205): whether Hermes offers `message_agent` in this install's Bot Chats. The rule is Hermes's
+ * (`tools/bot_mode_probe.py` `is_bot_mode_managed` at 0.23.2): any profile with a Bot Mode block, empty or not. It is
+ * read from the roster every time and kept nowhere, so it can't disagree with Hermes. `keptOnBy`: the bots whose
+ * block holds something. While there is one, turning it off would take that bot's look with it, so it stays on.
+ */
+export type AgentMessaging = { on: false } | { on: true; keptOnBy: readonly Bot[] };
+
+export function agentMessaging(roster: readonly Bot[]): AgentMessaging {
+  return roster.some((b) => b.block !== "none") ? { on: true, keptOnBy: roster.filter((b) => b.block === "held") } : { on: false };
+}
+
+/**
+ * The next step toward Bot messaging on or off, judged against `profiles.list` rows read just now. Taken again on the
+ * rows it led to, it answers `done`.
+ * - `done`: Hermes already has what was asked.
+ * - `write`: the requests to send, each checked against the revision just read. On is one empty block on the default
+ *   profile, which can't be deleted, so no deleted bot takes messaging with it. Off deletes each empty block.
+ * - `kept`: Off was asked while these profiles' blocks hold something. Nothing is sent.
+ * - `noCheck`: a row to write reports no revisions, so nothing is sent (ADR 0189).
+ */
+export type MessagingStep = { kind: "done" } | { kind: "write"; requests: readonly Record<string, unknown>[] } | { kind: "kept"; by: readonly string[] } | { kind: "noCheck" };
+
+export function messagingStep(rows: readonly (Record<string, unknown> & { name: string })[], want: boolean): MessagingStep {
+  const blocks = rows.map((row) => ({ profile: row.name.trim(), holds: holdsOf(row), revision: blockOf(row).revision, home: row.is_default === true }));
+  const targets = want ? (blocks.some((b) => b.holds !== "none") ? [] : blocks.filter((b) => b.home)) : blocks.filter((b) => b.holds === "empty");
+  const held = blocks.filter((b) => b.holds === "held");
+  if (!want && held.length) return { kind: "kept", by: held.map((b) => b.profile) };
+  const requests = targets.flatMap((b) => (b.revision === undefined ? [] : [configureParams(b.profile, want ? {} : null, b.revision)]));
+  if (requests.length < targets.length) return { kind: "noCheck" };
+  return requests.length ? { kind: "write", requests } : { kind: "done" };
+}
+
+/** What turning Bot messaging on or off did. `saved.now` is what Hermes had when read back. */
+export type MessagingSave = { kind: "saved"; now: AgentMessaging } | { kind: "kept"; by: readonly string[] } | { kind: "failed"; failure: ProfileFailure };
 
 /** Whether a listed or found chat is a Bot Chat, which the chat list and search leave out (ADR 0066). */
 export const isBotChatTitle = (title: unknown) => typeof title === "string" && title.trim() === BOT_CHAT_TITLE;

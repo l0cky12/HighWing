@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Self-checks for the harness itself, not the app. Needs `hv bootstrap` done; no build, no app, no network.
-#   wd.mjs: `wait` times out with exit 2, a bad [ms] is rejected, `gone` returns at once on no match.
+#   wd.mjs: `wait` times out with exit 2, a bad [ms] is rejected, `gone` returns at once on no match,
+#           `wait|gone <css> <digits>` with no [ms] is refused with the `"" <ms>` form.
 #   hv up:  a failed start stops every process it started (and a child its driver left behind) and deletes its run dir;
 #           an interrupted start (TERM) does the same;
 #           three concurrent `hv up`s each get their own display (their own Xvfb holds its lock), and `hv down` stops them.
@@ -52,6 +53,11 @@ ms=$((($(date +%s%N) - start) / 1000000))
 code=0; HV_RUN=$T/wdrun timeout 5 node "$HERE/wd.mjs" wait .nothing "" 5s >/dev/null 2>"$T/err" || code=$?
 [ "$code" = 1 ] && grep -q "whole number of ms" "$T/err" && pass "wd wait rejects a non-numeric timeout" || fail "wd wait with ms=5s: exit $code: $(cat "$T/err")"
 out=$(wd gone .nothing "" 400 2>&1) && [ "$out" = ok ] && pass "wd gone returns ok when nothing matches" || fail "wd gone: $out"
+for c in wait gone; do
+  code=0; HV_RUN=$T/wdrun timeout 5 node "$HERE/wd.mjs" $c .nothing 400 >/dev/null 2>"$T/err" || code=$?
+  [ "$code" = 1 ] && grep -qF "$c '.nothing' \"\" 400" "$T/err" && pass "wd $c refuses a lone number as its text and names the \"\" <ms> form" || fail "wd $c .nothing 400: exit $code: $(cat "$T/err")"
+done
+out=$(wd gone .nothing 400 400 2>&1) && [ "$out" = ok ] && pass "wd gone still matches number text when ms follows" || fail "wd gone .nothing 400 400: $out"
 
 # --- hv up under a throwaway HV_HOME ---
 export HV_HOME=$T/hv HV_TARGET=$T/target

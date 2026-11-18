@@ -5,7 +5,7 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { Ban, Check, ChevronRight, CircleAlert, Hand, Minus, MonitorPlay, Square, X } from "lucide-react";
 import { screenUse, type CuRun, type CuStep, type RunLine } from "../hermes/computerUse";
-import type { ApprovalChoice, Chat, Item } from "../hermes/model";
+import { isWaiting, type ApprovalChoice, type Chat, type Item } from "../hermes/model";
 import { withoutBidi } from "../hermes/preview";
 import type { ScreenHolder, ScreenState } from "../hermes/screenControl";
 import { errorText } from "../hermes/values";
@@ -141,7 +141,7 @@ function Line({
             {l.foreground}
           </span>
         )}
-        <Outcome step={step} />
+        <Outcome step={step} asking={asks.some(isWaiting)} />
         {step.durationS != null && step.outcome.kind !== "pending" && <span className="tool-dur">{Math.round(step.durationS * 10) / 10}s</span>}
       </button>
       {details}
@@ -171,12 +171,13 @@ function OutcomeIcon({ step }: { step: CuStep }) {
   }
 }
 
-function Outcome({ step }: { step: CuStep }) {
+function Outcome({ step, asking }: { step: CuStep; asking: boolean }) {
   const l = useLocale().chat.computerUse;
   const o = step.outcome;
   let text: string;
   let title: string | undefined;
-  if (o.kind === "done") {
+  if (o.kind === "pending" && asking) text = l.state.asking;
+  else if (o.kind === "done") {
     text = o.note ?? (o.capture ? l.capture(o.capture.size, o.capture.app, o.capture.elements) : "");
     if (o.verdict === "verify" || o.verdict === "escalate") text = [text, l.outcome[o.verdict]].filter(Boolean).join(" · ");
     title = o.hint;

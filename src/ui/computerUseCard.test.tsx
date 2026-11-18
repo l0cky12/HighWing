@@ -133,7 +133,7 @@ describe("A computer-use run in the chat", () => {
     pane(chat, {}, onAnswer);
     const [card] = cards();
     expect(within(card).getByRole("button", { name: /Computer use · 3 steps/ }).textContent).toContain("waiting for your approval");
-    expect(card.querySelector(".cu-step.latest .cu-n")!.textContent).toBe("3");
+    expect(card.querySelector(".cu-step.latest > .tool-line")!.textContent).toBe("3click at (619, 777)desktopwaiting for your approval");
     expect(card.querySelector(".approval-head")!.textContent).toBe("Hermes wants to click at (619, 777)");
     fireEvent.click(within(card).getByRole("button", { name: "Approve once" }));
     expect(onAnswer).toHaveBeenCalledWith(chat.items.find((i) => i.kind === "approval")!.id, "once", undefined);

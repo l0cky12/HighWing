@@ -27,6 +27,7 @@
 // its turn; each chat's totals and cost are Hermes's stored ones, read with the chat list and after each turn.
 import { McpApi } from "./mcp";
 import { GatewaysApi } from "./gateways";
+import { GatewayRestartApi } from "./gatewayRestart";
 import { PersonaApi } from "./persona";
 import { ProfileCloneApi } from "./profileClone";
 import { ProfilesApi, profileFailure, toProfileRows, type ProfileFailure } from "./profiles";
@@ -1284,6 +1285,11 @@ export class Hermes {
    * names its profile, and goes only over a connection that is up.
    */
   readonly gateways = new GatewaysApi((method, pathAndQuery, body) => this.connectedRest(method, pathAndQuery, body));
+  /**
+   * The Restart gateway button's status read, restart and read-back (gatewayRestart.ts, ADR 0203), beside Settings →
+   * Gateways and MCP servers. Its reads go on while the pipe reconnects; the button itself waits for a connection.
+   */
+  readonly gatewayRestart = new GatewayRestartApi((method, pathAndQuery, body) => this.rest(method, pathAndQuery, body));
 
   /** Settings → Persona's reads and writes of a profile's SOUL.md (persona.ts). Each call names its profile. */
   readonly persona = new PersonaApi((method, pathAndQuery, body) => this.rest(method, pathAndQuery, body));

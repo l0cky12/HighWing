@@ -383,8 +383,6 @@ export class FakeHermes {
   profileCreateLost?: string;
   /** While set, `POST /api/profiles` makes the profile but not its model, and answers `model_error` with this. */
   profileModelError?: string;
-  /** The profiles whose gateway runs, as `GET /api/profiles` reports them (`gateway_running`). */
-  gatewaysRunning = new Set<string>();
   /**
    * Settings → Profiles' routes this server lacks, each answering FastAPI's own 404 (`Not Found`) or, for a path that
    * has another method, a 405: an older Hermes (ADR 0156).
@@ -1508,7 +1506,12 @@ export class FakeHermes {
   /** Per-route REST behaviour, keyed `METHOD /path`. A handler throws to fail the request. */
   readonly rest: Record<string, RestHandler> = {
     "GET /api/health": () => this.health,
-    "GET /api/status": () => this.status,
+    // The gateway fields are the asked profile's, from the one record Settings → Gateways and Profiles read too.
+    "GET /api/status": ({ query }) => {
+      const profile = query.get("profile") ?? "default";
+      if (profile !== "default" && !(profile in this.otherProfiles)) throw new RestError(404, JSON.stringify({ detail: `Profile '${profile}' does not exist.` }));
+      return { ...this.status, ...this.gateways.statusOf(profile) };
+    },
     // `fs_list` (`hermes_cli/web_routers/files.py` at the deployed `bf0203a`): a folder's entries, or none and why.
     "GET /api/fs/list": ({ query }) => {
       // `fs_list` takes no `session_id`: a container path lists the profile's own `/workspace`.
@@ -1687,7 +1690,7 @@ export class FakeHermes {
         description_auto: this.profileMeta[name]?.description_auto ?? false,
         display_name: this.profileMeta[name]?.display_name ?? "",
         skill_count: (this.skills.folders[name] ?? []).length,
-        gateway_running: this.gatewaysRunning.has(name),
+        gateway_running: !!this.gateways.gateway[name]?.running,
         has_env: name in this.profileEnv,
         distribution_name: this.distributions[name] ?? null,
       })),
@@ -2416,7 +2419,10 @@ export class FakeHermes {
     move(this.distributions);
     move(this.skills.folders);
     if (this.skills.profiles.delete(name)) this.skills.profiles.add(to);
-    if (this.gatewaysRunning.delete(name)) this.gatewaysRunning.add(to);
+    if (this.gateways.gateway[name]) {
+      this.gateways.gateway[to] = this.gateways.gateway[name];
+      delete this.gateways.gateway[name];
+    }
     if (this.profileRenameLost) throw new Error(this.profileRenameLost);
     return { ok: true, name: to, path: `/home/lena/.hermes/profiles/${to}` };
   }
@@ -2460,7 +2466,7 @@ export class FakeHermes {
     if (name === "default") throw new RestError(400, JSON.stringify({ detail: "Cannot delete the default profile." }));
     if (!(name in this.otherProfiles)) throw new RestError(404, JSON.stringify({ detail: `Profile '${name}' does not exist.` }));
     if (this.profileGatewayStop) await this.profileGatewayStop;
-    this.gatewaysRunning.delete(name);
+    delete this.gateways.gateway[name];
     delete this.otherProfiles[name];
     delete this.souls[name];
     delete this.profileEnv[name];

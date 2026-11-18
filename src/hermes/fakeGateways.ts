@@ -2,6 +2,8 @@
 // as the deployed `f0d94882` answers them (`hermes_cli/web_routers/messaging.py`): the list with redacted previews and
 // the state ladder of `_messaging_platform_payload`, the write that checks the whole request before touching `.env` or
 // config.yaml, and the status check that sends no message. Each profile keeps its own `.env`, switches and gateway.
+// Also the Restart gateway button's routes at `da9c2bd` (ADR 0203): `POST /api/gateway/restart`, its shared action
+// record `GET /api/actions/gateway-restart/status`, and the gateway fields of `GET /api/status` (`statusOf`).
 import type { RestRequest } from "./fakeHermes";
 import { RestError } from "./pipe";
 
@@ -44,13 +46,36 @@ const looksRedacted = (v: string) => v.startsWith("«redacted") || v === "***" |
 /** What the profile's gateway last reported for a platform (`gateway_state.json`). */
 export type Runtime = { state: string; error_code?: string; error_message?: string };
 
+/**
+ * A profile's gateway, the one record every route reads: the platforms list, `/api/status` and `/api/profiles`.
+ * `state`: `gateway_state` when it isn't plain running or stopped. `activeAgents`: replies it runs now.
+ * `sharedWith`: the profiles the shared multiplexer carries, when it serves this one.
+ */
+export type GatewayRuntime = { running: boolean; platforms: Record<string, Runtime>; state?: string; activeAgents?: number; sharedWith?: string[] };
+
+/** How the next restart command ends: its exit code, its last output, and whether the gateway runs afterwards. */
+export type RestartPlan = { exit: number; lines?: string[]; comesBack: boolean };
+
 export class FakeGateways {
   /** Each profile's `.env`. */
   env: Record<string, Record<string, string>> = {};
   /** Each profile's `platforms.<id>.enabled` in config.yaml; unset means never written. */
   enabled: Record<string, Record<string, boolean>> = {};
   /** Whether each profile's gateway runs, and what it reports per platform. */
-  gateway: Record<string, { running: boolean; platforms: Record<string, Runtime> }> = {};
+  gateway: Record<string, GatewayRuntime> = {};
+  /** How many times each profile's gateway was restarted through the dashboard. */
+  readonly restarts: Record<string, number> = {};
+  /** `false`: a Hermes without `POST /api/gateway/restart`. */
+  restartRoute = true;
+  /** The next restart is refused with this, as Hermes answers a system unit without sudo. Applies once. */
+  refuseRestart?: { status: number; detail: string };
+  /** How each restart command ends. */
+  restartPlan: RestartPlan = { exit: 0, comesBack: true };
+  /** How many reads of the action record answer `running` before the command ends. */
+  restartPolls = 1;
+  /** The one `gateway-restart` action record, shared by every profile as Hermes's is. */
+  private action?: { pid: number; profile: string; plan: RestartPlan; pollsLeft: number; exit?: number };
+  private nextPid = 31000;
   /** Every write and status check asked, in order. */
   readonly writes: { profile: string; what: string; body?: unknown }[] = [];
   /** `none`: a Hermes without the messaging routes. */
@@ -118,7 +143,69 @@ export class FakeGateways {
     };
   }
 
+  /** The gateway fields of `GET /api/status?profile=` (`hermes_cli/web_routers/status.py`). */
+  statusOf(profile: string) {
+    const gw = this.gateway[profile];
+    const running = !!gw?.running;
+    return {
+      gateway_running: running,
+      gateway_state: gw?.state ?? (running ? "running" : "stopped"),
+      gateway_shared_with: gw?.sharedWith?.length ? gw.sharedWith : null,
+      active_agents: running ? (gw?.activeAgents ?? 0) : 0,
+    };
+  }
+
+  /** `POST /api/gateway/restart` (`hermes_cli/web_routers/actions.py`): spawns the command and answers its pid at once. */
+  private restart(profile: string) {
+    if (!this.restartRoute) throw answered(404, "Not Found");
+    this.writes.push({ profile, what: "restart" });
+    if (this.refuseRestart) {
+      const r = this.refuseRestart;
+      this.refuseRestart = undefined;
+      throw answered(r.status, r.detail);
+    }
+    if (this.action && this.action.exit === undefined && this.action.profile !== profile)
+      throw answered(500, "Failed to restart gateway: gateway restart already in progress for another profile");
+    this.action = { pid: this.nextPid++, profile, plan: this.restartPlan, pollsLeft: this.restartPolls };
+    if (this.action.pollsLeft <= 0) this.finish();
+    return { ok: true, pid: this.action.pid, name: "gateway-restart" };
+  }
+
+  /** The command ends: on success the gateway runs again and connects each platform that is on and set up. */
+  private finish() {
+    const a = this.action!;
+    a.exit = a.plan.exit;
+    if (a.exit !== 0 || !a.plan.comesBack) return;
+    this.restarts[a.profile] = (this.restarts[a.profile] ?? 0) + 1;
+    const gw = (this.gateway[a.profile] ??= { running: true, platforms: {} });
+    gw.running = true;
+    gw.state = undefined;
+    gw.activeAgents = 0;
+    for (const spec of CATALOG) {
+      const p = this.payload(a.profile, spec);
+      if (p.state === "pending_restart") gw.platforms[spec.id] = { state: "connected" };
+    }
+  }
+
+  /** `GET /api/actions/gateway-restart/status`: no profile, the latest spawn's record. */
+  private actionStatus() {
+    const a = this.action;
+    if (!a) return { name: "gateway-restart", running: false, exit_code: null, pid: null, lines: [] };
+    if (a.exit === undefined && --a.pollsLeft <= 0) this.finish();
+    const running = a.exit === undefined;
+    const lines = [`Restarting the gateway for profile ${a.profile}…`, ...(running ? [] : (a.plan.lines ?? []))];
+    return { name: "gateway-restart", running, exit_code: running ? null : a.exit, pid: a.pid, lines };
+  }
+
   route(req: RestRequest): (() => Promise<unknown>) | undefined {
+    if (req.method === "POST" && req.path === "/api/gateway/restart") {
+      const profile = req.query.get("profile") ?? "default";
+      return async () => {
+        if (!this.known(profile)) throw answered(404, `Profile '${profile}' does not exist`);
+        return this.restart(profile);
+      };
+    }
+    if (req.method === "GET" && req.path === "/api/actions/gateway-restart/status") return async () => this.actionStatus();
     if (!req.path.startsWith("/api/messaging/")) return undefined;
     return async () => {
       if (this.routes === "none") throw answered(404, "Not Found");

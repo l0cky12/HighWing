@@ -1,14 +1,16 @@
-"""An OpenAI-compatible model for a real Hermes dashboard's Group rooms. Every reply names no one, so a turn Hermes
-gives a bot comes from the owner's words alone and never from a teammate's reply pulling it in.
+"""An OpenAI-compatible model for a real Hermes dashboard. It answers every prompt with the same short reply and every
+title request with "Stub title". Set STUB_DELAY_S=<seconds> to hold each reply that long, so a session stays working.
 
-    python3 room-model.py <host> <port> <requests.jsonl>
+    python3 model-stub.py <host> <port> <requests.jsonl>
 """
 import json
+import os
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOST, PORT, LOG = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+DELAY_S = float(os.environ.get("STUB_DELAY_S") or 0)
 
 
 def text_of(content):
@@ -19,11 +21,9 @@ def text_of(content):
     return ""
 
 
-def answer(body):
+def is_title_request(body):
     system = text_of((body.get("messages") or [{}])[0].get("content"))
-    if "title" in system.lower() and not body.get("tools"):
-        return "Stub title"
-    return "Stub reply. I read the message and have nothing to add."
+    return "title" in system.lower() and not body.get("tools")
 
 
 class H(BaseHTTPRequestHandler):
@@ -40,10 +40,12 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers.get("content-length", 0))) or b"{}")
-        out = answer(body)
-        assert "@" not in out
+        title = is_title_request(body)
+        out = "Stub title" if title else "Stub reply. I read the message and have nothing to add."
         with open(LOG, "a") as f:
-            f.write(json.dumps({"t": time.time(), "last": text_of((body.get("messages") or [{}])[-1].get("content"))[:400], "answer": out}) + "\n")
+            f.write(json.dumps({"t": time.time(), "title": title, "last": text_of((body.get("messages") or [{}])[-1].get("content"))[:400], "answer": out}) + "\n")
+        if DELAY_S and not title:
+            time.sleep(DELAY_S)
         usage = {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
         msg = {"role": "assistant", "content": out}
         if not body.get("stream"):

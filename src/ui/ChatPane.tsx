@@ -90,7 +90,7 @@ const toldWhy = new Set<string>();
 
 type ToolItem = Extract<Item, { kind: "tool" }>;
 type ThinkingItem = Extract<Item, { kind: "thinking" }>;
-/** A `message_agent` call (ADR 0205): out of the tool group, where the owner reads what the bot told its teammate. */
+/** A `message_agent` call (ADR 0206): out of the tool group, where the owner reads what the bot told its teammate. */
 type SentBlock = { kind: "sent"; id: string; tool: ToolItem; send: AgentSend };
 type Block = { kind: "tools"; id: string; tools: ToolItem[] } | SentBlock | Exclude<Item, ToolItem>;
 const isItem = (b: Block): b is Exclude<Item, ToolItem> => b.kind !== "tools" && b.kind !== "sent";
@@ -1647,7 +1647,7 @@ function TurnCard({
 
 /**
  * A Returned result (ADR 0175). A subagent's answer shows as a reply does; a process's output as a log. With Bot
- * messaging (ADR 0205) it is a teammate's message to this bot, or the answer to one this bot sent: who it is from,
+ * messaging (ADR 0206) it is a teammate's message to this bot, or the answer to one this bot sent: who it is from,
  * or Hermes's own sentence for how the delivery ended, leads the card. Names and Hermes's sentences are data.
  */
 function ReturnedCard({ item, query, date }: { item: Extract<Item, { kind: "returned" }>; query: string; date: boolean }) {
@@ -1678,7 +1678,7 @@ function ReturnedCard({ item, query, date }: { item: Extract<Item, { kind: "retu
 }
 
 /**
- * A message this bot sent a teammate with Hermes's `message_agent` (ADR 0205), as a card with the message in it.
+ * A message this bot sent a teammate with Hermes's `message_agent` (ADR 0206), as a card with the message in it.
  * It carries the call's id, so Jump to call lands on it as on a tool row.
  */
 function SentCard({ block, query }: { block: SentBlock; query: string }) {

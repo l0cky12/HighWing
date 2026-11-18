@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Bot messaging (ADR 0205) in the real app against FakeHermes as Hermes 0.23.2 on a headless gateway: the switch above
+// Bot messaging (ADR 0206) in the real app against FakeHermes as Hermes 0.23.2 on a headless gateway: the switch above
 // the bots turns Hermes's `message_agent` on, shown only as read back, and each Bot Chat shows its side of a message
 // between two bots as a card on Hermes's side. Every new word comes from the catalogue. All data is synthetic.
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";

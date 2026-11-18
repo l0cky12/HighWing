@@ -3,7 +3,7 @@
 // A row opens the bot's Bot Chat, found by title every time (bots.ts); the pen beside it starts an ordinary chat in the
 // bot's profile. Above the rows, New bot makes a profile through Settings → Profiles' New profile form, and the new
 // bot's row is shown once the roster is read again (ADR 0164); Reload reads the roster now. Beside them, a switch turns
-// Bot messaging on or off for the whole install (ADR 0205). A right-click on a row
+// Bot messaging on or off for the whole install (ADR 0206). A right-click on a row
 // opens its menu (ADR 0194): Chat, Settings, Clone, Pin, Hide and Delete, through Settings → Profiles' own dialogs and
 // `Hermes.editBot`, which never writes over a change made elsewhere (ADR 0189). Every word comes from the catalogue
 // (ADR 0100).
@@ -38,7 +38,7 @@ export type BotEditWiring = {
 };
 
 /**
- * Bot messaging's switch (ADR 0205): whether Hermes offers its bots `message_agent`, for the whole install. It shows
+ * Bot messaging's switch (ADR 0206): whether Hermes offers its bots `message_agent`, for the whole install. It shows
  * what the roster says and nothing else, so it changes only once a save's read-back has landed. While a bot's block
  * holds something it can't be turned off without deleting that, so its tip names those bots, and a click says so.
  * `why`: why it can't be changed now.

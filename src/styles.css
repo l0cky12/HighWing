@@ -2863,7 +2863,7 @@ label.memory-pick { cursor: pointer; }
 .inbox-empty { padding: 12px 16px; }
 .bots-head { display: flex; justify-content: flex-end; gap: 2px; margin: 0 0 2px; }
 .bots-head .icon-btn { width: 26px; height: 24px; border-radius: 6px; }
-/* Bot messaging's switch (ADR 0205): at the row's start, away from New bot and Reload. */
+/* Bot messaging's switch (ADR 0206): at the row's start, away from New bot and Reload. */
 .bots-messaging { margin-right: auto; display: flex; align-items: center; gap: 8px; min-width: 0; padding-left: 6px; color: var(--text-2); font-size: calc(12.5rem / 14); }
 .bots-messaging > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bots-messaging .switch:disabled { opacity: 0.5; }

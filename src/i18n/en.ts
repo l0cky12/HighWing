@@ -27,7 +27,7 @@ export const en = {
       hide: "Hide the result",
       show: "Show the result",
     },
-    /** Bot messaging's cards in a Bot Chat (ADR 0205): a message this bot sent a teammate, one it got, and an answer. */
+    /** Bot messaging's cards in a Bot Chat (ADR 0206): a message this bot sent a teammate, one it got, and an answer. */
     agent: {
       sending: (to: string) => `Messaging ${to}…`,
       sent: (to: string) => `Messaged ${to}`,
@@ -286,7 +286,7 @@ export const en = {
       show: "Show",
       delete: "Delete",
     },
-    /** Bot messaging's switch above the bots (ADR 0205). */
+    /** Bot messaging's switch above the bots (ADR 0206). */
     messaging: {
       label: "Bots message each other",
       tipOff: "Let bots message each other from their Bot Chats, with Hermes's message_agent tool. Turning it on adds Hermes's instructions for it to every Bot Chat's prompt.",

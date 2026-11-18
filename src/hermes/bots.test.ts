@@ -297,7 +297,7 @@ describe("a bot named only by its profile", () => {
   });
 });
 
-describe("Bot messaging, read from the roster (ADR 0205)", () => {
+describe("Bot messaging, read from the roster (ADR 0206)", () => {
   const row = (name: string, block?: Record<string, unknown>, revision = 0) => ({
     name,
     is_default: name === "default",

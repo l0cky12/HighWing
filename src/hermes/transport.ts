@@ -2430,7 +2430,7 @@ export class Hermes {
   }
 
   /**
-   * Turns Bot messaging on or off for the whole install, and reads it back (ADR 0205): `messagingStep` on the roster
+   * Turns Bot messaging on or off for the whole install, and reads it back (ADR 0206): `messagingStep` on the roster
    * just read, each of its writes a compare-and-swap. When Hermes says a block moved meanwhile, the roster is read and
    * the step taken again. Never rejects. No state of the write is kept: an Off that stops between two deletes leaves
    * messaging on, and the next one deletes the rest. The roster every view shows is read again as part of it.

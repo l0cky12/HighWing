@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Bot messaging through the real transport against FakeHermes as Hermes 0.23.2 (ADR 0205): once the switch is on, one
+// Bot messaging through the real transport against FakeHermes as Hermes 0.23.2 (ADR 0206): once the switch is on, one
 // bot messages another with Hermes's own `message_agent`, and each Bot Chat shows its side of it, live, from history
 // and from the Saved copy. The app sends nothing of the delivery itself.
 import { afterEach, describe, expect, it } from "vitest";

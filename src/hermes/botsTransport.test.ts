@@ -623,7 +623,7 @@ describe("Editing a bot (ADR 0189)", () => {
   });
 });
 
-describe("Bot messaging's switch (ADR 0205)", () => {
+describe("Bot messaging's switch (ADR 0206)", () => {
   /** Signed in to a headless install: no profile has a Bot Mode block, and each has a Bot Chat. */
   const headless = (setup: (server: FakeHermes) => void = () => {}) =>
     signedIn(new FakeHermes(), (server) => {

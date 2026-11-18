@@ -841,7 +841,7 @@ export function approvalsFrom(result: unknown): Pick<Capability, "state" | "why"
  */
 const SHARED_CHATS_SINCE = [0, 21, 3];
 
-/** The first release whose Bot Chats have `message_agent` (`tools/bot_mode_dm.py`), the tool Bot messaging turns on (ADR 0205). */
+/** The first release whose Bot Chats have `message_agent` (`tools/bot_mode_dm.py`), the tool Bot messaging turns on (ADR 0206). */
 const BOT_MESSAGING_SINCE = [0, 23, 0];
 
 /** Hermes's version against `since`: below zero when older. Undefined when it names none, as a git checkout doesn't. */

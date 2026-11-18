@@ -51,10 +51,10 @@ async function replayed(name: CuFixture, upTo?: (f: { frame: Record<string, unkn
 }
 
 function pane(chat: Chat, desk: ScreenDesk = {}, onAnswer: (id: string, c: ApprovalChoice, confirmed?: boolean) => void = () => {}) {
-  const el = (d: ScreenDesk) => (
+  const el = (d: ScreenDesk, c = chat) => (
     <ScreenDeskProvider value={d}>
       <ChatPane
-        chat={chat}
+        chat={c}
         status="connected"
         draft=""
         draftKey="draft"
@@ -73,7 +73,7 @@ function pane(chat: Chat, desk: ScreenDesk = {}, onAnswer: (id: string, c: Appro
     </ScreenDeskProvider>
   );
   const r = render(el(desk));
-  return { desk: (d: ScreenDesk) => act(() => r.rerender(el(d))) };
+  return { desk: (d: ScreenDesk) => act(() => r.rerender(el(d))), chat: (c: Chat) => act(() => r.rerender(el(desk, c))) };
 }
 
 const cards = () => Array.from(document.querySelectorAll<HTMLElement>(".cu-run"));
@@ -169,6 +169,16 @@ describe("A computer-use run in the chat", () => {
     pane(await replayed("14-turn-interrupt"));
     expect(within(cards()[0]).getByRole("button", { name: /Computer use · 2 steps/ }).textContent).toContain("stopped");
     expect(lines(cards()[0])[1]).toBe("2wait 2swaited 2.00s · not confirmed2s");
+  });
+
+  it("reads a run as stopped once the reply after its last call is interrupted", async () => {
+    const stopped = await replayed("14-turn-interrupt");
+    const before = { ...stopped, items: stopped.items.map((i) => (i.kind === "assistant" && i.interrupted ? { ...i, interrupted: false } : i)) };
+    const shown = pane(before);
+    const head = () => within(cards()[0]).getByRole("button", { name: /Computer use · 2 steps/ }).textContent;
+    expect(head()).toContain("done");
+    shown.chat(stopped);
+    expect(head()).toContain("stopped");
   });
 });
 

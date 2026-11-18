@@ -4,7 +4,7 @@
 // saved, and a run is never stored: `foldRuns` derives it on each render.
 import type { Catalogue } from "../i18n/locale";
 import { agentSend } from "./agentMessages";
-import { beginsTurn, isWaiting, turnStart, type ApprovalItem, type Chat, type Item } from "./model";
+import { beginsTurn, currentTurn, isWaiting, type ApprovalItem, type Chat, type Item } from "./model";
 import { isObj } from "./values";
 
 /** Hermes's tool name (tools/computer_use, v0.23.2). */
@@ -245,9 +245,9 @@ function runOf(items: readonly Item[], before: number, next: Item | undefined): 
   return { kind: "cu-run", id: `cu-${first.id}`, items, lines, steps: steps.length, span: { ...(first.at !== undefined && { from: first.at }), ...(to !== undefined && { to }) }, state };
 }
 
-/** The last turn's computer_use, or undefined if it made none. */
-export function screenUse(chat: Pick<Chat, "items" | "running">): ScreenUse | undefined {
-  const turn = chat.items.slice(turnStart(chat.items));
+/** The current turn's computer_use (`currentTurn`), or undefined if it made none. */
+export function screenUse(chat: Pick<Chat, "items" | "running" | "turnAfter">): ScreenUse | undefined {
+  const turn = chat.items.slice(currentTurn(chat));
   const calls = turn.filter(isCu);
   if (!calls.length) return undefined;
   const lastRun = foldRuns(turn).filter((b): b is CuRun => b.kind === "cu-run").at(-1)!;

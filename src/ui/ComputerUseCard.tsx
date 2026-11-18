@@ -247,7 +247,7 @@ function Outcome({ step, asking }: { step: CuStep; asking: boolean }) {
  * still does (ADR 0216). The owner who holds it here can hand it back; one held from a dropped connection is handed back
  * from the Screen. It goes once the lease is back with Hermes.
  */
-export function HumanHasControlBanner({ chat }: { chat: Pick<Chat, "items" | "running"> }) {
+export function HumanHasControlBanner({ chat }: { chat: Pick<Chat, "items" | "running" | "turnAfter"> }) {
   const l = useLocale().chat.computerUse.banner;
   const { screen, onWatch, onHandBack } = useContext(ScreenDeskContext);
   const refused = screenUse(chat)?.refused;

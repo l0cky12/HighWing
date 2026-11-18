@@ -208,6 +208,26 @@ export const turnStart = (items: Item[]) => {
 };
 
 /**
+ * Where the running turn's items start: just after `from`, the last item before its `message.start` (`null`: the chat
+ * had none), else after the owner's last message (`turnStart`). -1 when `from` is no longer in the chat.
+ */
+export function turnFrom(items: Item[], from?: string | null): number {
+  if (from === null) return 0;
+  if (from === undefined) return turnStart(items);
+  const at = items.findIndex((i) => i.id === from);
+  return at < 0 ? -1 : at + 1;
+}
+
+/**
+ * Where the chat's current turn starts. A turn Hermes started itself has no message of the owner's to begin it, so
+ * while a turn runs it starts after `turnAfter`; otherwise, or once that item has gone, after `turnStart`.
+ */
+export function currentTurn(chat: Pick<Chat, "items" | "turnAfter">): number {
+  const at = turnFrom(chat.items, chat.turnAfter);
+  return at < 0 ? turnStart(chat.items) : at;
+}
+
+/**
  * A Queued message: words and files the owner lined up to send after the chat's reply (ADR 0018). `id` is stable for
  * its life in the queue. Once it goes it leaves the queue and is an outgoing message (`Outgoing`) like any other.
  */
@@ -290,6 +310,11 @@ export type Chat = {
    */
   savedAt?: number;
   running?: boolean;
+  /**
+   * The running turn's items come after this one, the last item before its `message.start`; null when there was none.
+   * Unset between turns, and when the app didn't hear the turn start. Set by the transport only.
+   */
+  turnAfter?: string | null;
   /** Stop was asked for; the reply keeps running until Hermes ends the turn (`Hermes.stop`). */
   stopping?: boolean;
   /**

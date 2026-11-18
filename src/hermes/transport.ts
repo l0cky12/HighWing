@@ -32,7 +32,7 @@ import { PersonaApi } from "./persona";
 import { ProfileCloneApi } from "./profileClone";
 import { ProfilesApi, profileFailure, toProfileRows, type ProfileFailure } from "./profiles";
 import { FILTER_SEARCH_LIMIT } from "./chatFilter";
-import { APPROVAL_CHOICES, endedNote, isBroadGrant, isOutgoing, isQuestion, isStoredPrompt, isWaiting, offeredChoices, sameFields, sendNowRoute, turnStart, type ApprovalChoice, type ApprovalItem, type AttachCheck, type ClarifyQuestion, type QuestionAnswer, type QuestionItem, type QuestionKind, type Attachment, type Chat, type ChatQueue, type ConnectionStatus, type ContextUse, type Found, type Hit, type Item, type ListedChat, type LiveSession, type LiveSessions, type OtherProfiles, type Outgoing, type OutgoingItem, type Queued, type SavedSend, type SeenFailure, type SentImage, type SentImagePath, type SentReference, type SessionLive, type SideQuestion, type Source, QUEUE_LIMIT } from "./model";
+import { APPROVAL_CHOICES, endedNote, isBroadGrant, isOutgoing, isQuestion, isStoredPrompt, isWaiting, offeredChoices, sameFields, sendNowRoute, turnFrom, turnStart, type ApprovalChoice, type ApprovalItem, type AttachCheck, type ClarifyQuestion, type QuestionAnswer, type QuestionItem, type QuestionKind, type Attachment, type Chat, type ChatQueue, type ConnectionStatus, type ContextUse, type Found, type Hit, type Item, type ListedChat, type LiveSession, type LiveSessions, type OtherProfiles, type Outgoing, type OutgoingItem, type Queued, type SavedSend, type SeenFailure, type SentImage, type SentImagePath, type SentReference, type SessionLive, type SideQuestion, type Source, QUEUE_LIMIT } from "./model";
 import { catalogFromServer, fallbackCatalog, isEffort, modelKey, pickFromInfo, type ModelCatalog, type ModelPick } from "./models";
 import { approvalsOf, isApprovalMode, writesFor, type ApprovalPick } from "./approvals";
 import { CheckTimesStore, noOthers, OtherProfilesCheck } from "./otherProfiles";
@@ -828,8 +828,6 @@ export class Hermes {
    * `unknown` when they can't be known, such as after reattaching mid-turn, so that reply shows no usage.
    */
   private usageFrom = new Map<string, UsageCounters | "unknown">();
-  /** Last item before a running turn, by stable id; null for an empty transcript. Older Failed messages can go away. */
-  private turnStart = new Map<string, string | null>();
   /** When each chat's running turn started (`message.start`), Unix ms: how long its reply took is timed from it. */
   private turnBegan = new Map<string, number>();
   /** What the app heard of each chat's turns, in memory, for the Run view (ADR 0178). */
@@ -4809,7 +4807,6 @@ export class Hermes {
       this.turnBegan.set(chat.id, began);
       this.recorder.begin(this.profile, chat.id, began, from === "unknown" ? undefined : from, unanswered ? { kind: "estimated", usd: 0 } : chat.usage?.cost);
       this.capabilities.noteTurnIds(typeof payload.turn_id === "string" && payload.turn_id !== "");
-      this.turnStart.set(chat.id, chat.items.at(-1)?.id ?? null);
       if (this.turns.has(this.profile, chat.id)) this.unprompted.delete(chat.id);
       else this.unprompted.add(chat.id);
       this.kanbanWatch.turnStarted([chat.id, ...(chat.lineage ?? [])]);
@@ -4832,10 +4829,10 @@ export class Hermes {
     const usage = counted && ms !== undefined ? { ...counted, ms } : counted;
     // Only a reply that finished counts toward how long replies take: a stopped or failed one ended early.
     if (ms !== undefined && (payload.status ?? "complete") === "complete" && !payload.error) this.cache.saveReplyTime(this.profile, { chat: chat.id, at: now, ms });
-    const from = this.turnStart.get(chat.id);
+    // The last item before the running turn, by stable id: `applyEvent` keeps it on the chat from `message.start` on.
+    const from = type === "message.start" ? (chat.items.at(-1)?.id ?? null) : chat.turnAfter;
     const unprompted = this.unprompted.has(chat.id);
     if (type === "message.complete" || type === "error") {
-      this.turnStart.delete(chat.id);
       this.turnBegan.delete(chat.id);
       this.unprompted.delete(chat.id);
     }
@@ -5232,7 +5229,6 @@ export class Hermes {
     this.earlyRequests.clear();
     // Runtime sessions end with the connection.
     this.usageFrom.clear();
-    this.turnStart.clear();
     this.turnBegan.clear();
     this.unprompted.clear();
     this.earlySideAnswers.clear();
@@ -5255,7 +5251,7 @@ export class Hermes {
         const subagents = onLost(c.subagents, Date.now());
         const left = subagents === c.subagents ? c : { ...c, subagents };
         return c.runtimeId || c.running
-          ? { ...left, runtimeId: undefined, live: undefined, running: false, stopping: false, sideQuestions: c.sideQuestions?.map(lostSide) }
+          ? { ...left, runtimeId: undefined, live: undefined, running: false, stopping: false, turnAfter: undefined, sideQuestions: c.sideQuestions?.map(lostSide) }
           : left;
       }),
     });
@@ -6762,17 +6758,6 @@ function withReplyUsage(items: Item[], usage: ReplyUsage, from?: string | null):
 }
 
 /**
- * Where the running turn's items start: just after `from`, the last item before its `message.start` (`null`: the chat
- * had none), else after the owner's last message (`turnStart`). -1 when `from` is no longer in the chat.
- */
-function turnFrom(items: Item[], from?: string | null): number {
-  if (from === null) return 0;
-  if (from === undefined) return turnStart(items);
-  const at = items.findIndex((i) => i.id === from);
-  return at < 0 ? -1 : at + 1;
-}
-
-/**
  * Where the response the model is giving now is, oldest part first: the turn's last replies back to a tool call,
  * anything else but reasoning or a steer, or sealed text. Reasoning inside a response, such as a `<think>` block Hermes
  * takes out of its text, splits it into parts. Empty when there is none. Hermes's final `text` is this response's text.
@@ -6819,7 +6804,7 @@ function applyEvent(c: Chat, type: string, p: Record<string, unknown>, from?: st
   const last = tail?.id === from ? undefined : tail;
   switch (type) {
     case "message.start":
-      return { ...c, running: true, updatedAt: Date.now() };
+      return { ...c, running: true, turnAfter: from, updatedAt: Date.now() };
     // `thinking.delta` is Hermes's spinner and wait notices, not reasoning, so it isn't shown.
     case "reasoning.delta": {
       const text = p.text;
@@ -6917,7 +6902,7 @@ function applyEvent(c: Chat, type: string, p: Record<string, unknown>, from?: st
           replaceResponse(items, parts, text);
         } else if (p.response_reused !== true && (!answer || answer.sealed)) items.push({ kind: "assistant", id: nextId(items, "a"), text });
       }
-      const end = { ...c, live: withLive(c.live, undefined, p.usage), running: false, stopping: false, updatedAt: Date.now() };
+      const end = { ...c, live: withLive(c.live, undefined, p.usage), running: false, stopping: false, turnAfter: undefined, updatedAt: Date.now() };
       // Stopped here or from another Hermes client.
       if (p.status === "interrupted") return { ...end, items: markInterrupted(endApprovals(items, "turn ended"), from, end.updatedAt) };
       const failure = p.error ?? (p.status === "error" ? p.failure_reason ?? "The turn failed." : undefined);
@@ -6926,7 +6911,7 @@ function applyEvent(c: Chat, type: string, p: Record<string, unknown>, from?: st
     }
     case "error":
       items.push(errorItem(c, textOf(p.message) ?? "Hermes reported an error."));
-      return { ...c, items: endApprovals(items, "turn ended"), running: false, stopping: false };
+      return { ...c, items: endApprovals(items, "turn ended"), running: false, stopping: false, turnAfter: undefined };
     default:
       return c;
   }

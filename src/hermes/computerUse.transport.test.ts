@@ -287,6 +287,33 @@ describe("Stop during a computer-use turn", () => {
     expect(server.display!.lease.holder).toBe("agent");
   });
 
+  it("judges a turn Hermes started by its own calls, not the computer use of the turn before it", async () => {
+    const { server, hermes, id, chat, rid } = await started();
+    await server.computerUseTurn(rid, { steps: [CU.capture()], reply: "Tidied." });
+    server.event(rid, "message.start");
+    server.event(rid, "tool.start", { tool_id: "t1", name: "terminal", preview: "du -sh /srv" });
+    await until(() => chat().items.some((i) => i.kind === "tool" && i.name === "terminal"));
+    expect(screenUse(chat())).toBeUndefined();
+    expect(await hermes.stopScreen()).toEqual({ stopped: [], hold: { kind: "held" } });
+    expect(interrupts(server)).toEqual([]);
+    await hermes.screen.handBack();
+    const asked = screenAsks(server).length;
+    await hermes.stop(id);
+    expect(interrupts(server)).toEqual([{ session_id: rid }]);
+    expect(screenAsks(server)).toHaveLength(asked);
+    expect(server.display!.lease.holder).toBe("agent");
+  });
+
+  it("counts only its own steps in a turn Hermes started that uses the screen, for follow mode and Stop", async () => {
+    const { server, chat, rid } = await started();
+    await server.computerUseTurn(rid, { steps: [CU.capture()], reply: "Tidied." });
+    const first = screenUse(chat())!.key;
+    void server.computerUseTurn(rid, { steps: [CU.capture(), CU.capture()], reply: "never" }, () => new Promise(() => {}));
+    await until(() => !!chat().running && chat().items.filter((i) => i.kind === "tool").length === 2);
+    expect(screenUse(chat())).toMatchObject({ running: true, steps: 1 });
+    expect(screenUse(chat())!.key).not.toBe(first);
+  });
+
   it("sends the interrupt without waiting for the screen, and says why the screen couldn't be taken", async () => {
     const { server, hermes, id, chat, rid } = await started();
     const { turn, next } = paused(server, rid);

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Proves a change left what the app sends Hermes as it was (ADR 0204): runs the test suite at a base ref and on this
+// Proves a change left what the app sends Hermes as it was (ADR 0208): runs the test suite at a base ref and on this
 // checkout with every FakeHermes recording the frames and dashboard calls it hears (scripts/frames-record.setup.mjs),
 // then compares them test by test.
 //

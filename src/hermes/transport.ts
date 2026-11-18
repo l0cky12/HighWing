@@ -101,8 +101,8 @@ import { restartHold } from "./unsaved";
 import { hostFileView, readServerFile, type FileView } from "./preview";
 import type { PathKind, ServerPath } from "./paths";
 import { parseDoctor, type CliResult, type DisplayLease, type ScreenApi } from "./screen";
-import { ScreenControl, type ScreenState } from "./screenControl";
-import { askOf, COMPUTER_USE } from "./computerUse";
+import { ScreenControl, type HoldOutcome, type ScreenState } from "./screenControl";
+import { askOf, COMPUTER_USE, screenUse } from "./computerUse";
 import { checkCommand, dockFile, foundPrograms, shellQuote } from "./screenApps";
 import { readScreenClipboard } from "./screenClipboard";
 import { agentFsEditIo } from "./artifacts";
@@ -591,6 +591,12 @@ export type Snapshot = {
   /** Who drives the shown profile's Bot Desktop, once a status or an observe has said (screenControl.ts). */
   screen?: ScreenState;
 };
+
+/** What the panic Stop came to: the chats whose replies it stopped, and whether it got the Bot Desktop. */
+export type StopScreen = { stopped: string[]; hold: HoldOutcome };
+
+/** The lease's reason when a Stop takes the screen; other Hermes clients show it. */
+const STOP_REASON = "Stopped from Highwing";
 
 /**
  * What a connection is to the owner (ADR 0125). The composer target is the one they work in. A background one keeps
@@ -4203,6 +4209,26 @@ export class Hermes {
    * the reply keeps running.
    */
   async stop(chatId: string): Promise<void> {
+    await this.interrupt(chatId, (chat) => (screenUse(chat)?.running ? this.control.hold(STOP_REASON) : undefined));
+  }
+
+  /**
+   * The panic Stop, for the Stop shortcut and `hermes-chat --stop` (ADR 0216): stops every reply in the shown profile
+   * that is using the Bot Desktop, and takes the screen whether one is or not. Idempotent: a reply already stopping is
+   * left alone, and a screen this connection holds already is `already`.
+   */
+  async stopScreen(): Promise<StopScreen> {
+    const using = this.snapshot.chats.filter((c) => !c.stopping && screenUse(c)?.running).map((c) => c.id);
+    const holding = this.control.hold(STOP_REASON);
+    await Promise.all(using.map((id) => this.interrupt(id)));
+    return { stopped: using, hold: await holding };
+  }
+
+  /**
+   * `stop` without its screen. `alongside` starts with the interrupt, once the message is accepted; what it comes to
+   * never holds the interrupt back, and a screen it couldn't take is said in the chat.
+   */
+  private async interrupt(chatId: string, alongside?: (chat: Chat) => Promise<HoldOutcome> | undefined): Promise<void> {
     const stoppable = () => {
       const c = this.snapshot.chats.find((c) => c.id === chatId);
       return c?.running && !c.stopping ? c : undefined;
@@ -4216,6 +4242,7 @@ export class Hermes {
     const chat = stoppable();
     if (!chat?.runtimeId) return;
     this.patchChat(chatId, (c) => ({ ...c, stopping: true }));
+    const holding = alongside?.(chat);
     try {
       if (!(await this.protocol.stop(chat.runtimeId))) this.patchChat(chatId, (c) => ({ ...c, stopping: false }));
     } catch (e) {
@@ -4224,6 +4251,9 @@ export class Hermes {
         c.stopping ? { ...c, stopping: false, items: [...c.items, errorItem(c, `Couldn't stop the reply: ${(e as Error).message}`)] } : c,
       );
     }
+    const held = await holding;
+    if (held?.kind === "failed" || held?.kind === "no-screen")
+      this.patchChat(chatId, (c) => ({ ...c, items: [...c.items, errorItem(c, `Stopped the reply, but couldn't take the Bot Desktop: ${held.why}`)] }));
   }
 
   /**

@@ -2201,16 +2201,17 @@ export function Main({
       ),
     );
 
-  // Another saved connection (ADR 0112). Whatever is running or waiting here is named first, from the inbox's entries,
-  // which cover every profile on this server; an unsaved memory or skill edit asks first too. Nothing is stopped:
-  // Hermes keeps a running reply going after this connection closes, as it does when the profile switches.
+  // Another saved connection (ADR 0112). A waiting Approval is named first, from the inbox's entries, which cover every
+  // profile on this server; an unsaved memory or skill edit asks first too. Nothing is stopped: Hermes keeps a running
+  // reply going after this connection closes, as it does when the profile switches, so a switch doesn't name it
+  // (ADR 0224). Removing the connection names the running replies too.
   const [connectionAsk, setConnectionAsk] = useState<{ to: SavedConnection; notes: string[]; go: () => void; stay?: () => void }>();
   const [removeAsk, setRemoveAsk] = useState<SavedConnection>();
-  const leavingConnection = (): string[] => {
+  const leavingConnection = ({ replies = false } = {}): string[] => {
     const named = (es: InboxEntry[]) =>
       es.slice(0, 3).map((e) => `“${e.title}” in ${e.profile}`).join(", ") + (es.length > 3 ? `, and ${es.length - 3} more` : "");
     const waiting = inbox.entries.filter((e) => e.kind === "approval" && !e.ended);
-    const running = inbox.entries.filter((e) => e.kind === "running");
+    const running = replies ? inbox.entries.filter((e) => e.kind === "running") : [];
     const notes: string[] = [];
     if (waiting.length) notes.push(`${waiting.length === 1 ? "An Approval is" : `${waiting.length} Approvals are`} waiting for you: ${named(waiting)}.`);
     if (running.length) notes.push(`${running.length === 1 ? "A reply is" : `${running.length} replies are`} running: ${named(running)}.`);
@@ -3983,7 +3984,7 @@ export function Main({
         <RemoveConnection
           c={removeAsk}
           inUse={removeAsk.id === connection.id}
-          notes={removeAsk.id === connection.id ? leavingConnection() : backgroundNotes(removeAsk.id)}
+          notes={removeAsk.id === connection.id ? leavingConnection({ replies: true }) : backgroundNotes(removeAsk.id)}
           onCancel={() => setRemoveAsk(undefined)}
           onRemove={async () => {
             await onRemoveConnection(removeAsk);

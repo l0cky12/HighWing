@@ -95,16 +95,28 @@ describe("Opening a chat link", () => {
     expect(prompts(server)).toBe(0);
   });
 
-  it("asks before leaving a profile with a reply running, and Cancel leaves everything as it was", async () => {
-    const { hermes, linkTo, open, user } = await launch();
-    let id = "";
+  it("switches at once to open a link while a reply runs here, and asks no question", async () => {
+    const { hermes, linkTo, open } = await launch();
     await act(async () => {
-      id = await hermes.newChat();
+      const id = await hermes.newChat();
       await hermes.send(id, "Summarise the logs");
     });
     await open(linkTo("work", "deploy"));
+    await waitFor(() => expect(onScreen()).toBe("Deploy plan"));
+    expect(hermes.getSnapshot().profile).toBe("work");
+    expect(screen.queryByRole("button", { name: "Switch to work" })).toBeNull();
+  });
+
+  it("asks before leaving a profile with an Approval waiting, and Cancel leaves everything as it was", async () => {
+    const { server, hermes, linkTo, open, user } = await launch();
+    await act(async () => {
+      const id = await hermes.newChat();
+      await hermes.send(id, "Clean up the logs");
+      server.askApproval(server.runtimeIdOf(id)!);
+    });
+    await open(linkTo("work", "deploy"));
     const asking = await screen.findByLabelText("Chat link");
-    expect(asking.textContent).toMatch(/A reply is still running in default.*Switch to work to open the linked chat\?/);
+    expect(asking.textContent).toMatch(/An approval is waiting in default.*Switch to work to open the linked chat\?/);
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(notice()).toBeNull();
     expect(hermes.getSnapshot().profile).toBe("default");

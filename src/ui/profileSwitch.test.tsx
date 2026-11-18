@@ -91,28 +91,31 @@ describe("Switching profile in the app", () => {
     await switched(hermes, "work");
   });
 
-  it("says a reply is still running before leaving its profile", async () => {
+  it("switches on one pick while a reply is still running, without asking", async () => {
     const { hermes, user } = await launch();
     await act(async () => {
       const id = await hermes.newChat();
       await hermes.send(id, "Summarise the logs");
     });
     await pickProfile(user, "work");
-    expect((await screen.findByRole("alertdialog")).textContent).toMatch(/A reply is still running in default\. Hermes keeps it going/);
+    await switched(hermes, "work");
+    expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
-  it("keeps the question open if the reply finishes meanwhile, and puts focus back on the switcher on Stay", async () => {
+  it("keeps the question open if the Approval ends meanwhile, and puts focus back on the switcher on Stay", async () => {
     const { server, hermes, user } = await launch();
     let id = "";
     await act(async () => {
       id = await hermes.newChat();
-      await hermes.send(id, "Summarise the logs");
+      await hermes.send(id, "Clean up the logs");
+      server.askApproval(server.runtimeIdOf(id)!);
     });
     await pickProfile(user, "work");
     const ask = await screen.findByRole("alertdialog");
     expect(ask.getAttribute("aria-describedby")).toBeTruthy();
-    expect(document.getElementById(ask.getAttribute("aria-describedby")!)?.textContent).toMatch(/A reply is still running/);
-    act(() => server.event(server.runtimeIdOf(id)!, "message.complete", { text: "Done." }));
+    expect(document.getElementById(ask.getAttribute("aria-describedby")!)?.textContent).toMatch(/An approval is waiting in default/);
+    act(() => server.event(server.runtimeIdOf(id)!, "approval.cancelled", { reason: "timed out" }));
+    await waitFor(() => expect(hermes.getSnapshot().chats.find((c) => c.id === id)?.items.some((i) => i.kind === "approval" && i.ended)).toBe(true));
     expect(screen.getByRole("alertdialog")).toBe(ask);
 
     await user.click(screen.getByRole("button", { name: "Stay" }));

@@ -240,8 +240,6 @@ const scenes = {
       pickPersona("research"),
     ],
   },
-  // Automations (ADR 0108). Tall pages: the screenshot covers the whole screen, scrolled to the part named.
-  automations: { query: "", steps: [click("button[aria-label='Automations']")] },
   work: { query: "", ...hd, steps: [click("button[aria-label='Work']")] },
   "work-task": { query: "", steps: [click("button[aria-label='Work']"), click(".work-card", "Compare three NAS backup tools")] },
   "work-new": { query: "", steps: [click("button[aria-label='Work']"), click(".btn", "New task")] },
@@ -249,9 +247,6 @@ const scenes = {
   "work-graph": { query: "?graph=1", ...hd, steps: [...workGraph, legibleGraph] },
   // At the largest interface size the cards and the gaps between them grow with the text (appearance.ts sets both).
   "work-graph-20px": { query: "?graph=1&size=20", ...hd, steps: [...workGraph, legibleGraph] },
-  "automation-editor": { query: "", height: 1700, steps: [click("button[aria-label='Automations']"), click("button", "New automation")] },
-  "automation-preview": { query: "", height: 1100, steps: [click("button[aria-label='Automations']"), click("button", "New automation"), scrollTo(".automation-preview")] },
-  "automation-history": { query: "", height: 1400, steps: [click("button[aria-label='Automations']"), click("button", "triage-issues"), scrollTo(".delivery-list")] },
   // Skills from the composer (issue #188): the "/" menu, the "$" menu mid-message, the note before sending, and the chat after.
   "skills-slash-menu": { query: "", steps: [click("button", "Nightly backup"), typeIn("/")] },
   "skills-dollar-menu": { query: "", steps: [click("button", "Nightly backup"), typeIn("clear the stale lock using $re")] },
@@ -311,7 +306,6 @@ const scenes = {
   "subagent-details-stopped": { query: "", ...hd, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "Walk tank/media"), endSubagents, unfocus] },
   "subagent-details-stopped-small": { query: "", width: 1100, height: 760, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "Walk tank/media"), endSubagents, unfocus] },
   "subagent-details-failed-small": { query: "", width: 1100, height: 760, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "Docker volumes"), endSubagents, unfocus] },
-  "automation-history-light": { query: "?mode=light", height: 1400, steps: [click("button[aria-label='Automations']"), click("button", "triage-issues"), scrollTo(".delivery-list")] },
 };
 // Every Settings tab at 1920 × 1080 (#568): `settings-tab-<id>`, for a redesign's before and after.
 for (const [id, label] of Object.entries({ general: "General", appearance: "Appearance", keyboard: "Keyboard Shortcuts", snapshots: "Snapshots", model: "Model", providers: "Providers", voice: "Voice", toolsets: "Toolsets", mcp: "MCP servers", gateways: "Gateways", profiles: "Profiles", persona: "Persona", memory: "Memory", skills: "Skills", extensions: "Extensions", diagnostics: "Diagnostics" }))

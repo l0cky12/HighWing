@@ -167,7 +167,7 @@ Needs the cron routes under `/api/cron/`. Checked with `GET /api/cron/jobs`. To 
 
 ## Automations
 
-Needs the webhook routes under `/api/webhooks`. Checked with `GET /api/webhooks`. Without them, the Automations screen shows a note instead of the list. A Hermes whose list doesn't name the `webhooks/1` contract keeps fewer fields per route; the Automations screen says which.
+Needs the webhook routes under `/api/webhooks`. Checked with `GET /api/webhooks`. The Automations screen is gone (ADR 0202). The capability stays because extensions can name `automations` in `needs` (ADR 0126): without the routes, such an extension shows what is missing instead of running.
 
 ## Outputs
 

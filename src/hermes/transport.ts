@@ -44,7 +44,6 @@ import { callText, offeredSkills, runSkill, skillInvocationText, type SkillCall,
 import { CronApi, jobRunTitle } from "./cronJobs";
 import { followsSession, nextRoster, parseKanbanCreate, sameTask, type DispatchedTask } from "./dispatched";
 import { KanbanApi, KanbanWatch } from "./kanban";
-import { AutomationsApi } from "./automations";
 import { ModelSettingsApi } from "./modelSettings";
 import { ToolsetsApi } from "./toolsets";
 import { VoiceSettingsApi } from "./voiceSettings";
@@ -1146,9 +1145,6 @@ export class Hermes {
 
   /** Hermes's scheduled jobs, each call naming its profile (cronJobs.ts). Hermes runs them; this only manages them. */
   readonly cron = new CronApi((method, pathAndQuery, body) => this.rest(method, pathAndQuery, body));
-
-  /** Hermes's webhook routes, each call naming its profile (automations.ts). Hermes receives and runs the events. */
-  readonly automations = new AutomationsApi((method, pathAndQuery, body) => this.rest(method, pathAndQuery, body));
 
   /** Hermes's kanban board, read for the tasks the shown profile's chats dispatched (kanban.ts, issue #287). */
   readonly kanban = new KanbanApi((method, pathAndQuery, body) => this.rest(method, pathAndQuery, body));

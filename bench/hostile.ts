@@ -1,4 +1,4 @@
-// Reply text and filters built to stall the UI thread (#490), each timed at growing sizes. Linear work doubles when the
+// Reply text built to stall the UI thread (#490), each timed at growing sizes. Linear work doubles when the
 // size doubles; quadratic work quadruples. Runs in Node (V8) and on the bench page in WebKitGTK (JavaScriptCore), whose
 // regex engine backtracks differently: `bench.hostile()` there.
 // Usage: npx rolldown bench/hostile.ts --platform node -o <out>.mjs && node <out>.mjs [case...]
@@ -7,8 +7,6 @@ import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import { rehypePlugins, remarkPlugins } from "../src/ui/markdownPipeline";
 import { findSecrets } from "../src/hermes/secrets";
-import { filterMatches } from "../src/hermes/automations";
-import { testPattern } from "../src/hermes/pyRegex";
 
 /** What ReactMarkdown runs over one message, marking `query` as find-in-chat does. */
 function render(text: string, query = "") {
@@ -54,12 +52,6 @@ export const CASES: Case[] = [
   },
   { name: "secrets-dash", what: 'findSecrets("a-".repeat(n))', sizes: [5000, 10000, 20000, 40000], run: (n) => findSecrets("a-".repeat(n)) },
   { name: "secrets-dot", what: 'findSecrets("a.".repeat(n))', sizes: [5000, 10000, 20000, 40000], run: (n) => findSecrets("a.".repeat(n)) },
-  {
-    name: "webhook-regex",
-    what: 'filter { regex: "(a+)+$" } on a field of n "a"s and a "!", tested on this thread as the pattern worker does',
-    sizes: [16, 18, 20, 22],
-    run: (n) => filterMatches({ field: "x", regex: "(a+)+$" }, { x: "a".repeat(n) + "!" }, "push", {}, testPattern),
-  },
 ];
 
 export type Row = { name: string; n: number; ms: number };

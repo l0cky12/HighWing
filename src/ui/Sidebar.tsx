@@ -3,7 +3,7 @@
 // rail's foot. Right-clicking a chat opens its menu (ChatMenu.tsx).
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useReducer, useRef, useState, useSyncExternalStore, type DragEvent, type CSSProperties, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { BarChart3, Bot as BotIcon, Building2, CalendarClock, Loader, MessagesSquare, ShieldAlert, Check, ChevronDown, ChevronRight, CircleAlert, Copy, Hourglass, LockOpen, PanelLeftClose, Pin, Search, Settings, SquareKanban, SquarePen, Trash2, Webhook } from "lucide-react";
+import { BarChart3, Bot as BotIcon, Building2, CalendarClock, Loader, MessagesSquare, ShieldAlert, Check, ChevronDown, ChevronRight, CircleAlert, Copy, Hourglass, LockOpen, PanelLeftClose, Pin, Search, Settings, SquareKanban, SquarePen, Trash2 } from "lucide-react";
 import { waitingLabel, type Handoff } from "../hermes/dispatched";
 import type { Chat, CheckTimes, ConnectionStatus, OtherProfile, OtherProfiles } from "../hermes/model";
 import { SOURCE_LABEL, archiveAction, inArchived, isWaiting } from "../hermes/model";
@@ -50,8 +50,6 @@ export function Rail({
   settingsOpen = false,
   onJobs,
   jobsOpen = false,
-  onAutomations,
-  automationsOpen = false,
   onUsage,
   usageOpen = false,
   updateWaiting = false,
@@ -79,9 +77,6 @@ export function Rail({
   /** Opens Scheduled jobs: Hermes's jobs for the profile, which it runs on the server. */
   onJobs?: () => void;
   jobsOpen?: boolean;
-  /** Opens Automations: Hermes's webhook routes for the profile, which start tasks on the server (Automations.tsx). */
-  onAutomations?: () => void;
-  automationsOpen?: boolean;
   /** Opens Usage analytics: tokens and recorded cost across chats, models, projects and profiles (UsageAnalytics.tsx). */
   onUsage?: () => void;
   usageOpen?: boolean;
@@ -110,11 +105,6 @@ export function Rail({
     onJobs && (
       <button key="jobs" className={`icon-btn ${jobsOpen ? "on" : ""}`} aria-label="Scheduled jobs" aria-pressed={jobsOpen} onClick={onJobs} {...bind("jobs", { label: "Scheduled jobs", note: "Tasks Hermes runs on a schedule" })}>
         <CalendarClock size={18} />
-      </button>
-    ),
-    onAutomations && (
-      <button key="automations" className={`icon-btn ${automationsOpen ? "on" : ""}`} aria-label="Automations" aria-pressed={automationsOpen} onClick={onAutomations} {...bind("automations", { label: "Automations", note: "Tasks started by GitHub events" })}>
-        <Webhook size={18} />
       </button>
     ),
     onUsage && (

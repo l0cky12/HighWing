@@ -20,7 +20,6 @@ function rail(over: Partial<Parameters<typeof Rail>[0]> = {}) {
     onSearch: noop,
     onSettings: noop,
     onJobs: noop,
-    onAutomations: noop,
     onUsage: noop,
     ...over,
   };
@@ -36,7 +35,7 @@ describe("the rail", () => {
     const top = container.querySelector(".rail-top") as HTMLElement;
     expect(names(top)).toEqual(["Hide or show chats", "New chat (Ctrl+N)", "Search all chats (Ctrl+K)"]);
     expect(screen.queryByRole("button", { name: /^Inbox/ })).toBeNull();
-    expect(names(screen.getByRole("group", { name: "Server" }))).toEqual(["Scheduled jobs", "Automations", "Usage"]);
+    expect(names(screen.getByRole("group", { name: "Server" }))).toEqual(["Scheduled jobs", "Usage"]);
     // Server files and the Terminal are the side panel's tabs, not rail buttons.
     expect(screen.queryByRole("group", { name: "Work" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Server files" })).toBeNull();
@@ -48,7 +47,7 @@ describe("the rail", () => {
   });
 
   it("leaves out a group with none of its tools", () => {
-    rail({ onJobs: undefined, onAutomations: undefined, onUsage: undefined });
+    rail({ onJobs: undefined, onUsage: undefined });
     expect(screen.queryByRole("group", { name: "Server" })).toBeNull();
   });
 
@@ -103,7 +102,7 @@ describe("the rail", () => {
 
   it("gives each button its tip's line as its description", () => {
     rail({ updateWaiting: true });
-    expect(screen.getByRole("button", { name: "Automations", description: "Tasks started by GitHub events" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Scheduled jobs", description: "Tasks Hermes runs on a schedule" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Settings: an update is ready", description: "An update is ready" })).toBeTruthy();
     // A line the name already says isn't said twice.
     expect(screen.getByRole("button", { name: /^Connected/, description: "" })).toBeTruthy();
@@ -141,8 +140,8 @@ describe("the rail", () => {
 
   it("shows a line about a tool without a shortcut", async () => {
     const { user } = rail();
-    await user.hover(screen.getByRole("button", { name: "Automations" }));
-    expect(tip()?.textContent).toBe("AutomationsTasks started by GitHub events");
+    await user.hover(screen.getByRole("button", { name: "Scheduled jobs" }));
+    expect(tip()?.textContent).toBe("Scheduled jobsTasks Hermes runs on a schedule");
     expect(tip()?.querySelector("kbd")).toBeNull();
   });
 

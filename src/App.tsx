@@ -113,7 +113,6 @@ import { TroubleshootStore, startTroubleshoot } from "./hermes/troubleshoot";
 import { CapabilityGate } from "./ui/Diagnostics";
 import { CAPABILITIES, guideUrl, type CapabilityId } from "./hermes/capabilities";
 import { useCapabilities } from "./ui/Diagnostics";
-import { Automations } from "./ui/Automations";
 import { tauriLocalTerminal, tauriTerminal } from "./ui/tauriTerminal";
 import { useShells } from "./ui/useShells";
 import { MAX_FOLDER_SHELLS, terminalTarget, terminalTargetGuessed, terminalTargetKey, type TerminalKind } from "./hermes/terminal";
@@ -1415,8 +1414,6 @@ export function Main({
   const [jobsOpen, setJobsOpen] = useState(false);
   /** The job the Scheduled jobs screen opens on, when something other than the rail opened it; `n` starts it again. */
   const [jobsAt, setJobsAt] = useState<{ id: string; n: number }>();
-  /** Automations (webhook routes, ADR 0108) cover the chat too. */
-  const [automationsOpen, setAutomationsOpen] = useState(false);
   // The side panel's Terminal (ADR 0022, ADR 0039): which shell is shown, kept in the prefs so it opens on the one picked
   // last (the Hermes server's until then, ADR 0051), the folder shells a reply's paths opened (ADR 0167), and which are
   // running, for the rail's dot.
@@ -1445,7 +1442,7 @@ export function Main({
       guardRef.current(() => {
         setProjectOpen(false);
         setSettingsOpen(false);
-        setJobsOpen(false); setAutomationsOpen(false); setOfficeOpen(false);
+        setJobsOpen(false); setOfficeOpen(false);
         setWorkOpen(false);
         setUsageTab("budgets");
         setUsageOpen(true);
@@ -1773,7 +1770,7 @@ export function Main({
   };
   const openSettings = () => {
     setProjectOpen(false);
-    setJobsOpen(false); setAutomationsOpen(false); setOfficeOpen(false);
+    setJobsOpen(false); setOfficeOpen(false);
     setUsageOpen(false); setWorkOpen(false);
     setShowTextGeneration(undefined);
     setShowMemory(undefined);
@@ -1925,7 +1922,7 @@ export function Main({
       setReopening(undefined);
       if (!keepSettings) setSettingsOpen(false);
       setProjectOpen(false);
-      setJobsOpen(false); setAutomationsOpen(false); setOfficeOpen(false);
+      setJobsOpen(false); setOfficeOpen(false);
       setUsageOpen(false); setWorkOpen(false);
       if (remember) rememberChat(id);
     };
@@ -1941,7 +1938,7 @@ export function Main({
       setProjectOpen(false);
       setSettingsOpen(false);
       setUsageOpen(false); setWorkOpen(false);
-      setAutomationsOpen(false);
+     
       setOfficeOpen(false);
       setJobsAt((a) => ({ id, n: (a?.n ?? 0) + 1 }));
       setJobsOpen(true);
@@ -1981,7 +1978,7 @@ export function Main({
     setSearchOpen(false);
     setSettingsOpen(false);
     setProjectOpen(false);
-    setJobsOpen(false); setAutomationsOpen(false); setOfficeOpen(false);
+    setJobsOpen(false); setOfficeOpen(false);
     setUsageOpen(false); setWorkOpen(false);
   });
 
@@ -2000,7 +1997,7 @@ export function Main({
     setReopening(undefined);
     setSettingsOpen(false);
     setProjectOpen(false);
-    setJobsOpen(false); setAutomationsOpen(false); setOfficeOpen(false);
+    setJobsOpen(false); setOfficeOpen(false);
     setUsageOpen(false); setWorkOpen(false);
     rememberChat(chatId);
   });
@@ -2057,7 +2054,7 @@ export function Main({
   );
   const openTextGeneration = () => {
     setProjectOpen(false);
-    setJobsOpen(false); setAutomationsOpen(false); setOfficeOpen(false);
+    setJobsOpen(false); setOfficeOpen(false);
     setUsageOpen(false); setWorkOpen(false);
     // One destination at a time: an earlier Memory shortcut mustn't switch Settings away from this one.
     setShowMemory(undefined);
@@ -2072,7 +2069,7 @@ export function Main({
     flushSync(() => {
       setSettingsOpen(false);
       setProjectOpen(false);
-      setJobsOpen(false); setAutomationsOpen(false); setOfficeOpen(false);
+      setJobsOpen(false); setOfficeOpen(false);
       setUsageOpen(false); setWorkOpen(false);
       setSearchOpen(false);
       if (!previewFits) setPanelHidden(true);
@@ -3003,7 +3000,7 @@ export function Main({
           return;
         case "focusLeft":
         case "focusRight":
-          if (!split || settingsOpen || jobsOpen || automationsOpen) return;
+          if (!split || settingsOpen || jobsOpen) return;
           e.preventDefault();
           focusPane(panes[command === "focusLeft" ? 0 : 1].key);
           return;
@@ -3018,9 +3015,8 @@ export function Main({
   const previewFits = !mainWidth || mainWidth >= CHAT_MIN_WIDTH + PANE_MIN_WIDTH;
   const paneMax = mainWidth ? mainWidth - CHAT_MIN_WIDTH : 1200;
   const paneWidth = Math.min(Math.max(dragWidth ?? previewWidth ?? PREVIEW_DEFAULT_WIDTH, PANE_MIN_WIDTH), Math.max(PANE_MIN_WIDTH, paneMax));
-  // Settings covers the chat, and the side panel with it; so do the project screen, Scheduled jobs, Automations
-  // and Usage.
-  const covering = settingsOpen || projectScreenOpen || jobsOpen || automationsOpen || usageOpen || workOpen || officeVisible;
+  // Settings covers the chat, and the side panel with it; so do the project screen, Scheduled jobs and Usage.
+  const covering = settingsOpen || projectScreenOpen || jobsOpen || usageOpen || workOpen || officeVisible;
   const previewShown = panelOpen && !covering && (previewFits || !panelHidden);
   const previewCovers = previewShown && !previewFits;
 
@@ -3177,7 +3173,7 @@ export function Main({
             hermes.memory
               ? () => {
                   setProjectOpen(false);
-                  setJobsOpen(false); setAutomationsOpen(false); setOfficeOpen(false);
+                  setJobsOpen(false); setOfficeOpen(false);
                   setUsageOpen(false); setWorkOpen(false);
                   setShowTextGeneration(undefined);
                   setShowDiagnostics(undefined);
@@ -3352,33 +3348,22 @@ export function Main({
             setProjectOpen(false);
             setSettingsOpen(false);
             setUsageOpen(false); setWorkOpen(false);
-            setAutomationsOpen(false);
+           
             setJobsAt(undefined);
             setJobsOpen(true);
           })
         }
         jobsOpen={jobsOpen && !settingsOpen}
-        onAutomations={() =>
-          guard(() => {
-            setProjectOpen(false);
-            setSettingsOpen(false);
-            setUsageOpen(false); setWorkOpen(false);
-            setJobsOpen(false);
-            setOfficeOpen(false);
-            setAutomationsOpen(true);
-          })
-        }
-        automationsOpen={automationsOpen && !settingsOpen}
         onUsage={() =>
           guard(() => {
             setProjectOpen(false);
             setSettingsOpen(false);
-            setJobsOpen(false); setAutomationsOpen(false); setOfficeOpen(false);
+            setJobsOpen(false); setOfficeOpen(false);
             setWorkOpen(false);
             setUsageOpen((o) => !o);
           })
         }
-        usageOpen={usageOpen && !settingsOpen && !projectScreenOpen && !jobsOpen && !automationsOpen}
+        usageOpen={usageOpen && !settingsOpen && !projectScreenOpen && !jobsOpen}
         // Hidden for a Hermes without the kanban plugin, once the page that found out has closed.
         onWork={
           caps.caps.kanban.state === "unsupported" && !workOpen
@@ -3387,12 +3372,12 @@ export function Main({
                 guard(() => {
                   setProjectOpen(false);
                   setSettingsOpen(false);
-                  setJobsOpen(false); setAutomationsOpen(false); setOfficeOpen(false);
+                  setJobsOpen(false); setOfficeOpen(false);
                   setUsageOpen(false);
                   setWorkOpen((o) => !o);
                 })
         }
-        workOpen={workOpen && !settingsOpen && !projectScreenOpen && !jobsOpen && !automationsOpen && !officeVisible}
+        workOpen={workOpen && !settingsOpen && !projectScreenOpen && !jobsOpen && !officeVisible}
         updateWaiting={updateWaiting}
         connectionsMenu={
           onSwitchConnection && (
@@ -3475,7 +3460,7 @@ export function Main({
                   await projects.create(name);
                   guard(() => {
                     setSettingsOpen(false);
-                    setJobsOpen(false); setAutomationsOpen(false); setOfficeOpen(false);
+                    setJobsOpen(false); setOfficeOpen(false);
                     setUsageOpen(false); setWorkOpen(false);
                     setProjectOpen(true);
                   });
@@ -3483,7 +3468,7 @@ export function Main({
                 onManage={() =>
                   guard(() => {
                     setSettingsOpen(false);
-                    setJobsOpen(false); setAutomationsOpen(false); setOfficeOpen(false);
+                    setJobsOpen(false); setOfficeOpen(false);
                     setUsageOpen(false); setWorkOpen(false);
                     setProjectOpen(true);
                     void projects.readDefaults();
@@ -3608,23 +3593,6 @@ export function Main({
                   focusPane(active.key);
                 }}
               />
-            ) : automationsOpen && !settingsOpen ? (
-              <CapabilityGate
-                store={hermes.capabilities}
-                id="automations"
-                openGuide={openGuide}
-                onDiagnostics={openDiagnostics}
-                onClose={() => { flushSync(() => setAutomationsOpen(false)); focusPane(active.key); }}
-              >
-                <Automations
-                  key={profile}
-                  api={hermes.automations}
-                  profile={profile}
-                  connected={status === "connected"}
-                  onClose={() => { flushSync(() => setAutomationsOpen(false)); focusPane(active.key); }}
-                  onOpenChat={(id) => openChat(id)}
-                />
-              </CapabilityGate>
             ) : jobsOpen && !settingsOpen ? (
               <CapabilityGate
                 store={hermes.capabilities}

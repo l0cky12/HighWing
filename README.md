@@ -109,7 +109,7 @@ The chat list sorts chats for you:
 - **Inbox** holds chats that need you: a finished reply you haven't read, an Approval waiting, or a problem.
 - **Working** holds chats where Hermes is still busy. A chat moves back to the Inbox when Hermes finishes or needs you.
 
-When you're done with a chat, point at it in the list and click its **Settle** button. Settled chats move to a drawer at the bottom of the list. Settling deletes nothing, and you can open the drawer and move a chat back at any time.
+When you're done with a chat, point at it in the list and click its **Archive** button. Archived chats move to the **Archived** drawer at the bottom of the list. Archiving deletes nothing and hides nothing from your other Hermes apps. You can open the drawer and click **Unarchive** to move a chat back at any time.
 
 ## What's next
 

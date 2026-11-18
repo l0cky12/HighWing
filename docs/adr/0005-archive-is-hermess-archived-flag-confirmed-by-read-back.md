@@ -1,5 +1,7 @@
 # Archive is Hermes's `archived` flag, separate from Settle, and confirmed by reading it back
 
+> **Partly superseded by [ADR 0202](0202-settled-and-archived-are-one-archived-section-and-archive-settles-the-chat.md).** The app no longer archives a chat in Hermes. Unarchive still restores one Hermes archived, with the write and read-back described here.
+
 Archive and Restore write only the session's `archived` flag (`PATCH /api/sessions/{id} {archived}`), through the same fenced single-session write as Settle (`request_id` plus the revision from the mutation snapshot). They never touch `pinned`, so a restored chat comes back Active or Settled as it was, and settling never archives. After every write, whether Hermes answered, refused or the answer was lost, the app reads the session back (`GET /api/sessions/{id}`) and shows the chat as Hermes has it. Only that read-back decides whether the archive or restore worked.
 
 ## Considered options

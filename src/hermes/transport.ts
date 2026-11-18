@@ -66,17 +66,20 @@ import {
   BotModeUnsupportedError,
   blockFor,
   blockOf,
+  agentMessaging,
   configureParams,
   isBotChat,
   isBotChatTitle,
   lacksPictureKeys,
   lookOf,
+  messagingStep,
   rosterOf,
   rosterRows,
   type Bot,
   type BotBlock,
   type BotBlockLook,
   type BotLook,
+  type MessagingSave,
   type Revision,
 } from "./bots";
 import { plan, settle as settleEdits, type EditResult, type Edits, type Outcomes } from "./fieldMerge";
@@ -2243,7 +2246,7 @@ export class Hermes {
   }
 
   /** One `profiles.list`, kept as the roster every view shows, with its rows as Hermes sent them for a bot's look. */
-  private async readBotRoster(): Promise<{ bots: Bot[]; rows: Record<string, unknown>[] }> {
+  private async readBotRoster(): Promise<{ bots: Bot[]; rows: NonNullable<ReturnType<typeof rosterRows>> }> {
     const gen = this.generation;
     const n = ++this.rosterReads.started;
     try {
@@ -2424,6 +2427,45 @@ export class Hermes {
     if (wanted && keysMissing && fields.picture?.kind === "saved")
       fields.picture = failed(pictureKeysFailure ?? { kind: "pictureUnconfirmed" });
     return { fields, ...(now && { now }) };
+  }
+
+  /**
+   * Turns Bot messaging on or off for the whole install, and reads it back (ADR 0205): `messagingStep` on the roster
+   * just read, each of its writes a compare-and-swap. When Hermes says a block moved meanwhile, the roster is read and
+   * the step taken again. Never rejects. No state of the write is kept: an Off that stops between two deletes leaves
+   * messaging on, and the next one deletes the rest. The roster every view shows is read again as part of it.
+   */
+  async setAgentMessaging(on: boolean): Promise<MessagingSave> {
+    let failure: ProfileFailure | undefined;
+    try {
+      for (let attempt = 1; !failure; attempt++) {
+        const step = messagingStep((await this.readBotRoster()).rows, on);
+        if (step.kind === "kept") return step;
+        if (step.kind === "noCheck") failure = { kind: "noCheck" };
+        if (step.kind !== "write") break;
+        let moved = false;
+        for (const params of step.requests) {
+          const applied = obj(obj(await this.request("profiles.configure", params))?.applied);
+          if (applied?.ui_meta === true) continue;
+          // Without conflicts it is an exception inside Hermes: nothing was written, and no reason is given.
+          if (obj(applied?.ui_meta_conflicts)) moved = true;
+          else failure = { kind: "refused", status: 0, detail: "" };
+          break;
+        }
+        if (!moved) break;
+        if (attempt === BOT_SAVE_ATTEMPTS) failure = { kind: "contended" };
+      }
+    } catch (e) {
+      failure = profileFailure(e, "botLook");
+    }
+    // What Hermes has now decides, so a write whose answer was lost still counts once the roster shows it.
+    try {
+      const now = agentMessaging((await this.readBotRoster()).bots);
+      if (now.on === on) return { kind: "saved", now };
+    } catch (e) {
+      failure ??= profileFailure(e, "botLook");
+    }
+    return { kind: "failed", failure: failure ?? { kind: "lost", message: "Hermes's list of profiles doesn't show the change." } };
   }
 
   /**

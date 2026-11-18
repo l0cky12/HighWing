@@ -12,7 +12,7 @@ A Group room is 2 to 6 bots that Hermes drives in turns. The owner makes one in 
 - `rooms-approval`: a bot's command waits in the strip with Approve once and Deny, and the bot goes on once approved.
 - `rooms-clarify`: a bot inside `clarify` shows as stuck, with Stop, until Hermes moves on.
 - `rooms-needs-you`: a room that needs the owner shows on its row, on the Bots tab while Chats shows, and in the Rail inbox.
-- `rooms-mentions`: typing `@` lists the room's bots (face, name, `@handle`, description; Everyone last), Enter or Tab picks one, and a Goes to line under the composer says who Hermes will hand the message to, with a note for a trailing mark, a mention glued to a word, one in code, and a handle nobody has (ADR 0213).
+- `rooms-mentions`: typing `@` lists the room's bots (face, name, `@handle`, description; Everyone last), Enter or Tab picks one, and a Goes to line under the composer says who Hermes will hand the message to, with a note for a trailing mark, a mention glued to a word, one in code, and a handle nobody has (ADR 0216).
 
 ## How to get to it (user POV)
 

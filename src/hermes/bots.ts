@@ -1,5 +1,5 @@
 import { errorText, isObj } from "./values";
-import type { AppMethod } from "./canonicalVerbs";
+import type { PlainMethod, SessionProtocol } from "./sessionProtocol";
 import type { Same } from "./fieldMerge";
 import type { ProfileFailure } from "./profiles";
 // Hermes's Bot Mode (ADR 0066, research doc "Bot Mode"). Each bot is a Hermes profile with a persistent identity, and
@@ -300,7 +300,7 @@ export function isBotChatOnScreen(bot: Pick<Bot, "botChat"> | undefined, chatId:
 export type BotChatOpen = { registryId: string; openId: string; created: boolean };
 
 /** One JSON-RPC request on the connection, as the transport sends it. */
-export type BotRpc = (method: AppMethod, params: Record<string, unknown>) => Promise<unknown>;
+export type BotRpc = (method: PlainMethod, params: Record<string, unknown>) => Promise<unknown>;
 
 /**
  * Finds and creates Bot Chats over JSON-RPC. `source`: the `source` this app stamps on sessions it starts. No session
@@ -312,6 +312,7 @@ export class BotChats {
 
   constructor(
     private readonly rpc: BotRpc,
+    private readonly sessions: () => Pick<SessionProtocol, "open" | "edit">,
     private readonly source: string,
   ) {}
 
@@ -359,14 +360,14 @@ export class BotChats {
   private async resolve(profile: string, name: string, expected: boolean): Promise<BotChatOpen> {
     const found = await this.find(profile, name, expected);
     if (found) return { registryId: found.id, openId: found.resolvedId, created: false };
-    const made = await this.rpc("session.create", { profile, title: BOT_CHAT_TITLE, hidden: true, follow_profile_config: true, source: this.source });
-    const runtime = isObj(made) ? trimmedOrEmpty(made.session_id) : "";
-    const stored = isObj(made) ? trimmedOrEmpty(made.stored_session_id) : "";
+    const made = await this.sessions().open({ kind: "bot", profile, source: this.source, title: BOT_CHAT_TITLE });
+    const runtime = trimmedOrEmpty(made.runtimeId);
+    const stored = trimmedOrEmpty(made.storedId);
     if (!runtime || !stored) throw new Error(`Hermes didn't say which session it started for ${name}'s Bot Chat.`);
     try {
       // A new session has no row until its first message, and the title alone stays pending. Naming it now stores it
       // under the title, so the next lookup finds it and Hermes's own titling can't rename it.
-      await this.rpc("session.title", { session_id: runtime, title: BOT_CHAT_TITLE });
+      await this.sessions().edit(runtime, { op: "rename", title: BOT_CHAT_TITLE });
     } catch (e) {
       if (codeOf(e) !== TITLE_IN_USE && !/already in use/i.test(errorText(e))) throw new Error(`Hermes started ${name}'s Bot Chat but didn't name it: ${errorText(e)}`);
       // Another client made it between the lookup and now. Open theirs; the session started here holds nothing, and

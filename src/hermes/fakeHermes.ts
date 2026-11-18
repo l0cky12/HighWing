@@ -15,6 +15,8 @@ import { FakeCheckpoints, inlineDiff, type FakeEdit } from "./fakeCheckpoints";
 import { FakeGoals } from "./fakeGoals";
 import { ScheduleError, isoIn, parseSchedule, upcomingRuns } from "./schedule";
 import { skillInvocationText } from "./skillCommands";
+import { CANONICAL_READY } from "./canonicalVerbs";
+import { FakeAuthority, type CanonicalOptions } from "./fakeCanonical";
 
 type Request = { jsonrpc: "2.0"; id: number; method: string; params: Record<string, unknown> };
 /** The client's answer to a server→client request (`tui_gateway/server_requests.py`). */
@@ -310,7 +312,15 @@ const FS_MIME: Record<string, string> = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 };
 
+declare global {
+  var hermesWireTap: ((line: string) => void) | undefined;
+}
+
 export class FakeHermes {
+  private readonly tapOfTestThatMadeIt = globalThis.hermesWireTap;
+  private onWire(line: string) {
+    (this.tapOfTestThatMadeIt ?? globalThis.hermesWireTap)?.(line);
+  }
   /** Every request the client sent, in order. */
   readonly requests: Request[] = [];
   readonly restRequests: RestRequest[] = [];
@@ -787,6 +797,13 @@ export class FakeHermes {
     for (const r of ["GET /api/health", "GET /api/files", "GET /api/files/read", "GET /api/fs/list"]) delete this.rest[r];
     this.status = { version: "0.16.0", release_date: "2026.6.8", auth_required: true, auth_providers: ["basic"] };
     this.botMode = "none";
+  }
+
+  authority?: FakeAuthority;
+
+  asCanonical(options: CanonicalOptions = {}) {
+    this.readyPayload = { ...CANONICAL_READY };
+    return (this.authority = new FakeAuthority(this, options));
   }
 
   /** Per-method behaviour; tests override entries. Unhandled methods get no answer. */
@@ -1920,15 +1937,20 @@ export class FakeHermes {
     this.opened++;
     this.wsProfiles.push(profile);
     this.closed = false;
-    // Runtime sessions belong to the connection that started them; closing it detaches them (research doc §5).
-    this.runtime.clear();
-    this.onEvent = onEvent;
-    // The server writes gateway.ready as soon as the socket is accepted.
-    this.frame({ jsonrpc: "2.0", method: "event", params: { type: "gateway.ready", payload: this.readyPayload } });
+    const canonical = this.authority?.connect(onEvent, profile);
+    if (canonical) this.onEvent = this.authority!.route;
+    else {
+      // Runtime sessions belong to the connection that started them; closing it detaches them (research doc §5).
+      this.runtime.clear();
+      this.onEvent = onEvent;
+      // The server writes gateway.ready as soon as the socket is accepted.
+      this.frame({ jsonrpc: "2.0", method: "event", params: { type: "gateway.ready", payload: this.readyPayload } });
+    }
     // A new connection hasn't said yet whether it answers server→client requests.
     this.answersRequests = false;
     const restCall = (method: RestMethod, pathAndQuery: string, body?: string) => this.restCall(method, pathAndQuery, body);
     const send = async (text: string) => {
+      this.onWire(text);
       if (this.failSend !== undefined) throw new Error(this.failSend);
       const req = JSON.parse(text) as Request | Response;
       if (!("method" in req)) {
@@ -1939,6 +1961,7 @@ export class FakeHermes {
         return;
       }
       this.requests.push(req);
+      if (canonical) return canonical.request(req);
       this.handlers[req.method]?.(req);
     };
     return {
@@ -2015,6 +2038,7 @@ export class FakeHermes {
       },
       close: async () => {
         this.closed = true;
+        canonical?.close();
         this.managedFiles.stopAll();
       },
     };
@@ -2022,6 +2046,7 @@ export class FakeHermes {
 
   /** One dashboard REST call as the Rust relay makes it: the answer's body on 2xx, or an error worded as Rust words it. */
   private async restCall(method: RestMethod, pathAndQuery: string, body?: string): Promise<string> {
+    this.onWire(`${method} ${pathAndQuery}${body === undefined ? "" : ` ${body}`}`);
     const url = new URL(pathAndQuery, "http://dashboard/");
     const req: RestRequest = { method, path: url.pathname, query: url.searchParams, body: body === undefined ? undefined : JSON.parse(body) };
     this.restRequests.push(req);
@@ -2580,8 +2605,8 @@ export class FakeHermes {
     this.frame({ jsonrpc: "2.0", id, result });
   }
 
-  fail(id: number, code: number, message: string) {
-    this.frame({ jsonrpc: "2.0", id, error: { code, message } });
+  fail(id: number, code: number, message: string, data?: unknown) {
+    this.frame({ jsonrpc: "2.0", id, error: { code, message, ...(data !== undefined && { data }) } });
   }
 
   /** The runtime sessions with a turn running, as far as this fake has heard: started by a prompt or `message.start`, ended by `message.complete` or `error`. */
@@ -2598,6 +2623,7 @@ export class FakeHermes {
   readonly stopped = new Set<string>();
 
   event(sessionId: string, type: string, payload: Record<string, unknown> = {}) {
+    if (this.authority) return this.authority.event(sessionId, type, payload);
     if (type === "message.start") {
       this.turns.add(sessionId);
       const stored = this.runtime.get(sessionId);
@@ -2748,6 +2774,8 @@ export class FakeHermes {
    * connection is down stays open for the next resume.
    */
   ask(sid: string, method: string, params: Record<string, unknown>): string | undefined {
+    // A canonical gateway asks an Approval and a Clarify with events; Sudo and Secret stay requests.
+    if (this.authority && (method === "approval" || method === "clarify")) return this.authority.ask(sid, method, params);
     if (!this.answersRequests) return undefined;
     const id = `srq-${(++this.asked).toString(16).padStart(12, "0")}`;
     this.openRequests.set(id, { sid, stored: this.runtime.get(sid)!, method, params });
@@ -3332,6 +3360,7 @@ export class FakeHermes {
       throw new RestError(409, `{"detail":"client_upgrade_required: this app is out of sync (different versions) with the Hermes backend; update the app to edit sessions"}`);
     if (body.request_id === undefined || body.expected_revision === undefined)
       throw new RestError(409, `{"detail":"mutation_identity_required"}`);
+    if (this.authority) return this.authority.patch(id, body);
     const s = this.storeOrFail(body.profile as string | undefined).find((r) => r.id === id);
     if (!s || !EDITABLE_SOURCES.has(s.source)) throw new RestError(404, `{"detail":"not_found"}`);
     if (body.expected_revision !== (s.runtime_revision ?? 0)) throw new RestError(409, `{"detail":"revision_conflict"}`);

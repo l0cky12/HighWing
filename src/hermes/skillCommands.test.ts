@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import golden from "./skillInvocationGolden.json";
 import { listServerCommands } from "./commands";
+import { legacyOver } from "./fakeSessions";
 import { RpcError } from "./transport";
 import {
   callText,
@@ -181,24 +182,24 @@ describe("Running a skill", () => {
   it("asks command.dispatch for the session, and keeps the skill text apart from what the chat shows", async () => {
     const calls: unknown[] = [];
     const ran = await runSkill(
-      async (method, params) => {
+      legacyOver(async (method, params) => {
         calls.push({ method, params });
         return { type: "skill", message: golden[0].content, name: "debugging", display: "/debugging fix the build using $debugging" };
-      },
+      }),
       "rt1",
       { name: "debugging", arg: "fix the build using $debugging" },
     );
     expect(calls).toEqual([{ method: "command.dispatch", params: { name: "debugging", arg: "fix the build using $debugging", session_id: "rt1" } }]);
     expect(ran).toEqual({ message: golden[0].content, display: "/debugging fix the build using $debugging" });
     // An older answer without `display`: read from the message, as Hermes's history would.
-    const older = await runSkill(async () => ({ type: "skill", message: golden[0].content, name: "debugging" }), "rt1", { name: "debugging", arg: "x" });
+    const older = await runSkill(legacyOver(async () => ({ type: "skill", message: golden[0].content, name: "debugging" })), "rt1", { name: "debugging", arg: "x" });
     expect(older.display).toBe("/debugging fix the build using $debugging");
   });
 
   it("sends nothing when Hermes answers anything but a skill", async () => {
-    await expect(runSkill(async () => ({ type: "send", message: "bundle", notice: "Loading bundle" }), "rt1", { name: "x", arg: "" })).rejects.toThrow(/nothing was sent/);
-    await expect(runSkill(async () => ({ type: "exec", output: "ran" }), "rt1", { name: "x", arg: "" })).rejects.toThrow(/nothing was sent/);
-    await expect(runSkill(() => Promise.reject(new RpcError(4018, "not a quick/plugin/bundle/skill command: x")), "rt1", { name: "x", arg: "" })).rejects.toThrow(
+    await expect(runSkill(legacyOver(async () => ({ type: "send", message: "bundle", notice: "Loading bundle" })), "rt1", { name: "x", arg: "" })).rejects.toThrow(/nothing was sent/);
+    await expect(runSkill(legacyOver(async () => ({ type: "exec", output: "ran" })), "rt1", { name: "x", arg: "" })).rejects.toThrow(/nothing was sent/);
+    await expect(runSkill(legacyOver(() => Promise.reject(new RpcError(4018, "not a quick/plugin/bundle/skill command: x"))), "rt1", { name: "x", arg: "" })).rejects.toThrow(
       /no x skill to run.*turned off or removed/,
     );
   });

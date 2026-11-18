@@ -2,6 +2,7 @@
 // commands, with the request shapes read from Hermes's source at the deployed `bf0203a`.
 import { describe, expect, it } from "vitest";
 import { COMMANDS, argProblem, completion, listServerCommands, matchCommands, menuQuery, runServerCommand, typedCommand } from "./commands";
+import { legacyOver } from "./fakeSessions";
 import { RpcError } from "./transport";
 
 const def = (name: string) => COMMANDS.find((c) => c.name === name)!;
@@ -102,8 +103,8 @@ describe("Server commands", () => {
       calls.push({ method, params });
       return method === "command.dispatch" ? { type: "send", message: "a\nb", notice: "No agent running" } : { output: "12k tokens" };
     };
-    expect(await runServerCommand(rpc, "rt1", def("steer"), "a\nb")).toEqual({ kind: "send", message: "a\nb", notice: "No agent running" });
-    expect(await runServerCommand(rpc, "rt1", def("context"), "")).toEqual({ kind: "output", text: "12k tokens" });
+    expect(await runServerCommand(rpc, legacyOver(rpc), "rt1", def("steer"), "a\nb")).toEqual({ kind: "send", message: "a\nb", notice: "No agent running" });
+    expect(await runServerCommand(rpc, legacyOver(rpc), "rt1", def("context"), "")).toEqual({ kind: "output", text: "12k tokens" });
     expect(calls).toEqual([
       { method: "command.dispatch", params: { name: "steer", arg: "a\nb", session_id: "rt1" } },
       { method: "slash.exec", params: { command: "/context", session_id: "rt1" } },
@@ -111,6 +112,6 @@ describe("Server commands", () => {
   });
 
   it("refuse an answer they don't know how to show", async () => {
-    await expect(runServerCommand(async () => ({ type: "prefill", message: "x" }), "rt1", def("steer"), "x")).rejects.toThrow(/doesn't handle/);
+    await expect(runServerCommand(async () => undefined, legacyOver(async () => ({ type: "prefill", message: "x" })), "rt1", def("steer"), "x")).rejects.toThrow(/doesn't handle/);
   });
 });

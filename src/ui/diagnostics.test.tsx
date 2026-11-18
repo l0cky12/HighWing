@@ -41,6 +41,7 @@ function scriptedStore(answers: Record<string, unknown>) {
   const io: CapabilityIO = {
     get: (p) => answer(`GET ${p.split("?")[0]}`).then((v) => JSON.stringify(v)),
     rpc: (m) => answer(`RPC ${m}`),
+    approvalProbe: () => answer("RPC approval.respond"),
     put: (p) => answer(`PUT ${p.split("?")[0]}`).then((v) => JSON.stringify(v)),
     post: (p) => answer(`POST ${p.split("?")[0]}`).then((v) => JSON.stringify(v)),
   };

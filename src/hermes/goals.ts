@@ -4,6 +4,7 @@
 // `hermes_cli/goal_command.py` (the /goal grammar), `hermes_cli/goals.py` (contract lines, checks and the judge) and
 // `tui_gateway/methods_tools.py` `_cmd_goal`.
 import type { Rpc } from "./commands";
+import type { SessionProtocol } from "./sessionProtocol";
 import { errorText, isObj } from "./values";
 
 /** A check's limits, fixed in Hermes (`DEFAULT_GATE_TIMEOUT_SECONDS`, `DEFAULT_GATE_MAX_RETRIES`): /goal can't change them. */
@@ -182,7 +183,14 @@ export async function readControl(rpc: Rpc, sid: string): Promise<Control> {
  * go now. Resolves with that read and the message Hermes wants sent as the chat's next turn, which is what starts the
  * goal. Rejects saying what happened, with no turn started.
  */
-export async function setGoal(rpc: Rpc, sid: string, d: GoalDraft, seen: string, refusal: () => string | undefined = () => undefined): Promise<{ control: Control; kickoff: string }> {
+export async function setGoal(
+  rpc: Rpc,
+  sessions: Pick<SessionProtocol, "command">,
+  sid: string,
+  d: GoalDraft,
+  seen: string,
+  refusal: () => string | undefined = () => undefined,
+): Promise<{ control: Control; kickoff: string }> {
   const problem = draftProblem(d) ?? refusal();
   if (problem) throw new Error(problem);
   const before = await readControl(rpc, sid);
@@ -190,14 +198,14 @@ export async function setGoal(rpc: Rpc, sid: string, d: GoalDraft, seen: string,
     throw new GoalWriteError("This chat's goal changed since you opened Set a goal, so nothing was saved. Look at the goal, then set it again.", before);
   const now = refusal();
   if (now) throw new Error(`${now} Nothing was saved.`);
-  const set = await rpc("command.dispatch", { name: "goal", arg: goalArg(d), session_id: sid });
+  const set = await sessions.command(sid, "goal", goalArg(d));
   if (!isObj(set) || set.type !== "send" || typeof set.message !== "string" || !set.message)
     throw new GoalWriteError("Hermes didn't answer /goal as it does when it sets a goal, so nothing was started.", await readControl(rpc, sid).catch(() => undefined));
   if (d.check.trim()) {
     try {
       const late = refusal();
       if (late) throw new Error(late);
-      await rpc("command.dispatch", { name: "goal", arg: checkArg(d), session_id: sid });
+      await sessions.command(sid, "goal", checkArg(d));
     } catch (e) {
       throw new GoalWriteError(`Hermes set the goal but didn't add its check: ${errorText(e).replace(/\.?$/, ".")} Nothing was started.`, await readControl(rpc, sid).catch(() => undefined));
     }

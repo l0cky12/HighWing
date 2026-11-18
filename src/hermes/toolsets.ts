@@ -32,7 +32,7 @@
 
 import { RestError, type ToolsetGuards } from "./pipe";
 import { errorText, textOrEmpty } from "./values";
-import type { AppMethod } from "./canonicalVerbs";
+import type { PlainMethod, SessionProtocol } from "./sessionProtocol";
 
 export type { ToolsetGuards };
 
@@ -113,7 +113,7 @@ const cautionKey = (c: Caution) =>
 const PROVIDER_TOOLSETS = ["web", "browser", "image_gen", "video_gen", "x_search", "tts", "stt", "computer_use"];
 
 /** One JSON-RPC call over the connection's WS socket; resolves to the result, rejects with a `code` on Hermes's error. */
-export type Rpc = (method: AppMethod, params: Record<string, unknown>) => Promise<unknown>;
+export type Rpc = (method: PlainMethod, params: Record<string, unknown>) => Promise<unknown>;
 
 /**
  * What one open chat is offered, read from Hermes. `read`: the tool names its agent has now. `closed`: Hermes no longer
@@ -220,8 +220,7 @@ export class ToolsetsApi {
     private readonly readGuards: (profile: string) => Promise<ToolsetGuards>,
     /** Called after a change Hermes may have taken, so cached reads that depend on it are dropped. */
     private readonly changed: (profile: string, name: string) => void = () => {},
-    /** The WS socket, for what one open chat has (`chatTools`). */
-    private readonly rpc?: Rpc,
+    private readonly live?: { rpc: Rpc; sessions: () => Pick<SessionProtocol, "info"> },
     /**
      * Called as the write check starts, for where to say what it found: whether Hermes has the switch's route
      * (capabilities.ts `toolsetSwitches`). Asked at the start, so an answer that comes after a reconnect or profile
@@ -240,7 +239,7 @@ export class ToolsetsApi {
    *   only when `session.status` still finds the session after it: then it was there while `tools.show` read it.
    */
   async chatTools(profile: string, runtimeId: string): Promise<ChatTools> {
-    if (!this.rpc) return { kind: "unsupported", reason: "This app can't ask Hermes about one chat here." };
+    if (!this.live) return { kind: "unsupported", reason: "This app can't ask Hermes about one chat here." };
     const served = textOrEmpty(obj(await this.rest("GET", "api/profiles/active")).current);
     if (served !== profile)
       return {
@@ -249,8 +248,8 @@ export class ToolsetsApi {
       };
     let shown: Json;
     try {
-      shown = obj(await this.rpc("tools.show", { session_id: runtimeId }));
-      await this.rpc("session.status", { session_id: runtimeId });
+      shown = obj(await this.live.rpc("tools.show", { session_id: runtimeId }));
+      await this.live.sessions().info(runtimeId);
     } catch (e) {
       if (rpcCode(e) === -32601) return { kind: "unsupported", reason: "This Hermes server doesn't say which tools an open chat has." };
       if (rpcCode(e) === 4001) return { kind: "closed" };

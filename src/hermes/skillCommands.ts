@@ -12,7 +12,8 @@
 //   history shows that turn as `display` (`session_history._skill_scaffold_projection`).
 // - `$skill` is this app's own way to name a skill anywhere in a message. Hermes has no `$` form: the message goes out as
 //   the same `command.dispatch` a leading `/skill` would make, with every skill named stacked in front of the words.
-import { COMMANDS, type Rpc } from "./commands";
+import { COMMANDS } from "./commands";
+import type { SessionProtocol } from "./sessionProtocol";
 import type { SkillsView } from "./skills";
 import { isObj } from "./values";
 
@@ -217,10 +218,10 @@ const NOT_DISPATCHED = 4018;
  * next turn (`message`), and what the chat shows for it (`display`). Rejects, having sent nothing, when Hermes answers
  * anything but a skill, as a bundle or quick command of the same name would.
  */
-export async function runSkill(rpc: Rpc, sessionId: string, call: SkillCall): Promise<{ message: string; display: string }> {
+export async function runSkill(sessions: Pick<SessionProtocol, "command">, sessionId: string, call: SkillCall): Promise<{ message: string; display: string }> {
   let res: unknown;
   try {
-    res = await rpc("command.dispatch", { name: call.name, arg: call.arg, session_id: sessionId });
+    res = await sessions.command(sessionId, call.name, call.arg);
   } catch (e) {
     if (isObj(e) && e.code === NOT_DISPATCHED)
       throw new Error(`Hermes has no ${call.name} skill to run for this chat now. It may have been turned off or removed.`);

@@ -2590,8 +2590,8 @@ export class FakeHermes {
     this.frame({ jsonrpc: "2.0", id, result });
   }
 
-  fail(id: number, code: number, message: string) {
-    this.frame({ jsonrpc: "2.0", id, error: { code, message } });
+  fail(id: number, code: number, message: string, data?: unknown) {
+    this.frame({ jsonrpc: "2.0", id, error: { code, message, ...(data !== undefined && { data }) } });
   }
 
   /** The runtime sessions with a turn running, as far as this fake has heard: started by a prompt or `message.start`, ended by `message.complete` or `error`. */

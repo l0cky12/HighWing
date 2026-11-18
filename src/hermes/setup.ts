@@ -6,7 +6,11 @@ import type { Route } from "./pipe";
 import type { Reached, SignInDetails } from "./tauriPipe";
 import { isUnsecure } from "./unsecure";
 import { KIND_LABEL, RoutesFailedError, routeTargetLabel, routesOf, singleRoute, type RouteDetails } from "./routes";
-import { errorText, textOrEmpty } from "./values";
+import { errorText, isObj, textOrEmpty } from "./values";
+import { negotiate, type Port } from "./sessionProtocol";
+import { SignInFailure } from "./signInFailure";
+
+export { SignInFailure };
 
 /**
  * How far a connection test got: the address or SSH tunnel, the dashboard's port, the sign-in, then the chat
@@ -27,19 +31,6 @@ export type ProbeFailure = { stage: Stage; message: string; status?: string | nu
 
 /** A call the dashboard answered with a failure: its HTTP status and the start of its body. */
 export type Answered = { status: number; body: string };
-
-/** A real sign-in that failed (src-tauri `hermes_connect`), as an Error that keeps the stage and answer Rust gave. */
-export class SignInFailure extends Error implements ProbeFailure {
-  readonly stage: Stage;
-  readonly status?: string | null;
-  readonly answered?: Answered;
-  constructor(f: ProbeFailure) {
-    super(f.message);
-    this.stage = f.stage;
-    this.status = f.status;
-    this.answered = f.answered;
-  }
-}
 
 /**
  * What the sign-in screen explains: a sign-in that failed, every route of one failing, or a note Hermes Chat wrote
@@ -128,9 +119,15 @@ export function readStatus(raw?: string | null): DashboardStatus | undefined {
   };
 }
 
-/** Why the first frame isn't a legacy `gateway.ready` (the generation Hermes Chat speaks, ADR 0003); none when it is. */
+const NO_PORT: Port = {
+  call: () => Promise.reject(new Error("Not connected to Hermes.")),
+  reply: () => Promise.reject(new Error("Not connected to Hermes.")),
+  inHermesQueue: () => false,
+  track: () => {},
+};
+
 function notReady(frame: string): ProbeFailure | undefined {
-  let f: { method?: unknown; params?: { type?: unknown; payload?: { session_authority?: unknown } } };
+  let f: { method?: unknown; params?: { type?: unknown; payload?: unknown } };
   try {
     f = JSON.parse(frame);
   } catch {
@@ -138,8 +135,12 @@ function notReady(frame: string): ProbeFailure | undefined {
   }
   if (f?.method !== "event" || f.params?.type !== "gateway.ready")
     return { stage: "chat", message: "Hermes's first message on the chat connection wasn't gateway.ready." };
-  if (f.params.payload?.session_authority)
-    return { stage: "chat", message: "This Hermes server speaks the canonical session protocol, which Highwing doesn't support yet." };
+  try {
+    negotiate(isObj(f.params.payload) ? f.params.payload : {}, NO_PORT);
+  } catch (e) {
+    if (!(e instanceof SignInFailure)) throw e;
+    return { stage: e.stage, message: e.message };
+  }
 }
 
 const asFailure = (e: unknown): ProbeFailure =>

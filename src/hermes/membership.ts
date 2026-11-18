@@ -1,5 +1,5 @@
 import { isObj, nonEmptyText } from "./values";
-import type { AppMethod } from "./canonicalVerbs";
+import type { PlainMethod } from "./sessionProtocol";
 // Which chats are in which project, kept by Hermes so every computer shows the same (ADR 0109, #84).
 //
 // Hermes at the deployed `bf0203a`, and upstream at `9302ba9e` (2026-11-03), has no record linking a project to its
@@ -77,8 +77,8 @@ function toResult(v: unknown): OpResult | undefined {
 }
 
 /** The membership calls over the dashboard's legacy JSON-RPC. */
-export function membershipApi(rpc: (method: AppMethod, params: Record<string, unknown>) => Promise<unknown>): MembershipApi {
-  const call = async (method: AppMethod, params: Record<string, unknown>) => {
+export function membershipApi(rpc: (method: PlainMethod, params: Record<string, unknown>) => Promise<unknown>): MembershipApi {
+  const call = async (method: PlainMethod, params: Record<string, unknown>) => {
     try {
       return await rpc(method, params);
     } catch (e) {

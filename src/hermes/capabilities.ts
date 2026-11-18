@@ -23,6 +23,7 @@ import { redactSecrets } from "./secrets";
 import { RestError, type RestMethod } from "./pipe";
 import { errorText, isObj } from "./values";
 import type { AppMethod } from "./canonicalVerbs";
+import type { PlainMethod } from "./sessionProtocol";
 import { listServerCommands } from "./commands";
 
 /** The features whose server support is tracked. */
@@ -93,7 +94,7 @@ type Probe =
   | { kind: "rest"; path: (profile: string) => string; maxBytes?: number; shape: (body: unknown) => boolean; lacks?: (body: unknown) => string | undefined }
   | {
       kind: "rpc";
-      method: AppMethod;
+      method: PlainMethod;
       params: (profile: string) => Record<string, unknown>;
       shape: (result: unknown) => boolean;
       lacks?: (result: unknown) => string | undefined;
@@ -218,7 +219,7 @@ export const CAPABILITIES: readonly CapabilitySpec[] = [
     // `dashboard.turn_isolation` decides.
     writeCheck: {
       says: "an answer to an Approval no chat has",
-      send: (io) => io.rpc("approval.respond", { session_id: PROBE_NAME, request_id: PROBE_NAME, choice: "deny" }),
+      send: (io) => io.approvalProbe(PROBE_NAME),
       context: (io, profile) => io.get(`api/config?${new URLSearchParams({ profile })}`, 2 * 1024 * 1024).then(turnIsolationOf),
       read: (o, isolation) => {
         const has = "answer" in o ? isObj(o.answer) && o.answer.resolved === 0 : o.failure.rpcCode === SESSION_NOT_FOUND;
@@ -869,7 +870,8 @@ export function approvalsFailed(e: unknown): Pick<Capability, "state" | "why"> {
 /** How the store reaches Hermes. Each call fails as the transport words it. */
 export type CapabilityIO = {
   get(pathAndQuery: string, maxBytes?: number): Promise<string>;
-  rpc(method: AppMethod, params: Record<string, unknown>): Promise<unknown>;
+  rpc(method: PlainMethod, params: Record<string, unknown>): Promise<unknown>;
+  approvalProbe(name: string): Promise<unknown>;
   /** A dashboard `PUT`, for a write check only (`WriteCheck`). */
   put(pathAndQuery: string, body: unknown): Promise<string>;
   /** A dashboard `POST`, for a write check only (`WriteCheck`). */

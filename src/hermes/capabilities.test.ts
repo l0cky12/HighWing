@@ -91,6 +91,7 @@ function scripted(answers: Record<string, unknown>) {
   const io: CapabilityIO = {
     get: (pathAndQuery) => answer(`GET ${pathAndQuery.split("?")[0]}`).then((v) => (typeof v === "string" ? v : JSON.stringify(v))),
     rpc: (method) => answer(`RPC ${method}`),
+    approvalProbe: () => answer("RPC approval.respond"),
     put: (pathAndQuery) => answer(`PUT ${pathAndQuery.split("?")[0]}`).then((v) => JSON.stringify(v)),
     post: (pathAndQuery) => answer(`POST ${pathAndQuery.split("?")[0]}`).then((v) => JSON.stringify(v)),
   };

@@ -11,6 +11,7 @@
 // `projects=unsupported,toolsets=supported`.
 import { describe, expect, it } from "vitest";
 import { CAPABILITIES, CapabilityStore, reportText, type CapabilityIO } from "./capabilities";
+import { legacyOver } from "./fakeSessions";
 import { RpcError } from "./transport";
 import { RestError } from "./pipe";
 
@@ -65,6 +66,7 @@ async function signedIn() {
       return text;
     },
     rpc,
+    approvalProbe: (name) => legacyOver(rpc).approvalProbe(name),
     put: async (path, body) => {
       sent.push(`PUT ${path.split("?")[0]}`);
       const res = await send("PUT", path, body);

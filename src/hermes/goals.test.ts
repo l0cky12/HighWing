@@ -3,6 +3,7 @@
 // Resume and Clear, and the capability check, against FakeHermes with the shapes Hermes has at `bf0203a`.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FakeHermes, row } from "./fakeHermes";
+import { legacyOver } from "./fakeSessions";
 import { connect, type Hermes } from "./transport";
 import { localChatCache } from "./chatCache";
 import { controlOf, draftProblem, goalArg, readBackProblem, setGoal, type Control, type GoalDraft } from "./goals";
@@ -131,7 +132,7 @@ describe("Setting a goal", () => {
     };
     let reads = 0;
     const refusal = () => (reads++ ? "A reply is running. Set the goal once it ends." : undefined);
-    await expect(setGoal(rpc, "rt", DRAFT, "", refusal)).rejects.toThrow("A reply is running. Set the goal once it ends. Nothing was saved.");
+    await expect(setGoal(rpc, legacyOver(rpc), "rt", DRAFT, "", refusal)).rejects.toThrow("A reply is running. Set the goal once it ends. Nothing was saved.");
     expect(calls).toEqual(["session.control.read"]);
   });
 

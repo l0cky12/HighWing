@@ -249,6 +249,21 @@ describe("A chat link and what the owner does meanwhile", () => {
     expect(notice()).toBeNull();
   });
 
+  it("names a reply started while a slow lookup ran in the toast of the switch it leads to", async () => {
+    const { server, hermes, linkTo, open } = await launch();
+    const answer = holdProfiles(server);
+    await open(linkTo("work", "deploy"));
+    await screen.findByLabelText("Chat link");
+    await act(async () => {
+      const id = await hermes.newChat();
+      await hermes.send(id, "Summarise the logs");
+    });
+    answer();
+    await waitFor(() => expect(onScreen()).toBe("Deploy plan"));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(screen.getByRole("status").textContent).toMatch(/A reply is still running in default/);
+  });
+
   it("drops a slow lookup's answer once the owner has opened another chat meanwhile", async () => {
     const { server, linkTo, open, user } = await launch();
     const answer = holdProfiles(server);

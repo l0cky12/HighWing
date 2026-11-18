@@ -2182,8 +2182,10 @@ export function Main({
     shown?.set(prefScope(connection, name), null);
     if (!keepSettings) setSettingsOpen(false);
     setProjectOpen(false);
-    // A running reply isn't asked about: Hermes keeps it going, so the switch says so after it (ADR 0224).
-    setToast(chats.some((c) => c.running) ? { text: words.profiles.leaving.reply(profile), at: Date.now() } : null);
+    // A running reply isn't asked about: Hermes keeps it going, so the switch says so after it (ADR 0224). Read now, not
+    // from this render: a chat link's switch runs after a lookup that can outlast a reply starting or ending.
+    const left = hermes.getSnapshot();
+    setToast(left.chats.some((c) => c.running) ? { text: words.profiles.leaving.reply(left.profile), at: Date.now() } : null);
     // What the Preview showed was the old profile's; the Screen tab starts again for the new one.
     stepPreview({ kind: "clear" });
     if (panelTab === "preview") setPanelOpen(false);

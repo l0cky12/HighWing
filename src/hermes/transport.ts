@@ -1915,8 +1915,7 @@ export class Hermes {
         // Answers about sessions no longer live are dropped.
         const live = new Set(sessions.map((s) => s.key));
         for (const m of [this.sessionOwners, this.ownerTried]) for (const k of m.keys()) if (!live.has(k)) m.delete(k);
-        // Rows don't say their profile or source. Each other session is looked up by its id in every profile, a few per
-        // check, the ones tried longest ago first.
+        // Rows don't say their profile or source.
         const unknown = sessions
           .filter((s) => !s.profile && !this.sessionOwners.has(s.key))
           .sort((a, b) => (this.ownerTried.get(a.key) ?? 0) - (this.ownerTried.get(b.key) ?? 0))
@@ -1931,7 +1930,6 @@ export class Hermes {
         const placed = sessions.flatMap(({ key, ...s }): LiveSession[] => {
           if (s.profile) return [s];
           const owner = this.sessionOwners.get(key);
-          // Until its lookup has run, any row may be a seat's, whatever its title.
           if (owner === "seat" || (owner === undefined && !this.ownerTried.has(key))) return [];
           return [owner ? { ...s, ...owner } : s];
         });

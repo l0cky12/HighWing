@@ -98,8 +98,8 @@ HAND = [
     ("@adaé @bram", FAMILY),
     ("@zoë", ["zo", "ada"]),
     ("@Å", FAMILY),
-    ("@ada @bram", FAMILY),
-    ("@ada​@bram", FAMILY),
+    ("@ada\u00a0@bram", FAMILY),
+    ("@ada\u200b@bram", FAMILY),
     ("😀@ada", FAMILY),
     ("@ada😀", FAMILY),
 ]
@@ -144,7 +144,7 @@ def lift(source: str, where: str):
         sys.exit(f"{where}: expected _MENTION_RE and resolve_mentions, found {len(nodes)} node(s). Hermes renamed or moved them.")
     text = "\n".join(ast.get_source_segment(source, n) or "" for n in nodes)
     ns = {"re": re, "Iterable": Iterable, "Sequence": Sequence, "DiscussionMember": Member}
-    exec(compile(ast.Module(body=nodes, type_ignores=[]), where, "exec"), ns)
+    exec(compile(ast.Module(body=nodes, type_ignores=[]), where, "exec"), ns)  # noqa: S102 - runs the two functions lifted from the Hermes checkout the caller names
     return hashlib.sha256(text.encode()).hexdigest(), ns["resolve_mentions"]
 
 

@@ -19,7 +19,7 @@
 // Profiles' Open goes through the same question. The search box (Ctrl+F) shows the sections of every tab whose text holds
 // what was typed (settingsSearch.ts).
 import type { ToolProgress } from "../hermes/flightRecorder";
-import { Fragment, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ArrowLeft, AudioLines, Blocks, Brain, ChevronDown, Cpu, Download, KeyRound, Keyboard, Lock, LogOut, Palette, PlugZap, Puzzle, RadioTower, Search, Server, Settings2, Share2, ShieldCheck, Stethoscope, Trash2, Users, Wrench, X } from "lucide-react";
 import type { MemorySource } from "../hermes/memory";
 import { EditingProfile, ProfileInUse, SearchHeads, SettingsPage } from "./SettingsPage";
@@ -1106,7 +1106,7 @@ export function SettingsScreen({
   const mainRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [jumps, setJumps] = useState<string[]>([]);
-  const [here, setHere] = useState<string>();
+  const [here] = useState(currentJump);
   const pinned = useRef<{ name: string; settling: number }>(undefined);
   const sectioned = !!sections;
   useLayoutEffect(() => {
@@ -1126,13 +1126,13 @@ export function SettingsScreen({
     const main = mainRef.current;
     const root = panelRef.current;
     pinned.current = undefined;
-    if (!main || !root || jumps.length < 2) return setHere(undefined);
+    if (!main || !root || jumps.length < 2) return here.set(undefined);
     const spy = () => {
       const pin = pinned.current;
       if (pin && Date.now() < pin.settling) {
         // The jump's own scroll: it settles once 150 ms pass without one.
         pin.settling = Date.now() + 150;
-        return setHere(pin.name);
+        return here.set(pin.name);
       }
       pinned.current = undefined;
       const secs = jumpSections(root);
@@ -1141,24 +1141,24 @@ export function SettingsScreen({
       let cur = secs[0];
       for (const s of secs) if (s.getBoundingClientRect().top <= top + 4) cur = s;
       if (main.scrollTop > 0 && main.scrollTop + main.clientHeight >= main.scrollHeight - 2) cur = secs[secs.length - 1];
-      setHere(headingOf(cur));
+      here.set(headingOf(cur));
     };
     spy();
     main.addEventListener("scroll", spy, { passive: true });
     return () => main.removeEventListener("scroll", spy);
-  }, [jumps]);
+  }, [jumps, here]);
   const jump = (name: string) => {
     const s = panelRef.current && jumpSections(panelRef.current).find((x) => headingOf(x) === name);
     if (!s) return;
     pinned.current = { name, settling: Date.now() + 150 };
-    setHere(name);
+    here.set(name);
     s.scrollIntoView?.({ block: "start" });
   };
   /** Under the open page in the tree: its sections, or its headings to jump to. */
-  const children: { id: string; label: string; current: boolean; go: () => void; jump?: boolean }[] = sections
+  const children: SubLink[] = sections
     ? sections.items.map((i) => ({ id: i.id, label: i.label, current: i.id === sections.selected, go: () => sections.onPick(i.id) }))
     : jumps.length >= 2
-      ? jumps.map((j) => ({ id: j, label: j, current: j === (here ?? jumps[0]), go: () => jump(j), jump: true }))
+      ? jumps.map((j, at) => ({ id: j, label: j, jump: { here, first: at === 0 }, go: () => jump(j) }))
       : [];
 
   // The narrow window (760 px wide at the least) has no room for the sidebar: a bar names the page and opens the same
@@ -1281,14 +1281,7 @@ export function SettingsScreen({
                 {kids && (
                   <div className="settings-subs" role="group" aria-label={`${label}: ${sections ? "sections" : "on this page"}`} onKeyDown={(e) => moveAmong(e, ".settings-sub")}>
                     {children.map((c) => (
-                      <button
-                        key={c.id}
-                        className={`settings-sub ${c.current ? "on" : ""}`}
-                        aria-current={c.current ? (c.jump ? "location" : "page") : undefined}
-                        onClick={() => (c.go(), setSheet(false))}
-                      >
-                        {c.label}
-                      </button>
+                      <SubLinkButton key={c.id} link={c} className="settings-sub" onClick={() => (c.go(), setSheet(false))} />
                     ))}
                   </div>
                 )}
@@ -1392,9 +1385,7 @@ export function SettingsScreen({
             {!searching && children.length > 0 && (
               <div className="settings-chips" role="group" aria-label={`${tabLabel(shownTab)}: ${sections ? "sections" : "on this page"}`} onKeyDown={(e) => moveAmong(e, "button", true)}>
                 {children.map((c) => (
-                  <button key={c.id} className={c.current ? "on" : ""} aria-current={c.current ? (c.jump ? "location" : "page") : undefined} onClick={c.go}>
-                    {c.label}
-                  </button>
+                  <SubLinkButton key={c.id} link={c} onClick={c.go} />
                 ))}
               </div>
             )}
@@ -1453,6 +1444,40 @@ export function SettingsScreen({
         </div>
       </div>
     </SettingsSearching.Provider>
+  );
+}
+
+/** Which jump link is current. Only the links subscribe, so a scroll renders them again and not the page. */
+type CurrentJump = { get: () => string | undefined; set: (name: string | undefined) => void; subscribe: (changed: () => void) => () => void };
+function currentJump(): CurrentJump {
+  let name: string | undefined;
+  const watchers = new Set<() => void>();
+  return {
+    get: () => name,
+    set: (next) => {
+      if (next === name) return;
+      name = next;
+      for (const changed of watchers) changed();
+    },
+    subscribe: (changed) => {
+      watchers.add(changed);
+      return () => watchers.delete(changed);
+    },
+  };
+}
+
+/** Under the open page, in the tree and in the narrow bar: one of its sections, or one of its headings to jump to. */
+type SubLink = { id: string; label: string; go: () => void } & ({ current: boolean; jump?: undefined } | { current?: undefined; jump: { here: CurrentJump; first: boolean } });
+const noJump: CurrentJump = currentJump();
+
+function SubLinkButton({ link, className, onClick }: { link: SubLink; className?: string; onClick: () => void }) {
+  const here = link.jump?.here ?? noJump;
+  const at = useSyncExternalStore(here.subscribe, here.get);
+  const current = link.jump ? (at === undefined ? link.jump.first : at === link.id) : link.current;
+  return (
+    <button className={[className, current && "on"].filter(Boolean).join(" ")} aria-current={current ? (link.jump ? "location" : "page") : undefined} onClick={onClick}>
+      {link.label}
+    </button>
   );
 }
 

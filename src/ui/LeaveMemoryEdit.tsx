@@ -1,4 +1,4 @@
-// Asking before an unsaved edit in Settings → Memory or Settings → Skills is dropped: by leaving Settings, opening a chat, switching
+// Asking before an unsaved edit in Settings → Memory, Settings → Skills or the profile form's Persona is dropped: by leaving Settings, opening a chat, switching
 // profile, signing out, or closing the window (MemorySettings.tsx). The edit lives only on screen, so it would be lost.
 import { useEffect, useId } from "react";
 import { guardWindowClose } from "./tauriWindow";
@@ -14,8 +14,8 @@ export function LeaveMemoryEdit({
   profile: string;
   onStay: () => void;
   onDiscard: () => void;
-  /** Whose edit it is: Settings → Memory's, or Settings → Skills'. */
-  subject?: "memory" | "skill";
+  /** Whose edit it is: Settings → Memory's, Settings → Skills', or the profile form's Persona. */
+  subject?: "memory" | "skill" | "persona";
 }) {
   const noteId = useId();
   return (
@@ -40,6 +40,10 @@ export function LeaveMemoryEdit({
           {subject === "skill" ? (
             <>
               You have an edit to a skill in the <span className="mono">{profile}</span> profile{" "}
+            </>
+          ) : subject === "persona" ? (
+            <>
+              You have an edit to the persona of the <span className="mono">{profile}</span> profile{" "}
             </>
           ) : (
             "You have an edit in Settings → Memory, to a memory entry or a memory provider's settings, "

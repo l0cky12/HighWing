@@ -1,11 +1,11 @@
 # New bot
 
-Bots mode's New bot (the New profile form) makes a profile from a name, a description, a model and a persona. Generate with AI beside Persona rewrites the rough persona the owner typed into an editable suggestion, which reaches the box only on Replace persona. Skills and Tools keep Hermes's defaults unless the owner picks Choose and ticks what the new bot starts with; after the create each choice is read back from the new profile, and the dialog stays open on anything not applied, with Delete or Keep it as is. MCP servers show a note that they can't be added while creating.
+Bots mode's New bot (the New profile form) makes a profile from a name, a description, a model and a persona. Write with AI beside Persona rewrites the rough persona the owner typed in the field itself, with Undo to put the owner's text back. Edit bot has the same Persona field, read from the bot's SOUL.md, and Edit persona… in a bot's right-click menu opens it there. Skills and Tools keep Hermes's defaults unless the owner picks Choose and ticks what the new bot starts with; after the create each choice is read back from the new profile, and the dialog stays open on anything not applied, with Delete or Keep it as is. MCP servers show a note that they can't be added while creating.
 
 ## Sub-features
 
-- `new-bot-empty-persona`: Generate with AI is off on an empty persona, with the reason under the field.
-- `new-bot-rewrite`: a rough persona, Generate with AI, the suggestion edited, Replace persona, and focus back in the box.
+- `new-bot-empty-persona`: Write with AI is off on an empty persona, with the reason under the field.
+- `new-bot-rewrite`: a rough persona, Write with AI, the field holding the rewrite, Undo, and Write with AI again.
 - `new-bot-rewrite-error`: a rewrite that fails says why and leaves the persona as typed.
 - `new-bot-skills`: Choose, filter, untick built-in skills; the create body is plain, and only the unticked skills are off in the new profile.
 - `new-bot-tools`: Choose, untick and tick toolsets; the new profile has them set, and the profile in use doesn't change.
@@ -21,6 +21,7 @@ Bots mode's New bot (the New profile form) makes a profile from a name, a descri
 
 - The chat list's **Bots** tab → **New bot** (+) above the bots.
 - Settings → Profiles → **New profile** shows the same form.
+- A right-click on a bot's row in the **Bots** tab → **Settings** opens Edit bot, and → **Edit persona…** opens it with focus in Persona.
 
 ## Driving it with wd.mjs
 
@@ -29,14 +30,14 @@ Preconditions:
 - `hv up` with `HV_BUNDLED=1` (built-in skills on `default`) and `HV_PERSONA_REPLY=<file>` (the rewrite's answer), then signed in per [sign-in.md](sign-in.md).
 - `F1='fieldset.bot-setup:nth-of-type(1)'` is Skills and `F2='fieldset.bot-setup:nth-of-type(2)'` is Tools.
 
-- **Open it.** `$S/wd.mjs click '[role=tab][data-mode=bots]'`, `$S/wd.mjs click button "New bot"`, `$S/wd.mjs wait '[role=dialog]' "Create bot"`. The Persona hint reads "Type a rough persona first…" and Generate with AI looks off.
-- **Rewrite.** `$S/wd.mjs fill input "Name" -- bc-synth-1`, `$S/wd.mjs fill textarea "Persona (optional)" -- "<rough text>"`, `$S/wd.mjs wait .set-hint "Rewritten by"`, `$S/wd.mjs click button "Generate with AI"`, `$S/wd.mjs wait textarea "Suggested persona"`. The suggestion holds the file's text.
-- **Edit and replace.** `$S/wd.mjs click textarea "Suggested persona"`, `$S/wd.mjs press Control+End`, `$S/wd.mjs keys '\n- <more>'`, `$S/wd.mjs click button "Replace persona"`, `$S/wd.mjs gone textarea "Suggested persona"`. `$S/wd.mjs value textarea "Persona (optional)"` prints the edited suggestion.
+- **Open it.** `$S/wd.mjs click '[role=tab][data-mode=bots]'`, `$S/wd.mjs click button "New bot"`, `$S/wd.mjs wait '[role=dialog]' "Create bot"`. The Persona hint reads "Type a rough persona first…" and Write with AI looks off.
+- **Rewrite.** `$S/wd.mjs fill input "Name" -- bc-synth-1`, `$S/wd.mjs fill textarea "Persona (optional)" -- "<rough text>"`, `$S/wd.mjs wait .set-hint "writes"` (the hint names the model that writes: a pin, the Writing model, or the bot's own model), `$S/wd.mjs click button "Write with AI"`, `$S/wd.mjs wait button "Undo"`. `$S/wd.mjs value textarea "Persona (optional)"` prints the file's text.
+- **Undo.** `$S/wd.mjs click button "Undo"`, `$S/wd.mjs gone button "Undo"`. `$S/wd.mjs value textarea "Persona (optional)"` prints the rough text again. Write with AI once more before Create.
 - **Skills.** `$S/wd.mjs click "$F1 input[type=radio]" "Choose"`, `$S/wd.mjs wait "$F1 .bot-setup-item" "recipes"`, `$S/wd.mjs fill "$F1 input[type=search]" -- re`, `$S/wd.mjs click "$F1 .bot-setup-item input" "recipes"`. Clear the filter with a click on it, `press Control+a`, `press Backspace`. `$S/wd.mjs text "$F1 [aria-live]"` prints the count.
 - **Tools.** `$S/wd.mjs click "$F2 input[type=radio]" "Choose"`, `$S/wd.mjs wait "$F2 .bot-setup-item" "Terminal"`, then click the toolsets to change.
 - **Create.** `$S/wd.mjs click button "Create bot"`, `$S/wd.mjs gone .profile-dialog`, `$S/wd.mjs wait .toast "with the skills and tools you chose"`. `$S/hv state` shows the create body under `profileCreates`, the SOUL.md under `souls`, `skillsOff` and `toolsetsOn` for the new profile, and `oneshots` with `profile: default`, `task: title_generation`.
-- **Persistence.** A right-click on the new bot's row → **Settings** → **Edit in Settings → Persona** shows the SOUL.md; Settings → Skills with `select "Profile whose skills are shown" -- <name>` shows the skills off.
-- **Error.** Empty the `HV_PERSONA_REPLY` file, then Generate with AI: `wait '[role=alert]' "couldn't rewrite"`, and the persona keeps what was typed.
+- **Persistence.** `$S/wd.mjs rightclick '.sb-bots .bots-row[data-profile=<name>] .bots-open'`, `$S/wd.mjs click '[role=menuitem]' "Edit persona…"`: Edit bot opens with the SOUL.md in `textarea "Persona"`, focused. **Settings** in the same menu opens Edit bot without moving focus to Persona; Settings → Skills with `select "Profile whose skills are shown" -- <name>` shows the skills off.
+- **Error.** Empty the `HV_PERSONA_REPLY` file, then Write with AI: `wait '[role=alert]' "couldn't rewrite"`, and the persona keeps what was typed.
 - **Double Create.** Click Create bot twice quickly: `hv state` `profileCreates` holds one body.
 - **Partial.** Tools → Choose → tick **Computer Use**, Create: `wait .bot-setup-outcome`. **Apply anyway** sets it and lists "Hermes started installing…" under Hermes also; **Done** repeats it in the notice. **Delete <name>** removes it (`hv state` `profiles`), **Keep it as is** closes with a notice naming what isn't applied.
 - **Progress.** With `HV_DELAY_MS=1500`, Tools → Choose → untick two toolsets, Create: `wait '[role=dialog] [role=status]' " of "` reads "n of m done…", and the line around it "Created. Applying … then reading them back: n of m done…".
@@ -51,5 +52,5 @@ Preconditions:
 - A toolset row below the fold answers `element not interactable`: `wheel .profile-dialog -- 500` (and `wheel "$F2 .bot-setup-list" -- 300` for the last rows) first.
 - While the form runs or shows its outcome, it covers the window, and Escape does nothing. The toast with Copy command for a settling delete, and the note after a profile switch, are covered by `src/ui/bots.test.tsx` and `src/ui/botCreation.test.tsx`.
 - Both areas have a radio named Choose; scope it with `$F1` or `$F2`.
-- The rewrite runs on the profile in use's Text generation model, so switching profile changes what the hint names.
+- New's rewrite runs on the model that writes for the profile in use, and Edit's on the one for the edited bot (ADR 0209): its Text generation model when pinned on the server, else the Writing model from Settings → Model, else its own main model. Switching profile changes what the hint names. With a Writing model and no pin, `hv state` `oneshots` shows `task: highwing_writing`.
 - A deterministic stand-in answer proves the app's path, not a provider's rewrite.

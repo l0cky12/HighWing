@@ -1,4 +1,5 @@
 import { BotModeUnsupportedError, type BotRpc } from "./bots";
+import type { SessionProtocol } from "./sessionProtocol";
 import { errorText, isObj } from "./values";
 
 export const THREAD_PREFIX = "Bot Thread: ";
@@ -107,6 +108,7 @@ export class Threads {
 
   constructor(
     private readonly rpc: BotRpc,
+    private readonly sessions: () => SessionProtocol,
     private readonly source: string,
   ) {}
 
@@ -151,13 +153,13 @@ export class Threads {
         taken.push(title);
         continue;
       }
-      const made = await this.rpc("session.create", { profile, title, hidden: true, follow_profile_config: true, source: this.source });
-      const runtime = isObj(made) ? text(made.session_id) : "";
-      const stored = isObj(made) ? text(made.stored_session_id) : "";
+      const made = await this.sessions().open({ kind: "bot", profile, source: this.source, title });
+      const runtime = made.runtimeId;
+      const stored = made.storedId;
       if (!runtime || !stored) throw new Error(`Hermes didn't say which session it started for the thread “${threadTopic(title)}”.`);
       try {
         // A new session has no row until its first message. Naming it now stores it, hidden, under the title.
-        await this.rpc("session.title", { session_id: runtime, title });
+        await this.sessions().edit(runtime, { op: "rename", title });
         return { title, openId: stored, created: true };
       } catch (e) {
         if (!titleInUse(e)) throw new Error(`Hermes started the thread “${threadTopic(title)}” but didn't name it: ${errorText(e)}`);

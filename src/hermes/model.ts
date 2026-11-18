@@ -4,6 +4,7 @@ import type { ModelPick } from "./models";
 import type { ChatUsage, ReplyUsage } from "./usage";
 import type { SubagentTree } from "./subagents";
 import type { DispatchedTask, RosterWork } from "./dispatched";
+import type { AgentTurn } from "./returned";
 
 /**
  * `import`: a transcript file imported into Hermes (ADR 0031). Hermes Chat shows it read-only. `cron`: a Job run, the
@@ -86,8 +87,9 @@ export type Item =
    * A Returned result: the work a chat handed off, come back in the turn Hermes started for it (ADR 0175). `title`:
    * Hermes's one line for it, when it sent one. `body`: the result without Hermes's notice around it (`returned.ts`).
    * `process`: a background process's output, shown as a log; otherwise a subagent's answer, shown as Markdown.
+   * `agent`: Bot messaging (ADR 0207): the row is a teammate's message to this bot, or the answer to one it sent.
    */
-  | { kind: "returned"; id: string; title?: string; body: string; process: boolean; rowId?: number; at?: number }
+  | { kind: "returned"; id: string; title?: string; body: string; process: boolean; agent?: AgentTurn; rowId?: number; at?: number }
   /** The model's reasoning before a reply or a tool call, as Hermes streams or stores it. */
   | { kind: "thinking"; id: string; text: string }
   | {

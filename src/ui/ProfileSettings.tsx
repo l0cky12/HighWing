@@ -8,6 +8,7 @@ import type { CapabilityStore } from "../hermes/capabilities";
 import { allApplied, applySetup, choosing, type SetupApis, type SetupItem } from "../hermes/botSetup";
 import { allSaved, editsOf, rebase, type EditResult, type Edits, type FieldOutcome } from "../hermes/fieldMerge";
 import type { CatalogProvider } from "../hermes/modelSettings";
+import { asReadBack, type PersonaApi, type Soul } from "../hermes/persona";
 import type { ProfileCloneApi } from "../hermes/profileClone";
 import type { PendingRename } from "../hermes/profileLocalData";
 import {
@@ -25,13 +26,15 @@ import {
   type ProfilesApi,
   type Removed,
 } from "../hermes/profiles";
+import { errorText } from "../hermes/values";
 import { useLocale, type Locale } from "../i18n/locale";
 import { Spinner, composing } from "./bits";
 import { BotCapabilities, SetupOutcome, outcomeNotice, useBotSetup, type Removal } from "./BotCapabilities";
 import { Menu } from "./ChatMenu";
 import { CloneProfileDialog } from "./CloneProfile";
 import { useModal } from "./modal";
-import { RephraseButton, RephrasePanel, usePersonaRephrase, type RephraseWiring } from "./PersonaRephrase";
+import { RephraseButton, RephrasePanel, usePersonaRephrase } from "./PersonaRephrase";
+import type { Writer } from "../hermes/writingModel";
 import { SettingNote, SettingsSection } from "./SettingRows";
 import { HeadPart, useInPage } from "./SettingsPage";
 
@@ -76,11 +79,20 @@ export type ProfilesWiring = {
     /** Forgets this computer's data for `name`. */
     deleted: (name: string) => Promise<void>;
   };
-  /** Shows Settings → Persona, Memory or Skills on `name`. */
-  showTab: (tab: "persona" | "memory" | "skills", name: string) => void;
+  /** Shows Settings → Memory or Skills on `name`. */
+  showTab: (tab: "memory" | "skills", name: string) => void;
   copyText: (text: string) => Promise<void>;
-  /** Generate with AI under New's Persona (ADR 0197), run as the profile in use; given only while connected. */
-  rephrase?: RephraseWiring;
+  /**
+   * Write with AI on the form's Persona (ADR 0197, 0206), run as `profile` on the model that writes for it
+   * (writingModel.ts, ADR 0209): the profile in use for New, the profile edited for Edit. Given only while connected.
+   */
+  rephrase?: (profile: string) => Writer;
+  /** Each profile's SOUL.md, which Edit reads as it opens and saves with the form (ADR 0206); without it Edit has no Persona. */
+  persona?: PersonaApi;
+  /** Told whether the open form holds a persona Hermes doesn't have, and whose, so leaving the screen asks first. */
+  onPersonaDirty?: (dirty: boolean, profile: string) => void;
+  /** Bumped each time the owner discards an unsaved persona on leaving: an open form closes, dropping it. */
+  personaDiscards?: number;
   /** New's Skills and Tools (ADR 0197): read from the profile in use, applied to the new profile and read back. */
   setup?: SetupApis;
   /** Tells the owner what a create came to once its form has closed, through the app's own notice. */
@@ -95,7 +107,7 @@ export type Notice = { tone: "muted" | "warn" | "bad"; text: string; open?: stri
 
 type Dialog =
   | { kind: "new" }
-  | { kind: "edit"; row: ProfileRow }
+  | { kind: "edit"; row: ProfileRow; focus?: FormFocus }
   | { kind: "delete"; row: ProfileRow }
   | { kind: "clone"; source: string };
 
@@ -419,10 +431,19 @@ export function ProfileSettings({ wiring }: { wiring: ProfilesWiring }) {
               }}
             />
           )}
+          {wiring.persona && (
+            <MenuEntry
+              icon={<Sparkles size={15} />}
+              label={w.menu.persona}
+              onPick={() => {
+                setMenu(undefined);
+                setDialog({ kind: "edit", row: menu.row, focus: "persona" });
+              }}
+            />
+          )}
           <div className="menu-sep" role="separator" />
           {(
             [
-              ["persona", <Sparkles size={15} key="i" />, w.menu.persona],
               ["memory", <Brain size={15} key="i" />, w.menu.memory],
               ["skills", <Puzzle size={15} key="i" />, w.menu.skills],
             ] as const
@@ -455,11 +476,11 @@ export function ProfileSettings({ wiring }: { wiring: ProfilesWiring }) {
         <ProfileForm
           wiring={wiring}
           row={dialog.kind === "edit" ? dialog.row : undefined}
+          focus={dialog.kind === "edit" ? dialog.focus : undefined}
           rows={rows ?? []}
           lacking={lacking}
           returnTo={selectedRow}
           onClone={wiring.clone && (() => setDialog({ kind: "clone", source: selected }))}
-          onPersona={(name) => wiring.showTab("persona", name)}
           onDone={(result) => {
             setDialog(undefined);
             setNotice(result.notice);
@@ -693,7 +714,7 @@ function SwitchQuestion({ to, note, onStay, onGo }: { to: string; note: string; 
  */
 type FieldState<V = never> = { kind: "saved" } | { kind: "failed"; text: string } | { kind: "changedElsewhere"; theirs: V };
 
-type FormStates = { name?: FieldState; create?: FieldState } & { [K in keyof ProfileFields]?: FieldState<ProfileFields[K]> } & {
+type FormStates = { name?: FieldState; create?: FieldState; soul?: FieldState<string> } & { [K in keyof ProfileFields]?: FieldState<ProfileFields[K]> } & {
   [K in "title" | "color" | "picture"]?: FieldState<BotLook[K]>;
 };
 
@@ -759,10 +780,16 @@ function ModelPicker({
 /** What a finished form tells its screen: what to say, which row to select, and a profile to edit next. */
 export type FormResult = { notice?: Notice; select?: string; edit?: string };
 
+/** A field Edit puts focus in once it can be typed in, for a menu entry that opens Edit at it. */
+export type FormFocus = "persona";
+
+/** Edit's read of the profile's SOUL.md as the form opened, or as last saved: what the Persona field is compared with. */
+type SoulRead = { kind: "reading" } | { kind: "read"; base: Soul } | { kind: "failed"; message: string };
+
 /**
  * New profile and Edit, one modal. New makes a blank profile in one create. Edit saves each changed field through its
- * own route, in order: description, model, then the name, so the earlier calls still use the old name. A failed field
- * keeps the dialog open, marked with Hermes's words; the fields that saved stay saved.
+ * own route, in order: description, model, the bot's look, the persona, then the name, so the earlier calls still use
+ * the old name. A failed field keeps the dialog open, marked with Hermes's words; the fields that saved stay saved.
  *
  * Edit never writes over a change made elsewhere since the dialog opened (ADR 0189): each field is saved only where
  * Hermes still has what the form last showed. One that changed keeps the owner's text, shows Hermes's value with Use
@@ -771,7 +798,8 @@ export type FormResult = { notice?: Notice; select?: string; edit?: string };
  *
  * Bots mode's New bot is this form's New (ADR 0164): `heading` and `createLabel` name what it makes there, and
  * `noEdit` leaves out Set model after a create that didn't set it, since Bots mode has no Edit to go on to.
- * `onPersona`: shows Settings → Persona on a profile, linked from Edit. `bot`: Edit bot, which adds the bot's look.
+ * `bot`: Edit bot, which adds the bot's look. Edit's Persona is the profile's SOUL.md, read as the form opens and
+ * saved with the other fields, before the name (ADR 0206); `focus` puts focus in it once read.
  */
 export function ProfileForm({
   wiring,
@@ -783,8 +811,8 @@ export function ProfileForm({
   createLabel,
   noEdit,
   bot,
+  focus,
   onClone,
-  onPersona,
   onDone,
   onClose,
 }: {
@@ -797,8 +825,8 @@ export function ProfileForm({
   createLabel?: string;
   noEdit?: boolean;
   bot?: BotSection;
+  focus?: FormFocus;
   onClone?: () => void;
-  onPersona?: (name: string) => void;
   onDone: (result: FormResult) => void;
   onClose: () => void;
 }) {
@@ -845,7 +873,7 @@ export function ProfileForm({
   const [stopping, setStopping] = useState(false);
   const [writing, setWriting] = useState(false);
   const [writeNote, setWriteNote] = useState<{ tone: "muted" | "bad"; text: string }>();
-  /** Asked before leaving with unsaved changes: `then` is where leaving goes (the persona link), else the dialog closes. */
+  /** Asked before leaving with unsaved changes: `then` is where leaving goes (Clone instead), else the dialog closes. */
   const [asking, setAsking] = useState<{ then?: () => void }>();
   const [madeNoModel, setMadeNoModel] = useState<{ name: string; error: string }>();
   /** A profile made with chosen skills or tools that didn't all apply: what each came to (ADR 0197). */
@@ -854,8 +882,15 @@ export function ProfileForm({
   const [applying, setApplying] = useState<{ done: number; total: number }>();
   // Set by the Create that runs, and cleared only by it: a second activation before the screen catches up sends nothing.
   const creating = useRef(false);
-  // New only: Edit has neither, so they read nothing there.
-  const rephrase = usePersonaRephrase({ wiring: row ? undefined : wiring.rephrase, connected, profile: wiring.inUse, text: soul });
+  // Edit's Persona, when it has one: the profile's SOUL.md, read once the dialog opens.
+  const soulApi = row ? wiring.persona : undefined;
+  const [soulRead, setSoulRead] = useState<SoulRead>({ kind: "reading" });
+  const soulReads = useRef(0);
+  const hasPersona = !row || !!soulApi;
+  // New's rewrite runs on the profile in use, as the new one doesn't exist yet; Edit's on the profile edited.
+  const writtenFor = row ? row.name : wiring.inUse;
+  const rephrase = usePersonaRephrase({ writer: hasPersona ? wiring.rephrase?.(writtenFor) : undefined, connected, profile: writtenFor, text: soul, setText: setSoul });
+  // New only: Edit has none, so it reads nothing there.
   const capabilities = useBotSetup(row ? undefined : wiring.setup, wiring.inUse);
   // The dialog swaps the whole form for a shorter view (what a create came to, or the question before leaving). WebKit
   // keeps the form's scroll offset past the shorter view's end, which draws it blank, so each view starts at its top.
@@ -874,6 +909,30 @@ export function ProfileForm({
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the catalogue is read once, when the dialog opens
   }, []);
 
+  /** Reads Edit's SOUL.md into the Persona field; only the newest read counts. */
+  const readSoul = async () => {
+    if (!row || !soulApi) return;
+    const n = ++soulReads.current;
+    setSoulRead({ kind: "reading" });
+    try {
+      const read = await soulApi.read(row.name);
+      if (!live.current || n !== soulReads.current) return;
+      setSoul(read.content);
+      setSoulRead({ kind: "read", base: read });
+    } catch (e) {
+      if (live.current && n === soulReads.current) setSoulRead({ kind: "failed", message: errorText(e) });
+    }
+  };
+  useEffect(() => {
+    void readSoul();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- read once, when the dialog opens; Try again reads it again
+  }, []);
+  const soulReady = !row || soulRead.kind === "read";
+  const reportSoul = wiring.onPersonaDirty;
+  useEffect(() => {
+    if (focus === "persona" && soulReady) soulBox.current?.focus();
+  }, [focus, soulReady]);
+
   const trimmed = name.trim();
   const nameChanged = trimmed !== base.name;
   const formProfile: ProfileFields = { description, model: provider || model.trim() ? { provider, model: model.trim() } : null };
@@ -886,7 +945,21 @@ export function ProfileForm({
   const formLook = base.look && { ...base.look, title, color, picture };
   const lookEdits = base.look && formLook ? editsOf(base.look, formLook, BOT_LOOK_SAME) : {};
   const lookChanged = Object.keys(lookEdits).length > 0;
-  const dirty = (row ? nameChanged : !!trimmed) || descChanged || modelTouched || lookChanged || !!soul.trim() || rephrase.state.kind === "suggestion" || choosing(capabilities.setup);
+  // Compared as Hermes reads SOUL.md back, so a line end it changes on the way isn't an edit.
+  const soulChanged = row ? soulRead.kind === "read" && asReadBack(soul) !== asReadBack(soulRead.base.content) : !!soul.trim();
+  const dirty = (row ? nameChanged : !!trimmed) || descChanged || modelTouched || lookChanged || soulChanged || choosing(capabilities.setup);
+  const soulOwner = row?.name ?? (trimmed || wiring.inUse);
+  // Once Create has made the profile, its persona is on Hermes, even while the form shows what the create came to.
+  const soulUnsaved = soulChanged && !outcome && !madeNoModel;
+  useEffect(() => reportSoul?.(soulUnsaved, soulOwner), [soulUnsaved, soulOwner, reportSoul]);
+  useEffect(() => () => reportSoul?.(false, ""), [reportSoul]);
+  const discards = useRef(wiring.personaDiscards);
+  useEffect(() => {
+    if (wiring.personaDiscards === discards.current) return;
+    discards.current = wiring.personaDiscards;
+    onClose();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new discard closes the form
+  }, [wiring.personaDiscards]);
 
   const issue = isDefault
     ? !trimmed
@@ -911,12 +984,12 @@ export function ProfileForm({
   const createWhy = row ? undefined : why("create");
   // `rows` undefined: the profiles there are aren't read yet, so New waits rather than send a name it can't check.
   const unreadWhy = !row && !rows ? f.namesUnread : undefined;
-  // A rewrite in flight or not yet applied isn't the persona: Create waits for the owner to settle it.
-  const rephraseWhy = row ? undefined : rephrase.state.kind === "asking" ? f.rephrase.blockedAsking : rephrase.state.kind === "suggestion" ? f.rephrase.blockedOpen : undefined;
+  // A rewrite in flight is about to replace the persona: Create waits for it.
+  const rephraseWhy = rephrase.state.kind === "asking" ? f.rephrase.blockedAsking : undefined;
   const listWhy = !row && (capabilities.skills.inventory.kind === "reading" || capabilities.toolsets.inventory.kind === "reading") ? f.setup.waitList : undefined;
   const saveWhy =
     createWhy ?? (!connected ? w.notConnected : undefined) ?? (issue && (row ? nameChanged : true) ? issue : undefined) ?? unreadWhy ?? busyText ?? renameWhy ?? descWhy ?? modelWhy ?? rephraseWhy ?? listWhy;
-  const nothing = row && !nameChanged && !descChanged && !modelChanged && !lookChanged;
+  const nothing = row && !nameChanged && !descChanged && !modelChanged && !lookChanged && !soulChanged;
   // Where the reason Create can't run is shown: the name's own note when it's the name's issue, else the line under it.
   const issueShown = !!issue && (row ? nameChanged : !!name);
   const saveWhyShown = saveWhy !== undefined && !(issueShown && saveWhy === issue) && saveWhy !== busyText && saveWhy !== renameWhy;
@@ -1085,8 +1158,12 @@ export function ProfileForm({
       setBase((b) => ({ ...b, look: lookNext.base }));
     }
     show();
+    if (soulChanged && soulApi && soulRead.kind === "read") {
+      next.soul = await saveSoul(soulApi, row.name, soulRead.base, soul);
+      show();
+    }
     // The name changes last, and only under a dialog with nothing left unsaved: a field changed elsewhere isn't.
-    let failed = !allSaved(savedProfile) || !allSaved(savedLook);
+    let failed = !allSaved(savedProfile) || !allSaved(savedLook) || (!!next.soul && next.soul.kind !== "saved");
     let renamedTo: string | undefined;
     let localFailed = false;
     if (nameChanged && !failed) {
@@ -1129,6 +1206,32 @@ export function ProfileForm({
           : { tone: "muted", text: renamedTo ? w.renamed(row.name, renamedTo) : w.saved(row.name) },
         select: renamedTo ?? row.name,
       });
+  };
+
+  /**
+   * Writes Edit's Persona as `profile`'s SOUL.md, only where Hermes still has `base` (ADR 0014), and starts the field
+   * from what Hermes has after. Changed elsewhere, the owner's text stays, and a second Save replaces Hermes's.
+   */
+  const saveSoul = async (api: PersonaApi, profile: string, base: Soul, text: string): Promise<FieldState<string>> => {
+    const from = (soul: Soul) => live.current && setSoulRead({ kind: "read", base: soul });
+    try {
+      const out = await api.save(profile, base, text);
+      switch (out.kind) {
+        case "saved":
+          from(out.soul);
+          return { kind: "saved" };
+        case "conflict":
+        case "changed":
+          from(out.server);
+          return { kind: "changedElsewhere", theirs: out.server.content };
+        case "unverified":
+          // Hermes said it saved: the field is taken as what it has, so Save doesn't send it again unasked.
+          from({ exists: true, content: asReadBack(text) });
+          return { kind: "failed", text: f.personaUnverified(out.problem.message) };
+      }
+    } catch (e) {
+      return { kind: "failed", text: f.personaNotSaved(errorText(e)) };
+    }
   };
 
   /**
@@ -1376,47 +1479,41 @@ export function ProfileForm({
                 },
               )}
             </div>
-            {row ? (
-              onPersona && (
+            {hasPersona && (
               <div className="field">
-                <span className="field-label">{w.menu.persona}</span>
-                <button
-                  className="link-btn profile-persona-link"
-                  disabled={saving || writing}
-                  onClick={() =>
-                    leave(() => {
-                      onClose();
-                      onPersona(row.name);
-                    })
-                  }
-                >
-                  {f.personaLink}
-                </button>
-              </div>
-              )
-            ) : (
-              <>
-                <div className="field">
-                  <div className="field-label">
-                    <label htmlFor={soulId}>{f.persona}</label>
-                    <RephraseButton r={rephrase} disabled={saving} hintId={rephraseHint} />
-                  </div>
-                  <textarea
-                    ref={soulBox}
-                    id={soulId}
-                    className="persona-text profile-soul"
-                    rows={4}
-                    readOnly={saving}
-                    placeholder={f.personaDefault}
-                    value={soul}
-                    onChange={(e) => setSoul(e.target.value)}
-                  />
-                  <div className="set-hint">{f.personaHint}</div>
-                  <RephrasePanel r={rephrase} text={soul} hintId={rephraseHint} onReplace={setSoul} focusBox={() => soulBox.current?.focus()} />
+                <div className="field-label">
+                  <label htmlFor={soulId}>{row ? f.persona : f.personaOptional}</label>
+                  <RephraseButton r={rephrase} disabled={saving || !soulReady} hintId={rephraseHint} />
                 </div>
-                <BotCapabilities state={capabilities} profile={wiring.inUse} disabled={saving} />
-              </>
+                <textarea
+                  ref={soulBox}
+                  id={soulId}
+                  className="persona-text profile-soul"
+                  rows={row ? 8 : 4}
+                  disabled={!soulReady}
+                  readOnly={saving || rephrase.state.kind === "asking"}
+                  placeholder={row ? undefined : f.personaDefault}
+                  value={soul}
+                  onChange={(e) => setSoul(e.target.value)}
+                />
+                <div className="set-hint">{row ? f.personaEditHint : f.personaHint}</div>
+                {soulRead.kind === "reading" && row && <div className="small muted">{f.personaReading}</div>}
+                {soulRead.kind === "failed" && (
+                  <div className="small sign-in-error" role="alert">
+                    {f.personaUnread(soulRead.message)}{" "}
+                    <button className="link-btn" onClick={() => void readSoul()}>
+                      {f.personaRetry}
+                    </button>
+                  </div>
+                )}
+                <RephrasePanel r={rephrase} hintId={rephraseHint} disabled={saving} focusBox={() => soulBox.current?.focus()} />
+                {stateNote<string>("soul", () => f.personaChanged, (theirs) => {
+                  rephrase.stop();
+                  setSoul(theirs);
+                })}
+              </div>
             )}
+            {!row && <BotCapabilities state={capabilities} profile={wiring.inUse} disabled={saving} />}
             {bot && nameField}
             {!row && <SettingNote>{f.keysNote}</SettingNote>}
             {stateNote("create")}

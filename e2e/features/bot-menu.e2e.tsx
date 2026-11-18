@@ -37,14 +37,14 @@ async function botMode() {
 /** What was written to the server's profiles: opening a Bot Chat writes its own read mark, which isn't the menu's. */
 const writes = (server: FakeHermes) => server.restRequests.filter((r) => r.method !== "GET" && r.path.startsWith("/api/profiles")).map((r) => `${r.method} ${r.path}`);
 
-it("opens Chat, Settings, Clone, Pin, Hide and Delete on a right-click on a bot in the chat list panel, switching nothing", async () => {
+it("opens Chat, Settings, Edit persona…, Clone, Pin, Hide and Delete on a right-click on a bot in the chat list panel, switching nothing", async () => {
   const { app, server, rowOf } = await botMode();
   await shot("bot-mode");
   await rowOf("Scratch").click({ button: "right" });
   await shot("right-clicked");
   const menu = app.getByRole("menu", { name: "More for Scratch" });
   await expect.element(menu).toBeVisible();
-  expect(menu.getByRole("menuitem").elements().map((e) => e.textContent)).toEqual(["Chat", "Settings", "Clone…", "Pin", "Hide", "Delete"]);
+  expect(menu.getByRole("menuitem").elements().map((e) => e.textContent)).toEqual(["Chat", "Settings", "Edit persona…", "Clone…", "Pin", "Hide", "Delete"]);
   // Scribe's Bot Chat is still the one open.
   await expect.element(rowOf("Scribe")).toHaveAttribute("aria-current", "true");
   await expect.element(rowOf("Scratch")).not.toHaveAttribute("aria-current");

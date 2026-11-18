@@ -1,4 +1,4 @@
-// The Settings screen (ADR 0160): sixteen pages in a sidebar tree that takes the chat list's column, in three groups (App,
+// The Settings screen (ADR 0160): fifteen pages in a sidebar tree that takes the chat list's column, in three groups (App,
 // Agent, Server), each page under one header (SettingsPage.tsx); a narrow window has a bar that opens the tree as a sheet.
 // General, ported from the prototype: the connection and Sign out, what shows on
 // launch, screenshots, updates, the local cache, older history, importing transcripts, and backups. Appearance: how the app looks on this
@@ -9,8 +9,8 @@
 // (ProviderSettings.tsx, ADR 0095), its subscription sign-ins (SignInSettings.tsx) and custom endpoints
 // (EndpointSettings.tsx, ADR 0133). Voice: Dictation, Read aloud and voice
 // conversations, and the profile's speech providers on Hermes (VoiceProviderSettings.tsx). Toolsets: which tools
-// Hermes offers the model in the profile (ToolsetSettings.tsx). Persona: the profile's SOUL.md on Hermes
-// (PersonaSettings.tsx). Memory: what Hermes remembers for the profile (MemorySettings.tsx). Skills: the profile's
+// Hermes offers the model in the profile (ToolsetSettings.tsx). Memory: what Hermes remembers for the profile
+// (MemorySettings.tsx). Skills: the profile's
 // skills, switched and edited on Hermes (SkillSettings.tsx). Diagnostics: what the connected Hermes is and what it
 // supports (Diagnostics.tsx), and Logs, this app's and the profile's Hermes logs (Logs.tsx, ADR 0087); a tab whose
 // feature Hermes lacks says so in its place. Profiles: every profile on the server, made, renamed, described, given a
@@ -20,7 +20,7 @@
 // what was typed (settingsSearch.ts).
 import type { ToolProgress } from "../hermes/flightRecorder";
 import { Fragment, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowLeft, AudioLines, Blocks, Brain, ChevronDown, Cpu, Download, KeyRound, Keyboard, Lock, LogOut, Palette, PlugZap, Puzzle, RadioTower, Search, Server, Settings2, Share2, ShieldCheck, Sparkles, Stethoscope, Trash2, Users, Wrench, X } from "lucide-react";
+import { ArrowLeft, AudioLines, Blocks, Brain, ChevronDown, Cpu, Download, KeyRound, Keyboard, Lock, LogOut, Palette, PlugZap, Puzzle, RadioTower, Search, Server, Settings2, Share2, ShieldCheck, Stethoscope, Trash2, Users, Wrench, X } from "lucide-react";
 import type { MemorySource } from "../hermes/memory";
 import { EditingProfile, ProfileInUse, SearchHeads, SettingsPage } from "./SettingsPage";
 import type { PlatformId } from "../hermes/gateways";
@@ -39,6 +39,7 @@ import { KeyboardSettings } from "./KeyboardSettings";
 import type { ModelSettingsApi } from "../hermes/modelSettings";
 import { ModelSettings } from "./ModelSettings";
 import { IdleCompactSettings } from "./IdleCompactSettings";
+import { WritingModelSettings } from "./WritingModelSettings";
 import type { ToolsetsApi } from "../hermes/toolsets";
 import { ToolsetSettings, type OpenChat } from "./ToolsetSettings";
 import type { MemoryApi } from "../hermes/memory";
@@ -47,10 +48,7 @@ import type { MemoryProvidersApi } from "../hermes/memoryProviders";
 import { MemoryProviderSettings } from "./MemoryProviderSettings";
 import type { SkillsApi } from "../hermes/skills";
 import { SkillSettings } from "./SkillSettings";
-import { PersonaPage, type PersonaDirty, type PersonaWhere } from "./PersonaSettings";
-import type { PersonaApi } from "../hermes/persona";
-import type { PersonaStore } from "../hermes/personaStore";
-import type { PersonaWriter } from "./PersonaAI";
+import type { WritingDesk } from "../hermes/writingModel";
 import { StartupSettings } from "./StartupSettings";
 import { SummonSettings } from "./SummonSettings";
 import { ChatSectionSettings } from "./ChatSectionSettings";
@@ -82,6 +80,7 @@ import { ProfilePicker } from "./ProfilePicker";
 import type { McpApi } from "../hermes/mcp";
 import { McpSettings } from "./McpSettings";
 import type { GatewaysApi } from "../hermes/gateways";
+import type { GatewayRestartApi } from "../hermes/gatewayRestart";
 import { GatewaySettings } from "./GatewaySettings";
 import { ProviderSettings, type ProviderKeysApi } from "./ProviderSettings";
 import { SignInSettings, type SignInApi } from "./SignInSettings";
@@ -92,7 +91,7 @@ import { ExtensionsSettings } from "./ExtensionsSettings";
 import type { SkillCommands } from "../hermes/skillCommands";
 import { errorText, formatBytes } from "../hermes/values";
 
-type Tab = "general" | "appearance" | "keyboard" | "snapshots" | "model" | "providers" | "voice" | "toolsets" | "mcp" | "gateways" | "profiles" | "persona" | "memory" | "skills" | "diagnostics" | "extensions";
+type Tab = "general" | "appearance" | "keyboard" | "snapshots" | "model" | "providers" | "voice" | "toolsets" | "mcp" | "gateways" | "profiles" | "memory" | "skills" | "diagnostics" | "extensions";
 /**
  * General's five groups, shown one at a time beside a sub-nav (ADR 0113); a search shows every group's sections at once.
  * Voice moved to its own tab with the speech providers (ADR 0115), so the third group holds screenshots.
@@ -146,10 +145,10 @@ const memSelOf = (id: string): MemSel => (id.startsWith("file:") ? { kind: "file
 /** The sidebar's three groups (ADR 0160): this app, the agent (the profile's setup on Hermes), and the server. */
 const SIDEBAR_GROUPS: { id: "app" | "agent" | "server"; tabs: Tab[] }[] = [
   { id: "app", tabs: ["general", "appearance", "keyboard", "voice", "snapshots", "extensions"] },
-  { id: "agent", tabs: ["model", "providers", "toolsets", "mcp", "gateways", "persona", "memory", "skills"] },
+  { id: "agent", tabs: ["model", "providers", "toolsets", "mcp", "gateways", "memory", "skills"] },
   { id: "server", tabs: ["profiles", "diagnostics"] },
 ];
-/** Pages that edit the profile in use name it in their header; Persona, Memory, Skills, MCP and Gateways pick theirs. */
+/** Pages that edit the profile in use name it in their header; Memory, Skills, MCP and Gateways pick theirs. */
 const IN_USE_PAGES: readonly Tab[] = ["voice", "model", "providers", "toolsets"];
 /** Each tab's label is the catalogue's `settings.tabs[id]`. */
 const TABS = [
@@ -164,7 +163,6 @@ const TABS = [
   { id: "toolsets", Icon: Wrench },
   { id: "mcp", Icon: Server },
   { id: "gateways", Icon: RadioTower },
-  { id: "persona", Icon: Sparkles },
   { id: "memory", Icon: Brain },
   { id: "skills", Icon: Puzzle },
   { id: "profiles", Icon: Users },
@@ -180,7 +178,6 @@ const SEARCHED: readonly Tab[] = ["general", "appearance", "keyboard", "model", 
 const ABOUT: Partial<Record<Tab, string>> = {
   mcp: "Tools from other programs and services Hermes connects to (MCP servers): add, edit, remove, switch, test and sign in, for each profile.",
   gateways: "Reach Hermes from Telegram or Discord: each profile's bot tokens, on/off switch, allowed users and connection status, kept on the server.",
-  persona: "Who Hermes is and how it speaks in this profile's chats: the profile's SOUL.md, edited on the server.",
   memory: "What Hermes remembers about you and your work between chats, changed or removed entry by entry.",
   skills: "Instructions Hermes can load for a kind of task: turn each skill on or off for the profile, and edit its SKILL.md.",
   snapshots:
@@ -197,20 +194,6 @@ export const signInText = (route?: Route) =>
     : route
       ? "Dashboard username and password, at the dashboard's URL"
       : "Dashboard username and password";
-
-/**
- * Settings → Persona's wiring: the API, where each profile's edits are kept on this computer (`keyOf`), and where it
- * starts: `where.profile` is the profile in use. Persona lists and picks profiles itself (ADR 0117), and copies the shown
- * SOUL.md to another profile (ADR 0118).
- */
-export type PersonaWiring = {
-  api: PersonaApi;
-  store: PersonaStore;
-  keyOf: (profile: string) => string;
-  where: PersonaWhere;
-  /** Write with AI for a profile's SOUL.md (PersonaAI.tsx), on that profile's own model. */
-  writerFor?: (profile: string) => PersonaWriter;
-};
 
 const allow = (go: () => void) => go();
 
@@ -247,6 +230,7 @@ export function SettingsScreen({
   toolsets,
   mcp,
   gateways,
+  gatewayRestart,
   providers,
   accounts,
   openUrl = () => {},
@@ -271,17 +255,15 @@ export function SettingsScreen({
   localStt,
   transcribe,
   showVoice,
-  persona,
-  onPersonaDirty = () => {},
   guard = allow,
   showTextGeneration,
+  writing,
   importer,
   backup,
   showMemory,
   capabilities,
   openGuide = () => {},
   showDiagnostics,
-  showPersona,
   screen,
   toolProgress,
   work,
@@ -326,6 +308,8 @@ export function SettingsScreen({
   mcp?: McpApi;
   /** Each profile's Telegram and Discord gateways on Hermes (ADR 0073); without it there is no Gateways tab. */
   gateways?: GatewaysApi;
+  /** Restarts a profile's gateway, beside a change it picks up only then (ADR 0205); without it there is no Restart gateway button. */
+  gatewayRestart?: GatewayRestartApi;
   /** The shown profile's provider API keys on Hermes (ADR 0095); without it there is no Providers tab. */
   providers?: ProviderKeysApi;
   /** The shown profile's subscription sign-ins and custom endpoints on Hermes, in the Providers tab (ADR 0133). */
@@ -375,19 +359,17 @@ export function SettingsScreen({
   transcribe?: (audio: Uint8Array, mime: string, side?: SttSide, signal?: AbortSignal) => Promise<HeardTranscript>;
   /** Set, each time anew, to show the Voice tab: from a voice conversation's "Change voice settings". */
   showVoice?: object;
-  /** Settings → Persona; the tab is left out without it. */
-  persona?: PersonaWiring;
-  /** Says whether the Persona tab holds an edit Hermes doesn't have yet. */
-  onPersonaDirty?: PersonaDirty;
   /**
    * Every profile on the server (`GET /api/profiles`). With it, Skills and Memory each pick which profile they show, and
-   * skills can be copied between profiles (ADR 0118). Persona lists them itself (ADR 0117).
+   * skills can be copied between profiles (ADR 0118).
    */
   listProfiles?: () => Promise<string[]>;
-  /** Runs `go`, once the owner agrees to leave an unsaved persona, memory or skill edit behind, if there is one. */
+  /** Runs `go`, once the owner agrees to leave an unsaved memory or skill edit behind, if there is one. */
   guard?: (go: () => void) => void;
   /** Set, each time anew, to show the Model tab at the Text generation model: from a title that couldn't be regenerated. */
   showTextGeneration?: object;
+  /** The Writing model (ADR 0209): the connection's writing desk while connected, and where its pick is kept. */
+  writing?: { desk?: WritingDesk; scope: string };
   /** The saved connections (Connections.tsx `ConnectionManager`), shown first in General. */
   connectionManager?: ReactNode;
   /** Set (to a new object each time) to show the Memory tab. */
@@ -398,8 +380,6 @@ export function SettingsScreen({
   openGuide?: OpenGuide;
   /** Set, each time anew, to show the Diagnostics tab, at a capability if it names one: from a screen's note. */
   showDiagnostics?: { id?: CapabilityId };
-  /** Set, each time anew, to show Persona on `name`: Edit bot's persona link. */
-  showPersona?: { name: string };
   /** The profile's Bot Desktop, for Diagnostics' browser check. */
   screen?: Pick<ScreenApi, "status">;
   /** Reads the profile's `display.tool_progress`, for Diagnostics' flight recorder rows (ADR 0178). */
@@ -439,6 +419,7 @@ export function SettingsScreen({
     },
     [onMemoryDirty],
   );
+  const [modelWrites, setModelWrites] = useState(0);
   const [tab, setTabNow] = useState<Tab>(
     showTextGeneration
       ? "model"
@@ -450,9 +431,7 @@ export function SettingsScreen({
             ? "voice"
             : showSnapshots && snapshots
               ? "snapshots"
-              : showPersona && persona
-                ? "persona"
-                : "general",
+              : "general",
   );
   const [diagGroup, setDiagGroup] = useState<DiagGroup>("server");
   // The Voice tab's set-up rows read again after a save there (or a Toolsets speech-to-text switch).
@@ -478,12 +457,9 @@ export function SettingsScreen({
       if (next.kind === "profile") setMemExternal(next.name);
     });
   // Which profile Skills and Memory each show (ADR 0118): the app's own until the owner picks another, and the app's own
-  // again when the app switches profile. Picking one leaves an unsaved edit, so it asks first. Persona picks its own
-  // (PersonaPage, ADR 0117).
+  // again when the app switches profile. Picking one leaves an unsaved edit, so it asks first.
   const [profiles, setProfiles] = useState<string[]>();
   const [shownIn, setShownIn] = useState({ skills: profile, memory: profile, mcp: profile, gateways: profile, of: profile });
-  /** The profile Persona's picker starts on when Profiles opened it at one; none starts it on the profile in use. */
-  const [personaStart, setPersonaStart] = useState<{ profile: string; of: string } | undefined>(showPersona ? { profile: showPersona.name, of: profile } : undefined);
   const tabProfile = shownIn.of === profile ? shownIn : { skills: profile, memory: profile, mcp: profile, gateways: profile, of: profile };
   useEffect(() => setShownIn({ skills: profile, memory: profile, mcp: profile, gateways: profile, of: profile }), [profile]);
   const connected = status === "connected";
@@ -511,13 +487,12 @@ export function SettingsScreen({
       (t.id !== "profiles" || profilesTab) &&
       (t.id !== "providers" || providers) &&
       (t.id !== "voice" || voiceSetup || voiceSettings || localStt) &&
-      (t.id !== "persona" || persona) &&
       (t.id !== "memory" || memory) &&
       (t.id !== "skills" || skills) &&
       (t.id !== "diagnostics" || capabilities || logs) &&
       (t.id !== "extensions" || extensions),
   ).map((t) => ({ ...t, label: tabLabels[t.id] }));
-  // Leaving the Persona, Memory or Skills tab asks first while it holds an unsaved edit.
+  // Leaving the Memory or Skills tab asks first while it holds an unsaved edit.
   const setTab = (t: Tab) => t !== tab && guard(() => setTabNow(t));
   // Asked from elsewhere in the app, these end a search too.
   useEffect(() => {
@@ -552,13 +527,6 @@ export function SettingsScreen({
     setTab("diagnostics");
   // eslint-disable-next-line react-hooks/exhaustive-deps -- open Diagnostics only when a new `showDiagnostics` arrives; `setTab` is rebuilt each render, so listing it (or `capabilities`) would switch back to Diagnostics on later renders
   }, [showDiagnostics]);
-  useEffect(() => {
-    if (!showPersona || !persona) return;
-    setQuery("");
-    setPersonaStart({ profile: showPersona.name, of: profile });
-    setTab("persona");
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- open the tab only when a new `showPersona` arrives; `setTab` is rebuilt each render, so listing it would switch back on later renders
-  }, [showPersona]);
   /** A tab's note about a feature Hermes lacks opens Diagnostics at it. */
   const toDiagnostics = (id: CapabilityId) =>
     guard(() => {
@@ -659,10 +627,9 @@ export function SettingsScreen({
   /** What a search reads of a tab it names: Profiles' words in the language shown, with the profiles' names. */
   const aboutOf = (id: Tab) => (id === "profiles" ? `${frame.about.profiles} ${(profiles ?? []).join(" ")}` : ABOUT[id]);
   const elsewhere = tabs.filter((t) => aboutOf(t.id) && textMatches(`${t.label} ${aboutOf(t.id)}`, words));
-  /** Profiles' menu: Persona, Memory or Skills, showing `name`. Leaving Profiles asks nothing, as it holds no edit. */
-  const showTabFor = (t: "persona" | "memory" | "skills", name: string) => {
-    if (t === "persona") setPersonaStart({ profile: name, of: profile });
-    else setShownIn((cur) => ({ ...(cur.of === profile ? cur : tabProfile), [t]: name }));
+  /** Profiles' menu: Memory or Skills, showing `name`. Leaving Profiles asks nothing, as it holds no edit. */
+  const showTabFor = (t: "memory" | "skills", name: string) => {
+    setShownIn((cur) => ({ ...(cur.of === profile ? cur : tabProfile), [t]: name }));
     setQuery("");
     setTabNow(t);
   };
@@ -740,7 +707,7 @@ export function SettingsScreen({
                 disabled={signingOut}
                 onClick={async () => {
                   setSigningOut(true);
-                  // Resolves without signing out when the owner chose to stay with an unsaved persona edit.
+                  // Resolves without signing out when the owner chose to stay with an unsaved edit.
                   await onSignOut().finally(() => setSigningOut(false));
                 }}
               >
@@ -908,27 +875,6 @@ export function SettingsScreen({
   /** The content of a tab: the same whether it's shown alone or with others in a search. */
   const panel = (id: Tab): ReactNode => {
     switch (id) {
-      case "persona":
-        return (
-          persona &&
-          // An edit is for one connection and profile: another profile is another editor. The picker starts again on the
-          // profile in use when that or the connection changes.
-          gated(
-            "persona",
-            <PersonaPage
-              key={`${persona.keyOf(persona.where.profile)} ${personaStart?.of === profile ? personaStart.profile : ""}`}
-              start={personaStart?.of === profile ? personaStart.profile : undefined}
-              defaultName={defaultName}
-              api={persona.api}
-              store={persona.store}
-              keyOf={persona.keyOf}
-              where={persona.where}
-              writerFor={persona.writerFor}
-              connected={status === "connected"}
-              onDirty={onPersonaDirty}
-            />,
-          )
-        );
       case "memory": {
         if (!memory) return null;
         // Both parts stay mounted whichever is shown, so an unsaved edit in either is kept, and guarded, as before. Only
@@ -1001,11 +947,26 @@ export function SettingsScreen({
       case "extensions":
         return <ExtensionsSettings skills={extensions?.skills} />;
       case "model":
-        // A draft lives only while this tab is open, and for one profile. Idle compaction is this computer's, and shows
-        // whether or not Hermes is reachable.
         return (
           <>
-            <ModelSettings key={profile} api={modelSettings} profile={profile} connected={status === "connected"} showTextGeneration={searching ? undefined : showTextGeneration} />
+            <ModelSettings
+              key={profile}
+              api={modelSettings}
+              profile={profile}
+              connected={status === "connected"}
+              showTextGeneration={searching ? undefined : showTextGeneration}
+              writingScope={writing?.scope}
+              onWritten={() => setModelWrites((n) => n + 1)}
+            />
+            {writing && (
+              <WritingModelSettings
+                desk={writing.desk}
+                scope={writing.scope}
+                profiles={listProfiles ?? (async () => [profile])}
+                catalog={() => modelSettings.providers()}
+                reread={modelWrites}
+              />
+            )}
             <IdleCompactSettings />
           </>
         );
@@ -1048,6 +1009,7 @@ export function SettingsScreen({
             <McpSettings
               key={tabProfile.mcp}
               api={mcp}
+              restart={gatewayRestart}
               profile={tabProfile.mcp}
               connected={status === "connected"}
               picker={picker("mcp", "Profile whose MCP servers are shown")}
@@ -1064,6 +1026,7 @@ export function SettingsScreen({
             <GatewaySettings
               key={tabProfile.gateways}
               api={gateways}
+              restart={gatewayRestart}
               profile={tabProfile.gateways}
               shown={profile}
               connected={status === "connected"}

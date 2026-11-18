@@ -51,6 +51,17 @@ export const APP_METHODS = [
   "file.attach",
   "gateway.capabilities",
   "gateway.ping",
+  // Group rooms (ADR 0210). Never `groups.capabilities`: its first call writes a secret file on the server.
+  "groups.approve",
+  "groups.continue",
+  "groups.create",
+  "groups.disband",
+  "groups.list",
+  "groups.log",
+  "groups.rename",
+  "groups.send",
+  "groups.state",
+  "groups.stop",
   "image.attach_bytes",
   "image.detach",
   "learning.delete",
@@ -124,6 +135,7 @@ const NO_METHOD = (method: AppMethod): CanonicalAnswer => ({ code: -32601, messa
 const moved = (method: AppMethod, params: AppVerb["params"], canonical: string): AppVerb => ({ method, params, route: "refused", answer: NO_METHOD(method), canonical });
 const DESKTOP = "starts or drives the profile's Bot Desktop";
 const CHECKPOINTS = "added after the gateway was recorded; its route and answer are from the source at bf0203a";
+const ROOMS = "added after the gateway was recorded; its route is from the source at f0d9488 (gateway/session_group_controls.py), which takes the app's own frame";
 const PNG_1X1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
 export const APP_VERBS: AppVerb[] = [
@@ -387,4 +399,28 @@ export const APP_VERBS: AppVerb[] = [
     canonical: "As for the check: the authority has no shell.exec without a session.",
     unprobed: "added after the recording; its route and answer are from the source at bf0203a",
   },
+
+  { method: "groups.list", params: () => ({ limit: 500 }), route: "authority", answer: "ok", unprobed: ROOMS },
+  { method: "groups.state", params: () => ({ room_id: "room-none" }), route: "authority", answer: "ok", unprobed: ROOMS },
+  { method: "groups.log", params: () => ({ room_id: "room-none", since_seq: 0, limit: 500 }), route: "authority", answer: "ok", unprobed: ROOMS },
+  {
+    method: "groups.create",
+    params: (s) => ({ room_id: "room-probe", name: "Canonical probe", members: [{ member_id: s.profile, profile: s.profile, handle: s.profile, display_name: s.profile }] }),
+    route: "authority",
+    answer: "ok",
+    unprobed: ROOMS,
+  },
+  { method: "groups.send", params: () => ({ room_id: "room-none", event_id: "e1", payload: { thread_id: "main", text: "x" } }), route: "authority", answer: "ok", unprobed: ROOMS },
+  { method: "groups.stop", params: () => ({ room_id: "room-none", cancel_id: "c1" }), route: "authority", answer: "ok", unprobed: ROOMS },
+  {
+    method: "groups.approve",
+    params: () => ({ room_id: "room-none", member_id: "m", task_id: "t", execution_generation: 1, choice: "deny", request_id: "r" }),
+    route: "authority",
+    answer: "ok",
+    unprobed: ROOMS,
+  },
+  { method: "groups.rename", params: () => ({ room_id: "room-none", event_id: "e1", name: "X" }), route: "authority", answer: "ok", unprobed: ROOMS },
+  { method: "groups.disband", params: () => ({ room_id: "room-none" }), route: "authority", answer: "ok", unprobed: ROOMS },
+  // Hermes has Continue from `ae2a81cc`. The recorded `f0d9488` has it on neither protocol.
+  { method: "groups.continue", params: () => ({ room_id: "room-none", discussion_event_id: "user:none" }), route: "none", answer: NO_METHOD("groups.continue"), unprobed: ROOMS },
 ];

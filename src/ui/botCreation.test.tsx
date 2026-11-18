@@ -1,13 +1,12 @@
 // @vitest-environment jsdom
-// The New profile form's Generate with AI, Skills, Tools and MCP servers (ADR 0197), shared by Settings → Profiles and
-// Bots mode's New bot, through the real transport against FakeHermes at `f0d94882`. What the owner sees, and what
-// Hermes received: the rewrite only on a click and only into the box on Replace, and each chosen skill and toolset read
+// The New profile form's Write with AI, Skills, Tools and MCP servers (ADR 0197, 0206), shared by Settings → Profiles
+// and Bots mode's New bot, through the real transport against FakeHermes at `f0d94882`. What the owner sees, and what
+// Hermes received: the rewrite only on a click, in the field with Undo, and each chosen skill and toolset read
 // back from the new profile before any success is said. All data is synthetic.
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createRef } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { TEXT_TASK } from "../hermes/modelSettings";
 import { FakeHermes } from "../hermes/fakeHermes";
 import { memoryCache } from "../hermes/memoryCache";
 import { RestError } from "../hermes/pipe";
@@ -15,6 +14,7 @@ import { connect, type Hermes } from "../hermes/transport";
 import { en } from "../i18n/en";
 import { LocaleContext } from "../i18n/locale";
 import { pseudoLocale, untranslated } from "../i18n/pseudo";
+import type { WritingPick } from "../hermes/writingModel";
 import { ProfileForm, type FormResult, type Notice, type ProfilesWiring } from "./ProfileSettings";
 
 beforeAll(() => {
@@ -41,14 +41,15 @@ type Options = {
   models?: boolean;
   /** As Bots mode's New bot: no Set model after a create that didn't set it. */
   noEdit?: boolean;
+  writingPick?: WritingPick;
 };
 
 /**
  * The New form over a fake Hermes, wired as App wires it; `done` gets what the form finished with, and `notified` what
- * the app is told once the form has closed. `reconnect` draws it again connected or not, with Generate with AI wired
+ * the app is told once the form has closed. `reconnect` draws it again connected or not, with Write with AI wired
  * only while connected, as App does; `switchProfile` draws it again with another profile in use.
  */
-async function open({ connected = true, rephrase = true, setup = true, seed = () => {}, locale, forgetFails = false, models = false, noEdit = true }: Options = {}) {
+async function open({ connected = true, rephrase = true, setup = true, seed = () => {}, locale, forgetFails = false, models = false, noEdit = true, writingPick }: Options = {}) {
   const server = new FakeHermes();
   for (const name of BUILT_IN)
     server.skills.add("default", { dir: `/home/liam/.hermes/skills/${name}`, source: "bundled" }, `---\nname: ${name}\ndescription: The ${name} skill\n---\nDo ${name}.\n`);
@@ -60,6 +61,8 @@ async function open({ connected = true, rephrase = true, setup = true, seed = ()
   const done = vi.fn<(r: FormResult) => void>();
   const notified = vi.fn<(n: Notice) => void>();
   const closed = vi.fn();
+  /** What the form told the app, each time, about an unsaved persona. */
+  const personaReports: boolean[] = [];
   const at = { connected, inUse: "default" };
   const deleted = vi.fn(async () => {
     if (forgetFails) throw new Error("The drafts folder is read-only.");
@@ -76,12 +79,10 @@ async function open({ connected = true, rephrase = true, setup = true, seed = ()
     switchTo: async () => true,
     local: { pending: () => undefined, note: () => {}, clear: () => {}, renamed: async () => {}, deleted },
     copyText: async () => {},
+    onPersonaDirty: (dirty) => void personaReports.push(dirty),
     ...(rephrase &&
       connected && {
-        rephrase: {
-          ask: (c) => hermes.askForEdit({ profile: "default", instructions: c.instructions, input: c.input, maxTokens: c.maxTokens, task: TEXT_TASK }).then((r) => r.text),
-          model: () => hermes.modelSettings.textModel(),
-        },
+        rephrase: (p) => hermes.writingDesk(() => writingPick).writer(p, "persona"),
       }),
     ...(setup && { setup: { skills: hermes.skills, toolsets: hermes.toolsets } }),
     notify: notified,
@@ -111,12 +112,12 @@ async function open({ connected = true, rephrase = true, setup = true, seed = ()
     at.inUse = name;
     rerender(form());
   };
-  return { server, hermes, done, notified, closed, deleted, unmount, reconnect, switchProfile, user: userEvent.setup() };
+  return { server, hermes, done, notified, closed, deleted, unmount, reconnect, switchProfile, personaReports, user: userEvent.setup() };
 }
 
 const dialog = () => screen.getByRole("dialog");
 const persona = () => within(dialog()).getByLabelText("Persona (optional)") as HTMLTextAreaElement;
-const generate = () => within(dialog()).getByRole("button", { name: /Generate with AI/ });
+const generate = () => within(dialog()).getByRole("button", { name: /Write with AI/ });
 const create = () => within(dialog()).getByRole("button", { name: /Create bot/ });
 const hintOf = (el: HTMLElement) => document.getElementById(el.getAttribute("aria-describedby")!)?.textContent;
 const oneshots = (server: FakeHermes) => server.requests.filter((r) => r.method === "llm.oneshot");
@@ -129,7 +130,7 @@ async function named(user: ReturnType<typeof userEvent.setup>, name = "chef") {
   await user.type(within(dialog()).getByLabelText("Name"), name);
 }
 
-describe("Generate with AI", () => {
+describe("Write with AI", () => {
   it("can't run on an empty persona, and says why next to it", async () => {
     const { server, user } = await open();
     await waitFor(() => expect(hintOf(generate())).toBe("Type a rough persona first. AI rewrites what you write; it doesn't make one up."));
@@ -140,7 +141,7 @@ describe("Generate with AI", () => {
     expect(oneshots(server)).toEqual([]);
   });
 
-  it("says why it can't run without a connection, without wiring, or without a Text generation model", async () => {
+  it("says why it can't run without a connection, without wiring, or with no model to write with", async () => {
     const off = await open({ connected: false });
     expect(hintOf(generate())).toBe("Connect to Hermes to rewrite the persona with AI.");
     cleanup();
@@ -154,56 +155,48 @@ describe("Generate with AI", () => {
       },
     });
     await none.user.type(persona(), ROUGH);
-    await waitFor(() => expect(hintOf(generate())).toBe("No Text generation model is set for default. Pick one in Settings → Model."));
+    await waitFor(() => expect(hintOf(generate())).toBe("default has no model to write with. Pick a Writing model in Settings → Model."));
     await none.user.click(generate());
     expect(oneshots(none.server)).toEqual([]);
     expect(oneshots(off.server)).toEqual([]);
   });
 
-  it("runs only on a click, as the profile in use on Text generation, and names that model", async () => {
+  it("runs only on a click, as the profile in use on its pinned Text generation model, names that model, and rewrites the field in place", async () => {
     const { server, user } = await open();
     await user.type(persona(), ROUGH);
-    await waitFor(() => expect(hintOf(generate())).toMatch(/^Rewritten by deepseek-v4-flash, the Text generation model of default\./));
+    await waitFor(() => expect(hintOf(generate())).toMatch(/^default writes with openrouter · deepseek-v4-flash, its Text generation model, pinned on the server\./));
     expect(oneshots(server)).toEqual([]);
     await user.click(generate());
-    const suggestion = await within(dialog()).findByLabelText("Suggested persona");
+    await waitFor(() => expect(persona().value).toBe(REWRITTEN));
     expect(oneshots(server)).toHaveLength(1);
     expect(oneshots(server)[0].params).toMatchObject({ profile: "default", task: "title_generation", input: expect.stringContaining(`<persona>${ROUGH}</persona>`) });
-    expect(suggestion).toHaveProperty("value", REWRITTEN);
-    expect(persona().value).toBe(ROUGH);
+    expect(within(dialog()).queryAllByRole("textbox").filter((t) => t.tagName === "TEXTAREA")).toHaveLength(1);
   });
 
-  it("lets the owner edit the suggestion, and only Replace persona puts it in the box, with focus back there", async () => {
+  it("puts the owner's text back on Undo, with focus in the field", async () => {
     const { user } = await open();
     await user.type(persona(), ROUGH);
     await modelReadDone();
     await user.click(generate());
-    const suggestion = await within(dialog()).findByLabelText("Suggested persona");
-    await user.type(suggestion, " Use metric units.");
-    await user.click(within(dialog()).getByRole("button", { name: "Replace persona" }));
-    expect(persona().value).toBe(`${REWRITTEN} Use metric units.`);
-    expect(within(dialog()).queryByLabelText("Suggested persona")).toBeNull();
+    await waitFor(() => expect(persona().value).toBe(REWRITTEN));
+    await user.click(within(dialog()).getByRole("button", { name: "Undo" }));
+    expect(persona().value).toBe(ROUGH);
+    expect(within(dialog()).queryByRole("button", { name: "Undo" })).toBeNull();
     await waitFor(() => expect(document.activeElement).toBe(persona()));
-    await user.type(persona(), " Vegetarian.");
-    expect(persona().value).toBe(`${REWRITTEN} Use metric units. Vegetarian.`);
   });
 
-  it("asks before replacing text the owner changed since asking", async () => {
-    const { server, user } = await open();
-    const gate = hold(server);
+  it("stops offering Undo once the owner edits the rewrite", async () => {
+    const { user } = await open();
     await user.type(persona(), ROUGH);
     await modelReadDone();
     await user.click(generate());
-    await user.type(persona(), " and desserts");
-    await act(async () => gate.go());
-    await within(dialog()).findByLabelText("Suggested persona");
-    expect(within(dialog()).getByRole("alert").textContent).toMatch(/You changed the persona since asking/);
-    expect(within(dialog()).queryByRole("button", { name: "Replace persona" })).toBeNull();
-    await user.click(within(dialog()).getByRole("button", { name: "Replace anyway" }));
-    expect(persona().value).toBe(REWRITTEN);
+    await waitFor(() => expect(persona().value).toBe(REWRITTEN));
+    await user.type(persona(), " Vegetarian.");
+    expect(persona().value).toBe(`${REWRITTEN} Vegetarian.`);
+    expect(within(dialog()).queryByRole("button", { name: "Undo" })).toBeNull();
   });
 
-  it("drops an answer that comes after Stop, and keeps the persona", async () => {
+  it("keeps the field read-only while asking, and drops an answer that comes after Stop", async () => {
     const { server, user } = await open();
     const gate = hold(server);
     await user.type(persona(), ROUGH);
@@ -211,11 +204,13 @@ describe("Generate with AI", () => {
     await user.click(generate());
     expect(within(dialog()).getByText(/Hermes is rewriting your persona…/)).toBeTruthy();
     expect(within(dialog()).getByText("Hermes can't cancel the call. Stop throws its answer away, even if it still finishes.")).toBeTruthy();
+    expect(persona().readOnly).toBe(true);
     await user.click(within(dialog()).getByRole("button", { name: "Stop" }));
     await act(async () => gate.go());
     await act(async () => void (await new Promise((r) => setTimeout(r, 20))));
-    expect(within(dialog()).queryByLabelText("Suggested persona")).toBeNull();
     expect(persona().value).toBe(ROUGH);
+    expect(persona().readOnly).toBe(false);
+    expect(within(dialog()).queryByRole("button", { name: "Undo" })).toBeNull();
     await waitFor(() => expect(document.activeElement).toBe(persona()));
   });
 
@@ -228,39 +223,67 @@ describe("Generate with AI", () => {
     await user.click(generate());
     await waitFor(() => expect(oneshots(server)).toHaveLength(1));
     await act(async () => gate.go());
-    await within(dialog()).findByLabelText("Suggested persona");
+    await waitFor(() => expect(persona().value).toBe(REWRITTEN));
     expect(oneshots(server)).toHaveLength(1);
   });
 
-  it("says why it failed in Hermes's words and keeps the persona as typed", async () => {
+  it("says why it failed and names the setting in words, with no link to open Settings behind the form, and keeps the persona as typed", async () => {
     const { user } = await open({ seed: (s) => s.signedOut.add("openrouter") });
     await user.type(persona(), ROUGH);
     await modelReadDone();
     await user.click(generate());
     const alert = await within(dialog()).findByRole("alert");
-    expect(alert.textContent).toMatch(/^Hermes couldn't rewrite it: .*openrouter.* Your persona is unchanged\.$/);
+    expect(alert.textContent).toMatch(/^Hermes couldn't rewrite it: default's Text generation model is pinned on the server to openrouter.* Your persona is unchanged\./);
     expect(alert.textContent).not.toMatch(/sk-|api_key=/i);
     expect(persona().value).toBe(ROUGH);
+    expect(within(alert).queryByRole("button")).toBeNull();
   });
 
-  it("blocks Create while a suggestion is open, and never sends one that wasn't applied", async () => {
+  it("writes with the Writing model for a bot with no pin, copying it into the bot's config once", async () => {
+    const pick = { provider: "nous", model: "hermes-5-70b" };
+    const { server, user } = await open({ writingPick: pick, seed: (s) => (s.modelConfig.auxiliary.title_generation = { provider: "auto", model: "" }) });
+    await user.type(persona(), ROUGH);
+    await waitFor(() => expect(hintOf(generate())).toMatch(/^Your Writing model writes it: nous · hermes-5-70b\./));
+    expect(server.configWrites).toEqual([]);
+    await user.click(generate());
+    await waitFor(() => expect(persona().value).toBe(REWRITTEN));
+    expect(oneshots(server)[0].params).toMatchObject({ profile: "default", task: "highwing_writing" });
+    expect(server.configWrites).toHaveLength(1);
+    expect(server.oneshotCalls).toEqual([{ profile: "default", task: "highwing_writing", model: "hermes-5-70b" }]);
+  });
+
+  it("steers to the Writing model when the bot's own model can't write", async () => {
+    const { user } = await open({
+      seed: (s) => {
+        s.modelConfig.auxiliary.title_generation = { provider: "auto", model: "" };
+        s.signedOut.add("openrouter");
+      },
+    });
+    await user.type(persona(), ROUGH);
+    await waitFor(() => expect(hintOf(generate())).toMatch(/^No Writing model is set, so default writes with its own model: openrouter · glm-5.3-flash\./));
+    await user.click(generate());
+    const alert = await within(dialog()).findByRole("alert");
+    expect(alert.textContent).toContain("default writes with its own model, openrouter · glm-5.3-flash, and Hermes couldn't use it for writing. Pick a Writing model in Settings → Model.");
+    expect(within(alert).queryByRole("button")).toBeNull();
+  });
+
+  it("blocks Create only while asking, and creates with the rewritten persona", async () => {
     const { server, user, done } = await open();
+    const gate = hold(server);
     await named(user);
     await user.type(persona(), ROUGH);
     await modelReadDone();
     await user.click(generate());
-    await within(dialog()).findByLabelText("Suggested persona");
     expect(create().getAttribute("aria-disabled")).toBe("true");
-    expect(hintOf(create())).toBe("Replace the persona with the suggestion, or discard it, before creating.");
-    create().focus();
-    expect(document.activeElement).toBe(create());
+    expect(hintOf(create())).toBe("Wait for the persona's rewrite, or stop it, first.");
     await user.click(create());
     expect(creates(server)).toEqual([]);
-    await user.click(within(dialog()).getByRole("button", { name: "Discard" }));
-    await waitFor(() => expect(document.activeElement).toBe(persona()));
+    await act(async () => gate.go());
+    await waitFor(() => expect(persona().value).toBe(REWRITTEN));
+    expect(create().getAttribute("aria-disabled")).toBeNull();
     await user.click(create());
     await waitFor(() => expect(done).toHaveBeenCalled());
-    expect(createBody(server)).toEqual({ name: "chef", soul: ROUGH });
+    expect(createBody(server)).toEqual({ name: "chef", soul: REWRITTEN });
   });
 
   it("says an empty answer failed, in the catalogue's words", async () => {
@@ -269,16 +292,20 @@ describe("Generate with AI", () => {
     await modelReadDone();
     await user.click(generate());
     expect((await within(dialog()).findByRole("alert")).textContent).toBe("Hermes couldn't rewrite it: Hermes answered with no text. Your persona is unchanged.");
+    expect(persona().value).toBe(ROUGH);
   });
 
-  it("says on the suggestion when only the start of a long persona was sent", async () => {
-    const { user } = await open();
+  it("won't rewrite a persona too long to send whole, so its end isn't lost", async () => {
+    let asked = 0;
+    const { user } = await open({ seed: (s) => (s.oneshotAnswer = () => (asked++, REWRITTEN)) });
     await user.click(persona());
     await user.paste(`${ROUGH} `.repeat(200));
     await modelReadDone();
     await user.click(generate());
-    const suggestion = await within(dialog()).findByLabelText("Suggested persona");
-    expect(hintOf(suggestion)).toMatch(/^Your persona is longer than 8000 characters, so only its first 8000 were rewritten\./);
+    expect(generate().getAttribute("aria-disabled")).toBe("true");
+    expect(hintOf(generate())).toBe("Write with AI rewrites up to 8000 characters, and this persona is longer. Shorten it first, or edit it by hand.");
+    expect(asked).toBe(0);
+    expect(persona().value).toBe(`${ROUGH} `.repeat(200));
   });
 
   it("lets Create run again once a connection drops during a rewrite and comes back", async () => {
@@ -288,7 +315,7 @@ describe("Generate with AI", () => {
     await user.type(persona(), ROUGH);
     await modelReadDone();
     await user.click(generate());
-    expect(hintOf(create())).toBe("Wait for the rewrite, or stop it, before creating.");
+    expect(hintOf(create())).toBe("Wait for the persona's rewrite, or stop it, first.");
     reconnect(false);
     reconnect(true);
     await modelReadDone();
@@ -299,19 +326,7 @@ describe("Generate with AI", () => {
     expect(createBody(server)).toEqual({ name: "chef", soul: ROUGH });
   });
 
-  it("counts an open suggestion as unsaved when leaving", async () => {
-    const { user, closed } = await open();
-    await user.type(persona(), ROUGH);
-    await modelReadDone();
-    await user.click(generate());
-    await within(dialog()).findByLabelText("Suggested persona");
-    await user.clear(persona());
-    await user.keyboard("{Escape}");
-    expect(within(dialog()).getByText("The changes you made here aren't saved.")).toBeTruthy();
-    expect(closed).not.toHaveBeenCalled();
-  });
-
-  it("is reached by Tab from the Persona label's row, before the box", async () => {
+  it("is reached by Tab from the Persona label's row, before the field", async () => {
     const { user } = await open();
     persona().focus();
     await user.tab({ shift: true });
@@ -519,6 +534,20 @@ describe("Skills, Tools and MCP servers", () => {
     }
   });
 
+  it("stops calling the persona unsaved once Create made the profile, while the form says what didn't apply", async () => {
+    const { user, personaReports } = await open({ models: true, seed: (s) => (s.profileModelError = "Model not listed.") });
+    await named(user);
+    await user.type(persona(), ROUGH);
+    expect(personaReports.at(-1)).toBe(true);
+    const provider = within(dialog()).getByLabelText("Provider") as HTMLSelectElement;
+    await waitFor(() => expect(provider.options.length).toBeGreaterThan(1));
+    await user.selectOptions(provider, "openai");
+    await user.type(within(dialog()).getByLabelText("Model name"), "gpt-6.1");
+    await user.click(create());
+    await within(dialog()).findByText("Profile created, but Hermes didn't set the model: Model not listed.");
+    expect(personaReports.at(-1)).toBe(false);
+  });
+
   it("offers Set model when Hermes didn't set the model picked, and goes on to Edit with what didn't apply", async () => {
     const pick = async (noEdit: boolean) => {
       const opened = await open({ models: true, noEdit, seed: (s) => (s.profileModelError = "Model not listed.") });
@@ -576,7 +605,7 @@ describe("Skills, Tools and MCP servers", () => {
       },
     });
     await user.type(persona(), ROUGH);
-    await waitFor(() => expect(hintOf(generate())).toMatch(/the Text generation model of default\./));
+    await waitFor(() => expect(hintOf(generate())).toMatch(/^default writes with/));
     const tools = within(dialog()).getByRole("group", { name: "Tools" });
     await user.click(within(tools).getByRole("radio", { name: "Choose" }));
     await user.click(await within(tools).findByLabelText(/File Operations/));
@@ -589,7 +618,7 @@ describe("Skills, Tools and MCP servers", () => {
     switchProfile("work");
     await waitFor(() => expect(within(tools).getByText(/^Starts from what work has on\./)).toBeTruthy());
     expect(read("/api/tools/toolsets", "work")).toBe(1);
-    await waitFor(() => expect(hintOf(generate())).toMatch(/the Text generation model of work\./));
+    await waitFor(() => expect(hintOf(generate())).toMatch(/^work writes with/));
     expect(server.restRequests.filter((r) => r.path === "/api/model/auxiliary").length).toBe(auxReads + 1);
     const ticked = (label: RegExp) => (within(tools).getByLabelText(label) as HTMLInputElement).checked;
     // The owner's own changes, over what work has on.
@@ -794,7 +823,7 @@ describe("Skills, Tools and MCP servers", () => {
 });
 
 describe("Elsewhere", () => {
-  it("leaves Edit as it was: no Generate with AI, Skills, Tools or MCP servers", async () => {
+  it("leaves Skills, Tools and MCP servers out of Edit", async () => {
     const server = new FakeHermes();
     server.otherProfiles = { work: [] };
     const hermes = await connect(server.openPipe, undefined, memoryCache());
@@ -815,7 +844,7 @@ describe("Elsewhere", () => {
           switchTo: async () => true,
           local: { pending: () => undefined, note: () => {}, clear: () => {}, renamed: async () => {}, deleted: async () => {} },
           copyText: async () => {},
-          rephrase: { ask: async () => "x", model: async () => ({ provider: "p", model: "m" }) },
+          rephrase: (p) => hermes.writingDesk(() => undefined).writer(p, "persona"),
           setup: { skills: hermes.skills, toolsets: hermes.toolsets },
           notify: () => {},
         }}
@@ -827,24 +856,23 @@ describe("Elsewhere", () => {
         onClose={() => {}}
       />,
     );
-    expect(within(dialog()).queryByRole("button", { name: /Generate with AI/ })).toBeNull();
     expect(within(dialog()).queryByRole("group", { name: "Skills" })).toBeNull();
     expect(within(dialog()).queryByRole("group", { name: "MCP servers" })).toBeNull();
-    expect(server.restRequests.filter((r) => r.path === "/api/model/auxiliary" || r.path === "/api/skills" || r.path === "/api/tools/toolsets")).toEqual([]);
+    expect(server.restRequests.filter((r) => r.path === "/api/skills" || r.path === "/api/tools/toolsets")).toEqual([]);
   });
 
-  it("shows only catalogue words: the form, a suggestion, chosen lists and what didn't apply", async () => {
+  it("shows only catalogue words: the form, a rewrite, chosen lists and what didn't apply", async () => {
     const p = pseudoLocale();
     const { server, user } = await open({ locale: p, seed: (s) => (s.skills.toggleRefusal = LOCKED) });
     const box = () => screen.getByRole("dialog");
     expect(untranslated(box())).toEqual([]);
     await user.type(within(box()).getByLabelText(p.profiles.form.name), "chef");
-    await user.type(within(box()).getByLabelText(p.profiles.form.persona), ROUGH);
-    await waitFor(() => expect(within(box()).getByText(new RegExp(`Rewritten by`))).toBeTruthy());
+    await user.type(within(box()).getByLabelText(p.profiles.form.personaOptional), ROUGH);
+    await waitFor(() => expect(within(box()).getByText(new RegExp(`writes with`))).toBeTruthy());
     await user.click(within(box()).getByRole("button", { name: new RegExp(p.profiles.form.rephrase.generate.replace(/[⟦⟧]/g, ".")) }));
-    await within(box()).findByLabelText(p.profiles.form.rephrase.suggestion);
+    await within(box()).findByRole("button", { name: p.profiles.form.rephrase.undo });
     expect(untranslated(box())).toEqual([]);
-    await user.click(within(box()).getByRole("button", { name: p.profiles.form.rephrase.discard }));
+    await user.click(within(box()).getByRole("button", { name: p.profiles.form.rephrase.undo }));
     server.oneshotAnswer = " ";
     await user.click(within(box()).getByRole("button", { name: new RegExp(p.profiles.form.rephrase.generate.replace(/[⟦⟧]/g, ".")) }));
     await within(box()).findByRole("alert");
@@ -870,7 +898,6 @@ function hold(server: FakeHermes) {
   return { go: () => go() };
 }
 
-/** Waits for the Text generation model read the form makes as it opens. */
 async function modelReadDone() {
-  await waitFor(() => expect(hintOf(generate())).not.toBe("Checking which model would rewrite it…"));
+  await waitFor(() => expect(hintOf(generate())).not.toBe("Checking which model would write it…"));
 }

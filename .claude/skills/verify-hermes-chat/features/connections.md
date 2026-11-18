@@ -35,4 +35,4 @@ Preconditions:
 - Remove deletes the connection and everything kept for it. On a fresh run that means going back through Setup.
 - Settings search filters the sections that are shown. Clear it before you look for a control by text.
 - On the private bus, Sign out also shows the alert "Signed out, but couldn't delete the saved password from the system keyring". This is expected here and is not a bug.
-- With an unsaved edit in Settings (memory, persona, an artifact), Sign out asks first. This recipe has none.
+- With an unsaved edit in Settings (memory, a skill, an artifact), Sign out asks first. This recipe has none.

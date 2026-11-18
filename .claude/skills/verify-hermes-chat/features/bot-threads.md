@@ -1,6 +1,6 @@
 # Bot threads
 
-In Bots mode every bot row has a disclosure, "N threads" or "No threads". Open, it lists the bot's threads and a **New thread** row. A thread is a hidden conversation with the same bot on one topic: New thread starts an empty one from a typed topic, and **Thread from here** under a Bot Chat message starts one with the Bot Chat's history up to that message. A thread's pane is headed "<Bot> / <topic>" with a Thread badge. Threads never show in Chats mode, the Archived drawer or Search, and they stay under their bot after the Bot Chat is compacted into a new session. A thread of a bot in another profile is a visit (ADR 0203), which the Chats tab ends. ADR 0205 holds the rules.
+In Bots mode every bot row has a disclosure, "N threads" or "No threads". Open, it lists the bot's threads and a **New thread** row. A thread is a hidden conversation with the same bot on one topic: New thread starts an empty one from a typed topic, and **Thread from here** under a Bot Chat message starts one with the Bot Chat's history up to that message. A thread's pane is headed "<Bot> / <topic>" with a Thread badge. Threads never show in Chats mode, the Archived drawer or Search, and they stay under their bot after the Bot Chat is compacted into a new session. A thread of a bot in another profile is a visit (ADR 0203), which the Chats tab ends. ADR 0211 holds the rules.
 
 ## Sub-features
 

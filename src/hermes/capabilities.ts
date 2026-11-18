@@ -23,7 +23,9 @@ import { redactSecrets } from "./secrets";
 import { RestError, type RestMethod } from "./pipe";
 import { errorText, isObj } from "./values";
 import type { AppMethod } from "./canonicalVerbs";
+import type { PlainMethod } from "./sessionProtocol";
 import { listServerCommands } from "./commands";
+import { isRoomList } from "./groupRooms";
 
 /** The features whose server support is tracked. */
 export type CapabilityId =
@@ -53,6 +55,7 @@ export type CapabilityId =
   | "workReclaim"
   | "workReassign"
   | "botMode"
+  | "groupRooms"
   | "subagents"
   | "subagentRoster"
   | "modelUsage"
@@ -93,7 +96,7 @@ type Probe =
   | { kind: "rest"; path: (profile: string) => string; maxBytes?: number; shape: (body: unknown) => boolean; lacks?: (body: unknown) => string | undefined }
   | {
       kind: "rpc";
-      method: AppMethod;
+      method: PlainMethod;
       params: (profile: string) => Record<string, unknown>;
       shape: (result: unknown) => boolean;
       lacks?: (result: unknown) => string | undefined;
@@ -218,7 +221,7 @@ export const CAPABILITIES: readonly CapabilitySpec[] = [
     // `dashboard.turn_isolation` decides.
     writeCheck: {
       says: "an answer to an Approval no chat has",
-      send: (io) => io.rpc("approval.respond", { session_id: PROBE_NAME, request_id: PROBE_NAME, choice: "deny" }),
+      send: (io) => io.approvalProbe(PROBE_NAME),
       context: (io, profile) => io.get(`api/config?${new URLSearchParams({ profile })}`, 2 * 1024 * 1024).then(turnIsolationOf),
       read: (o, isolation) => {
         const has = "answer" in o ? isObj(o.answer) && o.answer.resolved === 0 : o.failure.rpcCode === SESSION_NOT_FOUND;
@@ -357,9 +360,9 @@ export const CAPABILITIES: readonly CapabilitySpec[] = [
   {
     id: "persona",
     label: "Persona",
-    usedBy: "Settings → Persona",
+    usedBy: "The Persona field of Edit profile and Edit bot, and Clone profile's persona copy",
     needs: "GET and PUT /api/profiles/{name}/soul.",
-    without: "Settings → Persona explains what is missing, and reads or writes nothing.",
+    without: "Edit's Persona says what is missing and writes nothing; the rest of the form still saves.",
     anchor: "persona",
     probe: { kind: "rest", path: (profile) => `api/profiles/${encodeURIComponent(profile)}/soul`, shape: isObj },
     routes: [/^api\/profiles\/[^/]+\/soul$/],
@@ -604,6 +607,18 @@ export const CAPABILITIES: readonly CapabilitySpec[] = [
     methods: ["profiles.list"],
   },
   {
+    id: "groupRooms",
+    label: "Group rooms",
+    usedBy: "Group rooms in the chat list's Bots mode",
+    needs: "The groups.* methods on /api/ws, and Hermes's room worker running in the dashboard.",
+    without: "Bots mode has no Group rooms section.",
+    anchor: "group-rooms",
+    // Never `groups.capabilities`: its first call writes a secret file on the server (ADR 0044, ADR 0210).
+    probe: { kind: "rpc", method: "groups.list", params: () => ({ limit: 1 }), shape: isRoomList },
+    methods: ["groups.list"],
+    writeMethods: /^groups\.(?!list$|state$|log$)/,
+  },
+  {
     id: "subagents",
     label: "Subagents",
     usedBy: "The Subagents panel in a chat",
@@ -842,20 +857,31 @@ export function approvalsFrom(result: unknown): Pick<Capability, "state" | "why"
 const SHARED_CHATS_SINCE = [0, 21, 3];
 
 /**
+ * The oldest Hermes release known to have `message_agent` behind the Bot Mode block gate (`tools/bot_mode_dm.py`
+ * `message_agent_authorized`): every tag from v0.21.6 to v0.23.2 has it. No older tag was available to check.
+ */
+const BOT_MESSAGING_SINCE = [0, 21, 6];
+
+function atLeast(f: ServerFacts, since: readonly number[]): boolean | undefined {
+  const v = /^v?(\d+)\.(\d+)\.(\d+)/.exec(f.version ?? f.build ?? "");
+  if (!v) return undefined;
+  for (let i = 0; i < 3; i++) {
+    const d = Number(v[i + 1]) - since[i];
+    if (d) return d > 0;
+  }
+  return true;
+}
+
+/**
  * Whether Hermes shares a chat between the clients that have it open: each gets every server request, and the first
  * answer settles it, an error included (ADR 0125). `declines_not_shown` came later, so it says so before the version
  * is read.
  */
 export function sharesChats(f: ServerFacts): boolean {
-  if (f.declinesNotShown) return true;
-  const v = /^v?(\d+)\.(\d+)\.(\d+)/.exec(f.version ?? f.build ?? "");
-  if (!v) return false;
-  for (let i = 0; i < 3; i++) {
-    const d = Number(v[i + 1]) - SHARED_CHATS_SINCE[i];
-    if (d) return d > 0;
-  }
-  return true;
+  return !!f.declinesNotShown || (atLeast(f, SHARED_CHATS_SINCE) ?? false);
 }
+
+export const predatesBotMessaging = (f: ServerFacts) => atLeast(f, BOT_MESSAGING_SINCE) === false;
 
 /** What a failed `client.capabilities` means for Approvals. A Hermes without it is older than the requests this app reads. */
 export function approvalsFailed(e: unknown): Pick<Capability, "state" | "why"> {
@@ -868,7 +894,8 @@ export function approvalsFailed(e: unknown): Pick<Capability, "state" | "why"> {
 /** How the store reaches Hermes. Each call fails as the transport words it. */
 export type CapabilityIO = {
   get(pathAndQuery: string, maxBytes?: number): Promise<string>;
-  rpc(method: AppMethod, params: Record<string, unknown>): Promise<unknown>;
+  rpc(method: PlainMethod, params: Record<string, unknown>): Promise<unknown>;
+  approvalProbe(name: string): Promise<unknown>;
   /** A dashboard `PUT`, for a write check only (`WriteCheck`). */
   put(pathAndQuery: string, body: unknown): Promise<string>;
   /** A dashboard `POST`, for a write check only (`WriteCheck`). */

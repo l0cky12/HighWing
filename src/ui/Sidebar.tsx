@@ -989,11 +989,12 @@ export type ListModes = {
   pictures: Readonly<Record<string, string>>;
   leaving?: string;
   onOpenBot: (bot: Bot) => void;
+  rooms?: { waiting: number; line: (onShowBots: () => void) => ReactNode };
 };
 
 export type ShownBot = { bot: Bot; look: BotLookShown };
 
-function ModeSwitch({ value, onChange, inbox, waiting, replying }: Omit<ListModes, "waiting"> & { inbox: number; waiting: number }) {
+function ModeSwitch({ value, onChange, inbox, waiting, replying, rooms }: Omit<ListModes, "waiting"> & { inbox: number; waiting: number }) {
   const l = useLocale();
   const w = l.chatList;
   const flip = useBindings().chatListMode[0];
@@ -1011,16 +1012,17 @@ function ModeSwitch({ value, onChange, inbox, waiting, replying }: Omit<ListMode
     e.preventDefault();
     go(CHAT_LIST_MODES[to]);
   };
+  const needing = waiting + (rooms?.waiting ?? 0);
   const waits: Record<ChatListMode, { text?: string; badge?: ReactNode }> = {
     chats: inbox > 0 ? { text: w.inbox(inbox), badge: <span className="sb-mode-count">{l.fmt.number(inbox)}</span> } : {},
     bots:
-      waiting > 0
+      needing > 0
         ? {
-            text: w.needYou(waiting),
+            text: rooms?.waiting ? w.needYouInBots(needing) : w.needYou(needing),
             badge: (
               <span className="sb-mode-count is-needs-you">
                 <ShieldAlert size={12} aria-hidden />
-                {l.fmt.number(waiting)}
+                {l.fmt.number(needing)}
               </span>
             ),
           }
@@ -1455,6 +1457,7 @@ export function ChatList({
       {mode && !botsShown && (
         <NeedsYouLine waiting={mode.waiting} pictures={mode.pictures} leaving={mode.leaving} onOpenBot={mode.onOpenBot} onShowBots={() => mode.onChange("bots")} />
       )}
+      {mode && !botsShown && mode.rooms?.line(() => mode.onChange("bots"))}
       {mode && !botsShown && <div className="sb-profile">{switcher}</div>}
       {(onNew || onSearch) && (
         <div className="sb-actions">

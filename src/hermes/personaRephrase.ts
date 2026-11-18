@@ -1,6 +1,6 @@
-// Generate with AI on the New profile form's Persona (ADR 0197): what the stateless `llm.oneshot` call is told and given,
-// and how its answer is read. No I/O here. It only rewrites what the owner typed: an empty box sends nothing, and the
-// answer is a suggestion the owner edits and applies, never saved on its own.
+// Write with AI on the profile form's Persona (ADR 0197, 0206): what the stateless `llm.oneshot` call is told and given,
+// and how its answer is read. No I/O here. It only rewrites what the owner typed: an empty field sends nothing, and the
+// answer replaces the field's text, never saved on its own.
 import type { Call } from "./instructionsAI";
 
 /** Most characters of the owner's rough persona sent. */
@@ -10,7 +10,7 @@ export const REPHRASE_TOKENS = 2_048;
 
 /** What `llm.oneshot` is told when it rewrites a rough persona. */
 export const REPHRASE_INSTRUCTIONS = [
-  "You rewrite the owner's rough notes into the persona of a new AI assistant, kept as its SOUL.md: the text it reads as who it is and how it behaves.",
+  "You rewrite the owner's rough notes into the persona of an AI assistant, kept as its SOUL.md: the text it reads as who it is and how it behaves.",
   "Write it to the assistant in the second person (\"You are…\"), clearer and better organised than the notes.",
   "Keep every intent, constraint and name the owner gives, and write in the language the notes are in.",
   "Never add authority, permissions, tools, integrations, facts or rules the notes don't give.",
@@ -34,7 +34,7 @@ export function rephraseCall(text: string): Call {
   };
 }
 
-/** Hermes's answer as the suggested persona, or undefined if it holds no text. The `<persona>` tags come off if it echoed them. */
+/** Hermes's answer as the rewritten persona, or undefined if it holds no text. The `<persona>` tags come off if it echoed them. */
 export function rephraseFrom(answer: string): string | undefined {
   const m = /^\s*<persona>([\s\S]*)<\/persona>\s*$/.exec(answer);
   return (m ? m[1] : answer).trim() || undefined;

@@ -623,6 +623,109 @@ describe("Editing a bot (ADR 0189)", () => {
   });
 });
 
+describe("Bot messaging's switch (ADR 0207)", () => {
+  const headless = (setup: (server: FakeHermes) => void = () => {}) =>
+    signedIn(new FakeHermes(), (server) => {
+      server.profileMeta = {};
+      server.sessions.push(row("default-bot", 4, { title: BOT_CHAT_TITLE, hidden: true }));
+      setup(server);
+    });
+  const block = (server: FakeHermes, profile: string) => server.profileMeta[profile]?.ui_meta?.["hermes-bots"];
+  const writes = (server: FakeHermes) => rpc(server, "profiles.configure").map((r) => r.params);
+
+  it("turns it on with one empty block on the default profile, and shows it only as read back", async () => {
+    const { server, hermes } = await headless();
+    expect(server.messageAgentOffered("default-bot")).toBe(false);
+    const lists = rpc(server, "profiles.list").length;
+    expect(await hermes.setAgentMessaging(true)).toEqual({ kind: "saved", now: { on: true, keptOnBy: [] } });
+    expect(writes(server)).toEqual([{ name: "default", ui_meta: { "hermes-bots": {} }, ui_meta_expected_revisions: { "hermes-bots": 0 } }]);
+    expect(server.messageAgentOffered("default-bot")).toBe(true);
+    expect(server.messageAgentOffered("scribe-bot")).toBe(true);
+    expect(server.messageAgentOffered("scribe-side")).toBe(false);
+    expect(hermes.getSnapshot().bots?.roster.map((b) => b.block)).toEqual(["empty", "none"]);
+    expect(rpc(server, "profiles.list")).toHaveLength(lists + 2);
+  });
+
+  it("sends nothing the second time", async () => {
+    const { server, hermes } = await headless();
+    await hermes.setAgentMessaging(true);
+    expect(await hermes.setAgentMessaging(true)).toEqual({ kind: "saved", now: { on: true, keptOnBy: [] } });
+    expect(writes(server)).toHaveLength(1);
+  });
+
+  it("writes nothing more when another client's pin turned it on meanwhile, and leaves the pin", async () => {
+    const { server, hermes } = await headless((s) => {
+      s.beforeConfigure = () => {
+        s.beforeConfigure = undefined;
+        s.writeBotAsOtherClient("default", { pinned: true });
+      };
+    });
+    const saved = await hermes.setAgentMessaging(true);
+    expect(saved.kind === "saved" && saved.now.on && saved.now.keptOnBy.map((b) => b.profile)).toEqual(["default"]);
+    expect(writes(server)).toHaveLength(1);
+    expect(block(server, "default")).toEqual({ pinned: true });
+  });
+
+  it("turns it off by deleting the empty block, whose revision moves on", async () => {
+    const { server, hermes } = await headless();
+    await hermes.setAgentMessaging(true);
+    expect(await hermes.setAgentMessaging(false)).toEqual({ kind: "saved", now: { on: false } });
+    expect(writes(server)[1]).toEqual({ name: "default", ui_meta: { "hermes-bots": null }, ui_meta_expected_revisions: { "hermes-bots": 1 } });
+    expect(server.profileMeta.default?.ui_meta).toBeUndefined();
+    expect(server.uiMetaRevisions.default).toEqual({ "hermes-bots": 2 });
+    expect(server.messageAgentOffered("default-bot")).toBe(false);
+  });
+
+  it("stays on, and sends nothing, while a bot's block holds something", async () => {
+    const { server, hermes } = await headless((s) => {
+      s.profileMeta = { default: { ui_meta: { "hermes-bots": {} } }, scribe: { ui_meta: { "hermes-bots": { pinned: true } } } };
+    });
+    expect(await hermes.setAgentMessaging(false)).toEqual({ kind: "kept", by: ["scribe"] });
+    expect(writes(server)).toEqual([]);
+    expect(block(server, "scribe")).toEqual({ pinned: true });
+    expect(block(server, "default")).toEqual({});
+  });
+
+  it("writes nothing to a Hermes that can't check for changes", async () => {
+    const { server, hermes } = await headless((s) => (s.uiMetaCas = false));
+    expect(await hermes.setAgentMessaging(true)).toEqual({ kind: "failed", failure: { kind: "noCheck" } });
+    expect(writes(server)).toEqual([]);
+  });
+
+  it("gives up after three conflicts in a row", async () => {
+    const { server, hermes } = await headless((s) => {
+      s.profileMeta = { default: { ui_meta: { "hermes-bots": {} } } };
+      s.beforeConfigure = () => s.writeBotAsOtherClient("default", {});
+    });
+    expect(await hermes.setAgentMessaging(false)).toEqual({ kind: "failed", failure: { kind: "contended" } });
+    expect(writes(server)).toHaveLength(3);
+    expect(block(server, "default")).toEqual({});
+  });
+
+  it("counts a write whose answer was lost once the roster shows it", async () => {
+    const { server, hermes } = await headless();
+    const configure = server.handlers["profiles.configure"];
+    server.handlers["profiles.configure"] = (r) => {
+      const respond = server.respond;
+      server.respond = () => {};
+      configure(r);
+      server.respond = respond;
+    };
+    vi.useFakeTimers();
+    const saving = hermes.setAgentMessaging(true);
+    await vi.advanceTimersByTimeAsync(121_000);
+    expect(await saving).toEqual({ kind: "saved", now: { on: true, keptOnBy: [] } });
+  });
+
+  it("says so when Hermes has no profiles.configure", async () => {
+    const { server, hermes } = await headless((s) => {
+      s.handlers["profiles.configure"] = (r) => s.fail(r.id, -32601, "unknown method: profiles.configure");
+    });
+    expect(await hermes.setAgentMessaging(true)).toEqual({ kind: "failed", failure: { kind: "noRoute", action: "botLook" } });
+    expect(server.messageAgentOffered("default-bot")).toBe(false);
+  });
+});
+
 describe("the stand-in Hermes's Bot Mode writes, as f0d94882 answers them", () => {
   const send = async (method: "profiles.configure" | "profiles.set_asset", params: Record<string, unknown>) => {
     const { server, hermes } = await signedIn();

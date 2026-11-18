@@ -38,10 +38,11 @@ Each feature file starts with an H1 and one paragraph describing the behaviour t
 - [Sign in](sign-in.md): first-run setup for a web address connection, a wrong password, and signing in again after a relaunch.
 - [Send a message](send-message.md): open a chat, send, watch the streamed reply, and confirm both messages on the server.
 - [New chat](new-chat.md): start a chat from the rail, the list panel or Ctrl+N, and see it created on the server and in the list.
-- [New bot](new-bot.md): rewrite a rough persona with AI, choose skills and tools, create, and read each back; the partial and narrow cases.
+- [New bot](new-bot.md): rewrite a rough persona with AI in place, edit a bot's persona, choose skills and tools, create, and read each back; the partial and narrow cases.
 - [Bot threads](bot-threads.md): each bot's disclosure, New thread, Thread from here, switching, kept out of Chats, Archived and Search, kept after the Bot Chat is compacted (`HV_COMPRESS=rotate`), and a thread under another profile's bot.
-- [MCP servers](mcp-servers.md): Settings → MCP servers: list, test, add, edit with write-only secrets, remove, switch, OAuth sign-in, catalog, another profile.
-- [Gateways](gateways.md): Settings → Gateways: Telegram and Discord state, token replace and remove with read-back, the switch, a turned-down token, a missing library, a change on the server meanwhile, Check status.
+- [Group rooms](group-rooms.md): Bots mode's New room, bots taking turns, stepping in, the pause with Continue or Carry on, an approval, a bot stuck in `clarify`, and the needs-you signs, with the `HV_ROOMS=1` seed.
+- [MCP servers](mcp-servers.md): Settings → MCP servers: list, test, add, edit with write-only secrets, remove, switch, OAuth sign-in, catalog, another profile, Restart gateway after an edit.
+- [Gateways](gateways.md): Settings → Gateways: Telegram and Discord state, token replace and remove with read-back, the switch, a turned-down token, a missing library, a change on the server meanwhile, Check status, Restart gateway.
 - [Search chats](search.md): Ctrl+K or the rail opens search, a body-text match opens its chat, and a miss shows No matches.
 - [Chat list](chat-list.md): the Archived drawer at the foot (open, close, its own scroll, kept across a relaunch), Archive and Unarchive from the menu, Up and Down into the drawer, chats archived in Hermes in the same drawer, resizing the list from its edge, and zooming the app, with the `HV_LIST=24` seed.
 - [Rail inbox](rail-inbox.md): opened as the tray's Open Inbox is (an emitted event), then Check now, Clear done, and auto-dismissing old completed entries, with the `HV_INBOX=1` seed.

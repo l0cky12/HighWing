@@ -4,7 +4,7 @@
 // ordinary message.
 import { catalogSkills } from "./skillCommands";
 import { isObj } from "./values";
-import type { AppMethod } from "./canonicalVerbs";
+import type { PlainMethod, SessionProtocol } from "./sessionProtocol";
 
 /**
  * `local`: an action of this app, which may write to Hermes through the same calls its buttons use. `server`: a command
@@ -80,7 +80,7 @@ export function matchCommands(query: string): CommandDef[] {
 export const completion = (def: CommandDef) => `/${def.name}${def.args ? " " : ""}`;
 
 /** How a request to Hermes goes: a JSON-RPC call on `/api/ws`. */
-export type Rpc = (method: AppMethod, params: Record<string, unknown>) => Promise<unknown>;
+export type Rpc = (method: PlainMethod, params: Record<string, unknown>) => Promise<unknown>;
 
 /** What a server command came back with: text to show, or a message Hermes wants sent as the chat's next turn. */
 export type CommandResult = { kind: "output"; text: string } | { kind: "send"; message: string; notice?: string };
@@ -143,10 +143,10 @@ export async function listServerCommands(rpc: Rpc, profile: string): Promise<Ser
  * argument as its own field, so its words reach Hermes exactly as typed. `/context` goes through `slash.exec`, which
  * Hermes answers from the live session without starting its slash worker.
  */
-export async function runServerCommand(rpc: Rpc, sessionId: string, def: CommandDef, arg: string): Promise<CommandResult> {
+export async function runServerCommand(rpc: Rpc, sessions: Pick<SessionProtocol, "command">, sessionId: string, def: CommandDef, arg: string): Promise<CommandResult> {
   const res =
     def.name === "steer"
-      ? await rpc("command.dispatch", { name: def.name, arg, session_id: sessionId })
+      ? await sessions.command(sessionId, def.name, arg)
       : def.name === "context"
         ? await rpc("slash.exec", { command: `/${def.name}`, session_id: sessionId })
         : undefined;

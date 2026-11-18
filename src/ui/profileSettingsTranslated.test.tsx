@@ -68,7 +68,7 @@ it("shows only catalogue words in the list, its menu, New, Edit and Delete", asy
   server.profileModel.work = { model: "gpt-6.1", provider: "openai", reasoning_effort: "medium", fast: false };
   server.profileMeta.work = { description: "Writes code", description_auto: true };
   server.profileMeta.default = { display_name: "Main" };
-  server.gatewaysRunning.add("work");
+  server.gateways.gateway.work = { running: true, platforms: {} };
   server.distributions.work = "coders";
   const hermes = await connect(server.openPipe, undefined, memoryCache());
   running.push(hermes);

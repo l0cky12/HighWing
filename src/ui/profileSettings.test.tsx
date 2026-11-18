@@ -35,7 +35,7 @@ async function launch(setup: (s: FakeHermes) => void = () => {}, shown?: Map<str
   server.otherProfiles = { work: [], research: [] };
   server.profileModel.work = { model: "gpt-6.1", provider: "openai", reasoning_effort: "medium", fast: false };
   server.profileMeta.work = { description: "Writes and reviews code" };
-  server.gatewaysRunning.add("work");
+  server.gateways.gateway.work = { running: true, platforms: {} };
   setup(server);
   const hermes = await connect(server.openPipe, undefined, memoryCache());
   running.push(hermes);
@@ -134,9 +134,6 @@ describe("Settings → Profiles", { timeout: 30_000 }, () => {
     await waitFor(() => expect(option(screen.getByRole("listbox", { name: "Profiles" }), "default").textContent).toMatch(/Main \(default\)/));
     await waitFor(() => expect(document.querySelector(".profile-btn .profile-name")?.textContent).toBe("Main"));
     expect(document.querySelector(".profile-btn .profile-id")?.textContent).toBe("default");
-    // Persona's own picker names it the same way.
-    await user.click(screen.getByRole("tab", { name: "Persona" }));
-    await waitFor(() => expect([...document.querySelectorAll("option")].map((o) => o.textContent)).toContain("Main (default) (in use)"));
   });
 
   it("sets the model and has Hermes write the description, each through its own route", async () => {
@@ -347,15 +344,30 @@ describe("Settings → Profiles", { timeout: 30_000 }, () => {
     expect(writes(server)).toEqual(["POST /api/profiles/work/describe-auto"]);
   });
 
-  it("asks before the Persona link leaves unsaved fields", async () => {
-    const { user, list } = await launch();
+  it("opens Edit at Persona from a row's Edit persona, and saves it as the profile's SOUL.md", async () => {
+    const { server, user, list } = await launch((s) => (s.souls.work = "You review code.\n"));
+    await user.click(within(option(list, "work")).getByRole("button", { name: "More for work" }));
+    await user.click(screen.getByRole("menuitem", { name: "Edit persona" }));
+    const dialog = screen.getByRole("dialog", { name: "Edit profile: work" });
+    const persona = within(dialog).getByLabelText<HTMLTextAreaElement>("Persona");
+    await waitFor(() => expect(document.activeElement).toBe(persona));
+    expect(persona.value).toBe("You review code.\n");
+    await user.type(persona, "Be blunt.");
+    await user.click(within(dialog).getByRole("button", { name: /Save changes/ }));
+    expect(await screen.findByText("Saved work.")).toBeTruthy();
+    expect(server.souls.work).toBe("You review code.\nBe blunt.");
+    expect(writes(server)).toEqual(["PUT /api/profiles/work/soul"]);
+  });
+
+  it("asks before leaving an unsaved persona on Edit", async () => {
+    const { user, list } = await launch((s) => (s.souls.work = "You review code.\n"));
     await user.click(within(option(list, "work")).getByRole("button", { name: "Edit work" }));
     const dialog = screen.getByRole("dialog", { name: "Edit profile: work" });
-    await user.type(within(dialog).getByLabelText("Description"), " too");
-    await user.click(within(dialog).getByRole("button", { name: "Edit in Settings → Persona" }));
+    const persona = within(dialog).getByLabelText<HTMLTextAreaElement>("Persona");
+    await waitFor(() => expect(persona.disabled).toBe(false));
+    await user.type(persona, " Be blunt.");
+    await user.keyboard("{Escape}");
     expect(within(dialog).getByText("The changes you made here aren't saved.")).toBeTruthy();
-    await user.click(within(dialog).getByRole("button", { name: "Close without saving" }));
-    expect(await screen.findByRole("tabpanel", { name: "Persona" })).toBeTruthy();
   });
 
   it("asks before Clone instead leaves a filled-in New profile, and offers neither while creating", async () => {

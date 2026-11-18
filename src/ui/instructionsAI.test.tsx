@@ -10,6 +10,8 @@ import { connect, type Hermes } from "../hermes/transport";
 import { projectScope } from "../hermes/projectLinks";
 import { savedDefaults } from "../hermes/projectDefaults";
 import { ASK_INSTRUCTIONS, IMPROVE_INSTRUCTIONS, READY, WRITE_INSTRUCTIONS } from "../hermes/instructionsAI";
+import { connectionScope } from "../hermes/connections";
+import { setUIPrefs } from "../hermes/uiPrefs";
 import { Main } from "../App";
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }));
@@ -26,7 +28,8 @@ afterEach(async () => {
   localStorage.clear();
 });
 
-const SCOPE = projectScope({ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }, "default");
+const CONNECTION = { mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" } as const;
+const SCOPE = projectScope(CONNECTION, "default");
 
 const budget: FakeProject = {
   id: "p_budget",
@@ -105,12 +108,10 @@ describe("Improve with AI, when the box has text", () => {
     const { user, box, before } = await openDefaults(s, "Use metric units.");
     await user.click(screen.getByRole("button", { name: "Improve with AI" }));
     const d = await dialog(/Improve the instructions with AI/);
-    expect(await within(d).findByText("openrouter · deepseek-v4-flash")).toBeTruthy();
-    expect(d.textContent).toContain("profile default's Project instructions model, which follows Text generation: openrouter · deepseek-v4-flash.");
+    await waitFor(() => expect(d.textContent).toContain("default writes with openrouter · deepseek-v4-flash, its Text generation model, pinned on the server. Each step"));
     expect((await draft()).textContent).toBe("USE METRIC UNITS.");
     expect(within(d).getByLabelText("Your instructions").textContent).toBe("Use metric units.");
     const call = oneshots(s)[0];
-    // Unset, the Project instructions model follows Text generation: the call sends its task.
     expect(call).toMatchObject({ profile: "default", instructions: IMPROVE_INSTRUCTIONS, task: "title_generation" });
     expect(call.input).toContain("Project name: Budget Tracker");
     expect(call.input).toContain("Folders on the server: /srv/budget");
@@ -164,7 +165,7 @@ describe("Improve with AI, when the box has text", () => {
     const { user, box } = await openDefaults(s, "Use metric units.");
     await user.click(screen.getByRole("button", { name: "Improve with AI" }));
     const d = await dialog(/Improve/);
-    expect((await within(d).findByRole("alert")).textContent).toContain("Hermes couldn't write the instructions: one-shot generation failed: Request timed out.");
+    expect((await within(d).findByRole("alert")).textContent).toContain("Hermes couldn't write the instructions: Request timed out.");
     expect(within(d).queryByRole("button", { name: "Use this" })).toBeNull();
     expect(box.value).toBe("Use metric units.");
     s.oneshotFailure = undefined;
@@ -186,8 +187,8 @@ describe("Write with AI, when the box is empty", () => {
     s.oneshotFailure = "Provider 'openrouter' is set in config.yaml but no API key was found";
     await user.click(within(d).getByRole("button", { name: "Write instructions" }));
     expect((await within(d).findByRole("alert")).textContent).toContain(
-      "Hermes couldn't write the instructions: Project instructions use the Text generation model, which runs on openrouter, and Hermes on the server " +
-        "has no API key or sign-in for it. Add one there, or pick a Project instructions model in Settings → Model.",
+      "Hermes couldn't write the instructions: default's Text generation model is pinned on the server to openrouter, and Hermes has no sign-in for it. " +
+        "Add an API key or sign-in for it there, or change that model in Settings → Model while Highwing uses default.",
     );
     expect((within(d).getByRole("textbox", { name: "About the project" }) as HTMLTextAreaElement).value).toBe("A Rust CLI. Always run cargo test.");
     expect(box.value).toBe("");
@@ -351,9 +352,7 @@ describe("The Project instructions model (ADR 0177)", () => {
     await user.click(screen.getByRole("button", { name: "Improve with AI" }));
     const d = await dialog(/Improve/);
     expect((await draft()).textContent).toBe("USE METRIC UNITS. [gpt-6.1-mini]");
-    await within(d).findByText("openai-codex · gpt-6.1-mini");
-    expect(d.textContent).toContain("profile default's Project instructions model: openai-codex · gpt-6.1-mini. Each step");
-    expect(d.textContent).not.toContain("follows");
+    expect(d.textContent).toContain("default writes with openai-codex · gpt-6.1-mini, its Project instructions model, pinned on the server. Each step");
     await user.click(within(d).getByRole("button", { name: "Ask again" }));
     await waitFor(async () => expect((await draft()).textContent).toBe("USE METRIC UNITS. (again) [gpt-6.1-mini]"));
     expect(oneshots(s).map((c) => c.task)).toEqual(["project_instructions", "project_instructions"]);
@@ -382,21 +381,35 @@ describe("The Project instructions model (ADR 0177)", () => {
     await user.click(screen.getByRole("button", { name: "Improve with AI" }));
     const d = await dialog(/Improve/);
     expect((await within(d).findByRole("alert")).textContent).toBe(
-      " Hermes couldn't write the instructions: Project instructions run on Nous Portal, and Hermes on the server isn't signed in to Nous Portal. " +
-        "Sign it in there with `hermes auth add nous`, or pick another Project instructions model in Settings → Model. The box keeps what it had.",
+      " Hermes couldn't write the instructions: default's Project instructions model is pinned on the server to nous, and Hermes has no sign-in for it. " +
+        "Sign it in there with hermes auth add nous, or change that model in Settings → Model while Highwing uses default. The box keeps what it had.",
     );
   });
 
-  it("names the main model when Text generation, which it follows, is on auto", async () => {
+  it("writes with the main model when nothing is pinned and no Writing model is set", async () => {
     const s = server();
     s.modelConfig.auxiliary.title_generation = { provider: "auto", model: "" };
     const { user } = await openDefaults(s, "Use metric units.");
     await user.click(screen.getByRole("button", { name: "Improve with AI" }));
     const d = await dialog(/Improve/);
-    await within(d).findByText("openrouter · glm-5.3-flash, the main model");
-    expect(d.textContent).toContain("Project instructions model, which follows Text generation: openrouter · glm-5.3-flash, the main model. Each step");
     await draft();
+    expect(d.textContent).toContain("No Writing model is set, so default writes with its own model: openrouter · glm-5.3-flash. Each step");
     expect(oneshots(s).map((c) => c.task)).toEqual(["title_generation"]);
+    expect(s.configWrites).toEqual([]);
+  });
+
+  it("writes with the Writing model when nothing is pinned, copying it into the profile's config first", async () => {
+    const s = server();
+    s.modelConfig.auxiliary.title_generation = { provider: "auto", model: "" };
+    s.oneshotAnswer = (c) => `${model(c)} [${c.model}]`;
+    setUIPrefs({ writingModels: { [connectionScope(CONNECTION)]: { provider: "openai-codex", model: "gpt-6.1-mini" } } });
+    const { user } = await openDefaults(s, "Use metric units.");
+    await user.click(screen.getByRole("button", { name: "Improve with AI" }));
+    const d = await dialog(/Improve/);
+    expect((await draft()).textContent).toBe("USE METRIC UNITS. [gpt-6.1-mini]");
+    expect(d.textContent).toContain("Your Writing model writes it: openai-codex · gpt-6.1-mini. Each step");
+    expect(oneshots(s).map((c) => c.task)).toEqual(["highwing_writing"]);
+    expect(s.configWrites.map((w) => w.profile)).toEqual(["default"]);
   });
 
   it("asks nothing when the model can't be read, never falling back to Text generation, and reads it again on Try again", async () => {
@@ -415,6 +428,6 @@ describe("The Project instructions model (ADR 0177)", () => {
     await user.click(within(d).getByRole("button", { name: "Try again" }));
     await draft();
     expect(oneshots(s).map((c) => c.task)).toEqual(["project_instructions"]);
-    expect(within(d).getByText("openai-codex · gpt-6.1-mini")).toBeTruthy();
+    expect(d.textContent).toContain("openai-codex · gpt-6.1-mini");
   });
 });

@@ -8,7 +8,6 @@ import { connectionScope, prefScope, type ScopeSource } from "./connections";
 import { forgetConnectionData } from "./forgetConnection";
 import { drafts, draftKey } from "./drafts";
 import { inboxAcks, inboxScope, type InboxEntry } from "./inbox";
-import { PersonaStore, personaKey } from "./personaStore";
 import {
   CONNECTION_KEYS,
   LocalMoveError,
@@ -122,16 +121,12 @@ describe("renaming a profile on this computer", () => {
     expect(Object.keys(JSON.parse((await defaultsFile.read())!).scopes)).toEqual([connectionScope(home, "coder")]);
   });
 
-  it("moves what is only in memory too: persona edits, unsaved drafts, messages on their way, and failed-write queues", async () => {
-    const persona = new PersonaStore(localStorage);
-    persona.setDraft(personaKey(home, "work"), { text: "Be terse.", base: { content: "", exists: false }, at: 1 });
+  it("moves what is only in memory too: unsaved drafts, messages on their way, and failed-write queues", async () => {
     const draftKey = key("hermes-chat.draft.", home, "work", "chat-1");
     unsaved.set(draftKey, "not stored");
     const item = { key: key("hermes-chat.draft.", home, "work", "null"), text: "on its way" };
     sending.add(item);
-    await renameProfileLocally(home, "work", "coder", { persona });
-    expect(persona.draft(personaKey(home, "coder"))?.text).toBe("Be terse.");
-    expect(persona.draft(personaKey(home, "work"))).toBeUndefined();
+    await renameProfileLocally(home, "work", "coder");
     expect([...unsaved.keys()]).toEqual([key("hermes-chat.draft.", home, "coder", "chat-1")]);
     expect(item.key).toBe(key("hermes-chat.draft.", home, "coder", "null"));
     // The live copies are moved by the same key rule.
@@ -155,26 +150,6 @@ describe("renaming a profile on this computer", () => {
     };
     await expect(renameProfileLocally(home, "work", "coder", { storage: refusing })).rejects.toBeInstanceOf(LocalMoveError);
     expect(localStorage.getItem(kept)).toBe("half a thought");
-  });
-
-  it("keeps a persona edit under the old name when its new copy can't be written, so reopening still has it", async () => {
-    // A full storage refuses every new copy, for the persona store and the walk alike.
-    const refusing = {
-      get length() {
-        return localStorage.length;
-      },
-      key: (i: number) => localStorage.key(i),
-      getItem: (k: string) => localStorage.getItem(k),
-      removeItem: (k: string) => localStorage.removeItem(k),
-      setItem: (k: string, v: string) => {
-        if (k.includes('"coder"')) throw new DOMException("full", "QuotaExceededError");
-        localStorage.setItem(k, v);
-      },
-    };
-    const persona = new PersonaStore(refusing);
-    persona.setDraft(personaKey(home, "work"), { text: "Be terse.", base: { content: "", exists: false }, at: 1 });
-    await expect(renameProfileLocally(home, "work", "coder", { persona, storage: refusing })).rejects.toBeInstanceOf(LocalMoveError);
-    expect(new PersonaStore(localStorage).draft(personaKey(home, "work"))?.text).toBe("Be terse.");
   });
 
   it("moves the Drafts held in memory with their undo history, and forgets them with the profile", async () => {
@@ -237,6 +212,15 @@ describe("forgetting a deleted profile on this computer", () => {
     expect(keysNow().filter((k) => k.includes(JSON.stringify(["connection", "c1"]).slice(0, -1)))).toEqual([]);
     for (const d of SCOPED_DOCS) expect(Object.keys(JSON.parse(localStorage.getItem(d)!).scopes)).toEqual([connectionScope(other, "work")]);
     expect(renamePending(home)).toBeUndefined();
+  });
+
+  it("keeps a connection's Writing model through a profile's delete, and drops it with the connection, leaving another's", async () => {
+    const pick = { provider: "openrouter", model: "deepseek/deepseek-v4-flash" };
+    setUIPrefs({ writingModels: { [connectionScope(home)]: pick, [connectionScope(other)]: pick } });
+    await forgetProfileLocally(home, "work");
+    expect(Object.keys(getUIPrefs().writingModels)).toEqual([connectionScope(home), connectionScope(other)]);
+    await forgetConnectionData(home as never);
+    expect(getUIPrefs().writingModels).toEqual({ [connectionScope(other)]: pick });
   });
 });
 

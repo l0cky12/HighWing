@@ -509,6 +509,7 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
 .returned-head svg { flex: none; color: var(--accent); }
 .returned-head .chev { color: var(--muted); }
 .returned-title { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.returned-why { margin: 6px 0 0; color: var(--text-2); font-size: calc(13rem / 14); overflow-wrap: anywhere; }
 .returned-body { margin-top: 6px; max-height: 420px; overflow: auto; }
 .returned-body.msg.assistant { clip-path: none; }
 .returned-log {
@@ -2314,6 +2315,10 @@ button.status-item:disabled { opacity: 0.5; cursor: default; }
 .text-gen .menu.pill-menu { bottom: auto; top: calc(100% + 8px); left: auto; right: 0; }
 .text-gen .model-options { left: auto; right: calc(100% + 6px); }
 .text-gen .model-options::before { right: auto; left: 100%; }
+/* Settings → Model → Writing model (WritingModelSettings.tsx): a provider and a model side by side, then one line per bot. */
+.writing-model-controls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.writing-bots { list-style: none; margin: 6px 0 0; padding: 0; font-size: calc(12.5rem / 14); line-height: 1.5; }
+.writing-bots li { padding: 2px 0; }
 /* ---------- setup (src/ui/Onboarding.tsx) ---------- */
 .setup {
   position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; overflow-y: auto; padding: 32px 16px;
@@ -2552,13 +2557,9 @@ label.memory-pick { cursor: pointer; }
 .skills-problems ul { margin: 4px 0 8px; padding-left: 18px; }
 .settings .skills-problems p { margin: 4px 0 8px; }
 .leave-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); z-index: 50; display: flex; align-items: center; justify-content: center; }
-/* The memory question shares the persona one's box (below), wider than a plain .confirm. */
+/* The questions over the whole window, wider than a plain .confirm. */
 .leave-overlay .leave-dialog { max-width: 420px; }
-/* Settings → Persona (PersonaSettings.tsx) and the question before leaving an unsaved edit (LeavePersona.tsx) */
-.persona-fact { overflow-wrap: anywhere; }
-.persona-profile { min-width: 180px; max-width: 100%; }
-.settings p.persona-note svg { vertical-align: -2px; }
-.settings p.persona-note { margin: 8px 0 0; }
+/* The profile form's Persona field (ProfileSettings.tsx). */
 .persona-text {
   width: 100%; box-sizing: border-box; resize: vertical; min-height: max(160px, calc(100vh - 460px)); padding: 12px 14px; border-radius: var(--radius);
   background: var(--code-bg); border: 1px solid var(--line-2); color: var(--text); outline: none;
@@ -2566,21 +2567,6 @@ label.memory-pick { cursor: pointer; }
 }
 .persona-text:focus { border-color: var(--line-3); }
 .persona-text[readonly] { color: var(--text-2); }
-.persona-readonly { min-height: 100px; }
-.persona-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.persona-actions-left { justify-content: flex-start; margin-top: 10px; }
-.persona-banner, .persona-conflict, .persona-problem {
-  display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; margin-bottom: 14px; border-radius: var(--radius);
-  border: 1px solid var(--line-2); background: var(--raised); font-size: calc(13rem / 14); line-height: 1.5;
-}
-.persona-banner { flex-direction: row; align-items: flex-start; gap: 10px; }
-.persona-banner > svg { flex: none; margin-top: 3px; color: var(--muted); }
-.persona-conflict, .persona-problem { border-color: rgba(245, 184, 74, 0.4); }
-.persona-problem.permission, .persona-problem.error, .persona-problem.no-profile { border-color: rgba(248, 113, 113, 0.4); }
-.persona-confirm { max-width: none; margin-top: 12px; }
-.persona-missing p { margin-bottom: 4px; }
-.settings p.persona-saved { color: var(--ok); margin: 10px 0 0; }
-.persona .field-label .badge { margin-left: 2px; }
 .leave-scrim { z-index: 60; align-items: flex-start; }
 /* Square and without a shadow (ADR 0084): WebKitGTK repaints a modal with every frame of a reply streaming behind it,
    and a rounded or shadowed box made those frames slow enough that keys in the dialog waited half a second. */
@@ -2862,6 +2848,9 @@ label.memory-pick { cursor: pointer; }
 .inbox-empty { padding: 12px 16px; }
 .bots-head { display: flex; justify-content: flex-end; gap: 2px; margin: 0 0 2px; }
 .bots-head .icon-btn { width: 26px; height: 24px; border-radius: 6px; }
+.bots-messaging { margin-right: auto; display: flex; align-items: center; gap: 8px; min-width: 0; padding-left: 6px; color: var(--text-2); font-size: calc(12.5rem / 14); }
+.bots-messaging > span { min-width: 0; line-height: 1.25; }
+.bots-messaging .switch:disabled { opacity: 0.5; }
 .bots-note { margin: 0 6px 8px; color: var(--warn); font-size: calc(12rem / 14); line-height: 1.4; }
 .bots-row { align-items: center; }
 .bots-open { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 10px; text-align: left; padding: 8px; border-radius: 8px; }
@@ -3761,6 +3750,9 @@ div.export-preview.export-page { height: auto; padding: 10px 12px; background: v
 .gw-line.warn { color: var(--warn); }
 .gw-line.bad, .pk-line.bad, .gw-problem { color: var(--bad); }
 .gw-problem.missing-dependency, .gw-problem.permission { color: var(--warn); }
+/* Restart gateway (RestartGateway.tsx, ADR 0205): what waits for the restart, then the button, on one line. */
+.gw-restart { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.gw-restart-why { color: var(--muted); }
 
 /* Settings → Providers, sign-ins and custom endpoints (ADR 0133). */
 .si-code { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; overflow-wrap: anywhere; }
@@ -3814,10 +3806,9 @@ div.export-preview.export-page { height: auto; padding: 10px 12px; background: v
 .profile-dialog p { margin: 0 0 6px; }
 .profile-save-why { text-align: right; }
 /* New's Generate with AI (ADR 0197): the call in flight, and the suggestion under the Persona box. */
-.persona-rephrase-asking { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; color: var(--muted); }
-.persona-rephrase-asking .btn { padding: 2px 9px; }
-.persona-rephrase-asking .set-hint { flex-basis: 100%; }
-.persona-suggestion { padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--raised); }
+.persona-rephrase-note { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; color: var(--muted); }
+.persona-rephrase-note .btn { padding: 2px 9px; }
+.persona-rephrase-note .set-hint { flex-basis: 100%; }
 /* New's Skills, Tools and MCP servers (ADR 0197): Hermes's defaults or Choose, then a filterable checklist. */
 .bot-setup { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin: 0; padding: 0; border: 0; }
 .bot-setup > legend { padding: 0; margin-bottom: 6px; }
@@ -4186,13 +4177,69 @@ button.budget-chat:hover { text-decoration: underline; }
 .budget-chat-amount { grid-column: 2; grid-row: 1; font-variant-numeric: tabular-nums; color: var(--text-2); text-align: right; }
 .budget-notes ul { padding-left: 18px; display: grid; gap: 4px; }
 
-/* Write with AI for a SOUL.md (PersonaAI.tsx), under Settings → Persona's editor and in the New bot form. */
-.persona-ai { margin-top: 10px; }
-.persona-ai-panel { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: var(--radius); background: var(--raised); }
-.persona-ai-open { display: inline-flex; align-items: center; gap: 6px; }
-.persona-ai .persona-text.persona-ai-notes { min-height: 70px; }
-.persona-ai .persona-text.persona-ai-text { min-height: 140px; max-height: 50vh; }
-.persona-ai .persona-actions { margin-top: 4px; }
-.persona-ai-working { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 0; color: var(--muted); }
-.persona-ai-working .btn { margin-left: auto; }
-.persona-ai-suggestion { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.rooms-section { margin: 0 0 8px; padding: 0 0 6px; border-bottom: 1px solid var(--line); }
+.rooms-title { display: flex; align-items: center; gap: 6px; margin: 0; padding: 4px 8px 4px 6px; color: var(--faint); font-size: calc(12rem / 14); font-weight: 500; }
+.rooms-faces { flex: none; display: flex; align-items: center; min-width: 34px; height: 34px; }
+.rooms-faces .bots-face + .bots-face { margin-left: -6px; box-shadow: -2px 0 0 var(--raised); }
+.rooms-floor { -webkit-line-clamp: 1; }
+.rooms-row.is-needs-you .rooms-floor { color: var(--warn); }
+.rooms-row.is-busy .rooms-floor { color: var(--accent); }
+.rooms-row.is-stale .rooms-floor { font-style: italic; }
+.sb-bots .rooms-row.is-current { background: var(--hover-2); box-shadow: inset 0 0 0 1px var(--line); }
+
+.leave-overlay .leave-dialog.room-dialog { max-width: min(440px, calc(100% - 32px)); width: 100%; max-height: calc(100vh - 32px); overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+.room-dialog h2 { margin: 0; font-size: calc(15rem / 14); }
+.room-pick { border: 0; margin: 0; padding: 0; min-width: 0; }
+.room-pick legend { display: flex; justify-content: space-between; width: 100%; padding: 0 0 6px; color: var(--muted); font-size: calc(12.5rem / 14); }
+.room-count { font-variant-numeric: tabular-nums; color: var(--text-2); }
+.room-pick ul { list-style: none; margin: 0; padding: 0; max-height: min(320px, 40vh); overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; }
+.room-pick-row { display: flex; align-items: center; gap: 9px; padding: 7px 10px; cursor: pointer; }
+.room-pick-row:hover { background: var(--hover); }
+.room-pick-row.is-on { background: var(--hover-2); }
+.room-pick-row:has(input:disabled) { opacity: 0.5; cursor: default; }
+.room-pick-row:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+.room-pick-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.room-pick-order {
+  flex: none; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; display: grid; place-items: center;
+  background: var(--accent); color: var(--on-accent); font-size: calc(12rem / 14); font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.room-name { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: calc(12.5rem / 14); }
+.room-name input { background: var(--raised); border: 1px solid var(--line-2); border-radius: 8px; padding: 7px 10px; color: var(--text); font-size: calc(13.5rem / 14); outline: none; }
+.room-name input:focus { border-color: var(--line-3); }
+.room-dialog .field-hint.err:empty { display: none; }
+
+.room .chat-head { gap: 12px; }
+.room .chat-title { flex: 1; }
+.room-seats { list-style: none; display: flex; align-items: center; gap: 4px; margin: 0; padding: 0; flex: none; }
+.room-seats li { display: grid; border-radius: 50%; padding: 2px; }
+.room-seats li.is-speaking { box-shadow: 0 0 0 2px var(--accent); }
+.room-loading { display: flex; align-items: center; gap: 8px; margin: auto; color: var(--muted); }
+.room-banner { margin: 0; padding: 6px 24px; background: color-mix(in srgb, var(--warn) 12%, transparent); color: var(--warn); font-size: calc(12.5rem / 14); }
+.room-log { gap: 16px; }
+.room-earlier { align-self: center; }
+.room-reply { display: flex; gap: 10px; align-items: flex-start; border-radius: 10px; }
+.room-reply:focus { outline: none; }
+.room-reply:focus-visible { outline: 2px solid var(--line-2); outline-offset: 6px; }
+.room-reply > .bots-face { margin-top: 3px; }
+.room-reply-body { flex: 1; min-width: 0; }
+.room-reply-name { font-size: calc(13rem / 14); font-weight: 600; color: var(--text); margin-bottom: 2px; }
+.room-round { display: flex; align-items: center; gap: 12px; color: var(--faint); font-size: calc(12rem / 14); font-weight: 500; }
+.room-round::before, .room-round::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.room-note { margin: 0; padding-left: 32px; color: var(--muted); font-size: calc(12.5rem / 14); line-height: 1.5; overflow-wrap: anywhere; }
+.room-note.is-bad { color: var(--bad); }
+.room-sending { color: var(--faint); font-size: calc(12rem / 14); }
+.room-unsent { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; color: var(--bad); font-size: calc(12.5rem / 14); }
+.room-unsent .btn, .room-asked .btn { padding: 2px 9px; font-size: calc(12rem / 14); }
+.room-foot { display: flex; flex-direction: column; gap: 8px; }
+.room-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; min-height: 30px; padding: 0 4px; color: var(--text-2); font-size: calc(13rem / 14); }
+.room-strip.is-empty { display: none; }
+.room-strip .btn { flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px; font-size: calc(12.5rem / 14); }
+.room-turn { flex: 1; min-width: 0; display: inline-flex; align-items: center; gap: 8px; line-height: 1.45; }
+.room-turn.is-warn { color: var(--warn); }
+.room-asked { display: inline-flex; align-items: center; gap: 8px; color: var(--text); }
+.room-approval { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.room-behind { color: var(--muted); font-size: calc(12.5rem / 14); }
+.room-composer { position: relative; }
+.menu.room-handles { position: absolute; left: 10px; bottom: calc(100% + 6px); min-width: 200px; max-height: 240px; overflow-y: auto; list-style: none; margin: 0; }
+.room-handles .menu-item { justify-content: space-between; gap: 16px; cursor: pointer; }
+.room-handles .menu-item.is-on { background: var(--raised-2); color: var(--text); }

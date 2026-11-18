@@ -918,7 +918,7 @@ describe("An unsaved memory edit in the app", () => {
     expect(editor().value).toBe(`${SHORT} Unsaved words.`);
   });
 
-  it("asks on Ctrl+\\, which closes Settings to show the split, as Settings → Persona does", async () => {
+  it("asks on Ctrl+\\, which closes Settings to show the split", async () => {
     const { user } = await launchApp({ openChat: true });
     await user.keyboard("{Control>}\\{/Control}");
     await user.click(within(leaveDialog()).getByRole("button", { name: "Keep editing" }));

@@ -41,6 +41,7 @@ function scriptedStore(answers: Record<string, unknown>) {
   const io: CapabilityIO = {
     get: (p) => answer(`GET ${p.split("?")[0]}`).then((v) => JSON.stringify(v)),
     rpc: (m) => answer(`RPC ${m}`),
+    approvalProbe: () => answer("RPC approval.respond"),
     put: (p) => answer(`PUT ${p.split("?")[0]}`).then((v) => JSON.stringify(v)),
     post: (p) => answer(`POST ${p.split("?")[0]}`).then((v) => JSON.stringify(v)),
   };
@@ -59,6 +60,7 @@ const NEW = {
   "RPC learning.detail": { ok: false },
   "RPC rollback.list": Object.assign(new Error("session not found"), { code: 4001 }),
   "RPC profiles.list": { profiles: [{ name: "default", is_default: true, canonical_session: null }] },
+  "RPC groups.list": { rooms: [], next_offset: null },
   "GET api/tools/toolsets": [],
   "GET api/profiles/default/soul": {},
   "GET api/profiles": { profiles: [] },
@@ -459,19 +461,18 @@ describe("in the app", () => {
 
   it("shows Settings tabs for features Hermes lacks as notes, and leaves the others as they were", { timeout: 15_000 }, async () => {
     const s = new FakeHermes();
-    s.soulRoutes = false;
+    s.toolsetRoutes = "none";
     const { hermes, user } = await launch(s);
     await act(() => settledChecks(hermes));
     await user.click(screen.getByRole("button", { name: "Settings" }));
-    await user.click(screen.getByRole("tab", { name: /Persona/ }));
+    await user.click(screen.getByRole("tab", { name: /Toolsets/ }));
     const panel = screen.getByRole("tabpanel");
-    expect(within(panel).getByRole("region", { name: /doesn't support Persona/ })).toBeTruthy();
-    expect(within(panel).queryByRole("textbox")).toBeNull();
+    expect(within(panel).getByRole("region", { name: /doesn't support Toolsets/ })).toBeTruthy();
     expect(s.restRequests.filter((r) => r.method === "PUT")).toEqual([]);
     // The note's own link opens Diagnostics in place.
     await user.click(within(panel).getByRole("button", { name: "Connection diagnostics" }));
     expect(screen.getByRole("tab", { name: /Diagnostics/, selected: true })).toBeTruthy();
-    expect(within(row$("Persona")).getByText("Not supported")).toBeTruthy();
+    expect(within(row$("Toolsets")).getByText("Not supported")).toBeTruthy();
     expect(within(row$("Scheduled jobs")).getByText("Supported")).toBeTruthy();
   });
 

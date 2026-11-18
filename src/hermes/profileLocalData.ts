@@ -18,7 +18,6 @@ import { type ScopeSource, connectionScope, inScope, isPrefOf, prefScope, scopeP
 import { DRAFT_PREFIX, type Drafts } from "./drafts";
 import { IMPORTS_KEY } from "./importTranscripts";
 import { INBOX_PREFIX } from "./inbox";
-import { PERSONA_PREFIX, type PersonaStore } from "./personaStore";
 import { CONTEXT_LEDGER_KEY } from "./projectContextFiles";
 import { type DefaultsDoc, moveScopeKeys } from "./projectDefaults";
 import { PROJECTS_KEY } from "./projectLinks";
@@ -27,6 +26,12 @@ import { moveTagScopes, type TagsFile } from "./tags";
 import { getUIPrefs, setUIPrefs } from "./uiPrefs";
 import { sending, unsaved } from "./unsaved";
 import { isObj } from "./values";
+
+/**
+ * Settings → Persona's unsaved edits and replaced versions. Nothing writes them since the page went (ADR 0206), but
+ * copies an earlier version kept still go with their profile or connection.
+ */
+const PERSONA_PREFIX = "hermes-chat.persona.";
 
 /** Keys of one profile, or one of its chats: the prefix, then the scope as JSON, then `suffix` if it has one. */
 export const PROFILE_KEYS: readonly { prefix: string; suffix?: RegExp }[] = [
@@ -74,6 +79,7 @@ export const SCOPED_DOCS: readonly string[] = [
  * swapped in files (`files` below); their keys here are their browser stand-ins.
  */
 export const NOT_PER_PROFILE: Record<string, string> = {
+  "hermes-chat.group-rooms-read.": "How far each Group room was read, by room id: a room is the connection's, in no profile",
   "hermes-chat.appearance": "The look of the app, the same for every connection",
   "hermes-chat.connections": "The saved connections themselves",
   "hermes-chat.sign-in": "The single sign-in kept before saved connections, moved into them once",
@@ -217,7 +223,7 @@ function moveConnectionValues(storage: Store, parts: readonly string[], from: st
 
 /** The display preferences kept per profile (`prefScope`), and templates tied to a project, moved or dropped. */
 function movePrefs(c: ScopeSource, walk: Walk) {
-  const { lastOpenChat, modelPicker, modelPicks, templates } = getUIPrefs();
+  const { lastOpenChat, modelPicker, modelPicks, templates, writingModels } = getUIPrefs();
   const prefMove = (k: string): string | null | undefined => {
     if (!isPrefOf(c, k)) return undefined;
     if (!walk.profile) return null;
@@ -233,24 +239,26 @@ function movePrefs(c: ScopeSource, walk: Walk) {
     return to === null ? [] : [{ ...t, project: { ...t.project!, scope: to } }];
   });
   const templatesMoved = nextTemplates.length !== templates.length || nextTemplates.some((t, i) => t !== templates[i]);
-  if (!open && !picks && pickTo === undefined && !templatesMoved) return;
+  const writingGone = !walk.profile && Object.hasOwn(writingModels, connectionScope(c));
+  if (!open && !picks && pickTo === undefined && !templatesMoved && !writingGone) return;
   setUIPrefs({
     ...(open && { lastOpenChat: open }),
     ...(picks && { modelPicks: picks }),
     ...(pickTo !== undefined && { modelPicker: pickTo === null || !modelPicker ? null : { ...modelPicker, profile: pickTo } }),
     ...(templatesMoved && { templates: nextTemplates }),
+    ...(writingGone && { writingModels: Object.fromEntries(Object.entries(writingModels).filter(([scope]) => scope !== connectionScope(c))) }),
   });
 }
 
 /** The stores a walk moves besides this webview's storage: the swapped files every window shares, and in-memory copies. */
-export type LocalStores = { storage?: Store; defaults?: DefaultsDoc; tags?: TagsFile; persona?: PersonaStore; drafts?: Pick<Drafts, "move"> };
+export type LocalStores = { storage?: Store; defaults?: DefaultsDoc; tags?: TagsFile; drafts?: Pick<Drafts, "move"> };
 
 /**
  * One walk over every kind of per-profile data, in storage, in memory and in the shared files. Each move writes the
  * new copy before it removes the old one, and a failed one is left where it was: the walk goes on, then throws
  * `LocalMoveError` saying how many failed.
  */
-async function walkAll(c: ScopeSource, walk: Walk, { storage = localStorage as Store, defaults, tags, persona, drafts }: LocalStores) {
+async function walkAll(c: ScopeSource, walk: Walk, { storage = localStorage as Store, defaults, tags, drafts }: LocalStores) {
   let failed = 0;
   const attempt = async (step: () => unknown) => {
     try {
@@ -260,7 +268,6 @@ async function walkAll(c: ScopeSource, walk: Walk, { storage = localStorage as S
     }
   };
   const keyMove = (k: string) => movedKey(k, walk);
-  await attempt(() => persona?.move(keyMove));
   const keys: string[] = [];
   for (let i = 0; i < storage.length; i++) {
     const k = storage.key(i);

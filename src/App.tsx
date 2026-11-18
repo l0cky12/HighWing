@@ -1,8 +1,7 @@
 import { type ReactNode, type RefObject, Suspense, lazy, useCallback, useLayoutEffect, useMemo, useEffect, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal, flushSync } from "react-dom";
-import { ArrowLeft, ArrowRight, Columns2, FolderCog, PanelBottom, PanelLeft, PanelRight, PanelTop, Target, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Columns2, FolderCog, PanelBottom, PanelLeft, PanelRight, PanelTop, Target, UsersRound, X } from "lucide-react";
 import { CONNECT_STOPPED, RenameConflict, TitleModelUnavailable, connect, openSaved, readSaved, toSource, type Delivery, type Hermes, type NoticeCard, type Notify } from "./hermes/transport";
-import { TEXT_TASK } from "./hermes/modelSettings";
 import { invoke } from "@tauri-apps/api/core";
 import type { CommandHost } from "./ui/SlashCommands";
 import { STEER, type ServerCommandList } from "./hermes/commands";
@@ -11,13 +10,12 @@ import { useExtensions } from "./ui/extensionsContext";
 import type { SkillCall, SkillCommands } from "./hermes/skillCommands";
 import { CHECK_EVERY_MS } from "./hermes/otherProfiles";
 import { type Account, type Kept, type SavedSignIn, launchOpen, launchSignIn, removeConnection, savedSignIn, savedSignInOrForm, signIn, signInForm, signOutToSignIn } from "./hermes/account";
-import { CONNECTIONS_KEY, Connections, type SavedConnection, type ScopeSource, addressLabel, defaultName, keptRouteHealth, prefScope } from "./hermes/connections";
+import { CONNECTIONS_KEY, Connections, type SavedConnection, type ScopeSource, addressLabel, connectionScope, defaultName, keptRouteHealth, prefScope } from "./hermes/connections";
 import { forgetConnectionData } from "./hermes/forgetConnection";
 import { clearRename, forgetProfileLocally, noteRename, renameProfileLocally, renamePending } from "./hermes/profileLocalData";
 import { serial as makeSerial } from "./hermes/serial";
 import { localChatCache } from "./hermes/chatCache";
 import { draftKey, drafts } from "./hermes/drafts";
-import { PersonaStore, personaKey } from "./hermes/personaStore";
 import { sending, unsaved, type Sending } from "./hermes/unsaved";
 import { connOf, restoreBlocked, savedBackupEnv } from "./hermes/backup";
 import { chatToReopen, forgetOpenChat, rememberOpenChat, type ReopenOn } from "./hermes/uiPrefs";
@@ -25,8 +23,6 @@ import { PROJECTS_KEY, projectLinks, projectScope } from "./hermes/projectLinks"
 import { chatContext, contextLedger, knownWindow, type ChatContexts } from "./hermes/projectContextFiles";
 import { ProjectsStore, type Project } from "./hermes/projects";
 import { instructionsMessage, modelProblem, resolveNewChat, savedDefaults, type ProjectDefaults } from "./hermes/projectDefaults";
-import { unavailableWords } from "./hermes/instructionsAI";
-import type { PersonaWriter } from "./ui/PersonaAI";
 import { systemSecrets } from "./hermes/tauriKeyring";
 import { appUpdates } from "./hermes/tauriUpdates";
 import { tauriSnapshots } from "./hermes/snapshots";
@@ -56,6 +52,10 @@ import { desktopLinks, type LinkInbox } from "./hermes/tauriLinks";
 import { ChatLinkNotice, type LinkNoticeView } from "./ui/ChatLinkNotice";
 import { Inbox } from "./ui/Inbox";
 import { BotList, useBotActions, type BotEditWiring } from "./ui/Bots";
+import { GroupRoomPane } from "./ui/GroupRoomPane";
+import { GroupRoomList, RoomsNeedYou, roomsWaiting, useGroupRooms } from "./ui/GroupRooms";
+import { NewRoomDialog } from "./ui/NewRoomDialog";
+import { roomMarks } from "./hermes/groupRoomsStore";
 import { CHAT_POLICY, chatKind, policyOf } from "./hermes/chatKind";
 import { jobRunTitle } from "./hermes/cronJobs";
 import { botActivity, botsWaiting, newInBotChatNote, type Bot } from "./hermes/bots";
@@ -87,14 +87,12 @@ import { TagsStore, savedTagsFile, type SavedFilter } from "./hermes/tags";
 import { AttentionClock, ClearedStore, PINS_KEY, PinStore, SNOOZE_KEY, STOP_WAITING_KEY, SnoozeStore, StopWaitingStore, chatSections, heldClears, wakeFull } from "./hermes/snooze";
 import { IDLE_COMPACT_CHECK_MS, IdleCompactor, idleCompactionNote } from "./hermes/idleCompact";
 import { runFilter } from "./hermes/chatFilter";
-import { SettingsScreen, type PersonaWiring } from "./ui/Settings";
+import { SettingsScreen } from "./ui/Settings";
 import type { ProfilesWiring } from "./ui/ProfileSettings";
-import { LeavePersona, type LeaveWhat } from "./ui/LeavePersona";
 import { LeaveArtifacts } from "./ui/ArtifactEditor";
 import { ASK_DEADLINE_MS, ArtifactStore, artifactIo, isDirty } from "./hermes/artifacts";
 import { useWindowTitle, windowTitle } from "./ui/windowTitle";
 import { LeaveMemoryEdit, useCloseGuard } from "./ui/LeaveMemoryEdit";
-import { tauriCloseGuard, type CloseGuard } from "./ui/tauriWindow";
 import { FileBrowser } from "./ui/FileBrowser";
 import { UsageAnalytics, type UsageTab } from "./ui/UsageAnalytics";
 import { BudgetOpener, BudgetWatches, budgetShelves } from "./hermes/budgetWatch";
@@ -279,14 +277,17 @@ const account: Account = {
   openSaved: (c, d) => openSaved(pipeFor(c, d), localChatCache(c), notifyFor(c)),
 };
 
+/** What leaving an unsaved edit does: leave Settings, switch `profile` or `connection`, `signout`, or `close` the window. */
+type LeaveWhat = "leave" | "profile" | "connection" | "signout" | "close";
+
 /** The sign-in methods a connection's server offers, read without signing in (ADR 0058). */
 const serverMethods = (d: SignInDetails) => readMethods((one, expect) => tauriReach(one, expect, true, true), d);
 
 /** Deletes what this computer keeps for a removed connection (forgetConnection.ts). */
 const forgetLocal = (c: SavedConnection) =>
-  forgetConnectionData(c, { defaults: savedDefaults, tags: savedTagsFile, persona: savedPersona, drafts: savedDrafts, afterwards: syncScreenshotOutbox });
+  forgetConnectionData(c, { defaults: savedDefaults, tags: savedTagsFile, drafts: savedDrafts, afterwards: syncScreenshotOutbox });
 /** The stores a profile's rename moves and its delete forgets, beside this webview's storage (profileLocalData.ts). */
-const profileStores = () => ({ defaults: savedDefaults, tags: savedTagsFile, persona: savedPersona, drafts: savedDrafts });
+const profileStores = () => ({ defaults: savedDefaults, tags: savedTagsFile, drafts: savedDrafts });
 
 const savedDrafts = drafts(localStorage);
 /** Adds `text` to the Draft at `key`, after anything already there. */
@@ -318,7 +319,6 @@ const budgetWatches = new BudgetWatches((id) => {
   };
 });
 const savedContextLedger = contextLedger(localStorage);
-const savedPersona = new PersonaStore(localStorage);
 // Applied as the app loads, so the chosen fonts show from the first screen.
 const appearance = appearanceStore(localStorage, document.documentElement);
 const backupEnv = savedBackupEnv(() => savedConnections().recent());
@@ -1171,8 +1171,6 @@ export function Main({
   serverPages = tauriServerPages,
   screenshots = tauriScreenshotWiring,
   summon = desktopSummon,
-  personaStore = savedPersona,
-  guardClose = tauriCloseGuard,
   onSignOut,
   updates = appUpdates,
   link,
@@ -1266,10 +1264,6 @@ export function Main({
   localStt?: LocalSttApi;
   /** Tells the window `hermes-chat --show` or `--toggle` brought it forward; none outside the desktop app. */
   summon?: SummonApi;
-  /** Where Settings → Persona keeps unsaved edits and replaced versions on this computer. */
-  personaStore?: PersonaStore;
-  /** Asks before the window closes; registered only while Settings → Persona holds an unsaved edit. */
-  guardClose?: CloseGuard;
   onSignOut: () => Promise<void>;
   updates?: Updater;
   /**
@@ -1292,19 +1286,6 @@ export function Main({
     hermes.getSnapshot,
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // Settings → Persona holds an edit Hermes doesn't have, or a save under way: leaving it asks first.
-  const personaDirty = useRef(false);
-  const [personaUnsaved, setPersonaUnsaved] = useState(false);
-  // This computer could keep the unsaved edit, so leaving doesn't lose it.
-  const [personaKept, setPersonaKept] = useState(true);
-  // The profile whose persona is open: Settings → Persona can edit any profile's, not only the one in use.
-  const [personaProfile, setPersonaProfile] = useState<string>();
-  const onPersonaDirty = useCallback((dirty: boolean, kept: boolean, profile: string) => {
-    personaDirty.current = dirty;
-    setPersonaUnsaved(dirty);
-    setPersonaKept(kept);
-    setPersonaProfile(profile);
-  }, []);
   // An unsaved edit in Settings → Memory (MemorySettings.tsx) lives only on screen: leaving it asks first too.
   const memoryDirty = useRef(false);
   const [memoryUnsaved, setMemoryUnsaved] = useState(false);
@@ -1322,6 +1303,15 @@ export function Main({
     skillDirty.current = dirty;
     setSkillUnsaved(dirty);
   }, []);
+  // An unsaved Persona in the profile form (ProfileSettings.tsx, ADR 0206) lives only on screen too, and is guarded the same way.
+  const personaDirty = useRef(false);
+  const [personaUnsaved, setPersonaUnsaved] = useState<string>();
+  const onPersonaDirty = useCallback((dirty: boolean, profile: string) => {
+    personaDirty.current = dirty;
+    setPersonaUnsaved(dirty ? profile : undefined);
+  }, []);
+  // Bumped when the owner discards it, so the form closes even if what follows doesn't close it.
+  const [personaDiscards, setPersonaDiscards] = useState(0);
   // Artifacts open to edit beside the chat (artifacts.ts, ADR 0029): their drafts live in memory for this sign-in, so
   // moving around the app keeps them, and only signing out or closing the window would drop one.
   const artifacts = useMemo(
@@ -1330,8 +1320,8 @@ export function Main({
   );
   const artSnap = useSyncExternalStore(artifacts.subscribe, artifacts.getSnapshot);
   const artifactUnsaved = [...artSnap.values()].some(isDirty);
-  const [leaving, setLeaving] = useState<{ edit: "persona" | "memory" | "skill" | "artifact"; what: LeaveWhat; go: () => void; stay?: () => void }>();
-  /** Runs `go` now, or once the owner agrees to leave an unsaved persona, memory, skill or artifact edit behind. `stay` runs if they don't. */
+  const [leaving, setLeaving] = useState<{ edit: "memory" | "skill" | "persona" | "artifact"; what: LeaveWhat; go: () => void; stay?: () => void }>();
+  /** Runs `go` now, or once the owner agrees to leave an unsaved memory, skill or artifact edit behind. `stay` runs if they don't. */
   const guard = (go: () => void, what: LeaveWhat = "leave", stay?: () => void) => {
     // Signing out or closing drops artifact edits too: once a settings edit is left, they are asked about in turn.
     const next = what === "signout" || what === "close" ? () => (artifacts.unsaved().length ? setLeaving({ edit: "artifact", what, go, stay }) : go()) : go;
@@ -1343,29 +1333,13 @@ export function Main({
   const guardRef = useRef(guard);
   guardRef.current = guard;
   // Closing the window asks too, only while there is something to lose. A memory edit also holds a page reload.
-  useCloseGuard(memoryUnsaved || skillUnsaved || artifactUnsaved, (close) => guardRef.current(close, "close"));
-  const guardCloseRef = useRef(guardClose);
-  useEffect(() => {
-    if (!personaUnsaved) return;
-    let stop: (() => void) | undefined;
-    let gone = false;
-    guardCloseRef.current((close) => guardRef.current(close, "close")).then(
-      (off) => (gone ? off() : (stop = off)),
-      () => {},
-    );
-    return () => {
-      gone = true;
-      stop?.();
-    };
-  }, [personaUnsaved]);
+  useCloseGuard(memoryUnsaved || skillUnsaved || !!personaUnsaved || artifactUnsaved, (close) => guardRef.current(close, "close"));
   // A new object each time a row asks Settings to show the Text generation model; the rail's button opens it plainly.
   const [showTextGeneration, setShowTextGeneration] = useState<object>();
   /** Set to open Settings on its Memory tab, from the context inspector. */
   const [showMemory, setShowMemory] = useState<object>();
   /** Set, each time anew, to open Settings → Diagnostics, at the capability a screen's note named. */
   const [showDiagnostics, setShowDiagnostics] = useState<{ id?: CapabilityId }>();
-  /** Set, each time anew, to open Settings → Persona on a profile, from Edit bot. */
-  const [showPersona, setShowPersona] = useState<{ name: string }>();
   /** What the connected Hermes supports, for the menus that say what it lacks (capabilities.ts). */
   const caps = useCapabilities(hermes.capabilities);
   const workLacking = (Object.keys(WORK_PARTS) as WorkFeature[]).filter((part) => caps.caps[WORK_PARTS[part]].state === "unsupported").join(" ");
@@ -1550,6 +1524,9 @@ export function Main({
   const [inboxOpen, setInboxOpen] = useState(false);
   const [arrival, setArrival] = useState<Arrival>();
   const [visit, setVisit] = useState<BotVisit>();
+  const [openRoom, setOpenRoom] = useState<string>();
+  const [newRoom, setNewRoom] = useState(false);
+  const newRoomBtn = useRef<HTMLButtonElement>(null);
   const ackScope = inboxScope(connection);
   const acks = useMemo(() => inboxAcks(localStorage, ackScope), [ackScope]);
   const dismissed = useSyncExternalStore(acks.subscribe, acks.getSnapshot);
@@ -1767,7 +1744,6 @@ export function Main({
     setShowDiagnostics(undefined);
     setShowVoice(undefined);
     setShowSnapshots(undefined);
-    setShowPersona(undefined);
     setSettingsOpen(true);
   };
   openVoiceSettings.current = () => {
@@ -1782,11 +1758,6 @@ export function Main({
   const openDiagnostics = (id: CapabilityId) => {
     openSettings();
     setShowDiagnostics({ id });
-  };
-  /** Opens Settings → Persona on profile `name`, from Edit bot. */
-  const openPersona = (name: string) => {
-    openSettings();
-    setShowPersona({ name });
   };
   /** Opens a page of the compatibility guide in the owner's browser. */
   const openGuide = (url: string) =>
@@ -1819,7 +1790,10 @@ export function Main({
   // eslint-disable-next-line react-hooks/exhaustive-deps -- settle once, when Hermes has listed and clears are held; adding `chats`, `snoozes` or `pins` would run it again on each change to them
   }, [listedFromHermes, status, cleared, clearedStore]);
   const where = routeLabel(route) ?? addressLabel(connection);
-  const inbox = inboxEntries({ profile, chats, connected: status === "connected", others, live, seen, handoffs: handoffMap });
+  const hasRooms = caps.caps.groupRooms.state === "supported";
+  const rooms = useGroupRooms(hermes.groupRooms, hasRooms);
+  useEffect(() => hermes.groupRooms.keepMarks(roomMarks(localStorage, ackScope)), [hermes, ackScope]);
+  const inbox = inboxEntries({ profile, chats, connected: status === "connected", others, live, seen, handoffs: handoffMap, rooms });
   const inboxShown = inbox.entries.filter((e) => !acks.isDismissed(e, dismissed));
   // Writes only when a resumed chat shows cards a dismissed waiting session covered.
   useEffect(() => acks.keepCovered(inbox.entries));
@@ -1838,21 +1812,8 @@ export function Main({
   workingRef.current = working;
   // Read when the restore dialog renders and again just before it writes: sends and refused writes aren't React state.
   const restoreBusy = () => restoreBlocked({ working: workingRef.current, unsaved: unsaved.size, sending: sending.size });
-  // Write with AI for a SOUL.md runs on `p`'s own Text generation model, with no chat, so no session lends a model.
-  const personaWriter = (p: string): PersonaWriter => ({
-    profile: p,
-    model: () => hermes.modelSettings.textModel(p),
-    ask: (call) => hermes.askForEdit({ profile: p, ...call }).then((r) => r.text),
-  });
-  // Settings → Persona edits the SOUL.md of any profile on this connection, starting on the one in use; its edits are
-  // kept apart per connection and profile.
-  const persona: PersonaWiring = {
-    writerFor: personaWriter,
-    api: hermes.persona,
-    store: personaStore,
-    keyOf: (p) => personaKey(connection, p),
-    where: { server: route ? serverLabel(route) : connection.mode === "ssh" ? connection.sshTarget : serverLabel({ kind: "url", url: connection.url, addresses: [] }), route: where, profile },
-  };
+  const writingScope = connectionScope(connection);
+  const writing = useMemo(() => hermes.writingDesk(() => getUIPrefs().writingModels[writingScope]), [hermes, writingScope]);
 
   const stillIn = (p: string) => hermes.profile === p;
 
@@ -1909,6 +1870,7 @@ export function Main({
       activeKeyRef.current = pane;
       setActiveKey(pane);
       setReopening(undefined);
+      setOpenRoom(undefined);
       if (!keepSettings) setSettingsOpen(false);
       setProjectOpen(false);
       setJobsOpen(false);
@@ -1961,6 +1923,7 @@ export function Main({
     hermes.reveal(found);
     patchPane(active.key, { chatId: found.chatId, picked: { found, at: Date.now() }, jump: undefined });
     setReopening(undefined);
+    setOpenRoom(undefined);
     rememberChat(found.chatId);
     setSearchOpen(false);
     setSettingsOpen(false);
@@ -2241,7 +2204,7 @@ export function Main({
     );
 
   // Another saved connection (ADR 0112). Whatever is running or waiting here is named first, from the inbox's entries,
-  // which cover every profile on this server; an unsaved persona or memory edit asks first too. Nothing is stopped:
+  // which cover every profile on this server; an unsaved memory or skill edit asks first too. Nothing is stopped:
   // Hermes keeps a running reply going after this connection closes, as it does when the profile switches.
   const [connectionAsk, setConnectionAsk] = useState<{ to: SavedConnection; notes: string[]; go: () => void; stay?: () => void }>();
   const [removeAsk, setRemoveAsk] = useState<SavedConnection>();
@@ -2296,11 +2259,22 @@ export function Main({
     />
   );
 
+  const showRoom = (id: string) =>
+    guard(() => {
+      navGen.current++;
+      setOpenRoom(id);
+      setSettingsOpen(false);
+      setProjectOpen(false);
+      setJobsOpen(false);
+      setUsageOpen(false);
+      setWorkOpen(false);
+    });
   // An inbox entry opens its chat, in its own profile, in the pane already showing it or else the active one. Another
   // profile is switched to first, the way the switcher does, and the chat opens once that profile's list has it.
-  // An unsaved persona or memory edit asks first, as any other way of leaving Settings does.
+  // An unsaved memory or skill edit asks first, as any other way of leaving Settings does.
   const openEntry = (e: InboxEntry) => {
     setInboxOpen(false);
+    if (e.roomId) return showRoom(e.roomId);
     guard(() => {
       if (e.profile !== profile) switchProfile(e.profile);
       setGoTo({ entry: e, approval: e.kind === "approval" && !e.ended });
@@ -2337,7 +2311,7 @@ export function Main({
   // A bot's row opens its Bot Chat, in the bot's own profile (ADR 0066): another profile is switched to first, as the
   // switcher does, and once its list has loaded the Bot Chat is looked up by title and opened in the active pane. It isn't
   // remembered for the next launch: what reopens a Bot Chat is its bot's row. The pen starts an ordinary chat there.
-  const botEdit = useMemo<BotEditWiring>(() => ({ look: (name) => hermes.botLook(name), edit: (name, edits) => hermes.editBot(name, edits) }), [hermes]);
+  const botEdit = useMemo<BotEditWiring>(() => ({ look: (name) => hermes.botLook(name), edit: (name, edits) => hermes.editBot(name, edits), messaging: (on) => hermes.setAgentMessaging(on) }), [hermes]);
   const loadBots = useCallback(() => hermes.bots(), [hermes]);
   const [threadsOpen, setThreadsOpen] = useState<Record<string, boolean>>({});
   const activityOf = (b: Bot, roster: readonly Bot[]) => {
@@ -2982,7 +2956,7 @@ export function Main({
   const previewFits = !mainWidth || mainWidth >= CHAT_MIN_WIDTH + PANE_MIN_WIDTH;
   const paneMax = mainWidth ? mainWidth - CHAT_MIN_WIDTH : 1200;
   const paneWidth = Math.min(Math.max(dragWidth ?? previewWidth ?? PREVIEW_DEFAULT_WIDTH, PANE_MIN_WIDTH), Math.max(PANE_MIN_WIDTH, paneMax));
-  const covering = settingsOpen || projectScreenOpen || jobsOpen || usageOpen || workOpen;
+  const covering = settingsOpen || projectScreenOpen || jobsOpen || usageOpen || workOpen || !!openRoom;
   const previewShown = panelOpen && !covering && (previewFits || !panelHidden);
   const previewCovers = previewShown && !previewFits;
 
@@ -3143,7 +3117,7 @@ export function Main({
                   setJobsOpen(false);
                   setUsageOpen(false); setWorkOpen(false);
                   setShowTextGeneration(undefined);
-                  setShowDiagnostics(undefined);
+                                setShowDiagnostics(undefined);
                   setShowVoice(undefined);
                   setShowMemory({});
                   setSettingsOpen(true);
@@ -3196,6 +3170,8 @@ export function Main({
   const copyText = (text: string) => (navigator.clipboard?.writeText ? navigator.clipboard.writeText(text) : Promise.reject(new Error("No clipboard")));
   const profilesWiring: Omit<ProfilesWiring, "showTab"> = {
     api: hermes.manageProfiles,
+    onPersonaDirty,
+    personaDiscards,
     clone: hermes.profileClone,
     capabilities: hermes.capabilities,
     inUse: profile,
@@ -3249,14 +3225,9 @@ export function Main({
       },
     },
     copyText,
-    // New's Generate with AI (ADR 0197): as the profile in use, on its Text generation model, only while connected.
-    rephrase:
-      status === "connected"
-        ? {
-            ask: (c) => hermes.askForEdit({ profile, instructions: c.instructions, input: c.input, maxTokens: c.maxTokens, task: TEXT_TASK }).then((r) => r.text),
-            model: () => hermes.modelSettings.textModel(),
-          }
-        : undefined,
+    // Persona's Write with AI (ADR 0197, 0206): as the profile named, on the model that writes for it, only while connected.
+    rephrase: status === "connected" ? (p) => writing.writer(p, "persona") : undefined,
+    persona: hermes.persona,
     setup: { skills: hermes.skills, toolsets: hermes.toolsets },
     // A command to run (a settling delete's) gets the toast's Copy; a notice of something gone wrong stays longer.
     notify: (n) => {
@@ -3282,8 +3253,20 @@ export function Main({
     shown: botsInList,
     onRefresh: () => void hermes.checkOtherProfiles(),
     onNote: (text) => setToast({ text, at: Date.now() }),
-    onPersona: openPersona,
+    headExtra: hasRooms && (
+      <button
+        ref={newRoomBtn}
+        className="icon-btn"
+        title={roster.length < 2 ? words.groupRooms.tooFewBots : words.groupRooms.newRoom}
+        aria-label={words.groupRooms.newRoom}
+        disabled={status !== "connected" || roster.length < 2}
+        onClick={() => setNewRoom(true)}
+      >
+        <UsersRound size={15} />
+      </button>
+    ),
   });
+  const waitingRooms = roomsWaiting(rooms);
 
   return (
     <LinksProvider preview={openPreview} path={openPath} web={webPages} onToast={(text) => setToast({ text, at: Date.now() })}>
@@ -3365,6 +3348,9 @@ export function Main({
                   pictures: botPictures,
                   leaving: leavingNote(profile, chats, words.profiles.leaving),
                   onOpenBot: (b) => openBot(b, "open"),
+                  rooms: hasRooms
+                    ? { waiting: waitingRooms.length, line: (onShowBots) => <RoomsNeedYou rooms={waitingRooms} bots={roster} onOpen={showRoom} onShowBots={onShowBots} /> }
+                    : undefined,
                 }
               : undefined
           }
@@ -3377,6 +3363,7 @@ export function Main({
           bots={
             <>
               {botActions.head}
+              {hasRooms && <GroupRoomList rooms={rooms} bots={roster} pictures={botPictures} openId={openRoom} onOpen={showRoom} />}
               {bots ? (
                 <BotList
                   bots={bots.roster}
@@ -3513,6 +3500,15 @@ export function Main({
         </div>
       )}
       {botActions.element}
+      {newRoom && (
+        <NewRoomDialog
+          bots={roster.filter((b) => !b.hidden)}
+          pictures={botPictures}
+          returnTo={newRoomBtn}
+          onCreate={(draft) => hermes.groupRooms.create(draft).then(showRoom)}
+          onClose={() => setNewRoom(false)}
+        />
+      )}
       {inboxOpen && (
         <Inbox
           entries={elsewhere.length ? [...inboxShown, ...elsewhere] : inboxShown}
@@ -3641,13 +3637,7 @@ export function Main({
                     if (draft.folder && status === "connected") await hermes.projects.checkFolder(profile, draft.folder);
                     return projects.saveDefaults(shownProject.id, base, draft);
                   },
-                  writer:
-                    status === "connected"
-                      ? {
-                          ask: (c, m) => hermes.askForEdit({ profile, ...c, task: m.task, words: unavailableWords(m) }).then((r) => r.text),
-                          model: () => hermes.modelSettings.instructionsModel(),
-                        }
-                      : undefined,
+                  writer: status === "connected" ? writing.writer(profile, "instructions") : undefined,
                 }}
               />
             ) : settingsOpen ? (
@@ -3669,6 +3659,7 @@ export function Main({
             toolsets={hermes.toolsets}
             mcp={hermes.mcp}
             gateways={hermes.gateways}
+            gatewayRestart={hermes.gatewayRestart}
             providers={hermes}
             accounts={hermes.accounts}
             openUrl={(url) => webPages.openInBrowser(url).then(() => undefined)}
@@ -3696,11 +3687,11 @@ export function Main({
             localStt={localStt}
             transcribe={(audio, mime, side, signal) => localStt.transcribe({ audio, mime, profile: hermes.profile, connection: hermes.connectionId, side, signal })}
             showTextGeneration={showTextGeneration}
+            writing={{ desk: status === "connected" ? writing : undefined, scope: writingScope }}
             showMemory={showMemory}
             capabilities={hermes.capabilities}
             openGuide={openGuide}
             showDiagnostics={showDiagnostics}
-            showPersona={showPersona}
             screen={hermes.screen}
             toolProgress={() => hermes.toolProgress()}
             work={hermes.kanban}
@@ -3749,8 +3740,6 @@ export function Main({
                 focusPane(active.key);
               })
             }
-            persona={persona}
-            onPersonaDirty={onPersonaDirty}
             guard={guard}
             listProfiles={listProfiles}
             defaultName={defaultProfileName}
@@ -3787,6 +3776,8 @@ export function Main({
               focusPane(active.key);
             }}
           />
+        ) : openRoom ? (
+          <GroupRoomPane key={openRoom} store={hermes.groupRooms} roomId={openRoom} bots={roster} pictures={botPictures} offline={status !== "connected"} />
         ) : null}
         <Split panes={slots} dir={splitDir} activeKey={active.key} onActivate={activate} covered={covered || covering || previewCovers || windowHidden} />
         </div>
@@ -3940,17 +3931,20 @@ export function Main({
           )}
         </div>
       )}
-      {(leaving?.edit === "memory" || leaving?.edit === "skill") && (
+      {(leaving?.edit === "memory" || leaving?.edit === "skill" || leaving?.edit === "persona") && (
         <LeaveMemoryEdit
           subject={leaving.edit}
-          profile={profile}
+          profile={leaving.edit === "persona" ? (personaUnsaved ?? profile) : profile}
           onStay={() => {
             leaving.stay?.();
             setLeaving(undefined);
           }}
           onDiscard={() => {
             setLeaving(undefined);
-            if (leaving.edit === "memory") {
+            if (leaving.edit === "persona") {
+              onPersonaDirty(false, "");
+              setPersonaDiscards((n) => n + 1);
+            } else if (leaving.edit === "memory") {
               onMemoryDirty(false);
               setMemoryDiscards((n) => n + 1);
             } else {
@@ -3972,22 +3966,6 @@ export function Main({
           onDiscard={() => {
             setLeaving(undefined);
             artifacts.clear();
-            leaving.go();
-          }}
-        />
-      )}
-      {leaving?.edit === "persona" && (
-        <LeavePersona
-          what={leaving.what}
-          profile={personaProfile ?? profile}
-          kept={personaKept}
-          onStay={() => {
-            leaving.stay?.();
-            setLeaving(undefined);
-          }}
-          onGo={() => {
-            setLeaving(undefined);
-            personaDirty.current = false;
             leaving.go();
           }}
         />

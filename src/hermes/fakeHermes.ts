@@ -13,8 +13,11 @@ import { FakeServerFiles } from "./fakeServerFiles";
 import { FakeProjectContext } from "./fakeProjectContext";
 import { FakeCheckpoints, inlineDiff, type FakeEdit } from "./fakeCheckpoints";
 import { FakeGoals } from "./fakeGoals";
+import { FakeGroups } from "./fakeGroups";
 import { ScheduleError, isoIn, parseSchedule, upcomingRuns } from "./schedule";
 import { skillInvocationText } from "./skillCommands";
+import { CANONICAL_READY } from "./canonicalVerbs";
+import { FakeAuthority, type CanonicalOptions } from "./fakeCanonical";
 
 type Request = { jsonrpc: "2.0"; id: number; method: string; params: Record<string, unknown> };
 /** The client's answer to a server→client request (`tui_gateway/server_requests.py`). */
@@ -311,7 +314,15 @@ const FS_MIME: Record<string, string> = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 };
 
+declare global {
+  var hermesWireTap: ((line: string) => void) | undefined;
+}
+
 export class FakeHermes {
+  private readonly tapOfTestThatMadeIt = globalThis.hermesWireTap;
+  private onWire(line: string) {
+    (this.tapOfTestThatMadeIt ?? globalThis.hermesWireTap)?.(line);
+  }
   /** Every request the client sent, in order. */
   readonly requests: Request[] = [];
   readonly restRequests: RestRequest[] = [];
@@ -384,8 +395,6 @@ export class FakeHermes {
   profileCreateLost?: string;
   /** While set, `POST /api/profiles` makes the profile but not its model, and answers `model_error` with this. */
   profileModelError?: string;
-  /** The profiles whose gateway runs, as `GET /api/profiles` reports them (`gateway_running`). */
-  gatewaysRunning = new Set<string>();
   /**
    * Settings → Profiles' routes this server lacks, each answering FastAPI's own 404 (`Not Found`) or, for a path that
    * has another method, a 405: an older Hermes (ADR 0156).
@@ -438,7 +447,13 @@ export class FakeHermes {
    * each call from what it was told and given, and the task and model it ran on.
    */
   oneshotAnswer: string | ((call: { instructions: string; input: string; task: string; model: string }) => string) = "A new title";
-  /** Providers Hermes on the server has no sign-in or key for: an `llm.oneshot` whose task runs on one fails. */
+  /** Every `llm.oneshot` that reached a model: the profile it named, the task it sent, and the model that task ran on. */
+  readonly oneshotCalls: { profile: string; task: string; model: string }[] = [];
+  readonly configWrites: { profile: string; config: unknown }[] = [];
+  /**
+   * Providers Hermes on the server has no sign-in or key for: an `llm.oneshot` whose task runs on one fails, in
+   * Hermes's words for a pinned provider, or for a task on `auto` its words when the main provider builds no client.
+   */
   signedOut = new Set<string>();
   /**
    * The profile's Bot Desktop (`display.*`, tui_gateway/methods_display.py at v2026.9.24; ADR 0039): its status and who
@@ -476,6 +491,7 @@ export class FakeHermes {
   readonly runtimeProfile = new Map<string, string>();
   /** Goals (fakeGoals.ts, ADR 0187). `standingMissions` false: a Hermes without `session.control`, "method not found". */
   readonly goals = new FakeGoals();
+  readonly groups = new FakeGroups();
   standingMissions = true;
   /** Starts the turn that follows a goal's turn at once, as Hermes does; none in tests, which send turns themselves. */
   goalTurn?: (runtimeId: string, prompt: string) => void;
@@ -790,6 +806,14 @@ export class FakeHermes {
     for (const r of ["GET /api/health", "GET /api/files", "GET /api/files/read", "GET /api/fs/list"]) delete this.rest[r];
     this.status = { version: "0.16.0", release_date: "2026.6.8", auth_required: true, auth_providers: ["basic"] };
     this.botMode = "none";
+    this.groups.build.absent = true;
+  }
+
+  authority?: FakeAuthority;
+
+  asCanonical(options: CanonicalOptions = {}) {
+    this.readyPayload = { ...CANONICAL_READY };
+    return (this.authority = new FakeAuthority(this, options));
   }
 
   /** Per-method behaviour; tests override entries. Unhandled methods get no answer. */
@@ -1316,10 +1340,13 @@ export class FakeHermes {
       if (!String(r.params.instructions ?? "").trim() && !String(r.params.input ?? "").trim())
         return this.fail(r.id, 4030, "llm.oneshot requires a template or instructions/input");
       const task = String(r.params.task || "title_generation");
-      const runsOn = this.oneshotModel(task);
+      const profile = String(r.params.profile || "default");
+      const runsOn = this.oneshotModel(task, profile);
       const answer = () => {
         if (this.oneshotFailure !== undefined) return this.fail(r.id, 5030, `one-shot generation failed: ${this.oneshotFailure}`);
-        if (this.signedOut.has(runsOn.provider)) return this.fail(r.id, 5030, `one-shot generation failed: ${signedOutText(runsOn.provider)}`);
+        if (this.signedOut.has(runsOn.provider))
+          return this.fail(r.id, 5030, `one-shot generation failed: ${runsOn.main ? mainUnavailableText(task) : signedOutText(runsOn.provider)}`);
+        this.oneshotCalls.push({ profile, task, model: runsOn.model });
         const a = this.oneshotAnswer;
         const call = { instructions: String(r.params.instructions ?? ""), input: String(r.params.input ?? ""), task, model: runsOn.model };
         this.respond(r.id, { text: typeof a === "string" ? a : a(call) });
@@ -1529,7 +1556,12 @@ export class FakeHermes {
   /** Per-route REST behaviour, keyed `METHOD /path`. A handler throws to fail the request. */
   readonly rest: Record<string, RestHandler> = {
     "GET /api/health": () => this.health,
-    "GET /api/status": () => this.status,
+    // The gateway fields are the asked profile's, from the one record Settings → Gateways and Profiles read too.
+    "GET /api/status": ({ query }) => {
+      const profile = query.get("profile") ?? "default";
+      if (profile !== "default" && !(profile in this.otherProfiles)) throw new RestError(404, JSON.stringify({ detail: `Profile '${profile}' does not exist.` }));
+      return { ...this.status, ...this.gateways.statusOf(profile) };
+    },
     // `fs_list` (`hermes_cli/web_routers/files.py` at the deployed `bf0203a`): a folder's entries, or none and why.
     "GET /api/fs/list": ({ query }) => {
       // `fs_list` takes no `session_id`: a container path lists the profile's own `/workspace`.
@@ -1708,7 +1740,7 @@ export class FakeHermes {
         description_auto: this.profileMeta[name]?.description_auto ?? false,
         display_name: this.profileMeta[name]?.display_name ?? "",
         skill_count: (this.skills.folders[name] ?? []).length,
-        gateway_running: this.gatewaysRunning.has(name),
+        gateway_running: !!this.gateways.gateway[name]?.running,
         has_env: name in this.profileEnv,
         distribution_name: this.distributions[name] ?? null,
       })),
@@ -1725,8 +1757,8 @@ export class FakeHermes {
         }
       );
     },
-    "GET /api/model/auxiliary": () => ({
-      tasks: Object.entries(this.modelConfig.auxiliary).map(([task, a]) => ({
+    "GET /api/model/auxiliary": ({ query }) => ({
+      tasks: Object.entries(this.configOf(query.get("profile")).auxiliary).map(([task, a]) => ({
         task,
         provider: a.provider || "auto",
         model: a.model,
@@ -1734,14 +1766,14 @@ export class FakeHermes {
         reasoning_effort: a.reasoning_effort || null,
         local_endpoint: /^https?:\/\/(127\.|10\.|192\.168\.|localhost)/.test(a.base_url ?? ""),
       })),
-      main: { provider: this.modelConfig.model.provider, model: this.modelConfig.model.default },
+      main: { provider: this.configOf(query.get("profile")).model.provider, model: this.configOf(query.get("profile")).model.default },
     }),
     "GET /api/config": ({ query }) => ({
-      model: this.modelConfig.model.default,
-      auxiliary: { ...structuredClone(this.modelConfig.auxiliary), ...structuredClone(this.modelConfig.unslottedAuxiliary) },
+      model: this.configOf(query.get("profile")).model.default,
+      auxiliary: { ...structuredClone(this.configOf(query.get("profile")).auxiliary), ...structuredClone(this.configOf(query.get("profile")).unslottedAuxiliary) },
       skills: this.skills.config(query.get("profile") || "default"),
-      agent: { ...this.modelConfig.agent },
-      delegation: { ...this.modelConfig.delegation },
+      agent: { ...this.configOf(query.get("profile")).agent },
+      delegation: { ...this.configOf(query.get("profile")).delegation },
       terminal: { backend: this.terminalBackend[query.get("profile") || "default"] ?? "local" },
       dashboard: { turn_isolation: this.turnIsolation },
       goals: { max_turns: this.goals.maxTurns },
@@ -1770,13 +1802,15 @@ export class FakeHermes {
       const config = body?.config;
       if (!config || typeof config !== "object")
         throw new RestError(422, `{"detail":[{"type":"missing","loc":["body","config"],"msg":"Field required"}]}`);
+      this.configWrites.push({ profile: query.get("profile") || "default", config: structuredClone(config) });
       const c = config as { agent?: Record<string, string>; delegation?: Record<string, unknown>; auxiliary?: Record<string, Record<string, string>> };
-      Object.assign(this.modelConfig.agent, c.agent ?? {});
-      Object.assign(this.modelConfig.delegation, c.delegation ?? {});
+      const mc = this.configOf(query.get("profile"));
+      Object.assign(mc.agent, c.agent ?? {});
+      Object.assign(mc.delegation, c.delegation ?? {});
       for (const [task, block] of Object.entries(c.auxiliary ?? {})) {
-        const slots = this.modelConfig.auxiliary;
+        const slots = mc.auxiliary;
         if (slots[task]) Object.assign(slots[task], block);
-        else this.modelConfig.unslottedAuxiliary[task] = { ...this.modelConfig.unslottedAuxiliary[task], ...block };
+        else mc.unslottedAuxiliary[task] = { ...mc.unslottedAuxiliary[task], ...block };
       }
       await this.voiceProviders.mergeConfig(query.get("profile") || "default", config as Record<string, unknown>);
       return { ok: true };
@@ -1785,6 +1819,12 @@ export class FakeHermes {
 
   /** The profile's model setup, as `config.yaml` holds it, and the catalog `model.options` lists. */
   modelConfig: FakeModelConfig = fakeModelConfig();
+  /** A profile's own `config.yaml`; a profile with none here shares `modelConfig`. */
+  readonly profileModelConfigs = new Map<string, FakeModelConfig>();
+
+  private configOf(profile?: string | null): FakeModelConfig {
+    return this.profileModelConfigs.get(profile || "default") ?? this.modelConfig;
+  }
 
   /** Runtime session id -> the tool names its agent was built with, from its profile's list then (`tools.show`). */
   readonly agentTools = new Map<string, Set<string>>();
@@ -1938,15 +1978,20 @@ export class FakeHermes {
     this.opened++;
     this.wsProfiles.push(profile);
     this.closed = false;
-    // Runtime sessions belong to the connection that started them; closing it detaches them (research doc §5).
-    this.runtime.clear();
-    this.onEvent = onEvent;
-    // The server writes gateway.ready as soon as the socket is accepted.
-    this.frame({ jsonrpc: "2.0", method: "event", params: { type: "gateway.ready", payload: this.readyPayload } });
+    const canonical = this.authority?.connect(onEvent, profile);
+    if (canonical) this.onEvent = this.authority!.route;
+    else {
+      // Runtime sessions belong to the connection that started them; closing it detaches them (research doc §5).
+      this.runtime.clear();
+      this.onEvent = onEvent;
+      // The server writes gateway.ready as soon as the socket is accepted.
+      this.frame({ jsonrpc: "2.0", method: "event", params: { type: "gateway.ready", payload: this.readyPayload } });
+    }
     // A new connection hasn't said yet whether it answers server→client requests.
     this.answersRequests = false;
     const restCall = (method: RestMethod, pathAndQuery: string, body?: string) => this.restCall(method, pathAndQuery, body);
     const send = async (text: string) => {
+      this.onWire(text);
       if (this.failSend !== undefined) throw new Error(this.failSend);
       const req = JSON.parse(text) as Request | Response;
       if (!("method" in req)) {
@@ -1957,7 +2002,10 @@ export class FakeHermes {
         return;
       }
       this.requests.push(req);
-      this.handlers[req.method]?.(req);
+      if (canonical) return canonical.request(req);
+      const handler = this.handlers[req.method];
+      if (handler) handler(req);
+      else if (req.method.startsWith("groups.")) this.groupsCall(req);
     };
     return {
       route: this.route,
@@ -2033,6 +2081,7 @@ export class FakeHermes {
       },
       close: async () => {
         this.closed = true;
+        canonical?.close();
         this.managedFiles.stopAll();
       },
     };
@@ -2040,6 +2089,7 @@ export class FakeHermes {
 
   /** One dashboard REST call as the Rust relay makes it: the answer's body on 2xx, or an error worded as Rust words it. */
   private async restCall(method: RestMethod, pathAndQuery: string, body?: string): Promise<string> {
+    this.onWire(`${method} ${pathAndQuery}${body === undefined ? "" : ` ${body}`}`);
     const url = new URL(pathAndQuery, "http://dashboard/");
     const req: RestRequest = { method, path: url.pathname, query: url.searchParams, body: body === undefined ? undefined : JSON.parse(body) };
     this.restRequests.push(req);
@@ -2437,7 +2487,10 @@ export class FakeHermes {
     move(this.distributions);
     move(this.skills.folders);
     if (this.skills.profiles.delete(name)) this.skills.profiles.add(to);
-    if (this.gatewaysRunning.delete(name)) this.gatewaysRunning.add(to);
+    if (this.gateways.gateway[name]) {
+      this.gateways.gateway[to] = this.gateways.gateway[name];
+      delete this.gateways.gateway[name];
+    }
     if (this.profileRenameLost) throw new Error(this.profileRenameLost);
     return { ok: true, name: to, path: `/home/lena/.hermes/profiles/${to}` };
   }
@@ -2481,7 +2534,7 @@ export class FakeHermes {
     if (name === "default") throw new RestError(400, JSON.stringify({ detail: "Cannot delete the default profile." }));
     if (!(name in this.otherProfiles)) throw new RestError(404, JSON.stringify({ detail: `Profile '${name}' does not exist.` }));
     if (this.profileGatewayStop) await this.profileGatewayStop;
-    this.gatewaysRunning.delete(name);
+    delete this.gateways.gateway[name];
     delete this.otherProfiles[name];
     delete this.souls[name];
     delete this.profileEnv[name];
@@ -2595,8 +2648,8 @@ export class FakeHermes {
     this.frame({ jsonrpc: "2.0", id, result });
   }
 
-  fail(id: number, code: number, message: string) {
-    this.frame({ jsonrpc: "2.0", id, error: { code, message } });
+  fail(id: number, code: number, message: string, data?: unknown) {
+    this.frame({ jsonrpc: "2.0", id, error: { code, message, ...(data !== undefined && { data }) } });
   }
 
   /** The runtime sessions with a turn running, as far as this fake has heard: started by a prompt or `message.start`, ended by `message.complete` or `error`. */
@@ -2613,6 +2666,7 @@ export class FakeHermes {
   readonly stopped = new Set<string>();
 
   event(sessionId: string, type: string, payload: Record<string, unknown> = {}) {
+    if (this.authority) return this.authority.event(sessionId, type, payload);
     if (type === "message.start") {
       this.turns.add(sessionId);
       const stored = this.runtime.get(sessionId);
@@ -2752,6 +2806,14 @@ export class FakeHermes {
     this.respond(id, { ...this.display.status, ...own, lease: this.display.lease, profile_key: "/home/lena/.hermes" });
   }
 
+  private groupsCall(r: Request) {
+    this.groups.onChange ??= (room_ids) => this.broadcast("groups.changed", { room_ids, broadcast_id: `e1:${++this.groupBroadcasts}` });
+    const answer = this.groups.handle(r.method, r.params);
+    if ("error" in answer) this.fail(r.id, answer.error.code, answer.error.message);
+    else this.respond(r.id, answer.result);
+  }
+  private groupBroadcasts = 0;
+
   /** A session-less broadcast such as `sessions.changed` (tui_gateway `_broadcast_global_event`). */
   broadcast(type: string, payload: Record<string, unknown> = {}) {
     this.event("", type, payload);
@@ -2763,6 +2825,8 @@ export class FakeHermes {
    * connection is down stays open for the next resume.
    */
   ask(sid: string, method: string, params: Record<string, unknown>): string | undefined {
+    // A canonical gateway asks an Approval and a Clarify with events; Sudo and Secret stay requests.
+    if (this.authority && (method === "approval" || method === "clarify")) return this.authority.ask(sid, method, params);
     if (!this.answersRequests) return undefined;
     const id = `srq-${(++this.asked).toString(16).padStart(12, "0")}`;
     this.openRequests.set(id, { sid, stored: this.runtime.get(sid)!, method, params });
@@ -2845,6 +2909,7 @@ export class FakeHermes {
     const status = this.turnIsolation ? "working" : "waiting";
     const rows = this.liveSessions.map((l) => (asking.has(l.id) ? { ...l, status } : l));
     for (const [sid, stored] of asking) if (!rows.some((l) => l.id === sid)) rows.push({ id: sid, session_key: stored, status, last_active: Date.now() / 1000 });
+    rows.push(...this.groups.liveRows());
     return rows;
   }
 
@@ -2950,14 +3015,95 @@ export class FakeHermes {
    * stored as a user row with its display kind and title, and the turn's `message.start` carries only the turn's id.
    */
   returnWork(stored: string, notice: { text: string; display_kind: string; display_metadata?: Record<string, unknown> }, reply: string) {
+    if (!this.runtimeIdOf(stored)) throw new Error(`No runtime session for ${stored}`);
+    this.wake(stored, notice, reply);
+  }
+
+  /**
+   * A turn Hermes starts by itself in a stored session: the notice and the reply are stored whoever is attached, and
+   * the turn's events go only to a client that has the session open.
+   */
+  wake(stored: string, notice: { text: string; display_kind: string; display_metadata?: Record<string, unknown> }, reply: string) {
     const runtime = this.runtimeIdOf(stored);
-    if (!runtime) throw new Error(`No runtime session for ${stored}`);
     this.storeMessage(stored, { role: "user", ...notice });
     const user_row_id = this.transcripts[stored].at(-1)!.row_id!;
-    this.event(runtime, "message.start", { turn_id: `wake-${user_row_id}` });
-    this.event(runtime, "message.delta", { text: reply });
+    if (runtime) {
+      this.event(runtime, "message.start", { turn_id: `wake-${user_row_id}` });
+      this.event(runtime, "message.delta", { text: reply });
+    }
     this.storeMessage(stored, { role: "assistant", text: reply });
-    this.event(runtime, "message.complete", { text: reply, status: "complete", persisted_turn: { user_row_id } });
+    if (runtime) this.event(runtime, "message.complete", { text: reply, status: "complete", persisted_turn: { user_row_id } });
+  }
+
+  /**
+   * Hermes's gate on `message_agent` (`tools/bot_mode_dm.py` `message_agent_authorized` at 0.23.2): the session is
+   * titled exactly "Bot Chat", and any profile's `profile.yaml` has a `ui_meta['hermes-bots']` mapping, empty or not.
+   */
+  messageAgentOffered(stored: string): boolean {
+    const session = this.profileNames().flatMap((p) => this.store(p) ?? []).find((s) => s.id === stored);
+    const managed = (v: unknown) => typeof v === "object" && v !== null && !Array.isArray(v);
+    return session?.title === "Bot Chat" && this.profileNames().some((p) => managed(this.profileMeta[p]?.ui_meta?.["hermes-bots"]));
+  }
+
+  private deliverySeq = 0;
+
+  /**
+   * One bot messages another, as Hermes 0.23.2 stored it between two profiles on a headless gateway. Throws while
+   * `messageAgentOffered` is false for the sender's Bot Chat, where the tool wouldn't exist. In order:
+   * 1. The sender's turn calls `message_agent {target, message}`, and its result is the queued ack. The owner's
+   *    prompt for that turn is stored already.
+   * 2. The recipient's Bot Chat gets a user row with `display_kind: "internal_notification"`, signed
+   *    `Message from 🤖 <name> (@<handle>): <message>`, and its reply.
+   * 3. The sender's Bot Chat is woken with a `process_complete` row whose output is the delivery's answer, and replies.
+   * A session that isn't open here gets its rows and no events. `handle`: the profile's name, or `hermes` for the
+   * default profile while no profile has that name (`bot_mode_probe._handle`).
+   */
+  async messageAgent(from: string, to: string, message: string, replies: { sent?: string; recipient: string; sender: string }): Promise<{ deliveryId: string }> {
+    const botChat = (profile: string) => {
+      const chat = this.store(profile)?.find((s) => s.title === "Bot Chat");
+      if (!chat) throw new Error(`${profile} has no Bot Chat`);
+      return chat.id;
+    };
+    const [sender, recipient] = [botChat(from), botChat(to)];
+    if (!this.messageAgentOffered(sender)) throw new Error("This install is not Bot-Mode-managed, so Hermes offers no message_agent.");
+    const handle = (profile: string) => (profile === "default" && !this.profileNames().includes("hermes") ? "hermes" : profile);
+    const title = (this.profileMeta[from]?.ui_meta?.["hermes-bots"] as { title?: unknown } | undefined)?.title;
+    const name = (typeof title === "string" && title.trim()) || this.profileMeta[from]?.display_name || handle(from);
+    const n = ++this.deliverySeq;
+    const deliveryId = `delivery-${n}`;
+    const process = `proc_dm${n}`;
+    const args = { target: to, message };
+    const ack = {
+      status: "queued",
+      delivery_id: deliveryId,
+      to: `@${handle(to)}`,
+      detail: "Durably queued for the live Bot Chat owner. Do NOT wait or resend; finish your turn.",
+      process_id: process,
+      reply_delivery: "notification",
+      target_state: "idle",
+    };
+    const sent = replies.sent ?? `Asked @${handle(to)}.`;
+    const runtime = this.runtimeIdOf(sender);
+    if (runtime) await this.toolTurn(runtime, { calls: [[{ name: "message_agent", args, result: ack, seconds: 0 }]], reply: sent, modelSeconds: 0, tokens: { prompt: 0, output: 0 }, costUsd: 0 });
+    else {
+      const call = `call_dm${n}`;
+      this.storeMessage(sender, { role: "assistant", text: "", tool_calls: [{ id: call, type: "function", function: { name: "message_agent", arguments: JSON.stringify(args) } }] });
+      this.storeMessage(sender, { role: "tool", tool_call_id: call, name: "message_agent", args, result: JSON.stringify(ack) });
+      this.storeMessage(sender, { role: "assistant", text: sent });
+    }
+    this.wake(recipient, { text: `Message from 🤖 ${name} (@${handle(from)}): ${message}`, display_kind: "internal_notification", display_metadata: { gateway_input_owner: `owner-${n}` } }, replies.recipient);
+    const command = `/opt/hermes/venv/bin/python /opt/hermes/tools/bot_mode_dm.py --run-delivery --author '{"id":"bot:${from}","name":"${name}","is_bot":true}' query-file /tmp/hermes-dm/dm-${n}.txt --profile-home /home/lena/.hermes/profiles/${to} /opt/hermes/venv/bin/hermes -p ${to}`;
+    const output = `{"outcome": "@${handle(to)} answered.", "reply": ${JSON.stringify(replies.recipient)}, "status": "settled", "delivery_id": "${deliveryId}"}`;
+    this.wake(
+      sender,
+      {
+        text: `[IMPORTANT: Background process ${process} completed normally (exit code 0).\nCommand: ${command}\nOutput:\n${output}\n]`,
+        display_kind: "process_complete",
+        display_metadata: { display_text: `Background Process Finished: ${command}` },
+      },
+      replies.sender,
+    );
+    return { deliveryId };
   }
 
   /**
@@ -3306,6 +3452,7 @@ export class FakeHermes {
       throw new RestError(409, `{"detail":"client_upgrade_required: this app is out of sync (different versions) with the Hermes backend; update the app to edit sessions"}`);
     if (body.request_id === undefined || body.expected_revision === undefined)
       throw new RestError(409, `{"detail":"mutation_identity_required"}`);
+    if (this.authority) return this.authority.patch(id, body);
     const s = this.storeOrFail(body.profile as string | undefined).find((r) => r.id === id);
     if (!s || !EDITABLE_SOURCES.has(s.source)) throw new RestError(404, `{"detail":"not_found"}`);
     if (body.expected_revision !== (s.runtime_revision ?? 0)) throw new RestError(409, `{"detail":"revision_conflict"}`);
@@ -3487,11 +3634,12 @@ export class FakeHermes {
    * The model an `llm.oneshot` for `task` runs on (`_resolve_task_provider_model` at `f0d9488`): `auxiliary.<task>` for
    * any task, slot or not, and the main model when that block is missing or its provider is empty or `auto`.
    */
-  private oneshotModel(task: string): { provider: string; model: string } {
-    const block = this.modelConfig.auxiliary[task] ?? this.modelConfig.unslottedAuxiliary[task] ?? {};
+  private oneshotModel(task: string, profile: string): { provider: string; model: string; main: boolean } {
+    const mc = this.configOf(profile);
+    const block = mc.auxiliary[task] ?? mc.unslottedAuxiliary[task] ?? {};
     const provider = String(block.provider ?? "").trim();
-    if (!provider || provider.toLowerCase() === "auto") return { provider: this.modelConfig.model.provider, model: this.modelConfig.model.default };
-    return { provider, model: String(block.model ?? "").trim() };
+    if (!provider || provider.toLowerCase() === "auto") return { provider: mc.model.provider, model: mc.model.default, main: true };
+    return { provider, model: String(block.model ?? "").trim(), main: false };
   }
 
   private frame(f: unknown) {
@@ -3559,6 +3707,15 @@ export function fakeModelConfig(): FakeModelConfig {
 function signedOutText(provider: string): string {
   if (provider === "nous") return "Nous Portal runtime credentials unavailable: Hermes is not logged into Nous Portal. (code: nous_auth_missing)";
   return `Provider '${provider}' is set in config.yaml but no API key was found.`;
+}
+
+/**
+ * How Hermes refuses a task on `auto` whose main provider it can't use: `_resolve_call_client` raises this once the main
+ * route builds no client (`agent/auxiliary_client.py` at `ae2a81c`); the "main provider … is unavailable" line before it
+ * goes only to `agent.log`.
+ */
+function mainUnavailableText(task: string): string {
+  return `No LLM provider configured for task=${task} provider=auto. Run: hermes setup`;
 }
 
 /** `SessionDB.session_unread`: activity postdates the read watermark, and `null` means read. */

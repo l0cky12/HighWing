@@ -1,0 +1,60 @@
+{
+  "recorded_with": "tools/computer-use-capture/record.mjs",
+  "hermes": "v0.23.2 (2026.9.24) ae2a81ccc00e",
+  "cut_at": 4096,
+  "files": {
+    "00-readiness.jsonl": {
+      "frames": 8,
+      "cut_data_urls": []
+    },
+    "01-readiness-p.jsonl": {
+      "frames": 6,
+      "cut_data_urls": []
+    },
+    "10-turn-approve.jsonl": {
+      "frames": 32,
+      "cut_data_urls": [
+        78030,
+        38034,
+        38034,
+        38034
+      ]
+    },
+    "11-turn-foreground.jsonl": {
+      "frames": 32,
+      "cut_data_urls": [
+        78030,
+        22458,
+        28158,
+        36626,
+        22458
+      ]
+    },
+    "12-turn-deny.jsonl": {
+      "frames": 12,
+      "cut_data_urls": [
+        53194
+      ]
+    },
+    "13-turn-takeover.jsonl": {
+      "frames": 16,
+      "cut_data_urls": [
+        53194
+      ]
+    },
+    "14-turn-interrupt.jsonl": {
+      "frames": 10,
+      "cut_data_urls": [
+        53194
+      ]
+    },
+    "15-resume-history.jsonl": {
+      "frames": 4,
+      "cut_data_urls": []
+    },
+    "16-hold-no-stream.jsonl": {
+      "frames": 24,
+      "cut_data_urls": []
+    }
+  }
+}

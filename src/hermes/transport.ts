@@ -100,7 +100,7 @@ import { providerKeys, readyProviders, SignInFailure, type ProviderSetup, type S
 import { restartHold } from "./unsaved";
 import { hostFileView, readServerFile, type FileView } from "./preview";
 import type { PathKind, ServerPath } from "./paths";
-import type { CliResult, DisplayLease, DisplayObserve, DisplayStatus, ScreenApi } from "./screen";
+import { parseDoctor, type CliResult, type DisplayLease, type DisplayObserve, type DisplayStatus, type ScreenApi } from "./screen";
 import { checkCommand, dockFile, foundPrograms, shellQuote } from "./screenApps";
 import { readScreenClipboard } from "./screenClipboard";
 import { agentFsEditIo } from "./artifacts";
@@ -926,6 +926,8 @@ export class Hermes {
     start: () => this.request("display.start", { profile: this.profile }) as Promise<DisplayStatus>,
     stop: () => this.request("display.stop", { profile: this.profile }) as Promise<DisplayStatus>,
     installBrowser: () => this.request("cli.exec", { argv: ["pm", "install", "chromium"], timeout: CLI_EXEC_TIMEOUT_S }) as Promise<CliResult>,
+    doctor: async () =>
+      parseDoctor((await this.request("cli.exec", { argv: ["-p", this.profile, "computer-use", "doctor", "--json"], timeout: CLI_EXEC_TIMEOUT_S })) as CliResult),
     findPrograms: async (programs) => {
       const { stdout } = (await this.request("shell.exec", { command: checkCommand(programs) })) as { stdout: string };
       return foundPrograms(stdout, programs);

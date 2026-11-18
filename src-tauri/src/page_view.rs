@@ -26,29 +26,14 @@ pub struct Rect {
     pub height: f64,
 }
 
-/// A page's own viewport, in its CSS pixels.
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
-pub struct PageSize {
-    pub width: f64,
-    pub height: f64,
-}
-
-/// The sides a page may be asked to lay out at, as the pane's size fields allow (`SIDE` in PageViewport.tsx): whole
-/// CSS pixels from 50 to 9999.
-const PAGE_SIDE_MIN: f64 = 50.0;
-const PAGE_SIDE_MAX: f64 = 9999.0;
-
 /// Where the page shows, and the parts of that the app's own layers cover (a menu, a dialog, a toast): the page
-/// leaves those bare, so the layer shows and takes the pointer. `page`: the size the page lays out at, when the owner
-/// picked one; the view zooms it to fit `rect`. Without it, the page is `rect`'s size.
+/// leaves those bare, so the layer shows and takes the pointer.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Placement {
     pub rect: Rect,
     #[serde(default)]
     pub holes: Vec<Rect>,
     pub viewport: Viewport,
-    #[serde(default)]
-    pub page: Option<PageSize>,
 }
 
 impl Placement {
@@ -67,48 +52,7 @@ impl Placement {
     pub fn in_view(&self, width: f64) -> Placement {
         let by = self.app_zoom(width);
         let scaled = |r: &Rect| Rect { x: r.x * by, y: r.y * by, width: r.width * by, height: r.height * by };
-        Placement { rect: scaled(&self.rect), holes: self.holes.iter().map(scaled).collect(), viewport: self.viewport, page: self.page }
-    }
-
-    /// Where the view goes, in whole GTK pixels over an app view `width` of them wide, and the zoom it gives its page.
-    /// Without a `page` (or with one the size fields wouldn't take) the view fills the placement at zoom 1. The page's
-    /// view is zoomed by the font DPI as the app's is, so that zoom is taken out.
-    ///
-    /// With a `page`, WebKit lays it out at the view's whole pixels over the zoom, floored, and its float arithmetic
-    /// can land just under a whole number. So the zoom puts the page half a CSS pixel over `page.width`, and the view
-    /// is the widest within the placement whose height lands within half a pixel of `page.height` and a half over:
-    /// both then floor to `page`. Most sizes find one within a few pixels of the placement. A page so long or so wide
-    /// that one of the view's pixels is many CSS pixels may only find one in a much smaller view, or none: then the view
-    /// is the one whose height comes nearest.
-    pub fn view_at(&self, width: f64) -> ((i32, i32, i32, i32), f64) {
-        let at = pixels(&self.in_view(width).rect);
-        let side = |v: f64| v.fract() == 0.0 && (PAGE_SIDE_MIN..=PAGE_SIDE_MAX).contains(&v);
-        let Some(page) = self.page.filter(|p| side(p.width) && side(p.height)) else { return (at, 1.0) };
-        let (x, y, wide, tall) = at;
-        let by = self.app_zoom(width);
-        let (natural_w, natural_h) = (page.width * by, page.height * by);
-        if natural_w.fract() == 0.0 && natural_h.fract() == 0.0 && natural_w <= f64::from(wide) && natural_h <= f64::from(tall) {
-            return ((x, y, natural_w as i32, natural_h as i32), 1.0);
-        }
-        let mut nearest: Option<(f64, i32, i32, f64)> = None;
-        for w in (1..=wide).rev() {
-            let per = f64::from(w) / (page.width + 0.5);
-            let h = ((page.height + 0.5) * per).round().clamp(1.0, f64::from(tall.max(1)));
-            let off = (h / per - page.height - 0.5).abs();
-            if nearest.is_none_or(|n| off < n.0) {
-                nearest = Some((off, w, h as i32, per));
-            }
-            if off < 0.48 {
-                break;
-            }
-        }
-        let Some((_, w, h, per)) = nearest else { return (at, 1.0) };
-        let zoom = per / by;
-        if zoom.is_finite() && zoom > 0.0 {
-            ((x, y, w, h), zoom)
-        } else {
-            (at, 1.0)
-        }
+        Placement { rect: scaled(&self.rect), holes: self.holes.iter().map(scaled).collect(), viewport: self.viewport }
     }
 }
 
@@ -505,14 +449,8 @@ mod imp {
             return;
         };
         let Some(app_view) = overlay.child() else { return };
-        let app_width = f64::from(app_view.allocated_width());
-        let (view_box, zoom) = placement.view_at(app_width);
-        // Zooming only lays the page out again: its scroll, its forms and a script's state stay.
-        if view.zoom_level() != zoom {
-            view.set_zoom_level(zoom);
-        }
-        let placement = &placement.in_view(app_width);
-        AT.with(|at| at.set(view_box));
+        let placement = &placement.in_view(f64::from(app_view.allocated_width()));
+        AT.with(|at| at.set(pixels(&placement.rect)));
         overlay.queue_resize();
         let holes = holes_in_page(placement);
         // The overlay's window for the view, which it moves and sizes. On X11 it can be a native window, whose shape
@@ -521,7 +459,7 @@ mod imp {
         let x11 = view.parent_window().filter(|w| w.display().is::<gdkx11::X11Display>() && w.ensure_native());
         match x11 {
             Some(window) => {
-                let (_, _, width, height) = view_box;
+                let (_, _, width, height) = pixels(&placement.rect);
                 let shape = gtk::cairo::Region::create_rectangle(&gtk::cairo::RectangleInt::new(0, 0, width, height));
                 for (x, y, w, h) in holes {
                     let _ = shape.subtract_rectangle(&gtk::cairo::RectangleInt::new(x, y, w, h));
@@ -713,11 +651,10 @@ mod imp {
         let Some((view, moves)) = shown(key) else { return done(Err(AnnotateError::NoPage)) };
         let Some(url) = view.uri().map(String::from).filter(|u| crate::web_page::web_url(u).is_ok()) else { return done(Err(AnnotateError::NoPage)) };
         let generation = moves.generation.get();
-        // In the page's own CSS pixels: the view's pixels over its zoom and the font DPI's (`Placement::view_at`).
+        // In the page's own CSS pixels: the page's view is zoomed by the font DPI as the app's is.
         let app_width = view.parent().and_downcast::<gtk::Overlay>().and_then(|o| o.child()).map(|a| f64::from(a.allocated_width()));
         let by = PAGE.with(|p| p.borrow().as_ref().and_then(|p| p.placement.as_ref().zip(app_width).map(|(at, w)| at.app_zoom(w)))).unwrap_or(1.0);
-        let per = view.zoom_level() * by;
-        let (width, height, scale) = (f64::from(view.allocated_width()) / per, f64::from(view.allocated_height()) / per, f64::from(view.scale_factor()) * per);
+        let (width, height, scale) = (f64::from(view.allocated_width()) / by, f64::from(view.allocated_height()) / by, f64::from(view.scale_factor()) * by);
         let key = key.to_owned();
         let keep = move |pixels: Result<Pixels, AnnotateError>| {
             let pixels = pixels?;
@@ -1006,7 +943,7 @@ Object.defineProperty(document.getElementById('save'), 'innerText', {{ get() {{ 
             go(KEY, url::Url::parse(url).unwrap(), None);
             let app_width = f64::from(overlay.child().unwrap().allocated_width());
             let viewport = Viewport { width: app_width, height: 700.0 };
-            show_at(&overlay, &view, Some(&Placement { rect: Rect { x: 100.0, y: 50.0, width: 640.0, height: 480.0 }, holes: vec![], viewport, page: None }));
+            show_at(&overlay, &view, Some(&Placement { rect: Rect { x: 100.0, y: 50.0, width: 640.0, height: 480.0 }, holes: vec![], viewport }));
             run_until(|| loaded.get(), 120, "the page loads");
             run_for(1000);
             (window, overlay, view)
@@ -1153,57 +1090,6 @@ Object.defineProperty(document.getElementById('save'), 'innerText', {{ get() {{ 
         }
 
         #[test]
-        #[ignore = "needs a display, a session bus and GTK on one thread, so one test a process: xvfb-run -a dbus-run-session -- cargo test --lib page_view::imp::tests::a_picked_size -- --ignored"]
-        fn a_picked_size_lays_the_page_out_at_it_and_keeps_its_state() {
-            let (_window, overlay, view) = plain_view();
-            let app_width = f64::from(overlay.child().unwrap().allocated_width());
-            let viewport = Viewport { width: app_width, height: 700.0 };
-            let place = |rect: Rect, page: Option<PageSize>| {
-                show_at(&overlay, &view, Some(&Placement { rect, holes: vec![], viewport, page }));
-                run_for(500);
-                in_page(&view, "innerWidth + 'x' + innerHeight")
-            };
-            in_page(&view, "window.kept = 'still here'; document.body.insertAdjacentHTML('beforeend', '<input id=f>'); f.value = 'typed'; 1");
-            assert_eq!(place(Rect { x: 100.0, y: 50.0, width: 400.0, height: 250.0 }, Some(PageSize { width: 1280.0, height: 800.0 })), "1280x800");
-            assert_eq!(in_page(&view, "window.kept + ' ' + f.value"), "still here typed", "zooming doesn't load the page again");
-            let taken = wait(|done| still_in(KEY, done)).expect("a still");
-            let scale = f64::from(view.scale_factor());
-            let (wide, tall) = (f64::from(view.allocated_width()), f64::from(view.allocated_height()));
-            assert!(wide <= 400.0 && tall <= 250.0, "the view stays in its box: {wide}×{tall}");
-            assert_eq!((taken.kept.width.floor(), taken.kept.height.floor()), (1280.0, 800.0), "a still is in the page's CSS pixels");
-            assert_eq!(taken.kept.scale, scale * view.zoom_level());
-            assert_eq!((taken.kept.pixels.width(), taken.kept.pixels.height()), ((wide * scale) as usize, (tall * scale) as usize));
-            assert_eq!(place(Rect { x: 100.0, y: 50.0, width: 375.0, height: 667.0 }, Some(PageSize { width: 375.0, height: 667.0 })), "375x667");
-            assert_eq!(place(Rect { x: 100.0, y: 50.0, width: 640.0, height: 480.0 }, None), "640x480", "Responsive fills the box again");
-            assert_eq!(view.zoom_level(), 1.0);
-        }
-
-        #[test]
-        #[ignore = "needs a display, a session bus and GTK on one thread, so one test a process; run it as is and with GDK_DPI_SCALE=1.5: xvfb-run -a dbus-run-session -- cargo test --lib page_view::imp::tests::a_pick_on_a_sized -- --ignored"]
-        fn a_pick_on_a_sized_page_finds_what_is_there_at_any_font_dpi() {
-            // GDK_DPI_SCALE zooms WebKit's views as Xft.dpi does; the app's CSS viewport then shrinks by the same.
-            let by: f64 = std::env::var("GDK_DPI_SCALE").ok().and_then(|v| v.parse().ok()).unwrap_or(1.0);
-            let (_window, overlay, view) = plain_view();
-            let app_width = f64::from(overlay.child().unwrap().allocated_width());
-            let viewport = Viewport { width: app_width / by, height: 700.0 / by };
-            let page = Some(PageSize { width: 1280.0, height: 800.0 });
-            let rect = Rect { x: 100.0 / by, y: 50.0 / by, width: 400.0 / by, height: 250.0 / by };
-            let placement = Placement { rect, holes: vec![], viewport, page };
-            show_at(&overlay, &view, Some(&placement));
-            PAGE.with(|p| p.borrow_mut().as_mut().unwrap().placement = Some(placement));
-            run_for(500);
-            assert_eq!(in_page(&view, "innerWidth + 'x' + innerHeight"), "1280x800", "at font DPI {by}");
-            let taken = wait(|done| still_in(KEY, done)).expect("a still");
-            assert_eq!((taken.kept.width.floor(), taken.kept.height.floor()), (1280.0, 800.0), "the still is in the page's CSS pixels at {by}");
-            let at = |x, y| match query(taken.kept.id, x, y, 0).unwrap().map(|a| a.target) {
-                Some(Target::Element { tag, .. }) => tag.as_str().to_owned(),
-                other => format!("{other:?}"),
-            };
-            assert_eq!(at(50.0, 20.0), "button", "the Go button, 100×40 at the page's corner");
-            assert_eq!(at(600.0, 400.0), "body");
-        }
-
-        #[test]
         #[ignore = "needs a display, a session bus and GTK on one thread, so one test a process: xvfb-run -a dbus-run-session -- cargo test --lib page_view::imp::tests::a_still_is -- --ignored"]
         fn a_still_is_in_device_pixels() {
             let (_window, _overlay, view) = plain_view();
@@ -1217,6 +1103,30 @@ Object.defineProperty(document.getElementById('save'), 'innerText', {{ get() {{ 
             let image = cairo::ImageSurface::create_from_png(&mut png.as_slice()).unwrap();
             assert_eq!((image.width() as usize, image.height() as usize), device, "the PNG too");
             eprintln!("scale {scale}: still {}×{} device pixels for a 640×480 view, PNG {} bytes", device.0, device.1, png.len());
+        }
+
+        #[test]
+        #[ignore = "needs a display, a session bus and GTK on one thread, so one test a process; run it as is and with GDK_DPI_SCALE=1.5: xvfb-run -a dbus-run-session -- cargo test --lib page_view::imp::tests::a_pick_finds -- --ignored"]
+        fn a_pick_finds_what_is_there_at_any_font_dpi() {
+            // GDK_DPI_SCALE zooms WebKit's views as Xft.dpi does; the app's CSS viewport then shrinks by the same.
+            let by: f64 = std::env::var("GDK_DPI_SCALE").ok().and_then(|v| v.parse().ok()).unwrap_or(1.0);
+            let (_window, overlay, view) = plain_view();
+            let app_width = f64::from(overlay.child().unwrap().allocated_width());
+            let viewport = Viewport { width: app_width / by, height: 700.0 / by };
+            let rect = Rect { x: 100.0 / by, y: 50.0 / by, width: 400.0 / by, height: 250.0 / by };
+            let placement = Placement { rect, holes: vec![], viewport };
+            show_at(&overlay, &view, Some(&placement));
+            PAGE.with(|p| p.borrow_mut().as_mut().unwrap().placement = Some(placement));
+            run_for(500);
+            let inner = in_page(&view, "innerWidth + 'x' + innerHeight");
+            let taken = wait(|done| still_in(KEY, done)).expect("a still");
+            assert_eq!(format!("{}x{}", taken.kept.width.floor(), taken.kept.height.floor()), inner, "the still is in the page's CSS pixels at {by}");
+            let at = |x, y| match query(taken.kept.id, x, y, 0).unwrap().map(|a| a.target) {
+                Some(Target::Element { tag, .. }) => tag.as_str().to_owned(),
+                other => format!("{other:?}"),
+            };
+            assert_eq!(at(50.0, 20.0), "button", "the Go button, 100×40 at the page's corner");
+            assert_eq!(at(200.0, 150.0), "body");
         }
 
         #[test]
@@ -1296,7 +1206,6 @@ mod tests {
                 rect(500.0, 100.0, 200.0, 300.0),
             ],
             viewport: Viewport { width: 1280.0, height: 820.0 },
-            page: None,
         };
         assert_eq!(holes_in_page(&placement), vec![(0, 500, 100, 40), (0, 0, 400, 600)]);
     }
@@ -1309,7 +1218,6 @@ mod tests {
             rect: rect(534.0, 57.33, 319.33, 489.33),
             holes: vec![rect(534.0, 500.0, 100.0, 30.0)],
             viewport: Viewport { width: 853.333_312_988_281_2, height: 546.666_687_011_718_8 },
-            page: None,
         };
         let on_screen = placement.in_view(1280.0);
         assert_eq!(pixels(&on_screen.rect), (801, 86, 479, 734));
@@ -1319,104 +1227,10 @@ mod tests {
         assert_eq!(pixels(&no_size.in_view(1280.0).rect), pixels(&placement.rect), "a viewport with no size leaves the place as it is");
     }
 
-    /// The page's size as WebKit gives it for a view of `w` × `h` GTK pixels at `zoom`, with the app zoomed `by`.
-    fn laid_out(w: i32, h: i32, zoom: f64, by: f64) -> (f64, f64) {
-        ((f64::from(w) / (zoom * by)).floor(), (f64::from(h) / (zoom * by)).floor())
-    }
-
-    #[test]
-    fn a_picked_size_is_what_the_page_lays_out_at_in_any_box() {
-        let devices: [(f64, f64); 17] = [
-            (375.0, 667.0),
-            (414.0, 896.0),
-            (390.0, 844.0),
-            (430.0, 932.0),
-            (412.0, 915.0),
-            (360.0, 740.0),
-            (768.0, 1024.0),
-            (820.0, 1180.0),
-            (1024.0, 1366.0),
-            (912.0, 1368.0),
-            (540.0, 720.0),
-            (344.0, 882.0),
-            (853.0, 1280.0),
-            (412.0, 914.0),
-            (1024.0, 600.0),
-            (1280.0, 800.0),
-            (747.0, 818.0),
-        ];
-        // Boxes as the pane fits a page to them: whole and fractional, at Xft.dpi 96 and 144 (the app's CSS viewport then
-        // 853⅓ wide over 1280 GTK pixels).
-        let boxes: [(f64, f64); 5] = [(463.0, 683.0), (307.86, 683.0), (479.4, 300.3), (1180.0, 900.0), (200.5, 211.7)];
-        let (mut checked, mut short) = (0, 0);
-        for (viewport, by) in [(1280.0, 1.0), (1280.0 / 1.5, 1.5)] {
-            for &(bw, bh) in &boxes {
-                for &(pw, ph) in &devices {
-                    let scale = (bw / pw).min(bh / ph).min(1.0);
-                    let placement = Placement {
-                        rect: rect(800.4 / by, 121.3 / by, pw * scale / by, ph * scale / by),
-                        holes: vec![],
-                        viewport: Viewport { width: viewport, height: 900.0 / by },
-                        page: Some(PageSize { width: pw, height: ph }),
-                    };
-                    let ((x, y, w, h), zoom) = placement.view_at(1280.0);
-                    let (_, _, wide, tall) = pixels(&placement.in_view(1280.0).rect);
-                    assert_eq!(laid_out(w, h, zoom, by), (pw, ph), "{pw}×{ph} in a {bw}×{bh} box at {by}");
-                    assert!(w <= wide && h <= tall, "{pw}×{ph}: view {w}×{h} in {wide}×{tall}");
-                    if bh >= 600.0 {
-                        short = short.max((wide - w).max(tall - h));
-                    }
-                    assert_eq!((x, y), (pixels(&placement.in_view(1280.0).rect).0, pixels(&placement.in_view(1280.0).rect).1));
-                    checked += 1;
-                }
-            }
-        }
-        assert_eq!(checked, 2 * 5 * 17);
-        // The sides the fields take at their limits, in the Preview's box: the width is exact, and so is the height
-        // wherever the view is more than a sliver.
-        for (pw, ph) in [(9999.0_f64, 50.0_f64), (50.0, 9999.0), (9999.0, 9999.0), (50.0, 50.0), (9999.0, 51.0), (51.0, 9998.0)] {
-            let scale = (464.0 / pw).min(667.0 / ph).min(1.0);
-            let placement = Placement {
-                rect: rect(808.4, 129.0, pw * scale, ph * scale),
-                holes: vec![],
-                viewport: Viewport { width: 1280.0, height: 820.0 },
-                page: Some(PageSize { width: pw, height: ph }),
-            };
-            let ((_, _, w, h), zoom) = placement.view_at(1280.0);
-            let (lw, lh) = laid_out(w, h, zoom, 1.0);
-            assert_eq!(lw, pw, "{pw}×{ph}: view {w}×{h}");
-            // A view only a few pixels across has no whole size that floors to the height: it comes within one of them.
-            assert!((lh - ph).abs() <= (pw + 0.5) / f64::from(w), "{pw}×{ph}: view {w}×{h} lays out {lw}×{lh}");
-            if w >= 40 {
-                assert_eq!(lh, ph, "{pw}×{ph}: view {w}×{h}");
-            }
-        }
-        assert!(short <= 4, "in a box the size of the Preview, the view is at most 4 pixels short of it: {short}");
-    }
-
-    #[test]
-    fn a_page_without_a_size_fills_its_box_at_zoom_1() {
-        let at = |page: Option<PageSize>| Placement {
-            rect: rect(800.0, 137.0, 480.0, 683.0),
-            holes: vec![],
-            viewport: Viewport { width: 1280.0, height: 820.0 },
-            page,
-        };
-        assert_eq!(at(None).view_at(1280.0), ((800, 137, 480, 683), 1.0));
-        let fits = Placement { rect: rect(852.5, 137.0, 375.0, 667.0), ..at(Some(PageSize { width: 375.0, height: 667.0 })) };
-        assert_eq!(fits.view_at(1280.0), ((853, 137, 375, 667), 1.0), "a size that fits shows as it is, unscaled");
-        for bad in [(0.0, 667.0), (f64::NAN, 667.0), (375.0, f64::INFINITY), (-375.0, 667.0), (1e9, 667.0), (375.5, 667.0), (49.0, 667.0), (375.0, 10000.0)] {
-            assert_eq!(at(Some(PageSize { width: bad.0, height: bad.1 })).view_at(1280.0), ((800, 137, 480, 683), 1.0), "{bad:?} is no size");
-        }
-    }
-
     #[test]
     fn placement_reads_the_webviews_json() {
         let p: Placement = serde_json::from_str(r#"{"rect":{"x":1,"y":2,"width":3,"height":4},"viewport":{"width":5,"height":6}}"#).unwrap();
-        assert_eq!(p, Placement { rect: rect(1.0, 2.0, 3.0, 4.0), holes: vec![], viewport: Viewport { width: 5.0, height: 6.0 }, page: None });
-        let sized: Placement =
-            serde_json::from_str(r#"{"rect":{"x":1,"y":2,"width":3,"height":4},"viewport":{"width":5,"height":6},"page":{"width":375,"height":667}}"#).unwrap();
-        assert_eq!(sized.page, Some(PageSize { width: 375.0, height: 667.0 }));
+        assert_eq!(p, Placement { rect: rect(1.0, 2.0, 3.0, 4.0), holes: vec![], viewport: Viewport { width: 5.0, height: 6.0 } });
         assert_eq!(
             serde_json::to_value(PageEvent::Failed { message: "m".into(), url: None }).unwrap(),
             serde_json::json!({ "kind": "failed", "message": "m" })

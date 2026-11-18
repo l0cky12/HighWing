@@ -1,6 +1,6 @@
 # The Preview lays a web page out at a size the owner picks
 
-> **Accepted.** The row is `ViewportBar` in `src/ui/PageViewport.tsx`, with the device list, the side check (`parseSide`) and the fit (`fitScale`). On Linux the size travels in the page view's placement (`Placement.page`), and Rust zooms the view to it (`Placement::view_at` in `src-tauri/src/page_view.rs`). Tested in `src/ui/pageViewport.test.ts`, `src/ui/previewPane.test.tsx`, `src/ui/pagePlacement.test.ts`, and `page_view.rs`'s unit and display tests.
+> **Superseded by [ADR 0211](0211-the-previews-page-size-row-is-removed.md).** The page size row, its device list and its scaling are gone. A web page always fills the Preview. A still on Linux still divides by the font DPI's zoom.
 
 The owner wanted to see a page in the Preview the way a phone or a tablet lays it out, from a menu like the one in Chrome's device toolbar. The menu has Responsive, then 17 devices under Standard, each with its width and height, and a width and height the owner can type.
 

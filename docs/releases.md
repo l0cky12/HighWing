@@ -2,11 +2,13 @@
 
 Highwing can update itself only as a standalone AppImage built with an update key. This page says which copies that covers, how a release is built, signed and checked, and what the owner still has to set up before the first real release. ADR 0075 records the decisions.
 
-Nothing here publishes an AppImage. The repo has no AppImage release, signing key, update endpoint or `TAURI_SIGNING_PRIVATE_KEY` secret yet, so no installed copy updates itself today.
+Nothing here publishes a self-updating AppImage. The repo has no signing key, update endpoint or `TAURI_SIGNING_PRIVATE_KEY` secret yet, so no installed copy updates itself today.
 
-The Windows installer and the `.deb` are published separately. Pushing a `v<version>` tag makes the `installers` workflow (`.github/workflows/installers.yml`) attach `hermes-chat_<version>_x64-setup.exe`, `hermes-chat_<version>_amd64.deb` and a `.sha256` for each to that tag's GitHub release, through `scripts/release/attach-release.sh`. The tag must match `tauri.conf.json`'s version (ADR 0080, ADR 0183). Those releases carry no `latest.json`.
+The Windows installer, the `.deb` and a plain AppImage are published separately. Pushing a `v<version>` tag makes the `installers` workflow (`.github/workflows/installers.yml`) attach `hermes-chat_<version>_x64-setup.exe`, `hermes-chat_<version>_amd64.deb`, `hermes-chat_<version>_amd64.AppImage` and a `.sha256` for each to that tag's GitHub release, through `scripts/release/attach-release.sh`. The tag must match `tauri.conf.json`'s version (ADR 0080, ADR 0183, ADR 0213). Those releases carry no `latest.json`.
 
 The `.deb` is built on Ubuntu 24.04, so it installs on Ubuntu 24.04, Debian 13 or newer, with `sudo apt install ./hermes-chat_<version>_amd64.deb`. Its package is `highwing`, and its command, icon and launcher are the AUR package's (ADR 0183).
+
+The plain AppImage is built from `tauri.conf.json` alone, with no updater and no key, on Ubuntu 24.04, so it needs a system at least that new on x86_64. The `appimage` job opens it under a virtual display and fails unless a window titled `Highwing` appears (`scripts/release/appimage-launches.sh`). It needs FUSE with a `fusermount` command, or `--appimage-extract-and-run`. Settings says it can't be updated from the app (ADR 0213).
 
 ## Which copies update themselves
 
@@ -163,4 +165,4 @@ These need a decision or a secret only the owner has, and none was exercised:
 - Generate the production key, keep it offline, and set `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` as secrets of that environment.
 - Put its public key in `src-tauri/tauri.release.conf.json`'s `pubkey`.
 - Decide the hosting. The configured endpoint assumes GitHub releases on this repo.
-- Add a publishing step (a tagged release with the staged files as assets), separately authorized. The dry run never publishes. It should attach to the same tagged release the Windows job does (ADR 0080), so the newest release carries both the installer and `latest.json`.
+- Add a publishing step (a tagged release with the staged files as assets), separately authorized. The dry run never publishes. It should attach to the same tagged release the Windows job does (ADR 0080), so the newest release carries both the installer and `latest.json`. The signed AppImage would replace the plain one on that release: it is published under the same name, `hermes-chat_<version>_amd64.AppImage` (ADR 0213).

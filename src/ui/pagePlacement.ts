@@ -1,8 +1,8 @@
 // Where the Preview's own page view goes (ADR 0081). The view is a native widget drawn over the whole app, so it
 // follows its box in the pane, and leaves bare the parts that the app's floating layers (menus, dialogs, toasts,
 // drawers) cover, so those still show and take the pointer.
-import { useEffect, useRef, type RefObject } from "react";
-import type { NativePage, PageSize, Placement, Rect } from "./tauriPreview";
+import { useEffect, type RefObject } from "react";
+import type { NativePage, Placement, Rect } from "./tauriPreview";
 
 /** The most often the page's place is worked out again, while the app keeps changing (a reply streaming, say). */
 const CHECK_MS = 200;
@@ -66,10 +66,9 @@ function drawnOver(layer: Element, box: Element, r: Rect): boolean {
  * the box (the pane's resize handle, a dialog's backdrop) moves that side in. Any other makes a hole, which only X11
  * can cut, so it is best kept for small layers such as a menu or a toast. A layer counts only where it is drawn over
  * the box, so one beneath the Preview when it covers the chat counts for nothing. All in CSS pixels, with the window's
- * CSS size as `viewport`, from which Rust finds how far WebKit zooms the app. `page`: the size the page lays out at, if
- * not the box's. `null`: the box has no size, or layers cover it.
+ * CSS size as `viewport`, from which Rust finds how far WebKit zooms the app. `null`: the box has no size, or layers cover it.
  */
-export function placementOf(box: Element, layers: string, page?: PageSize): Placement | null {
+export function placementOf(box: Element, layers: string): Placement | null {
   const r = box.getBoundingClientRect();
   let rect: Rect = { x: r.x, y: r.y, width: r.width, height: r.height };
   const over: Rect[] = [];
@@ -95,16 +94,11 @@ export function placementOf(box: Element, layers: string, page?: PageSize): Plac
   // The visual viewport's size keeps its fraction (853.33 at 1.5 times), where innerWidth rounds it off.
   const view = box.ownerDocument.defaultView;
   const viewport = { width: view?.visualViewport?.width ?? view?.innerWidth ?? 0, height: view?.visualViewport?.height ?? view?.innerHeight ?? 0 };
-  return { rect, holes: holes.flatMap((h) => intersect(rect, h) ?? []), viewport, ...(page && { page: { width: page.width, height: page.height } }) };
+  return { rect, holes: holes.flatMap((h) => intersect(rect, h) ?? []), viewport };
 }
 
-/** Keeps `page` placed over `box` while both are there, and hides it when either goes. `size`: what it lays out at. */
-export function usePlacement(box: RefObject<HTMLElement | null>, page: NativePage | undefined, size?: PageSize) {
-  const sized = useRef(size);
-  sized.current = size;
-  const recheck = useRef<() => void>(undefined);
-  // A new size with the same box (a device of the same shape) moves nothing the observers see.
-  useEffect(() => recheck.current?.(), [size?.width, size?.height]);
+/** Keeps `page` placed over `box` while both are there, and hides it when either goes. */
+export function usePlacement(box: RefObject<HTMLElement | null>, page: NativePage | undefined) {
   useEffect(() => {
     const el = box.current;
     if (!page || !el) return;
@@ -115,7 +109,7 @@ export function usePlacement(box: RefObject<HTMLElement | null>, page: NativePag
     const measure = () => {
       pending = undefined;
       checked = performance.now();
-      const placement = placementOf(el, layers, sized.current);
+      const placement = placementOf(el, layers);
       const key = JSON.stringify(placement);
       if (key === last) return;
       last = key;
@@ -133,10 +127,8 @@ export function usePlacement(box: RefObject<HTMLElement | null>, page: NativePag
     changed.observe(el.ownerDocument.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "hidden", "style"] });
     const events = ["resize", "pointerup", "keyup", "contextmenu", "animationend", "transitionend"] as const;
     for (const e of events) addEventListener(e, soon, true);
-    recheck.current = soon;
     measure();
     return () => {
-      recheck.current = undefined;
       resized.disconnect();
       changed.disconnect();
       clearTimeout(pending);

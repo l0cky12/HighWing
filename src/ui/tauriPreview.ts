@@ -40,11 +40,11 @@ export type WebPages = {
 
 /**
  * Where a still comes from: the Preview's own view (`key`, Linux), or the sandboxed frame (Windows): its box in the
- * window's CSS pixels, the window's CSS size, the address it shows, and the size it lays out at if the owner picked one.
+ * window's CSS pixels, the window's CSS size, and the address it shows.
  */
 export type StillSource =
   | { kind: "view"; key: string }
-  | { kind: "frame"; url: string; rect: Rect; viewport: { width: number; height: number }; page?: PageSize };
+  | { kind: "frame"; url: string; rect: Rect; viewport: { width: number; height: number } };
 
 /**
  * Rust's annotation commands (src-tauri/src/annotate.rs). Each rejects with an `AnnotateFailure` (`{ kind, message }`).
@@ -79,13 +79,8 @@ export type DevServers = {
 
 /** A rectangle in the window's CSS pixels. */
 export type Rect = { x: number; y: number; width: number; height: number };
-/** A page's own viewport, in its CSS pixels. */
-export type PageSize = { width: number; height: number };
-/**
- * Where a native page shows, and the parts of that the app's own layers cover, which the page leaves bare. `page`: the
- * size it lays out at, which Rust zooms to fit `rect`; without it, the page is `rect`'s size.
- */
-export type Placement = { rect: Rect; holes: Rect[]; viewport: { width: number; height: number }; page?: PageSize };
+/** Where a native page shows, and the parts of that the app's own layers cover, which the page leaves bare. */
+export type Placement = { rect: Rect; holes: Rect[]; viewport: { width: number; height: number } };
 export type PageEvent = { kind: "at"; url: ViewUrl; replace: boolean } | { kind: "failed"; message: string; url?: ViewUrl } | { kind: "escaped" };
 /** `key`: the view's name in Rust, which annotation queries ask about. */
 export type NativePage = { key: string; go(url: ViewUrl): void; reload(): void; place(placement: Placement | null): void; close(): void };

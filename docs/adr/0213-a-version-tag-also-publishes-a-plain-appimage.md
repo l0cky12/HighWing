@@ -1,0 +1,27 @@
+# A version tag also publishes a plain AppImage
+
+> **Accepted.** The build is the `appimage` job in `.github/workflows/installers.yml`, the launch check `scripts/release/appimage-launches.sh`, the publish step `scripts/release/attach-release.sh` (tested by `attach-release.test.sh`), and the Settings text for an AppImage without an update key in `src/hermes/updates.ts`. It partly supersedes ADR 0183.
+
+Since ADR 0183, a `v<version>` tag published the Windows installer and a .deb. Someone on Linux without a .deb system had to build from source or use the AUR package. The AppImage was built only by the release dry run (`release-dry-run.yml`), which never publishes. Issue #56 asks for a plain AppImage on the release page beside the other two. The signed AppImage that updates itself (ADR 0075) needs the owner's key and stays owner work.
+
+## Decisions
+
+- **The AppImage is plain: built from the base config, with no updater and no key.** `tauri.conf.json` has no `plugins.updater`, so `tauri build --bundles appimage` with no `--config` registers no updater plugin and needs no `TAURI_SIGNING_PRIVATE_KEY`. A signed, self-updating AppImage stays ADR 0075's, and would replace this one on the same release.
+- **It has its own job, `appimage`.** ADR 0183 said each format needs its own job. It runs on Ubuntu 24.04 with the same pinned actions and the same Tauri libraries as `deb`, plus `patchelf` and `file`, which the bundler needs. The `rust`, `nsis` and `deb` jobs are unchanged. The `release` job needs it too.
+- **The job proves the AppImage launches.** `appimage-launches.sh` runs the built file under `xvfb-run`, the way a user runs it, through FUSE and not `--appimage-extract-and-run`. It uses a throwaway home and runtime folder and sets `HERMES_CHAT_NEW_INSTANCE`, so a Highwing already running on the machine can't be what answers (`main.rs` hands over to a running copy otherwise and exits). It waits up to 60 seconds for an X window titled `Highwing`. It fails with the app's log when the app exits first or no window appears. The runner installs `xvfb`, `xdotool` and `fuse3`. The script runs the same on a developer's machine.
+- **One more attach row.** `attach-release.sh` takes a fourth folder. The row is the folder, `_<version>_amd64.AppImage` (what `tauri build` ends the name with, which proves the version), and the published name `hermes-chat_<version>_amd64.AppImage`. That is the name the release dry run already stages (`manifest.mjs`), so a later signed AppImage takes over the same row. The folder must hold exactly one AppImage, checked before `gh` is called, and it gets a `.sha256`. A new release's notes say how to run it.
+- **The same Ubuntu 24.04 floor as the .deb.** The binary links against the glibc of the system it was built on, so the AppImage needs a system as new as Ubuntu 24.04 (glibc 2.39), on x86_64.
+
+## Considered options
+
+- **Building it in the `deb` job.** One compile instead of two, but it changes the .deb job and ties the two formats together. A failure in one would hide the other.
+- **Waiting for the update key.** ADR 0183's position. The key is still owner work, and a plain AppImage doesn't need it. That position no longer holds for the plain AppImage, and ADR 0075's signed AppImage is unchanged.
+- **`--appimage-extract-and-run` in the launch check.** It needs no FUSE, but it skips the mount a user's launch goes through, so it wouldn't catch a build that fails there.
+
+## Consequences
+
+- The AppImage doesn't update itself. `tauri build` marks the binary's bundle type as AppImage, and with no `plugins.updater` Settings → General → Updates says "This AppImage was built without an update key, so it can't check for or install updates. Download a newer build to update."
+- Running the AppImage needs FUSE and a `fusermount` command. The runtime Tauri bundles is the static type2 runtime. It lists `fusermount` and no `libfuse2` (checked with `strings`). On a Ubuntu 24.04 container, installing only `fuse3` supplied `/usr/bin/fusermount`, and the AppImage mounted and started. Where FUSE is missing, `--appimage-extract-and-run` runs it.
+- The AppImage's own launcher entry has `Exec=env WEBKIT_DISABLE_DMABUF_RENDERER=1 hermes-chat %u`, because Tauri reuses the `bundle.linux.deb.desktopTemplate` (`packaging/aur/hermes-chat.desktop`) for it. Running the AppImage file directly doesn't use that entry, and its `AppRun` and hooks don't set the variable (grepped, none). So an AppImage run by hand starts WebKit with its DMA-BUF renderer on, unlike the .deb, the AUR package and `npm run app`. What a desktop-integration tool does with the entry wasn't checked. The app's code is unchanged for this.
+- A tag now waits for the `appimage` job as well, a few minutes more.
+- The publish path itself (a real tag push) wasn't run before merge. The attach script was run against a stand-in `gh`, and the launch check was run against an AppImage built on Arch Linux. It passed there, and it fails for an app that exits at once and for one that opens no window. The workflow was checked with actionlint. The first run of the job on Ubuntu 24.04 is on the pull request.

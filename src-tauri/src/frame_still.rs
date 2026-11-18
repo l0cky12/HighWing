@@ -19,14 +19,7 @@ const STILL_WITHIN: Duration = Duration::from_secs(3);
 
 type Sent = tokio::sync::oneshot::Sender<Result<Vec<u8>, AnnotateError>>;
 
-pub async fn take(
-    app: &tauri::AppHandle,
-    url: String,
-    rect: Rect,
-    viewport: Viewport,
-    page: Option<Viewport>,
-    captures: Arc<Captures>,
-) -> Result<Still, AnnotateError> {
+pub async fn take(app: &tauri::AppHandle, url: String, rect: Rect, viewport: Viewport, captures: Arc<Captures>) -> Result<Still, AnnotateError> {
     crate::web_page::web_url(&url).map_err(AnnotateError::Failed)?;
     let window = app.get_webview_window("main").ok_or(AnnotateError::NoPage)?;
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -36,7 +29,7 @@ pub async fn take(
         _ => return Err(AnnotateError::NoAnswer),
     };
     let taken_at_ms = annotate::now_ms();
-    tokio::task::spawn_blocking(move || annotate::frame_still(&captures, &png, url, rect, viewport, page, taken_at_ms))
+    tokio::task::spawn_blocking(move || annotate::frame_still(&captures, &png, url, rect, viewport, taken_at_ms))
         .await
         .map_err(|e| AnnotateError::Failed(e.to_string()))?
 }

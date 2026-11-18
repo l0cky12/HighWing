@@ -1674,7 +1674,7 @@ async fn preview_annotate_still(
     match source {
         annotate::StillSource::View { key } => page_view::annotate_still(&app, key, captures).await,
         #[cfg(windows)]
-        annotate::StillSource::Frame { url, rect, viewport, page } => frame_still::take(&app, url, rect, viewport, page, captures).await,
+        annotate::StillSource::Frame { url, rect, viewport } => frame_still::take(&app, url, rect, viewport, captures).await,
         #[cfg(not(windows))]
         annotate::StillSource::Frame { .. } => Err(annotate::AnnotateError::Unsupported("A still of the page's frame is taken only on Windows.".into())),
     }

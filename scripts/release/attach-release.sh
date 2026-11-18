@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Attaches every installer and package built for a v<version> tag to that tag's GitHub release (ADR 0080, ADR 0183).
+# Attaches every installer and package built for a v<version> tag to that tag's GitHub release (ADR 0080, ADR 0183, ADR 0213).
 #
-#   scripts/release/attach-release.sh <tag> <folder holding the one built .exe> <folder holding the one built .deb>
+#   scripts/release/attach-release.sh <tag> <folder holding the one built .exe> <folder holding the one built .deb> \
+#     <folder holding the one built .AppImage>
 #
 # Each file's name comes from tauri.conf.json's version, so a tag that doesn't match it is refused: the release must
 # hold the build of the version it names. Every file is checked before anything is published. Each is renamed
@@ -12,6 +13,7 @@ set -euo pipefail
 tag=${1:?tag, like v0.2.0}
 nsis=${2:?folder with the Windows installer}
 deb=${3:?folder with the .deb}
+appimage=${4:?folder with the AppImage}
 
 if [[ ! $tag =~ ^v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$ ]]; then
   echo "error: $tag isn't a v<semver> tag" >&2
@@ -42,8 +44,10 @@ stage() { # folder, the end of the name tauri build gives it, the published name
 
 exe=hermes-chat_${version}_x64-setup.exe
 package=hermes-chat_${version}_amd64.deb
+portable=hermes-chat_${version}_amd64.AppImage
 stage "$nsis" "_${version}_x64-setup.exe" "$exe"
 stage "$deb" "_${version}_amd64.deb" "$package"
+stage "$appimage" "_${version}_amd64.AppImage" "$portable"
 
 prerelease=()
 [[ $version == *-* ]] && prerelease=(--prerelease)
@@ -55,8 +59,10 @@ else
 
 **Windows:** download $exe and run it. It installs for your Windows user only. The installer isn't code-signed, so Windows SmartScreen warns on first run: choose More info, then Run anyway. To update, run a newer installer over the old one.
 
-**Debian and Ubuntu (x86_64):** download $package and install it with \`sudo apt install ./$package\`. It is built on Ubuntu 24.04, so it needs Ubuntu 24.04, Debian 13 or newer. The app doesn't update a .deb install: to update, install a newer .deb the same way."
+**Debian and Ubuntu (x86_64):** download $package and install it with \`sudo apt install ./$package\`. It is built on Ubuntu 24.04, so it needs Ubuntu 24.04, Debian 13 or newer. The app doesn't update a .deb install: to update, install a newer .deb the same way.
+
+**Other Linux (x86_64):** download $portable, make it executable with \`chmod +x $portable\`, and run it. It is built on Ubuntu 24.04, so it needs a system at least that new (glibc 2.39). It needs FUSE with a \`fusermount\` command (package \`fuse3\` on Debian and Ubuntu, \`fuse2\` on Arch). Without FUSE, run \`./$portable --appimage-extract-and-run\`. The app doesn't update an AppImage: to update, download a newer one."
   gh release create "$tag" "${assets[@]}" --verify-tag \
     --title "Highwing $version" --notes "$notes" "${prerelease[@]}"
 fi
-echo "Attached $exe and $package to $tag"
+echo "Attached $exe, $package and $portable to $tag"

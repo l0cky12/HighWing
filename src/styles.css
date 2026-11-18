@@ -2112,14 +2112,6 @@ button.settings-search-tab:hover { color: var(--text); }
 .preview-opened.failed { color: var(--warn); }
 .preview-web-frame { flex: 1; min-height: 0; position: relative; display: flex; }
 .preview-web-frame:focus { outline: none; }
-/* A page at a size of its own sits at the top of the box, centred, on the panel's ground. */
-.preview-web.sized { align-items: center; overflow: hidden; background: var(--raised); }
-.preview-viewport { flex: none; display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--line); min-width: 0; }
-.preview-viewport select { flex: 1 1 auto; min-width: 0; max-width: 220px; height: 26px; padding: 0 6px; }
-.preview-viewport input { flex: 0 1 64px; min-width: 40px; width: 64px; height: 26px; padding: 0 6px; background: var(--bg); color: var(--text); border: 1px solid var(--line-2); border-radius: 6px; font: inherit; font-size: calc(13rem / 14); font-variant-numeric: tabular-nums; outline: none; }
-.preview-viewport input:focus-visible { border-color: var(--line-3); }
-.preview-viewport input[aria-invalid] { border-color: var(--warn); }
-.preview-viewport > span { color: var(--faint); font-size: calc(12rem / 14); }
 .preview-loading { position: absolute; inset: 0; margin: 0; padding: 28px 22px; background: var(--sidebar); }
 .preview-image {
   flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 18px;

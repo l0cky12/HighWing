@@ -26,6 +26,8 @@ import { useInPage } from "./SettingsPage";
 import { errorText } from "../hermes/values";
 import type { ToolProgress } from "../hermes/flightRecorder";
 import type { KanbanApi, Orchestration } from "../hermes/kanban";
+import type { Readiness } from "../hermes/computerUseReadiness";
+import { ComputerUseReadiness } from "./ComputerUseReadiness";
 
 /** Opens a compatibility guide page in the owner's browser. */
 export type OpenGuide = (url: string) => void;
@@ -97,6 +99,7 @@ export function DiagnosticsSettings({
   openGuide,
   focus,
   screen,
+  computerUse,
   toolProgress,
   work,
   copyText = (text) => (navigator.clipboard?.writeText ? navigator.clipboard.writeText(text) : Promise.reject(new Error("no clipboard"))),
@@ -118,6 +121,8 @@ export function DiagnosticsSettings({
   copyText?: (text: string) => Promise<void>;
   /** `display.status` for the profile in use, which says whether its Bot Desktop has a browser. */
   screen?: Pick<ScreenApi, "status">;
+  /** Reads each prerequisite of the profile's computer use (ADR 0212); `openToolsets` is where its toolset is switched. */
+  computerUse?: { check: () => Promise<Readiness>; openToolsets: () => void };
   /** Reads the profile's `display.tool_progress`, for the flight recorder's rows (ADR 0178). */
   toolProgress?: () => Promise<ToolProgress>;
   /** The kanban plugin's dispatch settings and the profile's `kanban.review_dispatch`. */
@@ -194,6 +199,7 @@ export function DiagnosticsSettings({
       </SettingsSection>
 
       {screen && <BotDesktopSection screen={screen} connected={connected} profile={profile} />}
+      {computerUse && <ComputerUseReadiness {...computerUse} connected={connected} profile={profile} />}
       {toolProgress && <FlightRecorderSection read={toolProgress} connected={connected} profile={profile} turnIds={f.turnIds} />}
       {work && snap.caps.kanban.state !== "unsupported" && <WorkDispatchSection work={work} connected={connected} profile={profile} />}
 

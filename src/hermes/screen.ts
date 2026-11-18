@@ -6,6 +6,7 @@
 // `hermes_cli/web_routers/display.py`, read at v2026.9.24.
 
 import type { ScreenDisplay } from "./screenClipboard";
+import { isObj } from "./values";
 
 /** Who may drive the screen. The holder's viewer id never leaves Hermes; `viewer_hash` lets a holder know itself. */
 export type DisplayLease = { holder: "agent" | "human"; viewer_hash?: string | null; since: number; epoch: number; reason?: string };
@@ -25,6 +26,9 @@ export type DisplayStatus = {
   placement?: string;
   /** The X display the screen runs on (`:42`), while it runs. */
   display?: string | null;
+  /** Null where Hermes can't read them, such as a screen in a sandbox. */
+  memory_available_mb?: number | null;
+  memory_limit_mb?: number | null;
   lease: DisplayLease;
   profile_key: string;
 };
@@ -54,6 +58,54 @@ export const BROWSER_FIX = "hermes pm install chromium";
 /** `cli.exec`'s answer (tui_gateway/methods_tools.py at bf0203a): `blocked` with a `hint` when Hermes won't run it. */
 export type CliResult = { blocked: boolean; hint?: string | null; code: number; output: string };
 
+/** One line of `computer-use doctor --json`'s check matrix. */
+export type DoctorCheck = { name: string; status: "pass" | "fail" | "skip"; message: string; hint?: string };
+
+/**
+ * `computer-use doctor --json`, read (tools/computer_use/doctor.py): exit 0 is `overall: ok`, 1 is degraded, 2 is no
+ * driver, and then Hermes prints a sentence, not JSON. `report` is there only when the output held the JSON.
+ */
+export type DoctorAnswer = { blocked: boolean; hint?: string | null; code: number; output: string; report?: { overall: string; driver_version?: string; checks: DoctorCheck[] } };
+
+/** The first `{...}` object in `text`; Hermes can print warnings after it, and a stray brace in one is not part of it. */
+function firstObject(text: string): unknown {
+  const start = text.indexOf("{");
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; start >= 0 && i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (c === "\\") escaped = true;
+      else if (c === '"') inString = false;
+    } else if (c === '"') inString = true;
+    else if (c === "{") depth++;
+    else if (c === "}" && --depth === 0) {
+      try {
+        return JSON.parse(text.slice(start, i + 1));
+      } catch {
+        return undefined;
+      }
+    }
+  }
+  return undefined;
+}
+
+const DOCTOR_STATUSES = new Set(["pass", "fail", "skip"]);
+
+export function parseDoctor(r: CliResult): DoctorAnswer {
+  const answer: DoctorAnswer = { blocked: r.blocked, hint: r.hint, code: r.code, output: r.output };
+  const json = firstObject(r.output);
+  if (!isObj(json) || !Array.isArray(json.checks)) return answer;
+  const checks = json.checks.flatMap((c): DoctorCheck[] =>
+    isObj(c) && typeof c.name === "string" && typeof c.status === "string" && DOCTOR_STATUSES.has(c.status) && typeof c.message === "string"
+      ? [{ name: c.name, status: c.status as DoctorCheck["status"], message: c.message, ...(typeof c.hint === "string" && { hint: c.hint }) }]
+      : [],
+  );
+  return { ...answer, report: { overall: typeof json.overall === "string" ? json.overall : "", ...(typeof json.driver_version === "string" && { driver_version: json.driver_version }), checks } };
+}
+
 /** `display.observe`: a single-use ticket for `/api/display/ws`, good for 30 s, and the viewer id minted for it. */
 export type DisplayObserve = DisplayStatus & { ticket: string; viewer_id: string };
 
@@ -72,6 +124,8 @@ export interface ScreenApi {
   stop(): Promise<DisplayStatus>;
   /** `hermes pm install chromium` on the server, through `cli.exec` (screenApps.ts, ADR 0193). */
   installBrowser(): Promise<CliResult>;
+  /** `hermes -p <profile> computer-use doctor --json`. `cli.exec` ignores its `profile` parameter, so `-p` is in argv (ADR 0212). */
+  doctor(): Promise<DoctorAnswer>;
   /** Which of `programs` are on the PATH Hermes's own commands get, through `shell.exec`. */
   findPrograms(programs: readonly string[]): Promise<string[]>;
   /** Deletes the profile's dock layout, so the screen's next start writes it again with what is installed now. */

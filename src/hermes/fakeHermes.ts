@@ -473,7 +473,15 @@ export class FakeHermes {
    * characters a command prints, as Hermes does. `pmInstall`: how `hermes pm install chromium` ends; on 0 Hermes then
    * finds `browser` for every profile.
    */
-  machine?: { programs: Set<string>; files: Set<string>; pmInstall: { code: number; output: string }; browser: string; clipboard?: string };
+  machine?: {
+    programs: Set<string>;
+    files: Set<string>;
+    pmInstall: { code: number; output: string };
+    browser: string;
+    clipboard?: string;
+    /** What `hermes -p <profile> computer-use doctor --json` answers; healthy unless set. Without `-p` it answers for `default`, as Hermes does. */
+    computerUse?: { doctor: FakeCliAnswer };
+  };
   /** The server commands `commands.catalog` lists; undefined for a Hermes without the method. */
   commandCatalog: string[] | undefined = ["steer", "btw", "context", "compress", "help", "goal"];
   /** False: a Hermes with no `prompt.btw`, which answers "method not found". */
@@ -1067,6 +1075,9 @@ export class FakeHermes {
       const m = this.machine;
       if (!m) return this.fail(r.id, -32601, "unknown method: cli.exec");
       const argv = r.params.argv as string[];
+      const named = argv[0] === "-p";
+      const command = (named ? argv.slice(2) : argv).join(" ");
+      if (command === "computer-use doctor --json") return this.respond(r.id, named ? (m.computerUse?.doctor ?? DOCTOR_HEALTHY) : DOCTOR_NO_DISPLAY);
       if (argv.join(" ") !== "pm install chromium") return this.respond(r.id, { blocked: false, code: 2, output: `hermes: no such command: ${argv.join(" ")}` });
       if (m.pmInstall.code === 0 && this.display) this.display.status.browser = m.browser;
       this.respond(r.id, { blocked: false, ...m.pmInstall });
@@ -3739,6 +3750,42 @@ function formatRefValue(value: string): string {
   const q = ["`", '"', "'"].find((q) => !value.includes(q));
   return q ? `${q}${value}${q}` : value;
 }
+
+/** `cli.exec`'s answer as the app reads it (screen.ts `CliResult`). */
+export type FakeCliAnswer = { blocked: boolean; hint?: string; code: number; output: string };
+
+const doctorOutput = (overall: "ok" | "degraded", x11: { message: string; hint?: string; status: "pass" | "fail" }): string =>
+  JSON.stringify(
+    {
+      checks: [
+        { message: "cua-driver 0.21.0", name: "binary_version", status: "pass" },
+        { message: "not applicable on Linux", name: "tcc_accessibility", status: "skip" },
+        { ...x11, name: "ax_capability" },
+      ],
+      driver_version: "0.21.0",
+      overall,
+    },
+    null,
+    2,
+  );
+
+/** Doctor for a profile whose Bot Desktop has a display: every check passes (the recording 01-readiness-p). */
+export const DOCTOR_HEALTHY: FakeCliAnswer = {
+  blocked: false,
+  code: 0,
+  output: doctorOutput("ok", { status: "pass", message: "X11 reachable and org.a11y.Bus is on the session bus; AT-SPI inspection + XSendEvent input will work." }),
+};
+
+/** Doctor with no `-p`: it checks the `default` profile, which has no X display (the recording 00-readiness). */
+export const DOCTOR_NO_DISPLAY: FakeCliAnswer = {
+  blocked: false,
+  code: 1,
+  output: doctorOutput("degraded", {
+    status: "fail",
+    message: "X11 is not reachable; UI inspection and event injection will fail.",
+    hint: "Set DISPLAY (X11). Under Wayland, run via XWayland or expose XDG_SESSION_TYPE=x11.",
+  }),
+};
 
 /**
  * A configurable toolset as `GET /api/tools/toolsets` lists it at the deployed `bf0203a` (`CONFIGURABLE_TOOLSETS`,

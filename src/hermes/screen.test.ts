@@ -3,7 +3,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { FakeHermes } from "./fakeHermes";
 import { connect } from "./transport";
-import { RelayedSocket, browserOf, heldBy, isOlder, isUnavailable, phaseOf, viewerHash, type DisplayLease, type DisplayStatus, type ScreenSocket } from "./screen";
+import { RelayedSocket, browserOf, heldBy, isOlder, isUnavailable, parseDoctor, phaseOf, viewerHash, type DisplayLease, type DisplayStatus, type ScreenSocket } from "./screen";
 
 const agent: DisplayLease = { holder: "agent", viewer_hash: null, since: 1, epoch: 0 };
 const status = (s: Partial<DisplayStatus>): DisplayStatus => ({ supported: true, installed: true, missing: [], running: false, lease: agent, profile_key: "/h", ...s });
@@ -215,5 +215,57 @@ describe("display.* over the connection", () => {
     const failed = await hermes.screen.status().catch((e: unknown) => e);
     expect(isUnavailable(failed)).toBe(true);
     await expect(hermes.screen.openSocket("t", () => {}, () => {})).rejects.toThrow(/can't show the screen/);
+  });
+});
+
+describe("computer-use doctor's output", () => {
+  const checks = [{ name: "ax", status: "fail", message: "X11 is not reachable; } nor a {", hint: "Set DISPLAY" }];
+  const json = JSON.stringify({ checks, overall: "degraded", driver_version: "0.21.0" }, null, 2);
+
+  it("is read even when Hermes prints warning text after the JSON", () => {
+    const out = parseDoctor({ blocked: false, code: 1, output: `${json}\nWARNING: stale unit { not json }\n` });
+    expect(out.report).toEqual({ overall: "degraded", driver_version: "0.21.0", checks });
+  });
+
+  it("keeps a check that has no hint, and drops lines that aren't checks", () => {
+    const out = parseDoctor({ blocked: false, code: 0, output: JSON.stringify({ overall: "ok", checks: [{ name: "a", status: "pass", message: "fine" }, { name: 3 }, "x", { name: "b", status: "weird", message: "?" }] }) });
+    expect(out.report?.checks).toEqual([{ name: "a", status: "pass", message: "fine" }]);
+  });
+
+  it.each([["plain text", "cua-driver: not installed.\n  Run: hermes computer-use install"], ["broken JSON", '{"checks": [ {'], ["JSON that isn't a report", '{"ok": true}']])(
+    "leaves no report for %s, and keeps the output to read",
+    (_, output) => {
+      const out = parseDoctor({ blocked: false, code: 2, output });
+      expect(out.report).toBeUndefined();
+      expect(out).toMatchObject({ code: 2, output });
+    },
+  );
+});
+
+describe("computer-use doctor over the connection", () => {
+  const argvOf = (server: FakeHermes) => server.requests.filter((r) => r.method === "cli.exec").map((r) => r.params.argv);
+
+  it("runs doctor for the profile shown, so a dropped -p would read the default profile's degraded answer, not this one's", async () => {
+    const server = new FakeHermes();
+    server.otherProfiles = { work: [] };
+    server.machine = { programs: new Set(), files: new Set(), pmInstall: { code: 0, output: "" }, browser: "" };
+    const hermes = await connect(server.openPipe);
+    const first = await hermes.screen.doctor();
+    expect(first).toMatchObject({ code: 0, report: { overall: "ok", driver_version: "0.21.0" } });
+    await hermes.switchProfile("work");
+    server.machine.computerUse = { doctor: { blocked: false, code: 2, output: "cua-driver: not installed.\n  Run: hermes computer-use install" } };
+    expect((await hermes.screen.doctor()).code).toBe(2);
+    expect(argvOf(server)).toEqual([
+      ["-p", "default", "computer-use", "doctor", "--json"],
+      ["-p", "work", "computer-use", "doctor", "--json"],
+    ]);
+    await hermes.close();
+  });
+
+  it("says a Hermes with no cli.exec is unavailable", async () => {
+    const server = new FakeHermes();
+    const hermes = await connect(server.openPipe);
+    expect(isUnavailable(await hermes.screen.doctor().catch((e: unknown) => e))).toBe(true);
+    await hermes.close();
   });
 });

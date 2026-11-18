@@ -282,7 +282,7 @@ export function SettingsScreen({
   capabilities,
   openGuide = () => {},
   showDiagnostics,
-  showProfile,
+  showPersona,
   screen,
   toolProgress,
   work,
@@ -399,8 +399,8 @@ export function SettingsScreen({
   openGuide?: OpenGuide;
   /** Set, each time anew, to show the Diagnostics tab, at a capability if it names one: from a screen's note. */
   showDiagnostics?: { id?: CapabilityId };
-  /** Opens Profiles with `name` selected, or Persona on `name`: the Bots view's Open in Settings and its persona link. */
-  showProfile?: { name: string; tab: "profiles" | "persona" };
+  /** Set, each time anew, to show Persona on `name`: Edit bot's persona link. */
+  showPersona?: { name: string };
   /** The profile's Bot Desktop, for Diagnostics' browser check. */
   screen?: Pick<ScreenApi, "status">;
   /** Reads the profile's `display.tool_progress`, for Diagnostics' flight recorder rows (ADR 0178). */
@@ -451,8 +451,8 @@ export function SettingsScreen({
             ? "voice"
             : showSnapshots && snapshots
               ? "snapshots"
-              : showProfile && (showProfile.tab === "persona" ? persona : profilesTab)
-                ? showProfile.tab
+              : showPersona && persona
+                ? "persona"
                 : "general",
   );
   const [diagGroup, setDiagGroup] = useState<DiagGroup>("server");
@@ -484,7 +484,7 @@ export function SettingsScreen({
   const [profiles, setProfiles] = useState<string[]>();
   const [shownIn, setShownIn] = useState({ skills: profile, memory: profile, mcp: profile, gateways: profile, of: profile });
   /** The profile Persona's picker starts on when Profiles opened it at one; none starts it on the profile in use. */
-  const [personaStart, setPersonaStart] = useState<{ profile: string; of: string } | undefined>(showProfile?.tab === "persona" ? { profile: showProfile.name, of: profile } : undefined);
+  const [personaStart, setPersonaStart] = useState<{ profile: string; of: string } | undefined>(showPersona ? { profile: showPersona.name, of: profile } : undefined);
   const tabProfile = shownIn.of === profile ? shownIn : { skills: profile, memory: profile, mcp: profile, gateways: profile, of: profile };
   useEffect(() => setShownIn({ skills: profile, memory: profile, mcp: profile, gateways: profile, of: profile }), [profile]);
   const connected = status === "connected";
@@ -554,12 +554,12 @@ export function SettingsScreen({
   // eslint-disable-next-line react-hooks/exhaustive-deps -- open Diagnostics only when a new `showDiagnostics` arrives; `setTab` is rebuilt each render, so listing it (or `capabilities`) would switch back to Diagnostics on later renders
   }, [showDiagnostics]);
   useEffect(() => {
-    if (!showProfile || !(showProfile.tab === "persona" ? persona : profilesTab)) return;
+    if (!showPersona || !persona) return;
     setQuery("");
-    if (showProfile.tab === "persona") setPersonaStart({ profile: showProfile.name, of: profile });
-    setTab(showProfile.tab);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- open the tab only when a new `showProfile` arrives; `setTab` is rebuilt each render, so listing it would switch back on later renders
-  }, [showProfile]);
+    setPersonaStart({ profile: showPersona.name, of: profile });
+    setTab("persona");
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- open the tab only when a new `showPersona` arrives; `setTab` is rebuilt each render, so listing it would switch back on later renders
+  }, [showPersona]);
   /** A tab's note about a feature Hermes lacks opens Diagnostics at it. */
   const toDiagnostics = (id: CapabilityId) =>
     guard(() => {
@@ -1100,7 +1100,7 @@ export function SettingsScreen({
           logs && <LogsPanel key={profile} {...logs} profile={profile} connected={status === "connected"} />
         );
       case "profiles":
-        return profilesTab && gated("profiles", <ProfileSettings wiring={{ ...profilesTab, showTab: showTabFor }} select={showProfile?.tab === "profiles" ? showProfile : undefined} />);
+        return profilesTab && gated("profiles", <ProfileSettings wiring={{ ...profilesTab, showTab: showTabFor }} />);
       case "general":
         return general;
     }

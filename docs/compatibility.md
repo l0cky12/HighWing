@@ -129,7 +129,7 @@ Needs `POST /api/profiles`, which isn't checked ahead: the Clone dialog sends it
 
 Needs `GET /api/profiles` for Settings → Profiles, checked with that read; without it the tab shows a note in its place. Each change has its own route, none checked ahead, since a check never writes: `POST /api/profiles` (New profile), `PATCH /api/profiles/{name}` (rename, and `default`'s display name), `PUT /api/profiles/{name}/description`, `POST /api/profiles/{name}/describe-auto` (Write for me), `PUT /api/profiles/{name}/model` and `DELETE /api/profiles/{name}` (Hermes `f0d94882`). A Hermes that answers one of them with no such route (its 404, or a 405) has that change disabled for the rest of the sign-in, with the route named in the tab and in diagnostics; the others still work. Check again in diagnostics lets it be tried again.
 
-The Bots view's Edit bot, Pin and Hide need two methods on `/api/ws`, also not checked ahead: `profiles.configure` with `ui_meta` and `ui_meta_expected_revisions` (a bot's name in Bot Mode, colour, Pin and Hide), and `profiles.set_asset` (its picture, which needs both). A Hermes that answers one with "method not found" has only those entries turned off, with the method named, and still shows its bots. `profiles.list` must report `ui_meta_revisions` in its rows: a Hermes that doesn't can't check a write against another client's, so the app sends none and says so (Hermes `f0d94882` reports them).
+Bots mode's Edit bot, Pin and Hide need two methods on `/api/ws`, also not checked ahead: `profiles.configure` with `ui_meta` and `ui_meta_expected_revisions` (a bot's name in Bot Mode, colour, Pin and Hide), and `profiles.set_asset` (its picture, which needs both). A Hermes that answers one with "method not found" has only those entries turned off, with the method named, and still shows its bots. `profiles.list` must report `ui_meta_revisions` in its rows: a Hermes that doesn't can't check a write against another client's, so the app sends none and says so (Hermes `f0d94882` reports them).
 
 ## Provider keys
 
@@ -198,7 +198,7 @@ The sign-in screen and Setup read the dashboard's public `GET /api/status` (`aut
 
 ## Bot Mode
 
-Needs `profiles.list` on `/api/ws` with each profile's Bot Chat in its rows (`canonical_session`, which is `null` for a profile without one), and `session.list` with `title` and `include_hidden` to look a Bot Chat up by its title. Checked with `profiles.list`. Hermes `f0d94882` has both. An older Hermes without `profiles.list`, or one whose rows don't report a Bot Chat, has no Bot Mode: the Bots button doesn't show, and diagnostics says why. To start a Bot Chat, the app also uses `session.create` with `hidden` and `session.title`.
+Needs `profiles.list` on `/api/ws` with each profile's Bot Chat in its rows (`canonical_session`, which is `null` for a profile without one), and `session.list` with `title` and `include_hidden` to look a Bot Chat up by its title. Checked with `profiles.list`. Hermes `f0d94882` has both. An older Hermes without `profiles.list`, or one whose rows don't report a Bot Chat, has no Bot Mode: the chat list has no Bots tab, and diagnostics says why. To start a Bot Chat, the app also uses `session.create` with `hidden` and `session.title`.
 
 ## Subagents
 

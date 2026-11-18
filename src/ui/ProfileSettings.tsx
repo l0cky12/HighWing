@@ -159,8 +159,7 @@ export function useSwitchTo(wiring: Pick<ProfilesWiring, "leaving" | "switchTo">
   return { switchTo, question };
 }
 
-/** `select`: the profile to show selected, when the tab was opened for one (the Bots view's Open in Settings → Profiles). */
-export function ProfileSettings({ wiring, select }: { wiring: ProfilesWiring; select?: { name: string } }) {
+export function ProfileSettings({ wiring }: { wiring: ProfilesWiring }) {
   const l = useLocale();
   const w = l.profiles;
   const { api, connected, inUse } = wiring;
@@ -170,7 +169,7 @@ export function ProfileSettings({ wiring, select }: { wiring: ProfilesWiring; se
   const [rows, setRows] = useState<ProfileRow[]>();
   const [listError, setListError] = useState<string>();
   const [reading, setReading] = useState(false);
-  const [selected, setSelected] = useState(select?.name ?? inUse);
+  const [selected, setSelected] = useState(inUse);
   const selectedNow = useRef(selected);
   selectedNow.current = selected;
   const [dialog, setDialog] = useState<Dialog>();
@@ -229,14 +228,6 @@ export function ProfileSettings({ wiring, select }: { wiring: ProfilesWiring; se
   }, [connected]);
 
   const focusRow = (name: string) => requestAnimationFrame(() => listRef.current?.querySelector<HTMLElement>(`[data-profile="${CSS.escape(name)}"]`)?.focus());
-
-  // Asked for from elsewhere while the tab is open: that profile is selected, and its row takes focus once listed.
-  const wanted = select && rows?.some((r) => r.name === select.name) ? select : undefined;
-  useEffect(() => {
-    if (!wanted) return;
-    setSelected(wanted.name);
-    focusRow(wanted.name);
-  }, [wanted]);
 
   const moveDone = async (p: PendingRename) => {
     setOffer(undefined);
@@ -778,8 +769,8 @@ export type FormResult = { notice?: Notice; select?: string; edit?: string };
  * Hermes's, and a second Save then replaces it knowingly. The name is changed last, and only once every other field
  * saved.
  *
- * The Bots view's New bot is this form's New (ADR 0164): `heading` and `createLabel` name what it makes there, and
- * `noEdit` leaves out Set model after a create that didn't set it, since that screen has no Edit to go on to.
+ * Bots mode's New bot is this form's New (ADR 0164): `heading` and `createLabel` name what it makes there, and
+ * `noEdit` leaves out Set model after a create that didn't set it, since Bots mode has no Edit to go on to.
  * `onPersona`: shows Settings → Persona on a profile, linked from Edit. `bot`: Edit bot, which adds the bot's look.
  */
 export function ProfileForm({

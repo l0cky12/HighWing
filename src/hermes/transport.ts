@@ -617,7 +617,7 @@ export type Snapshot = {
   models?: ModelCatalog;
   /**
    * The server's bots as last read, and when (`bots`). A roster spans the profiles, so it is kept across profile
-   * switches and reconnects, for the Bots view to show at once while it reads them again.
+   * switches and reconnects, for Bots mode to show at once while it reads them again.
    */
   bots?: { roster: Bot[]; at: number };
   /** Each bot's picture as a data URL, by profile, read once per connection for a bot that has one. */
@@ -2298,16 +2298,6 @@ export class Hermes {
   }
 
   /**
-   * Whether a stored session is a Bot Chat the roster named, or one opened here: in `profile`, or in any profile when
-   * that isn't known. For what is live in another profile, whose rows the shown list doesn't hold.
-   */
-  isKnownBotChat(chatId: string, profile?: string): boolean {
-    if (profile) return !!this.botChatIds.get(profile)?.has(chatId);
-    for (const ids of this.botChatIds.values()) if (ids.has(chatId)) return true;
-    return false;
-  }
-
-  /**
    * Asks for each bot's picture once per connection, so a picture changed in another client shows after a reconnect.
    * One held already stays shown meanwhile; a bot without one, or whose picture fails, shows its initial.
    */
@@ -2502,8 +2492,8 @@ export class Hermes {
   }
 
   /**
-   * Reads the roster once per connection, for the Bot Chats' ids, so search can leave them out before the Bots view
-   * has ever opened, and so the view shows the bots and their pictures as soon as it opens. A Hermes without Bot Mode,
+   * Reads the roster once per connection, for the Bot Chats' ids, so search can leave them out before Bots mode
+   * has ever shown, and so it shows the bots and their pictures as soon as it does. A Hermes without Bot Mode,
    * or a read that fails, leaves only the title to go by. A read in any role: Everywhere asks it of each connection
    * before that connection's `searchIn`s.
    */

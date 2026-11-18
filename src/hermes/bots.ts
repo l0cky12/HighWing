@@ -6,7 +6,7 @@ import type { Same } from "./fieldMerge";
 // looked up by title on every open (`session.list {title, include_hidden: true}`), never by a session id kept here,
 // and never by which chat is newest. One is created only when the lookup finds none, and the creation looks again
 // first, so a second one is never started. `profiles.list` reports each profile's Bot Chat as `canonical_session`,
-// found by title on the server, and the Bots view's preview and activity read that row, so what a bot's row describes
+// found by title on the server, and Bots mode's preview and activity read that row, so what a bot's row describes
 // and what clicking it opens are the same chat.
 
 /** The one title a Bot Chat has. Hermes's UNIQUE(title) index makes (profile, this title) a registry of one row. */

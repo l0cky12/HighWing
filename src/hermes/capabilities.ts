@@ -368,7 +368,7 @@ export const CAPABILITIES: readonly CapabilitySpec[] = [
   {
     id: "profiles",
     label: "Profiles",
-    usedBy: "Settings → Profiles, and the Bots view's Edit bot, Pin and Hide",
+    usedBy: "Settings → Profiles, and Bots mode's New bot, Edit bot, Pin and Hide",
     needs:
       "GET /api/profiles, and to change them POST /api/profiles, PATCH and DELETE /api/profiles/{name}, and PUT /api/profiles/{name}/description, POST /api/profiles/{name}/describe-auto and PUT /api/profiles/{name}/model. For a bot's name, colour, picture, Pin and Hide, profiles.configure and profiles.set_asset on /api/ws.",
     without: "Settings → Profiles explains what is missing, and reads or writes nothing. A server with the list but not one of the changes disables only that change, and says which route or method it lacks.",
@@ -384,7 +384,7 @@ export const CAPABILITIES: readonly CapabilitySpec[] = [
       { name: "describeAuto", method: "POST", route: /^api\/profiles\/[^/]+\/describe-auto$/, shown: "POST /api/profiles/{name}/describe-auto" },
       { name: "setModel", method: "PUT", route: /^api\/profiles\/[^/]+\/model$/, shown: "PUT /api/profiles/{name}/model" },
       { name: "remove", method: "DELETE", route: /^api\/profiles\/[^/]+$/, shown: "DELETE /api/profiles/{name}" },
-      // The Bots view's writes (ADR 0189). Actions here, not `botMode` write methods: a Hermes without one of them
+      // Edit bot's, Pin's and Hide's writes (ADR 0189). Actions here, not `botMode` write methods: a Hermes without one of them
       // still has its bots and their Bot Chats.
       { name: "botLook", rpc: "profiles.configure", shown: "profiles.configure" },
       { name: "botPicture", rpc: "profiles.set_asset", shown: "profiles.set_asset" },
@@ -596,9 +596,9 @@ export const CAPABILITIES: readonly CapabilitySpec[] = [
   {
     id: "botMode",
     label: "Bot Mode",
-    usedBy: "The Bots view",
+    usedBy: "The chat list's Bots mode",
     needs: "profiles.list on /api/ws, reporting each profile's Bot Chat (canonical_session), and session.list by title.",
-    without: "The Bots button doesn't show. Every profile's chats still open from the profile switcher.",
+    without: "The chat list has no Bots tab. Every profile's chats still open from the profile switcher.",
     anchor: "bot-mode",
     // Only a roster whose rows report their Bot Chat counts: an older profiles.list has no Bot Mode.
     probe: { kind: "rpc", method: "profiles.list", params: () => ({}), shape: botRoster, lacks: rosterWithoutBotChats },

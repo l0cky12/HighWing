@@ -267,7 +267,7 @@ export type Chat = {
   settledHere?: boolean;
   /** Archived in Hermes: hidden in every Hermes client, its history kept. Active or Settled stays as it was. */
   archived?: boolean;
-  /** A bot's Bot Chat, opened from the Bots view: it stays out of the chat list and search (bots.ts, ADR 0066). */
+  /** A bot's Bot Chat, opened from its bot's row: it stays out of the chat list and search (bots.ts, ADR 0066). */
   bot?: boolean;
   /** The Scheduled job a Job run's chat is a run of, once Hermes has said (`cron_job_id`). */
   jobId?: string;

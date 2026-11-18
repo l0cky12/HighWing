@@ -55,14 +55,14 @@ import { type ChatLink, type ConnectionRefs, checkConnection, connectionKey, con
 import { desktopLinks, type LinkInbox } from "./hermes/tauriLinks";
 import { ChatLinkNotice, type LinkNoticeView } from "./ui/ChatLinkNotice";
 import { Inbox } from "./ui/Inbox";
-import { BotList, Bots, BOTS_REFRESH_MS, usePanelBotMenu, type BotEditWiring } from "./ui/Bots";
+import { BotList, useBotActions, type BotEditWiring } from "./ui/Bots";
 import { Office } from "./ui/Office";
 import { EMPTY_OFFICE_MEMORY } from "./ui/OfficeBuilding";
 import { officeRooms, type Desk, type Room } from "./hermes/office";
 import type { SubagentId } from "./hermes/subagents";
 import { policyOf } from "./hermes/chatKind";
 import { jobRunTitle } from "./hermes/cronJobs";
-import { botActivity, botsWaiting, isBotChat, isBotChatTitle, newInBotChatNote, type Bot } from "./hermes/bots";
+import { botActivity, botsWaiting, isBotChat, newInBotChatNote, type Bot } from "./hermes/bots";
 import { blocksRestore, inboxAcks, inboxEntries, inboxScope, needsOwner, type InboxAcks, type InboxEntry } from "./hermes/inbox";
 import { searchEverywhere, type EverywhereFilter, type EverywhereOutcome, type EverywhereRow } from "./hermes/everywhere";
 import { LiveConnections, attention as attentionOf, withoutServer, type ChatRef, type LiveSummary } from "./hermes/liveConnections";
@@ -1377,7 +1377,8 @@ export function Main({
   const [showMemory, setShowMemory] = useState<object>();
   /** Set, each time anew, to open Settings → Diagnostics, at the capability a screen's note named. */
   const [showDiagnostics, setShowDiagnostics] = useState<{ id?: CapabilityId }>();
-  const [showProfile, setShowProfile] = useState<{ name: string; tab: "profiles" | "persona" }>();
+  /** Set, each time anew, to open Settings → Persona on a profile, from Edit bot. */
+  const [showPersona, setShowPersona] = useState<{ name: string }>();
   /** What the connected Hermes supports, for the menus that say what it lacks (capabilities.ts). */
   const caps = useCapabilities(hermes.capabilities);
   const workLacking = (Object.keys(WORK_PARTS) as WorkFeature[]).filter((part) => caps.caps[WORK_PARTS[part]].state === "unsupported").join(" ");
@@ -1567,7 +1568,6 @@ export function Main({
   // computer for the connection, and change nothing else. `goTo`: an entry's chat to open once its profile's list
   // has it. `focusItem`: the card or message in a pane to show once it is on screen.
   const [inboxOpen, setInboxOpen] = useState(false);
-  const [botsOpen, setBotsOpen] = useState(false);
   const [botGo, setBotGo] = useState<{ bot: Bot; then: "open" | "new"; nav: number; opening?: boolean }>();
   /** The agent office (Office.tsx, ADR 0077), unless Settings turns it off. */
   const [officeOpen, setOfficeOpen] = useState(false);
@@ -1793,7 +1793,7 @@ export function Main({
     setShowDiagnostics(undefined);
     setShowVoice(undefined);
     setShowSnapshots(undefined);
-    setShowProfile(undefined);
+    setShowPersona(undefined);
     setSettingsOpen(true);
   };
   openVoiceSettings.current = () => {
@@ -1809,11 +1809,10 @@ export function Main({
     openSettings();
     setShowDiagnostics({ id });
   };
-  /** Opens Settings → Profiles on profile `name`, or Settings → Persona on it, from a bot's menu in the Bots view. */
-  const openProfileSettings = (name: string, tab: "profiles" | "persona") => {
-    setBotsOpen(false);
+  /** Opens Settings → Persona on profile `name`, from Edit bot. */
+  const openPersona = (name: string) => {
     openSettings();
-    setShowProfile({ name, tab });
+    setShowPersona({ name });
   };
   /** Opens a page of the compatibility guide in the owner's browser. */
   const openGuide = (url: string) =>
@@ -2400,11 +2399,6 @@ export function Main({
     const open = b.profile === profile ? chats.find((c) => ids.includes(c.id)) : undefined;
     return botActivity(b, live?.sessions ?? [], open && { running: open.running, waiting: open.items.some(isWaiting) }, roster);
   };
-  // A Bot Chat waiting on the owner in any profile: one shown here, or a live one known by its title or, for one
-  // resumed here earlier, whose row says no title, by the ids the roster named.
-  const botsNeedYou =
-    chats.some((c) => isBotChat(c) && c.items.some(isWaiting)) ||
-    (live?.sessions ?? []).some((s) => s.status === "waiting" && (isBotChatTitle(s.title) || hermes.isKnownBotChat(s.chatId, s.profile)));
   const hasBotMode = caps.caps.botMode.state !== "unsupported";
   const botsInList = hasBotMode && chatListMode === "bots";
   const setChatListMode = (mode: ChatListMode) => setUIPrefs({ chatListMode: mode });
@@ -2424,17 +2418,7 @@ export function Main({
     beforeBotChat.current = null;
   }, [profile]);
   const onBotChat = !!shownChat && isBotChat(shownChat);
-  const connected = status === "connected";
-  useEffect(() => {
-    if (!botsInList || !connected) return;
-    // The Bots view reports a failed read; the panel keeps the roster read last.
-    const read = () => void hermes.bots().catch(() => {});
-    read();
-    const every = setInterval(read, BOTS_REFRESH_MS);
-    return () => clearInterval(every);
-  }, [hermes, botsInList, connected]);
   const openBot = (b: Bot, then: "open" | "new") => {
-    setBotsOpen(false);
     guard(() => {
       if (then === "open" && b.profile === profile && !onBotChat) beforeBotChat.current = active.chatId;
       if (b.profile !== profile) void switchProfileNow(b.profile);
@@ -2693,7 +2677,6 @@ export function Main({
   const trayInbox = useRef(() => {});
   trayInbox.current = () => {
     if (trayCovered()) return;
-    setBotsOpen(false);
     setOfficeOpen(false);
     setInboxOpen(true);
   };
@@ -2707,9 +2690,8 @@ export function Main({
   // The office is drawn, and its rooms worked out, only while it can be seen: hidden to the tray or minimized, it isn't.
   const officeVisible = officeShown && !windowHidden && !pageHidden;
 
-  // The inbox and the bots, in their view or the list panel, ask for fresh checks as they open, and keep asking while
-  // open: they show what is live.
-  const liveWatched = inboxOpen || botsOpen || botsInList;
+  // The inbox and Bots mode ask for fresh checks as they open, and keep asking while open: they show what is live.
+  const liveWatched = inboxOpen || botsInList;
   useEffect(() => {
     if (!liveWatched) return;
     void hermes.checkOtherProfiles();
@@ -3260,7 +3242,7 @@ export function Main({
     };
   });
 
-  // Settings → Profiles (ADR 0156), and the Bots view's New bot, which is its New profile form (ADR 0164).
+  // Settings → Profiles (ADR 0156), and Bots mode's New bot, which is its New profile form (ADR 0164).
   const copyText = (text: string) => (navigator.clipboard?.writeText ? navigator.clipboard.writeText(text) : Promise.reject(new Error("No clipboard")));
   const profilesWiring: Omit<ProfilesWiring, "showTab"> = {
     api: hermes.manageProfiles,
@@ -3331,13 +3313,17 @@ export function Main({
       setToast({ text, ...(copy && { action: copy }), lasting: n.tone === "bad", at: Date.now() });
     },
   };
-  // Bot mode's row menu (ADR 0194): its dialogs are drawn outside the list panel, so a delete that leaves bot mode finishes.
-  const panelBotMenu = usePanelBotMenu({
+  // Bots mode's New bot, Reload and row menu (ADR 0194, ADR 0203): the dialogs are drawn outside the list panel, so a
+  // delete that switches away from the open bot's profile finishes.
+  const botActions = useBotActions({
     profiles: profilesWiring,
     botEdit,
+    roster: bots?.roster,
     load: loadBots,
+    shown: botsInList,
+    onRefresh: () => void hermes.checkOtherProfiles(),
     onNote: (text) => setToast({ text, at: Date.now() }),
-    onPersona: (name) => openProfileSettings(name, "persona"),
+    onPersona: openPersona,
   });
 
   return (
@@ -3354,24 +3340,11 @@ export function Main({
         onToggleList={() => setListOpen((o) => !o)}
         onNew={() => newChat()}
         onSearch={() => openSearch()}
-        // Hidden for a Hermes without Bot Mode, once the view that found out has closed.
-        onBots={
-          caps.caps.botMode.state === "unsupported" && !botsOpen
-            ? undefined
-            : () => {
-                setInboxOpen(false);
-                setOfficeOpen(false);
-                setBotsOpen((o) => !o);
-              }
-        }
-        botsOpen={botsOpen}
-        botsNeedYou={botsNeedYou}
         onOffice={
           agentOffice === "off"
             ? undefined
             : () => {
                 setInboxOpen(false);
-                setBotsOpen(false);
                 // Over Settings, it opens in Settings' place, as the rail's other screens do; otherwise it toggles.
                 if (settingsOpen)
                   guard(() => {
@@ -3484,25 +3457,27 @@ export function Main({
               look: shownLook ?? lookShown(shownBot, botPictures),
             }
           }
-          bots={(under) =>
-            bots ? (
-              <BotList
-                bots={bots.roster}
-                pictures={botPictures}
-                activity={activityOf}
-                profile={profile}
-                current={!covering && shownChat && isBotChat(shownChat) ? profile : undefined}
-                leaving={leavingNote(profile, chats, words.profiles.leaving)}
-                onOpen={(b) => openBot(b, "open")}
-                onNewChat={(b) => openBot(b, "new")}
-                onMenu={panelBotMenu.onMenu}
-                moreButton={false}
-                under={under}
-              />
-            ) : (
-              <div className="empty-hint">{words.bots.reading}</div>
-            )
-          }
+          bots={(under) => (
+            <>
+              {botActions.head}
+              {bots ? (
+                <BotList
+                  bots={bots.roster}
+                  pictures={botPictures}
+                  activity={activityOf}
+                  profile={profile}
+                  current={!covering && shownChat && isBotChat(shownChat) ? profile : undefined}
+                  leaving={leavingNote(profile, chats, words.profiles.leaving)}
+                  onOpen={(b) => openBot(b, "open")}
+                  onNewChat={(b) => openBot(b, "new")}
+                  onMenu={botActions.onMenu}
+                  under={under}
+                />
+              ) : (
+                <div className="empty-hint">{words.bots.reading}</div>
+              )}
+            </>
+          )}
             projectSwitcher={
               <ProjectSwitcher
                 projects={listable}
@@ -3609,26 +3584,7 @@ export function Main({
         />
         </div>
       )}
-      {panelBotMenu.element}
-      {botsOpen && (
-        <Bots
-          server={where ?? "the server"}
-          profile={profile}
-          connected={status === "connected"}
-          last={bots}
-          pictures={botPictures}
-          load={loadBots}
-          activity={activityOf}
-          leaving={leavingNote(profile, chats, words.profiles.leaving)}
-          onOpen={(b) => openBot(b, "open")}
-          onNewChat={(b) => openBot(b, "new")}
-          onRefresh={() => void hermes.checkOtherProfiles()}
-          onClose={() => setBotsOpen(false)}
-          profiles={profilesWiring}
-          botEdit={botEdit}
-          onProfileSettings={openProfileSettings}
-        />
-      )}
+      {botActions.element}
       {inboxOpen && (
         <Inbox
           entries={elsewhere.length ? [...inboxShown, ...elsewhere] : inboxShown}
@@ -3850,7 +3806,7 @@ export function Main({
             capabilities={hermes.capabilities}
             openGuide={openGuide}
             showDiagnostics={showDiagnostics}
-            showProfile={showProfile}
+            showPersona={showPersona}
             screen={hermes.screen}
             toolProgress={() => hermes.toolProgress()}
             work={hermes.kanban}

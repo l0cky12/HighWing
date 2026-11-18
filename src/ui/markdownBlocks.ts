@@ -1,8 +1,6 @@
 import { fromMarkdown } from "mdast-util-from-markdown";
-import { gfm } from "micromark-extension-gfm";
-import { gfmFromMarkdown } from "mdast-util-gfm";
 import type { Nodes } from "mdast";
-import { mathMdast, mathSyntax } from "./markdownMath";
+import { transcriptSyntax } from "./markdownMath";
 
 export type Block = { start: number; text: string; refs: boolean; open: boolean };
 
@@ -20,8 +18,6 @@ const countFence = (type: "code" | "math") =>
     if (node) fences.set(node, (fences.get(node) ?? 0) + 1);
   };
 const countFences = { enter: { codeFencedFence: countFence("code"), mathFlowFence: countFence("math") } };
-
-export const transcriptSyntax = { extensions: [gfm(), mathSyntax], mdastExtensions: [gfmFromMarkdown(), mathMdast] };
 
 const options = { ...transcriptSyntax, mdastExtensions: [...transcriptSyntax.mdastExtensions, countFences] };
 

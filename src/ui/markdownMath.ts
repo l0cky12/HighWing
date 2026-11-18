@@ -1,3 +1,5 @@
+import { gfm } from "micromark-extension-gfm";
+import { gfmFromMarkdown } from "mdast-util-gfm";
 import { math } from "micromark-extension-math";
 import { mathFromMarkdown } from "mdast-util-math";
 import type { Extension as FromMarkdownExtension } from "mdast-util-from-markdown";
@@ -5,7 +7,7 @@ import type { Parent } from "mdast";
 import type { InlineMath } from "mdast-util-math";
 import type { Code, Construct, Effects, Extension, State, TokenizeContext } from "micromark-util-types";
 import type { Processor } from "unified";
-// Declares the processor data fields remarkMath fills (micromarkExtensions, fromMarkdownExtensions).
+// Declares the processor data fields remarkTranscriptSyntax fills (micromarkExtensions, fromMarkdownExtensions).
 import type {} from "remark-parse";
 
 const DOLLAR = 36;
@@ -153,11 +155,11 @@ const backslashMath: Construct = {
   },
 };
 
-export const mathSyntax: Extension = { flow: math().flow, text: { [DOLLAR]: dollarMath, [BACKSLASH]: backslashMath } };
+const mathSyntax: Extension = { flow: math().flow, text: { [DOLLAR]: dollarMath, [BACKSLASH]: backslashMath } };
 
 const fromMath = mathFromMarkdown();
 
-export const mathMdast: FromMarkdownExtension = {
+const mathMdast: FromMarkdownExtension = {
   ...fromMath,
   exit: {
     ...fromMath.exit,
@@ -171,8 +173,10 @@ export const mathMdast: FromMarkdownExtension = {
   },
 };
 
-export function remarkMath(this: Processor) {
+export const transcriptSyntax = { extensions: [gfm(), mathSyntax], mdastExtensions: [gfmFromMarkdown(), mathMdast] };
+
+export function remarkTranscriptSyntax(this: Processor) {
   const data = this.data();
-  (data.micromarkExtensions ??= []).push(mathSyntax);
-  (data.fromMarkdownExtensions ??= []).push(mathMdast);
+  (data.micromarkExtensions ??= []).push(...transcriptSyntax.extensions);
+  (data.fromMarkdownExtensions ??= []).push(...transcriptSyntax.mdastExtensions);
 }

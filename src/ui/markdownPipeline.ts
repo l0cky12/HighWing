@@ -1,4 +1,3 @@
-import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import rehypeHighlight from "rehype-highlight";
 import katex from "katex";
@@ -8,7 +7,7 @@ import { SKIP, visit } from "unist-util-visit";
 import type { Element, ElementContent, Root } from "hast";
 import type { VFile } from "vfile";
 import { escapeRe } from "./bits";
-import { remarkMath } from "./markdownMath";
+import { remarkTranscriptSyntax } from "./markdownMath";
 import { findPaths, hrefPath, type PathMention } from "../hermes/paths";
 
 type HastNode = { type: string; value?: string; tagName?: string; properties?: Record<string, unknown>; children?: HastNode[] };
@@ -214,7 +213,7 @@ function rehypeCode(source?: string, guessed?: () => void) {
     });
 }
 
-export const remarkPlugins = [remarkGfm, remarkMath, remarkBreaks];
+export const remarkPlugins = [remarkTranscriptSyntax, remarkBreaks];
 
 const highlightOnly = [rehypeCode(), rehypePaths];
 

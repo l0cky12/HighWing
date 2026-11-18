@@ -1479,7 +1479,7 @@ mark.hl { background: rgba(245, 184, 74, 0.22); color: var(--warn); border-radiu
 .crash-actions { display: flex; gap: 8px; }
 /* Every select on a Settings page takes this style, classed or not (ADR 0160); :where keeps a page's own rules ahead. */
 .select, :where(.settings-main) select {
-  height: 32px; padding: 0 8px; border-radius: 8px; background: var(--raised-2); border: 1px solid var(--line); color: var(--text);
+  height: calc(32rem / 14); padding: 0 8px; border-radius: 8px; background: var(--raised-2); border: 1px solid var(--line); color: var(--text);
   font: inherit; font-size: calc(13rem / 14); outline: none;
 }
 .select:hover, :where(.settings-main) select:hover { background: var(--raised-3); }
@@ -1601,7 +1601,7 @@ mark.hl { background: rgba(245, 184, 74, 0.22); color: var(--warn); border-radiu
 .page-profile { display: inline-flex; align-items: center; gap: 6px; font-size: calc(12.5rem / 14); color: var(--muted); padding: 3px 4px 3px 10px; border: 1px solid var(--line-2); border-radius: 9px; background: var(--raised); white-space: nowrap; }
 .page-profile.static { padding-right: 10px; }
 .page-profile code { font-family: var(--mono); font-size: calc(12rem / 14); color: var(--text-strong); }
-.page-profile select { width: auto; min-width: 0; max-width: 200px; height: 28px; }
+.page-profile select { width: auto; min-width: 0; max-width: 200px; height: calc(28rem / 14); }
 .page-profile .badge { margin-right: 4px; }
 .meta-chip { display: inline-flex; align-items: stretch; max-width: 100%; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; font-size: calc(12rem / 14); }
 .meta-chip > span { padding: 2px 7px; color: var(--muted); background: var(--raised-2); }
@@ -3867,7 +3867,8 @@ label.memory-pick { cursor: pointer; }
 /* The list scrolls inside a window-tall box, so the controls above it stay in view. */
 [role="tabpanel"] .logs-panel { padding-top: 4px; }
 /* The filters' boxes are one height, so their labels share a line. */
-.logs-filters select, .logs-filters input { box-sizing: border-box; height: 32px; }
+.logs-filters select, .logs-filters input { box-sizing: border-box; height: calc(32rem / 14); }
+.logs-filters select { padding-block: 0; }
 .logs-search input { min-width: 220px; }
 .logs-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 8px; }
 .logs-actions .btn { display: inline-flex; align-items: center; gap: 6px; }

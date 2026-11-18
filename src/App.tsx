@@ -1261,7 +1261,7 @@ export function Main({
 }) {
   const connection: SavedConnection = "id" in given ? given : { ...given, id: "", name: defaultName(given), addedAt: 0 };
   const words = useLocale();
-  const { profile, chats, olderPulled, archivedListed, status, route, unsecure, closedReason, syncError, others, live, models, switching, branchNews, bots, botPictures, threads: botThreads, defaultName: defaultProfileName } = useSyncExternalStore(
+  const { profile, chats, olderPulled, archivedListed, status, route, unsecure, closedReason, syncError, others, live, models, switching, branchNews, bots, botPictures, threads: botThreads, defaultName: defaultProfileName, screen: screenState } = useSyncExternalStore(
     hermes.subscribe,
     hermes.getSnapshot,
   );
@@ -1376,8 +1376,6 @@ export function Main({
   }, [hermes, archivedShown, archivedListed]);
   const [termRunning, setTermRunning] = useState<Record<TerminalKind, boolean>>({ server: false, local: false });
   const terminalRunning = termRunning.server || termRunning.local;
-  // The owner holds Hermes's screen: its computer use waits until they hand back, so the Screen tab says so.
-  const [screenHeld, setScreenHeld] = useState(false);
   // The side panel's Files: the folder open last stays for this sign-in.
   const [filesPath, setFilesPath] = useState<string>();
   // Usage analytics covers the chat panes too (ADR 0026). It reads Hermes afresh each time it opens.
@@ -3747,7 +3745,7 @@ export function Main({
               }}
               onHide={() => setPanelHidden(true)}
               onClose={() => setPanelOpen(false)}
-              running={{ terminal: terminalRunning, screen: screenHeld && "(you're in control)" }}
+              running={{ terminal: terminalRunning, screen: screenState?.holder.kind === "you" && "(you're in control)" }}
               tabs={{
                 // A page or file runs only while it is on screen: a hidden frame could keep playing or loading.
                 preview: (shown) =>
@@ -3802,7 +3800,7 @@ export function Main({
                       api={hermes.screen}
                       shown={shown}
                       connected={status === "connected"}
-                      onHeld={setScreenHeld}
+                      screen={screenState}
                       system={target ? (password) => screenApps(target, password) : undefined}
                     />
                   );

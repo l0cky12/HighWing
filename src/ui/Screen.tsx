@@ -10,15 +10,12 @@ import {
   CLOSE_SCREEN_GONE,
   RelayedSocket,
   browserOf,
-  heldBy,
-  isOlder,
   isUnavailable,
   phaseOf,
-  viewerHash,
-  type DisplayLease,
   type DisplayStatus,
   type ScreenApi,
 } from "../hermes/screen";
+import type { HoldOutcome, ScreenState } from "../hermes/screenControl";
 import {
   SCREEN_APPS,
   canSetUp,
@@ -83,28 +80,26 @@ export function ScreenTab({
   shown,
   connected,
   loadRfb = loadNoVnc,
-  onHeld,
+  screen,
   system,
   clipboard = tauriClipboard,
 }: {
   api: ScreenApi;
+  /** Who holds the screen, as the connection knows it (the snapshot's `screen`). */
+  screen?: ScreenState;
   shown: boolean;
   connected: boolean;
   /** Installs the terminal and the text editor through the connection's ssh; undefined without an SSH target. */
   system?: InstallSystem;
   loadRfb?: () => Promise<RfbConstructor>;
-  /** Whether the owner holds the screen, so the panel can say so while the tab isn't shown. */
-  onHeld?: (held: boolean) => void;
   /** This computer's clipboard, for copy and paste with the screen while the owner holds it. */
   clipboard?: LocalClipboard;
 }) {
   const [status, setStatus] = useState<DisplayStatus>();
-  const [lease, setLease] = useState<DisplayLease>();
   const [unavailable, setUnavailable] = useState(false);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [conn, setConn] = useState<Conn>({ kind: "idle" });
-  const [viewer, setViewer] = useState<{ id: string; hash: string }>();
   const [evicted, setEvicted] = useState(false);
   /** The browser a Check again found where there was none, said once until the next read. */
   const [found, setFound] = useState<string>();
@@ -116,47 +111,29 @@ export function ScreenTab({
   // Bumped by every attach and detach, so a late answer from an earlier one does nothing.
   const generation = useRef(0);
   const evictions = useRef({ count: 0, at: 0 });
-  const viewerRef = useRef(viewer);
-  viewerRef.current = viewer;
   const [bridge] = useState(() => new ClipboardBridge(clipboard));
   // Bumped when the connection drops and when the tab goes (switching profile remounts it). A setup run from before
   // then stops: `api` would answer for the new connection or profile.
   const setupRun = useRef(0);
   useEffect(() => () => void setupRun.current++, []);
 
-  const held = heldBy(lease, viewer?.hash);
-  // Viewers this tab held the screen as on connections since gone. Hermes keeps such a hold when a connection drops,
-  // so the owner can be told it is still theirs.
-  const pastHolds = useRef(new Set<string>());
-  if (held && viewer) pastHolds.current.add(viewer.hash);
-  const onHeldRef = useRef(onHeld);
-  onHeldRef.current = onHeld;
-  useEffect(() => onHeldRef.current?.(held), [held]);
-  // Not cleared when the tab goes: leaving the connection hands back what the owner still holds.
-  useEffect(() => api.noteHeld(held ? viewer?.id : undefined), [api, held, viewer?.id]);
-  useEffect(() => () => onHeldRef.current?.(false), []);
-
-  const noteLease = useCallback((next: DisplayLease) => setLease((known) => (isOlder(known, next) ? known : next)), []);
-  const noteStatus = useCallback(
-    (s: DisplayStatus) => {
-      setStatus(s);
-      if (s.lease) noteLease(s.lease);
-    },
-    [noteLease],
-  );
+  const holder = screen?.holder;
+  const held = holder?.kind === "you";
+  const heldRef = useRef(held);
+  heldRef.current = held;
 
   const refresh = useCallback(async () => {
     setFound(undefined);
     try {
       const s = await api.status();
-      noteStatus(s);
+      setStatus(s);
       setError(undefined);
       return s;
     } catch (e) {
       if (isUnavailable(e)) setUnavailable(true);
       else setError(errorText(e));
     }
-  }, [api, noteStatus]);
+  }, [api]);
 
   /** Lets go of the stream. A normal close: Hermes hands control the owner took back to the agent. */
   const detach = useCallback(() => {
@@ -177,12 +154,9 @@ export function ScreenTab({
     setConn({ kind: "attaching" });
     try {
       const Rfb = await loadRfb();
-      // A viewer id this connection minted before keeps the lease it holds across a re-attach.
-      const observed = await api.observe(viewerRef.current?.id);
-      const minted = { id: observed.viewer_id, hash: await viewerHash(observed.viewer_id) };
+      const observed = await api.observe();
       if (gen !== generation.current) return;
-      noteStatus(observed);
-      setViewer(minted);
+      setStatus(observed);
       const socket = await RelayedSocket.open(api.openSocket, observed.ticket);
       if (gen !== generation.current || !host.current) return socket.close();
       const client = new Rfb(host.current, socket, { shared: true });
@@ -191,7 +165,7 @@ export function ScreenTab({
       client.focusOnClick = true;
       client.background = "transparent";
       client.qualityLevel = 7;
-      client.viewOnly = !heldBy(observed.lease, minted.hash);
+      client.viewOnly = !heldRef.current;
       client.addEventListener("connect", () => {
         if (gen !== generation.current) return;
         setConn({ kind: "live" });
@@ -221,7 +195,7 @@ export function ScreenTab({
     } catch (e) {
       if (gen === generation.current) setConn({ kind: "lost", why: errorText(e) });
     }
-  }, [api, bridge, detach, loadRfb, noteStatus, refresh]);
+  }, [api, bridge, detach, loadRfb, refresh]);
 
   // What the screen is doing: asked on first show and after each reconnect to Hermes, which watches again a stream
   // the drop ended. The stream isn't let go here: a normal close would tell Hermes the owner left, and hand control
@@ -231,19 +205,13 @@ export function ScreenTab({
       setConn((c) => (c.kind === "lost" ? { kind: "idle" } : c));
       void refresh();
     }
-    else {
-      // A viewer id is good only on the connection that minted it.
-      setViewer(undefined);
-      setupRun.current++;
-    }
+    else setupRun.current++;
   }, [connected, refresh]);
-
-  useEffect(() => api.onLease((key, l) => key === status?.profile_key && noteLease(l)), [api, status?.profile_key, noteLease]);
 
   /** For a setup run that starts now. */
   const setupDeps = (): SetupDeps => {
     const run = setupRun.current;
-    return { api, system, update: setSetup, onStatus: noteStatus, alive: () => run === setupRun.current };
+    return { api, system, update: setSetup, onStatus: setStatus, alive: () => run === setupRun.current };
   };
   const depsRef = useRef(setupDeps);
   depsRef.current = setupDeps;
@@ -312,7 +280,7 @@ export function ScreenTab({
   };
   const start = () =>
     act(async () => {
-      noteStatus(await api.start());
+      setStatus(await api.start());
       setConn({ kind: "idle" });
     });
   const checkAgain = () =>
@@ -329,7 +297,7 @@ export function ScreenTab({
       await api.stop();
       detach();
       if (status) await api.resetDock(status.profile_key);
-      noteStatus(await api.start());
+      setStatus(await api.start());
       setConn({ kind: "idle" });
       setSetup((s) => (s.kind === "checked" ? { ...s, dock: { kind: "current" } } : s));
     });
@@ -346,12 +314,16 @@ export function ScreenTab({
       const outcome = await copyOutOf(true).catch((e: unknown) => void (isAbort(e) || setClipNote({ text: errorText(e), bad: true })));
       if (outcome) setClipNote({ text: COPIED[outcome], bad: outcome === "empty" });
     });
-  const takeOver = () => act(async () => viewer && noteLease(await api.takeOver(viewer.id)));
-  const handBack = () => act(async () => viewer && noteLease(await api.handBack(viewer.id)));
+  const takeOver = () =>
+    act(async () => {
+      const taken: HoldOutcome = await api.takeOver();
+      if (taken.kind === "failed" || taken.kind === "no-screen") throw new Error(taken.why);
+    });
+  const handBack = () => act(() => api.handBack());
 
   const phase = status && phaseOf(status);
-  const heldBefore = lease?.holder === "human" && !held && !!lease.viewer_hash && pastHolds.current.has(lease.viewer_hash);
-  const someoneElse = lease?.holder === "human" && !held && !heldBefore;
+  const heldBefore = holder?.kind === "you-before";
+  const someoneElse = holder?.kind === "someone";
 
   let body;
   if (unavailable)
@@ -435,7 +407,7 @@ export function ScreenTab({
               <Hand size={14} /> Hand back
             </button>
           ) : (
-            <button className="btn" disabled={busy || !connected || !viewer || conn.kind !== "live"} onClick={() => void takeOver()} title="Your keys and pointer drive the screen; Hermes's computer use waits">
+            <button className="btn" disabled={busy || !connected || conn.kind !== "live"} onClick={() => void takeOver()} title="Your keys and pointer drive the screen; Hermes's computer use waits">
               <MousePointer2 size={14} /> Take over
             </button>
           ))}

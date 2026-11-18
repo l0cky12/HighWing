@@ -3,7 +3,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { FakeHermes } from "./fakeHermes";
 import { connect } from "./transport";
-import { RelayedSocket, browserOf, heldBy, isOlder, isUnavailable, parseDoctor, phaseOf, viewerHash, type DisplayLease, type DisplayStatus, type ScreenSocket } from "./screen";
+import { RelayedSocket, browserOf, isOlder, isUnavailable, parseDoctor, phaseOf, viewerHash, type DisplayLease, type DisplayStatus, type ScreenSocket } from "./screen";
 
 const agent: DisplayLease = { holder: "agent", viewer_hash: null, since: 1, epoch: 0 };
 const status = (s: Partial<DisplayStatus>): DisplayStatus => ({ supported: true, installed: true, missing: [], running: false, lease: agent, profile_key: "/h", ...s });
@@ -34,9 +34,6 @@ describe("What the Screen shows", () => {
     // Python: hashlib.sha256(b"abc").hexdigest()[:12]
     expect(await viewerHash("abc")).toBe("ba7816bf8f01");
     const mine: DisplayLease = { holder: "human", viewer_hash: "ba7816bf8f01", since: 2, epoch: 3 };
-    expect(heldBy(mine, "ba7816bf8f01")).toBe(true);
-    expect(heldBy(mine, "000000000000")).toBe(false);
-    expect(heldBy(agent, undefined)).toBe(false);
     expect(isOlder(mine, { ...agent, epoch: 2 })).toBe(true);
     expect(isOlder(mine, { ...agent, epoch: 4 })).toBe(false);
   });
@@ -112,58 +109,101 @@ describe("The relayed stream noVNC drives", () => {
 });
 
 describe("display.* over the connection", () => {
-  it("asks for the profile shown, mints a viewer, takes over and hands back, hearing Hermes's lease broadcasts", async () => {
+  const running = () => ({ status: { supported: true, installed: true, missing: [], running: true }, lease: { holder: "agent" as const, viewer_hash: null, since: 1, epoch: 0 }, minted: new Set<string>() });
+
+  it("asks for the profile shown, mints a viewer, takes over and hands back, and the snapshot says who holds the screen", async () => {
     const server = new FakeHermes();
     server.display = { status: { supported: true, installed: true, missing: [], running: false, geometry: "1440x900" }, lease: { holder: "agent", viewer_hash: null, since: 1, epoch: 0 }, minted: new Set() };
     const hermes = await connect(server.openPipe);
-    const leases: [string, DisplayLease][] = [];
-    const off = hermes.screen.onLease((k, l) => void leases.push([k, l]));
 
     expect((await hermes.screen.status()).running).toBe(false);
+    expect(hermes.getSnapshot().screen).toEqual({ profileKey: "/home/lena/.hermes", holder: { kind: "agent" }, epoch: 0 });
     await expect(hermes.screen.observe()).rejects.toThrow(/not running/);
     expect((await hermes.screen.start()).running).toBe(true);
     const seen = await hermes.screen.observe();
     expect(seen).toMatchObject({ ticket: "ticket-viewer-1", viewer_id: "viewer-1" });
-    // Observing again with the id this connection minted keeps it.
-    expect((await hermes.screen.observe("viewer-1")).viewer_id).toBe("viewer-1");
+    // Observing again keeps the viewer this connection minted, so a re-attach keeps the lease it holds.
+    expect((await hermes.screen.observe()).viewer_id).toBe("viewer-1");
+    expect(server.requests.filter((r) => r.method === "display.observe").map((r) => r.params.viewer_id)).toEqual([undefined, undefined, "viewer-1"]);
 
-    const taken = await hermes.screen.takeOver("viewer-1");
-    expect(heldBy(taken, await viewerHash("viewer-1"))).toBe(true);
-    await expect(hermes.screen.takeOver("made-up")).rejects.toThrow(/not minted/);
-    const back = await hermes.screen.handBack("viewer-1");
-    expect(back.holder).toBe("agent");
-    await vi.waitFor(() => expect(leases.map(([, l]) => l.holder)).toEqual(["human", "agent"]));
-    expect(leases[0][0]).toBe("/home/lena/.hermes");
-    off();
+    expect(await hermes.screen.takeOver()).toEqual({ kind: "held" });
+    await vi.waitFor(() => expect(hermes.getSnapshot().screen?.holder).toEqual({ kind: "you", since: 2 }));
+    expect(await hermes.screen.takeOver()).toEqual({ kind: "already" });
+    expect(server.requests.filter((r) => r.method === "display.lease.acquire")).toHaveLength(1);
+    await hermes.screen.handBack();
+    await vi.waitFor(() => expect(hermes.getSnapshot().screen?.holder).toEqual({ kind: "agent" }));
 
     const asked = server.requests.filter((r) => r.method.startsWith("display."));
     expect(asked.every((r) => r.params.profile === "default")).toBe(true);
   });
 
+  it("takes the screen without the Screen tab, minting a viewer first, and says when there is none to take", async () => {
+    const server = new FakeHermes();
+    server.display = running();
+    const hermes = await connect(server.openPipe);
+    expect(await hermes.screen.takeOver("Stopped from Highwing")).toEqual({ kind: "held" });
+    expect(server.requests.filter((r) => r.method.startsWith("display.")).map((r) => r.method)).toEqual(["display.observe", "display.lease.acquire"]);
+    expect(server.last("display.lease.acquire")!.params).toMatchObject({ viewer_id: "viewer-1", reason: "Stopped from Highwing" });
+    expect(server.display.lease.holder).toBe("human");
+
+    const stopped = new FakeHermes();
+    stopped.display = { ...running(), status: { supported: true, installed: true, missing: [], running: false } };
+    const other = await connect(stopped.openPipe);
+    expect(await other.screen.takeOver()).toMatchObject({ kind: "no-screen", why: expect.stringMatching(/not running/) });
+    const none = await connect(new FakeHermes().openPipe);
+    expect((await none.screen.takeOver()).kind).toBe("no-screen");
+  });
+
+  it("hears who took the screen from Hermes's broadcasts, and only for the profile shown", async () => {
+    const server = new FakeHermes();
+    server.display = running();
+    const hermes = await connect(server.openPipe);
+    await hermes.screen.status();
+    server.broadcast("display.lease", { profile_key: "/home/lena/.hermes", lease: { holder: "human", viewer_hash: "0123456789ab", since: 3, reason: "a sign-in", epoch: 1 } });
+    await vi.waitFor(() => expect(hermes.getSnapshot().screen?.holder).toEqual({ kind: "someone", since: 3, reason: "a sign-in" }));
+    server.broadcast("display.lease", { profile_key: "/home/lena/.hermes/profiles/work", lease: { holder: "agent", viewer_hash: null, since: 4, epoch: 9 } });
+    server.broadcast("display.lease", { profile_key: "/home/lena/.hermes", lease: { holder: "agent", viewer_hash: null, since: 0, epoch: 0 } });
+    // Answered after both broadcasts went out, with the stale epoch-0 lease the fake still keeps.
+    await hermes.screen.status();
+    expect(hermes.getSnapshot().screen).toMatchObject({ holder: { kind: "someone" }, epoch: 1 });
+  });
+
+  it("knows a hold from a connection since dropped is still the owner's", async () => {
+    const server = new FakeHermes();
+    server.display = running();
+    const hermes = await connect(server.openPipe);
+    await hermes.screen.takeOver();
+    await vi.waitFor(() => expect(hermes.getSnapshot().screen?.holder.kind).toBe("you"));
+    server.drop();
+    await vi.waitFor(() => expect(hermes.getSnapshot().screen?.holder.kind).toBe("you-before"));
+    await hermes.reconnect();
+    await hermes.screen.observe();
+    expect(hermes.getSnapshot().screen?.holder.kind).toBe("you-before");
+    expect(server.display.lease.holder).toBe("human");
+  });
+
   it.each(["another profile", "sign-out"])("hands back the screen the owner holds before leaving for %s, stream or no stream", async (leave) => {
     const server = new FakeHermes();
     server.otherProfiles = { work: [] };
-    server.display = { status: { supported: true, installed: true, missing: [], running: true }, lease: { holder: "agent", viewer_hash: null, since: 1, epoch: 0 }, minted: new Set() };
+    server.display = running();
     const hermes = await connect(server.openPipe);
     const { viewer_id } = await hermes.screen.observe();
-    await hermes.screen.takeOver(viewer_id);
-    hermes.screen.noteHeld(viewer_id);
+    await hermes.screen.takeOver();
     expect(server.display.lease.holder).toBe("human");
     if (leave === "sign-out") await hermes.close();
     else await hermes.switchProfile("work");
     expect(server.display.lease.holder).toBe("agent");
     const release = server.requests.find((r) => r.method === "display.lease.release")!;
     expect(release.params).toMatchObject({ viewer_id, profile: "default" });
+    if (leave === "another profile") expect(hermes.getSnapshot().screen).toBeUndefined();
   });
 
   it("lands on the profile picked last when one is picked while the screen is still being handed back", async () => {
     const server = new FakeHermes();
     server.otherProfiles = { work: [], home: [] };
-    server.display = { status: { supported: true, installed: true, missing: [], running: true }, lease: { holder: "agent", viewer_hash: null, since: 1, epoch: 0 }, minted: new Set() };
+    server.display = running();
     const hermes = await connect(server.openPipe);
-    const { viewer_id } = await hermes.screen.observe();
-    await hermes.screen.takeOver(viewer_id);
-    hermes.screen.noteHeld(viewer_id);
+    await hermes.screen.takeOver();
     const first = hermes.switchProfile("work");
     const second = hermes.switchProfile("home");
     await Promise.all([first, second]);
@@ -174,11 +214,9 @@ describe("display.* over the connection", () => {
   it("stays on the profile shown when the owner picks it again while the screen is being handed back", async () => {
     const server = new FakeHermes();
     server.otherProfiles = { work: [] };
-    server.display = { status: { supported: true, installed: true, missing: [], running: true }, lease: { holder: "agent", viewer_hash: null, since: 1, epoch: 0 }, minted: new Set() };
+    server.display = running();
     const hermes = await connect(server.openPipe);
-    const { viewer_id } = await hermes.screen.observe();
-    await hermes.screen.takeOver(viewer_id);
-    hermes.screen.noteHeld(viewer_id);
+    await hermes.screen.takeOver();
     await Promise.all([hermes.switchProfile("work"), hermes.switchProfile("default")]);
     expect(hermes.getSnapshot()).toMatchObject({ profile: "default", status: "connected" });
     expect(server.display.lease.holder).toBe("agent");
@@ -187,11 +225,9 @@ describe("display.* over the connection", () => {
   it("waits for a hand-back under way before signing out", async () => {
     const server = new FakeHermes();
     server.otherProfiles = { work: [] };
-    server.display = { status: { supported: true, installed: true, missing: [], running: true }, lease: { holder: "agent", viewer_hash: null, since: 1, epoch: 0 }, minted: new Set() };
+    server.display = running();
     const hermes = await connect(server.openPipe);
-    const { viewer_id } = await hermes.screen.observe();
-    await hermes.screen.takeOver(viewer_id);
-    hermes.screen.noteHeld(viewer_id);
+    await hermes.screen.takeOver();
     const switching = hermes.switchProfile("work");
     await hermes.close();
     await switching;
@@ -200,11 +236,9 @@ describe("display.* over the connection", () => {
 
   it("leaves the screen alone when the owner doesn't hold it", async () => {
     const server = new FakeHermes();
-    server.display = { status: { supported: true, installed: true, missing: [], running: true }, lease: { holder: "agent", viewer_hash: null, since: 1, epoch: 0 }, minted: new Set() };
+    server.display = running();
     const hermes = await connect(server.openPipe);
-    const { viewer_id } = await hermes.screen.observe();
-    hermes.screen.noteHeld(viewer_id);
-    hermes.screen.noteHeld(undefined);
+    await hermes.screen.observe();
     await hermes.close();
     expect(server.requests.some((r) => r.method === "display.lease.release")).toBe(false);
   });

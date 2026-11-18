@@ -11,10 +11,12 @@ import { lru } from "./lru";
 import { remarkTranscriptSyntax } from "./markdownSyntax";
 import { findPaths, hrefPath, type PathMention } from "../hermes/paths";
 
-export const classes = (node: Element) => {
+const classes = (node: Element) => {
   const className = node.properties.className;
   return Array.isArray(className) ? className.map(String) : [];
 };
+
+export const languageOf = (code: Element) => classes(code).find((c) => c.startsWith("language-"))?.slice("language-".length);
 
 /** Typeset math is left alone: its text is KaTeX's glyphs and a copy of the TeX for screen readers, not words to find. */
 function rehypeFind(query: string) {
@@ -100,9 +102,9 @@ function highlight(code: Element, pre: Element, file: VFile, guessed?: () => voi
     if (guessing(code) && text.length > GUESS_FROM_CHARS) {
       const start: Element = { ...code, properties: { ...code.properties, className: classes(code) }, children: [{ type: "text", value: text.slice(0, GUESS_FROM_CHARS) }] };
       one(start);
-      const language = classes(start).find((c) => c.startsWith("language-"));
+      const language = languageOf(start);
       if (!language) return plain(code);
-      code.properties.className = [...classes(code), language];
+      code.properties.className = [...classes(code), `language-${language}`];
     }
     one(code);
   };

@@ -13,6 +13,8 @@ export function lru<V>(limit: number) {
       return hit.value;
     },
     set(key: string, value: V, weight: number) {
+      weights -= held.get(key)?.weight ?? 0;
+      held.delete(key);
       held.set(key, { value, weight });
       weights += weight;
       for (const [old, { weight }] of held) {

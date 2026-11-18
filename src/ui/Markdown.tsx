@@ -6,7 +6,7 @@ import { Check, CodeXml, Copy, Image as ImageIcon, Workflow } from "lucide-react
 import "katex/dist/katex.min.css";
 import { PathLink, PreviewLink } from "./previewContext";
 import { splitBlocks, type Blocks } from "./markdownBlocks";
-import { classes, rehypePlugins, remarkPlugins } from "./markdownPipeline";
+import { languageOf, rehypePlugins, remarkPlugins } from "./markdownPipeline";
 import { drawDiagram, drawnAlready, subscribeTheme, themeNow, type Drawing } from "./mermaid";
 import { errorText } from "../hermes/values";
 
@@ -43,7 +43,7 @@ function useDrawing(source: string, wanted: boolean, box: RefObject<HTMLElement 
 }
 
 function CodeBlock({ code, children }: { code: Element | undefined; children?: ReactNode }) {
-  const language = (code && classes(code).join(" ").match(/language-(\S+)/)?.[1]) || "";
+  const language = (code && languageOf(code)) || "";
   const box = useRef<HTMLDivElement>(null);
   const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle");
   const [showSource, setShowSource] = useState(false);

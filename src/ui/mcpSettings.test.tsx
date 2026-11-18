@@ -444,6 +444,21 @@ describe("Settings → MCP servers: Restart gateway", () => {
     expect(restartIn("git")).toBeNull();
   });
 
+  it("keeps the button when switching the server off is refused, and drops it once a switch-off is saved", async () => {
+    const s = server();
+    s.gateways.gateway.default = { running: true, platforms: {} };
+    const { user } = await shown({ s });
+    await editCommand(user, "fs", "bunx");
+    await waitFor(() => expect(restartIn("fs")).toBeTruthy());
+    s.mcp.refuse = { status: 400, detail: "config is locked" };
+    await user.click(within(rowOf("fs")).getByRole("switch", { name: "fs" }));
+    await within(rowOf("fs")).findByText(/config is locked/);
+    expect(restartIn("fs")).toBeTruthy();
+    await user.click(within(rowOf("fs")).getByRole("switch", { name: "fs" }));
+    await waitFor(() => expect(within(rowOf("fs")).getByRole("switch", { name: "fs" }).getAttribute("aria-checked")).toBe("false"));
+    expect(restartIn("fs")).toBeNull();
+  });
+
   it("shows nothing for an added server, which the gateway picks up by itself", async () => {
     const s = server();
     s.gateways.gateway.default = { running: true, platforms: {} };

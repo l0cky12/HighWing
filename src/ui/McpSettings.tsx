@@ -154,23 +154,25 @@ export function McpSettings({
     else setListNote(note);
   };
 
-  const run = async (name: string, kind: Busy, go: () => Promise<McpChange>, what: string) => {
+  /** `dropsServer`: once saved, the gateway has no connection to the server left, so nothing waits for a restart. */
+  const run = async (name: string, kind: Busy, go: () => Promise<McpChange>, what: string, dropsServer: boolean) => {
     const p = profile;
     setOne(setBusy, name, kind);
     setOne(setNotes, name, undefined);
     setListNote(undefined);
-    restart?.unmark(p, `mcp:${name}`);
     try {
-      settle(p, name, await go(), what);
+      const r = await go();
+      if (dropsServer && r.kind === "saved") restart?.unmark(p, `mcp:${name}`);
+      settle(p, name, r, what);
     } finally {
       if (mine(p)) setOne(setBusy, name, undefined);
     }
   };
 
-  const toggle = (s: McpServer) => void run(s.name, "toggle", () => api.setEnabled(profile, s.name, !s.enabled), s.enabled ? "Turned off" : "Turned on");
+  const toggle = (s: McpServer) => void run(s.name, "toggle", () => api.setEnabled(profile, s.name, !s.enabled), s.enabled ? "Turned off" : "Turned on", s.enabled);
   const remove = (s: McpServer) => {
     setConfirmRemove(undefined);
-    void run(s.name, "remove", () => api.remove(profile, s.name), `Removed ${s.name}`);
+    void run(s.name, "remove", () => api.remove(profile, s.name), `Removed ${s.name}`, true);
   };
 
   const test = async (s: McpServer) => {

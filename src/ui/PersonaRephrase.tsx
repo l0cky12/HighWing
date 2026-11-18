@@ -11,7 +11,7 @@ import { errorText } from "../hermes/values";
 import { WritingFailed, type Writer, type WritingRoute } from "../hermes/writingModel";
 import { useLocale } from "../i18n/locale";
 import { Spinner } from "./bits";
-import { fixLabel, willWrite, writingFailedText } from "./writingWords";
+import { willWrite, writingFailedText } from "./writingWords";
 
 /**
  * Where a rewrite stands. `asking`: call `n` is out, written from `before`. `replaced`: the field held `before` and now
@@ -21,7 +21,7 @@ export type Rephrase =
   | { kind: "idle" }
   | { kind: "asking"; n: number; before: string }
   | { kind: "replaced"; before: string; after: string }
-  | { kind: "failed"; message: string; fix?: WritingFailed["fix"] };
+  | { kind: "failed"; message: string };
 
 type RouteRead = { kind: "reading" } | { kind: "read"; route: WritingRoute } | { kind: "failed"; message: string };
 
@@ -63,8 +63,6 @@ export function usePersonaRephrase({
       // eslint-disable-next-line react-hooks/exhaustive-deps -- a call counter, not a node: bumping it on close drops any answer still on its way
       latest.current++;
       out.current = undefined;
-      // The writer goes with the connection, and the model with the profile: a rewrite dropped then is over, so it no
-      // longer holds Create or Save back.
       setState((s) => (s.kind === "asking" ? { kind: "idle" } : s));
       setModel({ kind: "reading" });
     };
@@ -105,7 +103,7 @@ export function usePersonaRephrase({
       setState({ kind: "replaced", before, after: answer });
     } catch (e) {
       if (latest.current === n)
-        setState(e instanceof WritingFailed ? { kind: "failed", message: writingFailedText(l.writing, e), fix: e.fix } : { kind: "failed", message: errorText(e) });
+        setState(e instanceof WritingFailed ? { kind: "failed", message: writingFailedText(l.writing, e) } : { kind: "failed", message: errorText(e) });
     } finally {
       if (out.current === n) out.current = undefined;
     }
@@ -147,17 +145,13 @@ export function RephrasePanel({
   hintId,
   focusBox,
   disabled,
-  onFix,
 }: {
   r: PersonaRephraseState;
   hintId: string;
   focusBox: () => void;
   disabled: boolean;
-  /** Opens the setting a failure names; without it the failure only says where. */
-  onFix?: (fix: WritingFailed["fix"]) => void;
 }) {
-  const l = useLocale();
-  const w = l.profiles.form.rephrase;
+  const w = useLocale().profiles.form.rephrase;
   const { state } = r;
   const close = (then: () => void) => {
     then();
@@ -186,14 +180,6 @@ export function RephrasePanel({
       {state.kind === "failed" && (
         <div className="small sign-in-error" role="alert">
           {w.failed(state.message)}
-          {state.fix && onFix && (
-            <>
-              {" "}
-              <button className="link-btn" onClick={() => onFix(state.fix!)}>
-                {fixLabel(l.writing, state.fix)}
-              </button>
-            </>
-          )}
         </div>
       )}
       {r.undoable && state.kind === "replaced" && (

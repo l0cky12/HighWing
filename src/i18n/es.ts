@@ -598,7 +598,7 @@ export const es: Catalogue = {
     pinInstructionsSignIn: (profile, provider, fix) =>
       `El modelo de Instrucciones de proyecto de ${profile} está fijado en el servidor a ${provider}, y Hermes no tiene sesión para él. ${fix}, o cambia ese modelo en Ajustes → Modelo.`,
     appSignIn: (profile, provider, fix) =>
-      `Tu modelo de escritura funciona con ${provider}, y Hermes no tiene sesión para él en ${profile}. ${fix}, o elige otro modelo de escritura en Ajustes → Modelo.`,
+      `Tu modelo de escritura funciona con ${provider}, y Hermes no tiene sesión para él en el bot ${profile}. ${fix}, o elige otro modelo de escritura en Ajustes → Modelo.`,
     mainSignIn: (profile, model) => `${profile} escribe con su propio modelo, ${model}, y Hermes no pudo usarlo para escribir. Elige un modelo de escritura en Ajustes → Modelo.`,
     mainNoProvider: (profile) => `${profile} no tiene ningún modelo con el que Hermes pueda escribir. Elige un modelo de escritura en Ajustes → Modelo.`,
     mainOther: (profile, model, detail) =>

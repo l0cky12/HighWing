@@ -20,23 +20,23 @@ export function WritingModelSettings({
   profiles,
   catalog,
   show,
+  reread,
 }: {
   /** Undefined while not connected: the saved pick still shows, and the bot list says it needs a connection. */
   desk?: WritingDesk;
   /** `connectionScope` of the connection: where the pick is kept. */
   scope: string;
-  /** Every profile on the connection. */
   profiles: () => Promise<string[]>;
-  /** The models to pick from: the connected server's catalog. */
   catalog: () => Promise<CatalogProvider[]>;
   /** Set anew to scroll here and focus the heading. */
   show?: object;
+  /** Changes after Settings → Model wrote to Hermes, so a pin set or cleared there shows in the bot list. */
+  reread?: number;
 }) {
   const l = useLocale();
   const w = l.writing.settings;
   const titleId = useId();
   const saved: WritingPick | undefined = useSyncExternalStore(subscribe, getUIPrefs).writingModels[scope];
-  // The provider picked before its model: nothing is kept until both are.
   const [provider, setProvider] = useState(saved?.provider ?? "");
   const [providers, setProviders] = useState<CatalogProvider[]>([]);
   const [unsaved, setUnsaved] = useState(false);
@@ -75,8 +75,8 @@ export function WritingModelSettings({
     return () => {
       live = false;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- read again per connection and per pick; `profiles` may be a new function each render
-  }, [desk, saved?.provider, saved?.model]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- read again per connection, per pick and after a Model write; `profiles` may be a new function each render
+  }, [desk, saved?.provider, saved?.model, reread]);
 
   const keep = (next: WritingPick | undefined) => {
     const all = { ...getUIPrefs().writingModels };

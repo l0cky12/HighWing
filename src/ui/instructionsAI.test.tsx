@@ -112,7 +112,6 @@ describe("Improve with AI, when the box has text", () => {
     expect((await draft()).textContent).toBe("USE METRIC UNITS.");
     expect(within(d).getByLabelText("Your instructions").textContent).toBe("Use metric units.");
     const call = oneshots(s)[0];
-    // With no Project instructions model, the Text generation pin writes: the call sends its task.
     expect(call).toMatchObject({ profile: "default", instructions: IMPROVE_INSTRUCTIONS, task: "title_generation" });
     expect(call.input).toContain("Project name: Budget Tracker");
     expect(call.input).toContain("Folders on the server: /srv/budget");

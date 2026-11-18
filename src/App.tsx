@@ -1331,7 +1331,6 @@ export function Main({
   useCloseGuard(memoryUnsaved || skillUnsaved || !!personaUnsaved || artifactUnsaved, (close) => guardRef.current(close, "close"));
   // A new object each time a row asks Settings to show the Text generation model; the rail's button opens it plainly.
   const [showTextGeneration, setShowTextGeneration] = useState<object>();
-  /** Set anew to open Settings → Model at the Writing model, from a failure that names it. */
   const [showWritingModel, setShowWritingModel] = useState<object>();
   /** Set to open Settings on its Memory tab, from the context inspector. */
   const [showMemory, setShowMemory] = useState<object>();
@@ -1804,8 +1803,6 @@ export function Main({
   workingRef.current = working;
   // Read when the restore dialog renders and again just before it writes: sends and refused writes aren't React state.
   const restoreBusy = () => restoreBlocked({ working: workingRef.current, unsaved: unsaved.size, sending: sending.size });
-  // Writing a persona or project instructions (ADR 0203): a model pinned on the server for the bot, else this
-  // connection's Writing model, else the bot's own main model.
   const writingScope = connectionScope(connection);
   const writing = useMemo(() => hermes.writingDesk(() => getUIPrefs().writingModels[writingScope]), [hermes, writingScope]);
 
@@ -3218,7 +3215,6 @@ export function Main({
     copyText,
     // Persona's Write with AI (ADR 0197, 0206): as the profile named, on the model that writes for it, only while connected.
     rephrase: status === "connected" ? (p) => writing.writer(p, "persona") : undefined,
-    writingFix: openWritingFix,
     persona: hermes.persona,
     setup: { skills: hermes.skills, toolsets: hermes.toolsets },
     // A command to run (a settling delete's) gets the toast's Copy; a notice of something gone wrong stays longer.

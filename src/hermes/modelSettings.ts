@@ -306,8 +306,7 @@ function catalogFrom(res: unknown): CatalogProvider[] {
   });
 }
 
-/** `auxiliary.<task>` from `GET /api/config`: unset when missing, or its provider is empty or `auto`. */
-function setBlock(config: unknown, task: string): Json | undefined {
+function pinnedAuxBlock(config: unknown, task: string): Json | undefined {
   const block = obj(obj(obj(config).auxiliary)[task]);
   const provider = textOrEmpty(block.provider).trim();
   if (!provider || provider.toLowerCase() === AUX_AUTO) return undefined;
@@ -315,7 +314,7 @@ function setBlock(config: unknown, task: string): Json | undefined {
 }
 
 function instructionsFrom(config: unknown): AuxDraft | undefined {
-  const block = setBlock(config, INSTRUCTIONS_TASK);
+  const block = pinnedAuxBlock(config, INSTRUCTIONS_TASK);
   if (!block) return undefined;
   return { provider: textOrEmpty(block.provider).trim(), model: textOrEmpty(block.model).trim(), effort: effortFromConfig(block.reasoning_effort) || AUX_INHERIT };
 }
@@ -388,7 +387,7 @@ export class ModelSettingsApi {
     const main = obj(obj(aux).main);
     const text = auxFrom(aux).find((t) => t.task === TEXT_TASK && t.provider.trim().toLowerCase() !== AUX_AUTO);
     const instructions = instructionsFrom(config);
-    const mirror = setBlock(config, WRITING_TASK);
+    const mirror = pinnedAuxBlock(config, WRITING_TASK);
     return {
       main: { provider: textOrEmpty(main.provider), model: textOrEmpty(main.model) },
       ...(text && { text: { provider: text.provider, model: text.model } }),

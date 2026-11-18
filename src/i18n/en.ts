@@ -617,7 +617,6 @@ export const en = {
     checking: "Checking which model would write it…",
     unread: (why: string) => `Couldn't check which model would write it: ${why}`,
     noModel: (profile: string) => `${profile} has no model to write with. Pick a Writing model in Settings → Model.`,
-    /** How to fix a missing sign-in on the server, for the sentences below. */
     signInNous: (command: string) => `Sign it in there with ${command}`,
     signInKey: "Add an API key or sign-in for it there",
     pinTextSignIn: (profile: string, provider: string, fix: string) =>
@@ -625,7 +624,7 @@ export const en = {
     pinInstructionsSignIn: (profile: string, provider: string, fix: string) =>
       `${profile}'s Project instructions model is pinned on the server to ${provider}, and Hermes has no sign-in for it. ${fix}, or change that model in Settings → Model.`,
     appSignIn: (profile: string, provider: string, fix: string) =>
-      `Your Writing model runs on ${provider}, and Hermes has no sign-in for it in ${profile}. ${fix}, or pick another Writing model in Settings → Model.`,
+      `Your Writing model runs on ${provider}, and Hermes has no sign-in for it on the ${profile} bot. ${fix}, or pick another Writing model in Settings → Model.`,
     mainSignIn: (profile: string, model: string) =>
       `${profile} writes with its own model, ${model}, and Hermes couldn't use it for writing. Pick a Writing model in Settings → Model.`,
     mainNoProvider: (profile: string) => `${profile} has no model Hermes can write with. Pick a Writing model in Settings → Model.`,

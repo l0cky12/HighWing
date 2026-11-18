@@ -1,6 +1,4 @@
 // @vitest-environment jsdom
-// Settings → Model → Writing model on screen (ADR 0203), against the fake dashboard with two bots: picked and cleared
-// on this computer, never written to Hermes by picking, and each bot's line saying which model writes for it.
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -43,7 +41,6 @@ function Screen({ hermes, connected = true }: { hermes: Hermes; connected?: bool
   );
 }
 
-/** `default` has Text generation pinned on the server; `wazuh` has it on auto, so it writes with its own main model. */
 async function shown(o: { connected?: boolean; seed?: (s: FakeHermes) => void } = {}) {
   const server = new FakeHermes();
   const wazuh = fakeModelConfig();
@@ -80,6 +77,13 @@ describe("The Writing model setting", () => {
     await user.click(within(section()).getByRole("button", { name: "Use each bot's own model" }));
     expect(getUIPrefs().writingModels).toEqual({});
     await waitFor(() => expect(bot("wazuh")).toBe("wazuh Writes with its own model: openai-codex · gpt-6.1-sol."));
+  });
+
+  it("reads the bots again once Text generation is unpinned on the same screen", async () => {
+    const { user } = await shown();
+    await waitFor(() => expect(bot("default")).toMatch(/^default Pinned on the server/));
+    await user.click(screen.getByRole("button", { name: "Use the main model for text generation" }));
+    await waitFor(() => expect(bot("default")).toBe("default Writes with its own model: openrouter · glm-5.3-flash."));
   });
 
   it("keeps the user-defined endpoint's URL with a pick from it", async () => {

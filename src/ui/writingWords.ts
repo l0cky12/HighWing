@@ -1,5 +1,5 @@
 // The words for which model writes a persona or project instructions, and why it failed, from the route it took
-// (writingModel.ts, ADR 0203). Each is one switch on the route, so a new route can't be left unworded.
+// (writingModel.ts, ADR 0203).
 import { shortName } from "../hermes/models";
 import { hermesCommand, missingSignIn } from "../hermes/transport";
 import type { WritingFailed, WritingRoute } from "../hermes/writingModel";
@@ -7,7 +7,6 @@ import type { Catalogue } from "../i18n/locale";
 
 type Words = Catalogue["writing"];
 
-/** "provider · model", as the writing screens name a model. */
 export const modelName = (w: Words, r: { provider: string; model: string }) => `${r.provider ? `${r.provider} · ` : ""}${shortName(r.model) || w.defaultModel}`;
 
 /** Under a suggestion: which model wrote it, and why that one. */
@@ -48,10 +47,9 @@ export function writingFailedText(w: Words, e: WritingFailed): string {
     case "app":
       return cause === "sign-in" ? w.appSignIn(profile, provider, fix) : detail;
     case "main":
-      if (cause === "no-provider" || !route.provider) return w.mainNoProvider(profile);
-      return cause === "sign-in" ? w.mainSignIn(profile, modelName(w, route)) : w.mainOther(profile, modelName(w, route), detail);
+      if (!route.provider) return w.mainNoProvider(profile);
+      return cause === "other" ? w.mainOther(profile, modelName(w, route), detail) : w.mainSignIn(profile, modelName(w, route));
   }
 }
 
-/** The button beside a failure that opens the setting `fix` names. */
 export const fixLabel = (w: Words, fix: WritingFailed["fix"]) => (fix === "text-model" ? w.openTextGeneration : w.openWritingModel);

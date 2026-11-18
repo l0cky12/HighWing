@@ -238,7 +238,6 @@ function movePrefs(c: ScopeSource, walk: Walk) {
     return to === null ? [] : [{ ...t, project: { ...t.project!, scope: to } }];
   });
   const templatesMoved = nextTemplates.length !== templates.length || nextTemplates.some((t, i) => t !== templates[i]);
-  // The Writing model is the connection's, not a profile's: only forgetting the connection drops it.
   const writingGone = !walk.profile && Object.hasOwn(writingModels, connectionScope(c));
   if (!open && !picks && pickTo === undefined && !templatesMoved && !writingGone) return;
   setUIPrefs({

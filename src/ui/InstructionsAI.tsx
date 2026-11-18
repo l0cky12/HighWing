@@ -61,7 +61,6 @@ export function InstructionsAI({
   const [working, setWorking] = useState<"question" | "draft">();
   const [error, setError] = useState<string>();
   const [view, setView] = useState<"side" | "changes">("side");
-  /** Where the calls run, as read when the dialog opens and as each answer then says. */
   const [route, setRoute] = useState<WritingRoute>();
   const l = useLocale();
   const box = useRef<HTMLDivElement>(null);

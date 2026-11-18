@@ -34,7 +34,7 @@ import { Menu } from "./ChatMenu";
 import { CloneProfileDialog } from "./CloneProfile";
 import { useModal } from "./modal";
 import { RephraseButton, RephrasePanel, usePersonaRephrase } from "./PersonaRephrase";
-import type { Writer, WritingFailed } from "../hermes/writingModel";
+import type { Writer } from "../hermes/writingModel";
 import { SettingNote, SettingsSection } from "./SettingRows";
 import { HeadPart, useInPage } from "./SettingsPage";
 
@@ -87,8 +87,6 @@ export type ProfilesWiring = {
    * (writingModel.ts, ADR 0203): the profile in use for New, the profile edited for Edit. Given only while connected.
    */
   rephrase?: (profile: string) => Writer;
-  /** Opens the setting a failed Write with AI names (ADR 0203). */
-  writingFix?: (fix: WritingFailed["fix"]) => void;
   /** Each profile's SOUL.md, which Edit reads as it opens and saves with the form (ADR 0206); without it Edit has no Persona. */
   persona?: PersonaApi;
   /** Told whether the open form holds a persona Hermes doesn't have, and whose, so leaving the screen asks first. */
@@ -1508,7 +1506,7 @@ export function ProfileForm({
                     </button>
                   </div>
                 )}
-                <RephrasePanel r={rephrase} hintId={rephraseHint} disabled={saving} focusBox={() => soulBox.current?.focus()} onFix={wiring.writingFix} />
+                <RephrasePanel r={rephrase} hintId={rephraseHint} disabled={saving} focusBox={() => soulBox.current?.focus()} />
                 {stateNote<string>("soul", () => f.personaChanged, (theirs) => {
                   rephrase.stop();
                   setSoul(theirs);

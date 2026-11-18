@@ -1,5 +1,3 @@
-// Which model writes a persona or project instructions for a bot: a model pinned on the server for it, else the app's
-// Writing model, else the bot's own main model (ADR 0203).
 import { describe, expect, it } from "vitest";
 import { FakeHermes, fakeModelConfig, row } from "./fakeHermes";
 import { RestError } from "./pipe";
@@ -29,8 +27,6 @@ describe("writingRoute", () => {
   });
 });
 
-// Two bots on one server, as the owner has them: `default` with Text generation pinned on the server, and `wazuh`
-// with no `auxiliary` block of its own, so its Text generation is on `auto` and it would write with its main model.
 async function twoBots(o: { pick?: WritingPick } = {}) {
   const server = new FakeHermes();
   const wazuh = fakeModelConfig();
@@ -112,7 +108,8 @@ describe("A writing call on the fake server", () => {
     signOut(server);
     const failed = await desk.writer(profile, "persona").ask(call).catch((e: unknown) => e);
     expect(failed).toBeInstanceOf(WritingFailed);
-    expect(failed).toMatchObject({ profile, route: { via }, cause: "sign-in", fix });
+    // On its own model Hermes doesn't name a sign-in: it says it found no provider for the task at all.
+    expect(failed).toMatchObject({ profile, route: { via }, cause: via === "main" ? "no-provider" : "sign-in", fix });
   });
 
   it("leaves chat titles alone: Text generation's block and a Regenerate title's model don't move", async () => {

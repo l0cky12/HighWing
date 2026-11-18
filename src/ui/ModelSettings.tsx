@@ -164,7 +164,6 @@ function ApplyRow({
   );
 }
 
-/** What an unset Project instructions model leaves writing to (ADR 0203). */
 function followsLine(route: WritingRoute): string {
   switch (route.via) {
     case "pin":
@@ -292,7 +291,6 @@ function TextGeneration({
   onSaved: (fresh: Settings) => void;
   /** Set anew to scroll this section into view and move focus to it. */
   show?: object;
-  /** Where this connection's Writing model is kept, which an unset Project instructions model leaves writing to. */
   writingScope?: string;
 }) {
   const { modelFavorites } = useSyncExternalStore(subscribeUIPrefs, getUIPrefs);
@@ -426,6 +424,7 @@ export function ModelSettings({
   connected,
   showTextGeneration,
   writingScope,
+  onWritten,
 }: {
   api: ModelSettingsApi;
   profile: string;
@@ -434,6 +433,8 @@ export function ModelSettings({
   showTextGeneration?: object;
   /** Where this connection's Writing model is kept (ADR 0203). */
   writingScope?: string;
+  /** After any part is written to Hermes: a pin changed may change which model writes for a bot. */
+  onWritten?: () => void;
 }) {
   const [saved, setSaved] = useState<Settings>();
   const [draft, setDraft] = useState<Draft>();
@@ -508,6 +509,7 @@ export function ModelSettings({
       const all = await write();
       const fresh = await api.load();
       setSaved(fresh);
+      onWritten?.();
       if (!all) return;
       setDraft((d) => d && { ...d, [part]: draftFrom(fresh)[part] });
       setDone((x) => ({ ...x, [part]: true }));
@@ -691,6 +693,7 @@ export function ModelSettings({
         writingScope={writingScope}
         onSaved={(fresh) => {
           setSaved(fresh);
+          onWritten?.();
           // The other helper tasks' edits stay drafted; this one is what Hermes now has.
           setDraft((d) => d && { ...d, auxiliary: { ...d.auxiliary, [TEXT_TASK]: draftFrom(fresh).auxiliary[TEXT_TASK] } });
         }}

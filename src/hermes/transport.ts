@@ -472,16 +472,13 @@ export class TitleModelUnavailable extends Error {
  * Whether Hermes's sentence says it has no credentials for a provider, and which. The texts are Hermes's own at
  * `c419cf7` (`agent/auxiliary_client.py` `_resolve_call_client`, `agent/auxiliary_unavailable.py`): a pin to Nous Portal
  * reports `Nous Portal runtime credentials unavailable: <why>`, any other pinned provider `Provider '<slug>' is set in
- * config.yaml but no API key was found` or `no credentials were found`, and a task on `auto` whose main provider can't
- * build `main provider <slug> is unavailable and no fallback_chain …`. A rate limit, a timeout or a busy provider isn't a
- * sign-in problem.
+ * config.yaml but no API key was found` or `no credentials were found`. A rate limit, a timeout, a busy provider, or a
+ * task on `auto` whose main provider Hermes can't build (`No LLM provider configured for task=…`) isn't a sign-in problem.
  */
 export function missingSignIn(why: string): { provider: string } | undefined {
   if (/Nous Portal runtime credentials unavailable/i.test(why) && !/rate.?limit|quota|temporarily|retry/i.test(why)) return { provider: "nous" };
   const pinned = /Provider '([^']+)' is set in config\.yaml but no (?:API key|credentials) (?:was|were) found/.exec(why);
   if (pinned) return { provider: pinned[1] };
-  const main = /main provider (\S+) is unavailable/.exec(why);
-  if (main) return { provider: main[1] };
 }
 
 /** The `TitleModelUnavailable` a failed `llm.oneshot` stands for, if it failed for want of the provider's credentials. */
@@ -504,7 +501,6 @@ export function titleModelUnavailable(why: string, profile: string): TitleModelU
   );
 }
 
-/** The start of a `hermes` command on the server for `profile`: `hermes ` for the default, else `hermes -p <profile> `. */
 export const hermesCommand = (profile: string) => `hermes ${profile && profile !== "default" ? `-p ${profile} ` : ""}`;
 
 /**
@@ -1054,10 +1050,6 @@ export class Hermes {
     return { text, lent: !!sid };
   }
 
-  /**
-   * Writing for this connection (writingModel.ts, ADR 0203): personas and project instructions, for any profile on it.
-   * `pick`: the app's Writing model for the connection, read at each call.
-   */
   writingDesk(pick: () => WritingPick | undefined): WritingDesk {
     return new WritingDesk(
       {

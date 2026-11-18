@@ -14,7 +14,7 @@ import { connect, type Hermes } from "../hermes/transport";
 import { en } from "../i18n/en";
 import { LocaleContext } from "../i18n/locale";
 import { pseudoLocale, untranslated } from "../i18n/pseudo";
-import type { WritingFailed, WritingPick } from "../hermes/writingModel";
+import type { WritingPick } from "../hermes/writingModel";
 import { ProfileForm, type FormResult, type Notice, type ProfilesWiring } from "./ProfileSettings";
 
 beforeAll(() => {
@@ -41,7 +41,6 @@ type Options = {
   models?: boolean;
   /** As Bots mode's New bot: no Set model after a create that didn't set it. */
   noEdit?: boolean;
-  /** The connection's Writing model (ADR 0203); none by default. */
   writingPick?: WritingPick;
 };
 
@@ -65,7 +64,6 @@ async function open({ connected = true, rephrase = true, setup = true, seed = ()
   /** What the form told the app, each time, about an unsaved persona. */
   const personaReports: boolean[] = [];
   const at = { connected, inUse: "default" };
-  const writingFix = vi.fn<(fix: WritingFailed["fix"]) => void>();
   const deleted = vi.fn(async () => {
     if (forgetFails) throw new Error("The drafts folder is read-only.");
   });
@@ -85,7 +83,6 @@ async function open({ connected = true, rephrase = true, setup = true, seed = ()
     ...(rephrase &&
       connected && {
         rephrase: (p) => hermes.writingDesk(() => writingPick).writer(p, "persona"),
-        writingFix,
       }),
     ...(setup && { setup: { skills: hermes.skills, toolsets: hermes.toolsets } }),
     notify: notified,
@@ -115,7 +112,7 @@ async function open({ connected = true, rephrase = true, setup = true, seed = ()
     at.inUse = name;
     rerender(form());
   };
-  return { server, hermes, done, notified, closed, deleted, writingFix, unmount, reconnect, switchProfile, personaReports, user: userEvent.setup() };
+  return { server, hermes, done, notified, closed, deleted, unmount, reconnect, switchProfile, personaReports, user: userEvent.setup() };
 }
 
 const dialog = () => screen.getByRole("dialog");
@@ -230,8 +227,8 @@ describe("Write with AI", () => {
     expect(oneshots(server)).toHaveLength(1);
   });
 
-  it("says why it failed, keeps the persona as typed, and opens the pinned model that failed", async () => {
-    const { user, writingFix } = await open({ seed: (s) => s.signedOut.add("openrouter") });
+  it("says why it failed and names the setting in words, with no link to open Settings behind the form, and keeps the persona as typed", async () => {
+    const { user } = await open({ seed: (s) => s.signedOut.add("openrouter") });
     await user.type(persona(), ROUGH);
     await modelReadDone();
     await user.click(generate());
@@ -239,8 +236,7 @@ describe("Write with AI", () => {
     expect(alert.textContent).toMatch(/^Hermes couldn't rewrite it: default's Text generation model is pinned on the server to openrouter.* Your persona is unchanged\./);
     expect(alert.textContent).not.toMatch(/sk-|api_key=/i);
     expect(persona().value).toBe(ROUGH);
-    await user.click(within(alert).getByRole("button", { name: "Open Text generation" }));
-    expect(writingFix).toHaveBeenCalledWith("text-model");
+    expect(within(alert).queryByRole("button")).toBeNull();
   });
 
   it("writes with the Writing model for a bot with no pin, copying it into the bot's config once", async () => {
@@ -257,7 +253,7 @@ describe("Write with AI", () => {
   });
 
   it("steers to the Writing model when the bot's own model can't write", async () => {
-    const { user, writingFix } = await open({
+    const { user } = await open({
       seed: (s) => {
         s.modelConfig.auxiliary.title_generation = { provider: "auto", model: "" };
         s.signedOut.add("openrouter");
@@ -268,8 +264,7 @@ describe("Write with AI", () => {
     await user.click(generate());
     const alert = await within(dialog()).findByRole("alert");
     expect(alert.textContent).toContain("default writes with its own model, openrouter · glm-5.3-flash, and Hermes couldn't use it for writing. Pick a Writing model in Settings → Model.");
-    await user.click(within(alert).getByRole("button", { name: "Open Writing model" }));
-    expect(writingFix).toHaveBeenCalledWith("writing-model");
+    expect(within(alert).queryByRole("button")).toBeNull();
   });
 
   it("blocks Create only while asking, and creates with the rewritten persona", async () => {
@@ -903,7 +898,6 @@ function hold(server: FakeHermes) {
   return { go: () => go() };
 }
 
-/** Waits for the read of which model writes, which the form makes as it opens. */
 async function modelReadDone() {
   await waitFor(() => expect(hintOf(generate())).not.toBe("Checking which model would write it…"));
 }

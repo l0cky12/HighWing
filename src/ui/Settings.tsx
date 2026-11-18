@@ -422,6 +422,7 @@ export function SettingsScreen({
     },
     [onMemoryDirty],
   );
+  const [modelWrites, setModelWrites] = useState(0);
   const [tab, setTabNow] = useState<Tab>(
     showTextGeneration || writing?.show
       ? "model"
@@ -955,8 +956,6 @@ export function SettingsScreen({
       case "extensions":
         return <ExtensionsSettings skills={extensions?.skills} />;
       case "model":
-        // A draft lives only while this tab is open, and for one profile. The Writing model and Idle compaction are this
-        // computer's, and show whether or not Hermes is reachable.
         return (
           <>
             <ModelSettings
@@ -966,6 +965,7 @@ export function SettingsScreen({
               connected={status === "connected"}
               showTextGeneration={searching ? undefined : showTextGeneration}
               writingScope={writing?.scope}
+              onWritten={() => setModelWrites((n) => n + 1)}
             />
             {writing && (
               <WritingModelSettings
@@ -974,6 +974,7 @@ export function SettingsScreen({
                 profiles={listProfiles ?? (async () => [profile])}
                 catalog={() => modelSettings.providers()}
                 show={searching ? undefined : writing.show}
+                reread={modelWrites}
               />
             )}
             <IdleCompactSettings />

@@ -447,11 +447,10 @@ export class FakeHermes {
   oneshotAnswer: string | ((call: { instructions: string; input: string; task: string; model: string }) => string) = "A new title";
   /** Every `llm.oneshot` that reached a model: the profile it named, the task it sent, and the model that task ran on. */
   readonly oneshotCalls: { profile: string; task: string; model: string }[] = [];
-  /** Every `PUT /api/config` body, with the profile it named. */
   readonly configWrites: { profile: string; config: unknown }[] = [];
   /**
    * Providers Hermes on the server has no sign-in or key for: an `llm.oneshot` whose task runs on one fails, in
-   * Hermes's words for a pinned provider, or for a task on `auto` its words for an unusable main provider.
+   * Hermes's words for a pinned provider, or for a task on `auto` its words when the main provider builds no client.
    */
   signedOut = new Set<string>();
   /**
@@ -1322,7 +1321,7 @@ export class FakeHermes {
       const answer = () => {
         if (this.oneshotFailure !== undefined) return this.fail(r.id, 5030, `one-shot generation failed: ${this.oneshotFailure}`);
         if (this.signedOut.has(runsOn.provider))
-          return this.fail(r.id, 5030, `one-shot generation failed: ${runsOn.main ? mainUnavailableText(task, runsOn.provider) : signedOutText(runsOn.provider)}`);
+          return this.fail(r.id, 5030, `one-shot generation failed: ${runsOn.main ? mainUnavailableText(task) : signedOutText(runsOn.provider)}`);
         this.oneshotCalls.push({ profile, task, model: runsOn.model });
         const a = this.oneshotAnswer;
         const call = { instructions: String(r.params.instructions ?? ""), input: String(r.params.input ?? ""), task, model: runsOn.model };
@@ -3622,9 +3621,13 @@ function signedOutText(provider: string): string {
   return `Provider '${provider}' is set in config.yaml but no API key was found.`;
 }
 
-/** How Hermes refuses a task on `auto` whose main provider it can't use (seen in the live `agent.log`). */
-function mainUnavailableText(task: string, provider: string): string {
-  return `Auxiliary ${task}: main provider ${provider} is unavailable and no fallback_chain / fallback_providers is configured — refusing to guess another`;
+/**
+ * How Hermes refuses a task on `auto` whose main provider it can't use: `_resolve_call_client` raises this once the main
+ * route builds no client (`agent/auxiliary_client.py` at `ae2a81c`); the "main provider … is unavailable" line before it
+ * goes only to `agent.log`.
+ */
+function mainUnavailableText(task: string): string {
+  return `No LLM provider configured for task=${task} provider=auto. Run: hermes setup`;
 }
 
 /** `SessionDB.session_unread`: activity postdates the read watermark, and `null` means read. */

@@ -2,7 +2,7 @@
 // instructions. One stateless `llm.oneshot` per call, which takes no model: Hermes runs `auxiliary.<task>` of the
 // profile's config. So which model writes is decided here, as which `task` to send and, for the app's Writing model,
 // one config key this app keeps in step. Precedence: a model pinned on the server for the bot, then the app's Writing
-// model, then the bot's own main model. Nothing else passes a `task` to `llm.oneshot` for writing.
+// model, then the bot's own main model.
 import { INSTRUCTIONS_TASK, TEXT_TASK, WRITING_TASK } from "./modelSettings";
 import { RpcError, missingSignIn } from "./transport";
 
@@ -37,7 +37,6 @@ export type WritingFacts = {
   mirror?: Model & { baseUrl: string };
 };
 
-/** The precedence. The mirror is deliberately not an input: a stale one never decides anything. */
 export function writingRoute(facts: WritingFacts, kind: WritingKind, pick: WritingPick | undefined): WritingRoute {
   if (kind === "instructions" && facts.instructions) return { via: "pin", pin: "instructions", ...facts.instructions };
   if (facts.text) return { via: "pin", pin: "text", ...facts.text };
@@ -60,10 +59,8 @@ function taskOf(route: WritingRoute): string {
 const mirrorIsCurrent = (mirror: WritingFacts["mirror"], pick: WritingPick) =>
   !!mirror && mirror.provider === pick.provider && mirror.model === pick.model && mirror.baseUrl === (pick.apiUrl ?? "");
 
-/** One prompt, as personaRephrase.ts and instructionsAI.ts build it. */
 export type WritingCall = { instructions: string; input: string; maxTokens: number };
 
-/** Hermes's text, and the route it ran on. */
 export type Written = { text: string; route: WritingRoute };
 
 /**
@@ -102,7 +99,6 @@ export class WritingFailed extends Error {
   }
 }
 
-/** What the desk needs from the server. */
 export type WritingPort = {
   /** `GET /api/model/auxiliary` and `GET /api/config` for `profile`. */
   facts(profile: string): Promise<WritingFacts>;
@@ -115,7 +111,6 @@ export type WritingPort = {
 /** One bot's line in Settings → Model → Writing model. A bot whose models couldn't be read keeps its reason. */
 export type BotWriting = { profile: string } & ({ route: WritingRoute } | { unread: string });
 
-/** What the writing screens hold: who writes, where a call would run now, and the call. */
 export type Writer = {
   profile: string;
   kind: WritingKind;
@@ -153,9 +148,8 @@ export class WritingDesk {
   }
 
   /**
-   * Reads fresh, so no cached route can disagree with the server or the setting. The mirror is written only on the
-   * `app` route and only when it differs, so a second call writes nothing. A failed write fails the call: Hermes would
-   * otherwise run the unset key on the main model while the label named the Writing model.
+   * A failed write fails the call: Hermes would otherwise run the unset key on the main model while the label named the
+   * Writing model.
    */
   private async write(profile: string, kind: WritingKind, call: WritingCall): Promise<Written> {
     const facts = await this.port.facts(profile);

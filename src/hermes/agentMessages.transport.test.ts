@@ -1,7 +1,4 @@
 // @vitest-environment jsdom
-// Bot messaging through the real transport against FakeHermes as Hermes 0.23.2 (ADR 0206): once the switch is on, one
-// bot messages another with Hermes's own `message_agent`, and each Bot Chat shows its side of it, live, from history
-// and from the Saved copy. The app sends nothing of the delivery itself.
 import { afterEach, describe, expect, it } from "vitest";
 import { agentSend } from "./agentMessages";
 import { BOT_CHAT_TITLE } from "./bots";
@@ -23,7 +20,6 @@ afterEach(async () => {
   localStorage.clear();
 });
 
-/** A headless install: the default profile and beta, each with a Bot Chat, and no Bot Mode block anywhere. */
 function headless() {
   const server = new FakeHermes();
   server.sessions = [row("alpha-bot", 1, { title: BOT_CHAT_TITLE, hidden: true }), row("side", 2, { title: "Disk usage" })];
@@ -110,11 +106,9 @@ describe("One bot messages another", () => {
       expect(list.at(-1)).toMatchObject({ kind: "assistant", text: REPLIES.sender });
     };
     shown(items());
-    // Live, the call carries Hermes's answer to it.
     const call = items().find((i) => i.kind === "tool");
     expect(call?.kind === "tool" && agentSend(call)).toEqual({ to: "@beta", text: ASK, ack: { kind: "queued", deliveryId: "delivery-1", to: "@beta" } });
     shown(await (await botChat(await signedIn(server, "lena@reload"), "default"))());
-    // The app sent nothing for the delivery: Hermes did it.
     expect(server.requests.filter((r) => r.method === "prompt.submit")).toEqual([]);
   });
 
@@ -154,7 +148,6 @@ describe("One bot messages another", () => {
     const exported = chatJson(chat, new Date("2026-11-17T10:00:00Z"));
     const [message] = (JSON.parse(exported) as { messages: Record<string, unknown>[] }[])[0].messages;
     expect(message).toMatchObject({ role: "user", display_kind: "internal_notification", content: `Message from 🤖 hermes (@hermes): ${ASK}` });
-    // Markdown has no place for the sender but the title's.
     expect(chatMarkdown(chat, new Date("2026-11-17T10:00:00Z"))).toContain(`**Returned:** Message from hermes (@hermes)\n\n${ASK}`);
     const [imported] = (await planImport("jsonl", "beta.json", exported)).chats[0].session.messages as Record<string, unknown>[];
     expect(returnedItem(String(imported.content), imported.display_kind, undefined)).toEqual({ body: ASK, process: false, agent: FROM.agent });

@@ -23,7 +23,6 @@ export function agentTurnOf(v: unknown): AgentTurn | undefined {
 
 export type Returned = { title?: string; body: string; process: boolean; agent?: AgentTurn };
 
-/** The display kinds that are a Returned result, and whether each one's body is a process's log. */
 const KINDS: Record<string, boolean> = { async_delegation_complete: false, process_complete: true, internal_notification: false };
 
 /** `display_metadata` as an object: Hermes sends it as one, or as its JSON text from the stored row. */
@@ -95,7 +94,6 @@ export function returnedItem(text: string, displayKind: unknown, metadata: unkno
     return { ...(title && { title }), body: message?.text || (resultBody(notice) ?? notice.trim()), process: false, agent: { kind: "from", ...(message && { teammate: message.from }) } };
   }
   const answer = displayKind === "process_complete" ? deliveryAnswer(notice) : undefined;
-  // With a reply, Hermes's sentence for the outcome is the title. Without one it is all there is to read.
   if (answer) return { ...(answer.reply && { title: answer.outcome }), body: answer.reply ?? answer.outcome, process: false, agent: { kind: "answer", deliveryId: answer.deliveryId, status: answer.status } };
   return { ...(title && { title }), body: resultBody(notice) ?? notice.trim(), process: KINDS[displayKind] };
 }

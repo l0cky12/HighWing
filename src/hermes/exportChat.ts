@@ -357,7 +357,6 @@ function block(i: Item, attachments: boolean): string[] {
       return [["**You:**", message(i.text), ...files].filter(Boolean).join("\n\n")];
     }
     case "returned": {
-      // A teammate's message keeps who sent it in the title's place, which is all Markdown has for it.
       const from = i.agent?.kind === "from" ? i.agent.teammate : undefined;
       const title = i.title ?? (from && `Message from ${from.name} (@${from.handle})`);
       return [[`**Returned${i.process ? " (process)" : ""}:**${title ? ` ${oneLine(title)}` : ""}`, i.process ? fenced(i.body) : message(i.body)].filter(Boolean).join("\n\n")];

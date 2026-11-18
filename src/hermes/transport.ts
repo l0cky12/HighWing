@@ -2458,7 +2458,6 @@ export class Hermes {
     } catch (e) {
       failure = profileFailure(e, "botLook");
     }
-    // What Hermes has now decides, so a write whose answer was lost still counts once the roster shows it.
     try {
       const now = agentMessaging((await this.readBotRoster()).bots);
       if (now.on === on) return { kind: "saved", now };

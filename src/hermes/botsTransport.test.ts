@@ -624,7 +624,6 @@ describe("Editing a bot (ADR 0189)", () => {
 });
 
 describe("Bot messaging's switch (ADR 0206)", () => {
-  /** Signed in to a headless install: no profile has a Bot Mode block, and each has a Bot Chat. */
   const headless = (setup: (server: FakeHermes) => void = () => {}) =>
     signedIn(new FakeHermes(), (server) => {
       server.profileMeta = {};
@@ -643,7 +642,6 @@ describe("Bot messaging's switch (ADR 0206)", () => {
     expect(server.messageAgentOffered("default-bot")).toBe(true);
     expect(server.messageAgentOffered("scribe-bot")).toBe(true);
     expect(server.messageAgentOffered("scribe-side")).toBe(false);
-    // The roster every view shows came from the save's own read-back.
     expect(hermes.getSnapshot().bots?.roster.map((b) => b.block)).toEqual(["empty", "none"]);
     expect(rpc(server, "profiles.list")).toHaveLength(lists + 2);
   });
@@ -697,7 +695,6 @@ describe("Bot messaging's switch (ADR 0206)", () => {
   it("gives up after three conflicts in a row", async () => {
     const { server, hermes } = await headless((s) => {
       s.profileMeta = { default: { ui_meta: { "hermes-bots": {} } } };
-      // Another client rewrites the empty block each time, which moves its revision and leaves it empty.
       s.beforeConfigure = () => s.writeBotAsOtherClient("default", {});
     });
     expect(await hermes.setAgentMessaging(false)).toEqual({ kind: "failed", failure: { kind: "contended" } });

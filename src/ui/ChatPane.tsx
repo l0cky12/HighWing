@@ -90,7 +90,6 @@ const toldWhy = new Set<string>();
 
 type ToolItem = Extract<Item, { kind: "tool" }>;
 type ThinkingItem = Extract<Item, { kind: "thinking" }>;
-/** A `message_agent` call (ADR 0206): out of the tool group, where the owner reads what the bot told its teammate. */
 type SentBlock = { kind: "sent"; id: string; tool: ToolItem; send: AgentSend };
 type Block = { kind: "tools"; id: string; tools: ToolItem[] } | SentBlock | Exclude<Item, ToolItem>;
 const isItem = (b: Block): b is Exclude<Item, ToolItem> => b.kind !== "tools" && b.kind !== "sent";
@@ -107,8 +106,7 @@ function toBlocks(items: Item[], side: SideQuestion[] = []): (Block | SideBlock)
   for (const it of items) {
     const last = out[out.length - 1];
     if (it.kind === "tool") {
-      // A call stopped before Hermes answered it may have sent nothing, so it stays a tool row.
-      const send = it.status === "stopped" ? undefined : agentSend(it);
+      const send = agentSend(it);
       if (send) out.push({ kind: "sent", id: it.id, tool: it, send });
       else if (last?.kind === "tools") last.tools.push(it);
       else out.push({ kind: "tools", id: `g-${it.id}`, tools: [it] });
@@ -1615,11 +1613,6 @@ function Thought({ item, live, query }: { item: ThinkingItem; live: boolean; que
   );
 }
 
-/**
- * A card on Hermes's side of the transcript: open from the start, so the owner sees what it holds, and closed or opened
- * again by its header. `tips`: the header's tooltip, open and closed. `note`: a few words beside the title. `foot`
- * shows whether it is open or closed.
- */
 function TurnCard({
   kind = "",
   icon,
@@ -1645,11 +1638,6 @@ function TurnCard({
   );
 }
 
-/**
- * A Returned result (ADR 0175). A subagent's answer shows as a reply does; a process's output as a log. With Bot
- * messaging (ADR 0206) it is a teammate's message to this bot, or the answer to one this bot sent: who it is from,
- * or Hermes's own sentence for how the delivery ended, leads the card. Names and Hermes's sentences are data.
- */
 function ReturnedCard({ item, query, date }: { item: Extract<Item, { kind: "returned" }>; query: string; date: boolean }) {
   const l = useLocale().chat;
   const { agent } = item;
@@ -1677,10 +1665,6 @@ function ReturnedCard({ item, query, date }: { item: Extract<Item, { kind: "retu
   );
 }
 
-/**
- * A message this bot sent a teammate with Hermes's `message_agent` (ADR 0206), as a card with the message in it.
- * It carries the call's id, so Jump to call lands on it as on a tool row.
- */
 function SentCard({ block, query }: { block: SentBlock; query: string }) {
   const l = useLocale().chat.agent;
   const { tool, send } = block;

@@ -280,7 +280,7 @@ export const es: Catalogue = {
       turnedOn: "Los bots ya pueden escribirse entre sí desde sus Bot Chats.",
       turnedOff: "Los bots ya no pueden escribirse entre sí.",
       failed: (why) => `La mensajería entre bots no cambió. ${why}`,
-      tooOld: "Este Hermes es anterior a la versión 0.23, la primera en la que los bots pueden escribirse entre sí.",
+      tooOld: "Este Hermes es anterior a la versión 0.21.6, la más antigua que se sabe que permite que los bots se escriban entre sí.",
     },
     editTitle: (name) => `Editar bot: ${name}`,
     openFailed: (name, why) => `No se pudo abrir ${name}: ${why}`,

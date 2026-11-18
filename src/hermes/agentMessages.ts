@@ -41,10 +41,10 @@ function ackOf(result: string | undefined): SendAck | undefined {
 /**
  * The message to a teammate a tool call is, or undefined for any other call. The tool's name decides. A call with
  * `cancel` withdraws an earlier request and stays a tool row, as does one with no target or no message, which Hermes
- * refuses.
+ * refuses, and one stopped before Hermes answered, which may have sent nothing.
  */
-export function agentSend(tool: { name: string; args?: Record<string, unknown>; result?: string }): AgentSend | undefined {
-  if (tool.name !== MESSAGE_AGENT_TOOL || text(tool.args?.cancel)) return undefined;
+export function agentSend(tool: { name: string; status: string; args?: Record<string, unknown>; result?: string }): AgentSend | undefined {
+  if (tool.name !== MESSAGE_AGENT_TOOL || tool.status === "stopped" || text(tool.args?.cancel)) return undefined;
   const targets = text(tool.args?.target).split(",").map((t) => t.trim().replace(/^@/, "")).filter(Boolean);
   const message = text(tool.args?.message);
   if (!targets.length || !message) return undefined;

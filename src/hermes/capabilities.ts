@@ -841,18 +841,20 @@ export function approvalsFrom(result: unknown): Pick<Capability, "state" | "why"
  */
 const SHARED_CHATS_SINCE = [0, 21, 3];
 
-/** The first release whose Bot Chats have `message_agent` (`tools/bot_mode_dm.py`), the tool Bot messaging turns on (ADR 0206). */
-const BOT_MESSAGING_SINCE = [0, 23, 0];
+/**
+ * The oldest Hermes release known to have `message_agent` behind the Bot Mode block gate (`tools/bot_mode_dm.py`
+ * `message_agent_authorized`): every tag from v0.21.6 to v0.23.2 has it. No older tag was available to check.
+ */
+const BOT_MESSAGING_SINCE = [0, 21, 6];
 
-/** Hermes's version against `since`: below zero when older. Undefined when it names none, as a git checkout doesn't. */
-function versionAgainst(f: ServerFacts, since: readonly number[]): number | undefined {
+function atLeast(f: ServerFacts, since: readonly number[]): boolean | undefined {
   const v = /^v?(\d+)\.(\d+)\.(\d+)/.exec(f.version ?? f.build ?? "");
   if (!v) return undefined;
   for (let i = 0; i < 3; i++) {
     const d = Number(v[i + 1]) - since[i];
-    if (d) return d;
+    if (d) return d > 0;
   }
-  return 0;
+  return true;
 }
 
 /**
@@ -861,14 +863,10 @@ function versionAgainst(f: ServerFacts, since: readonly number[]): number | unde
  * is read.
  */
 export function sharesChats(f: ServerFacts): boolean {
-  return !!f.declinesNotShown || (versionAgainst(f, SHARED_CHATS_SINCE) ?? -1) >= 0;
+  return !!f.declinesNotShown || (atLeast(f, SHARED_CHATS_SINCE) ?? false);
 }
 
-/**
- * Whether Hermes says it is older than `message_agent`. Such a Hermes still stores a Bot Mode block, so nothing it
- * answers would show that its bots can't message each other. A Hermes that names no version isn't known to be older.
- */
-export const predatesBotMessaging = (f: ServerFacts) => (versionAgainst(f, BOT_MESSAGING_SINCE) ?? 0) < 0;
+export const predatesBotMessaging = (f: ServerFacts) => atLeast(f, BOT_MESSAGING_SINCE) === false;
 
 /** What a failed `client.capabilities` means for Approvals. A Hermes without it is older than the requests this app reads. */
 export function approvalsFailed(e: unknown): Pick<Capability, "state" | "why"> {

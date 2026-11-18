@@ -1,11 +1,9 @@
 // @vitest-environment jsdom
-// Bot messaging (ADR 0206) in the real app against FakeHermes as Hermes 0.23.2 on a headless gateway: the switch above
-// the bots turns Hermes's `message_agent` on, shown only as read back, and each Bot Chat shows its side of a message
-// between two bots as a card on Hermes's side. Every new word comes from the catalogue. All data is synthetic.
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { BOT_CHAT_TITLE } from "../hermes/bots";
+import { CHECK_DELAY_MS } from "../hermes/capabilities";
 import { FakeHermes, row } from "../hermes/fakeHermes";
 import { memoryCache } from "../hermes/memoryCache";
 import { connect, type Hermes } from "../hermes/transport";
@@ -25,7 +23,6 @@ afterEach(async () => {
   cleanup();
   await Promise.all(running.splice(0).map((h) => h.close()));
   localStorage.clear();
-  // No write here may go without a check against another client's (ADR 0189).
   for (const server of servers.splice(0)) expect(server.uncheckedConfigures()).toEqual([]);
 });
 
@@ -33,7 +30,6 @@ const ASK = "What is the **backup window**?";
 const REPLIES = { recipient: "The window is 02:00 to 03:00.", sender: "Quill says 02:00 to 03:00." };
 let launches = 0;
 
-/** Signed in to a headless Hermes 0.23.2: the default profile and Quill, each with a Bot Chat, and no Bot Mode block. */
 async function launch(setup: (server: FakeHermes) => void = () => {}, locale?: Locale) {
   const server = new FakeHermes();
   server.health = { ...server.health, version: "0.23.2", displayVersion: "0.23.2" };
@@ -61,7 +57,6 @@ const toast = () => document.querySelector<HTMLElement>(".toast")?.textContent;
 const configures = (server: FakeHermes) => server.requests.filter((r) => r.method === "profiles.configure");
 const botRow = (profile: string) => document.querySelector<HTMLElement>(`.sb-bots .bots-row[data-profile="${profile}"] .bots-open`)!;
 const cards = () => Array.from(document.querySelectorAll<HTMLElement>(".msg.returned"));
-/** A card's header and what it holds. The stored time under it is drawn by the pane, which isn't converted yet. */
 const said = (card: HTMLElement) => Array.from(card.querySelectorAll(".returned-head, .returned-why, .returned-body")).flatMap(untranslated);
 const pinned = (s: FakeHermes) => void (s.profileMeta.quill = { ui_meta: { "hermes-bots": { title: "Quill", pinned: true } } });
 
@@ -76,7 +71,6 @@ describe("Bot messaging's switch", () => {
     server.beforeConfigure = () => (whileSaving = [toggle().getAttribute("aria-checked"), toggle().disabled]);
     await user.click(toggle());
     await waitFor(() => expect(toggle().getAttribute("aria-checked")).toBe("true"));
-    // Still off, and busy, while the write was on its way.
     expect(whileSaving).toEqual(["false", true]);
     expect(server.profileMeta.default?.ui_meta).toEqual({ "hermes-bots": {} });
     expect(server.messageAgentOffered("hermes-bot")).toBe(true);
@@ -100,11 +94,10 @@ describe("Bot messaging's switch", () => {
     expect(server.profileMeta.quill?.ui_meta).toEqual({ "hermes-bots": { title: "Quill", pinned: true } });
   });
 
-  it("is off, with why, on a Hermes older than 0.23", async () => {
-    const { server, user } = await launch((s) => (s.health = { ...s.health, version: "0.22.9", displayVersion: "0.22.9" }));
-    // The app reads Hermes's version a moment after connecting (`CHECK_DELAY_MS`).
-    await waitFor(() => expect(toggle().disabled).toBe(true), { timeout: 5_000 });
-    expect(tip()).toBe("This Hermes is older than 0.23, which is the first with a way for bots to message each other.");
+  it("is off, with why, on a Hermes older than 0.21.6", async () => {
+    const { server, user } = await launch((s) => (s.health = { ...s.health, version: "0.21.5", displayVersion: "0.21.5" }));
+    await waitFor(() => expect(toggle().disabled).toBe(true), { timeout: CHECK_DELAY_MS * 2 });
+    expect(tip()).toBe("This Hermes is older than 0.21.6, the oldest known to let bots message each other.");
     await user.click(toggle());
     expect(configures(server)).toEqual([]);
   });
@@ -129,7 +122,6 @@ describe("Bot messaging's switch", () => {
   });
 });
 
-/** Switches it on, opens the default bot's Bot Chat, has it message Quill, and waits for the answer's reply. */
 async function delivered(locale?: Locale) {
   const launched = await launch(undefined, locale);
   const { server, hermes, user } = launched;
@@ -157,7 +149,6 @@ describe("A message between two bots, in their Bot Chats", () => {
     expect(answer.matches(".process")).toBe(false);
     expect(document.body.textContent).not.toContain("bot_mode_dm.py");
     expect(Array.from(document.querySelectorAll(".msg.user")).map((m) => m.textContent)).toEqual([expect.stringContaining("Ask Quill what the backup window is.")]);
-    // The card folds by its header, as a Returned result does.
     const head = within(sent).getByRole("button", { name: /Messaged @quill/ });
     await user.click(head);
     expect(sent.querySelector(".returned-body")).toBeNull();

@@ -296,7 +296,7 @@ export const en = {
       turnedOn: "Bots can now message each other from their Bot Chats.",
       turnedOff: "Bots can no longer message each other.",
       failed: (why: string) => `Bot messaging wasn't changed. ${why}`,
-      tooOld: "This Hermes is older than 0.23, which is the first with a way for bots to message each other.",
+      tooOld: "This Hermes is older than 0.21.6, the oldest known to let bots message each other.",
     },
     editTitle: (name: string) => `Edit bot: ${name}`,
     openFailed: (name: string, why: string) => `Couldn't open ${name}: ${why}`,

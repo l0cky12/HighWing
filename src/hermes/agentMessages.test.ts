@@ -84,25 +84,26 @@ describe("A message_agent call", () => {
   const args = { target: "beta", message: "PING-C-1794974808162 what is 2+2?" };
 
   it("is a message to the teammate it names", () => {
-    expect(agentSend({ name: "message_agent", args })).toEqual({ to: "@beta", text: args.message });
-    expect(agentSend({ name: "message_agent", args: { target: "beta, @gamma", message: "Status?" } })?.to).toBe("@beta, @gamma");
+    expect(agentSend({ name: "message_agent", status: "done", args })).toEqual({ to: "@beta", text: args.message });
+    expect(agentSend({ name: "message_agent", status: "done", args: { target: "beta, @gamma", message: "Status?" } })?.to).toBe("@beta, @gamma");
   });
 
   it("carries Hermes's answer once the call has one", () => {
-    expect(agentSend({ name: "message_agent", args, result: ACK })).toEqual({ to: "@beta", text: args.message, ack: { kind: "queued", deliveryId: ID, to: "@beta" } });
+    expect(agentSend({ name: "message_agent", status: "done", args, result: ACK })).toEqual({ to: "@beta", text: args.message, ack: { kind: "queued", deliveryId: ID, to: "@beta" } });
     const refused = JSON.stringify({ error: "This install is not Bot-Mode-managed.", reason: "not_managed" });
-    expect(agentSend({ name: "message_agent", args, result: refused })?.ack).toEqual({ kind: "refused", why: "This install is not Bot-Mode-managed." });
-    expect(agentSend({ name: "message_agent", args, result: "not json" })).toEqual({ to: "@beta", text: args.message });
+    expect(agentSend({ name: "message_agent", status: "done", args, result: refused })?.ack).toEqual({ kind: "refused", why: "This install is not Bot-Mode-managed." });
+    expect(agentSend({ name: "message_agent", status: "done", args, result: "not json" })).toEqual({ to: "@beta", text: args.message });
   });
 
-  it("stays a tool call when it withdraws a request, names nobody or says nothing", () => {
-    expect(agentSend({ name: "message_agent", args: { target: "beta", cancel: ID } })).toBeUndefined();
-    expect(agentSend({ name: "message_agent", args: { message: "Hello" } })).toBeUndefined();
-    expect(agentSend({ name: "message_agent", args: { target: "beta" } })).toBeUndefined();
-    expect(agentSend({ name: "message_agent" })).toBeUndefined();
+  it("stays a tool call when it withdraws a request, names nobody, says nothing or was stopped", () => {
+    expect(agentSend({ name: "message_agent", status: "done", args: { target: "beta", cancel: ID } })).toBeUndefined();
+    expect(agentSend({ name: "message_agent", status: "done", args: { message: "Hello" } })).toBeUndefined();
+    expect(agentSend({ name: "message_agent", status: "done", args: { target: "beta" } })).toBeUndefined();
+    expect(agentSend({ name: "message_agent", status: "done" })).toBeUndefined();
+    expect(agentSend({ name: "message_agent", status: "stopped", args: { target: "beta", message: "Hello" } })).toBeUndefined();
   });
 
   it("is nothing for any other tool, whatever its arguments", () => {
-    expect(agentSend({ name: "terminal", args })).toBeUndefined();
+    expect(agentSend({ name: "terminal", status: "done", args })).toBeUndefined();
   });
 });

@@ -1,4 +1,5 @@
 import type { InboxKind } from "./inbox";
+import { EVERYONE_HANDLES, mentionedHandles } from "./roomMentions";
 import { isObj } from "./values";
 
 export const SEATS_MIN = 2;
@@ -11,7 +12,6 @@ export type RoomDraft = { readonly id: string; readonly name: string; readonly s
 export type DraftProblem = { problem: "name" | "tooFew" | "tooMany" | "handleClash" };
 
 export const ROOM_NAME_MAX = 200;
-const RESERVED_HANDLES = new Set(["all", "everyone"]);
 
 export function roomDraft(id: string, name: string, bots: readonly { profile: string; name: string }[]): RoomDraft | DraftProblem {
   const named = name.trim();
@@ -20,7 +20,7 @@ export function roomDraft(id: string, name: string, bots: readonly { profile: st
   if (bots.length > SEATS_MAX) return { problem: "tooMany" };
   const seats = bots.map((b): Seat => ({ id: b.profile, profile: b.profile, handle: b.profile, name: b.name }));
   const handles = new Set(seats.map((s) => s.handle.toLowerCase()));
-  if (handles.size !== seats.length || [...handles].some((h) => RESERVED_HANDLES.has(h))) return { problem: "handleClash" };
+  if (handles.size !== seats.length || [...handles].some((h) => EVERYONE_HANDLES.has(h))) return { problem: "handleClash" };
   return { id, name: named, seats } as unknown as RoomDraft;
 }
 
@@ -79,15 +79,12 @@ export function parseLog(answer: unknown): { events: LogEvent[]; cursor: number;
   return { events: events as unknown as LogEvent[], cursor, latestSeq: int(a.latest_seq) ?? cursor, hasMore: a.has_more === true };
 }
 
-const MENTION = /@([A-Za-z0-9][A-Za-z0-9._:-]*)/g;
-const mentions = (text: string): string[] => [...text.matchAll(MENTION)].map((m) => m[1].toLowerCase());
-
 export function asksOwner(text: string, seats: readonly Seat[]): boolean {
-  const named = mentions(text);
+  const named = mentionedHandles(text);
   if (named.some((h) => h === "user" || h === "owner" || h === "you")) return true;
   const last = text.trim().split(/\n\s*\n/).pop() ?? "";
   const handles = new Set(seats.map((s) => s.handle.toLowerCase()));
-  return last.trimEnd().endsWith("?") && !mentions(last).some((h) => handles.has(h) || RESERVED_HANDLES.has(h));
+  return last.trimEnd().endsWith("?") && !mentionedHandles(last).some((h) => handles.has(h) || EVERYONE_HANDLES.has(h));
 }
 
 const PAUSE: Record<string, PauseReason> = { max_rounds: "rounds", max_messages: "messages" };
@@ -176,7 +173,7 @@ export function carryOnDraft(log: RoomLog, seats: readonly Seat[]): string {
   const round = Math.max(-1, ...replies.map((r) => r.round));
   const last = replies.filter((r) => r.round === round);
   const byHandle = new Map(seats.map((s) => [s.handle.toLowerCase(), s]));
-  const named = last.flatMap((r) => mentions(r.text)).filter((h) => byHandle.has(h));
+  const named = last.flatMap((r) => mentionedHandles(r.text)).filter((h) => byHandle.has(h));
   const spoke = last.flatMap((r) => seats.find((s) => s.id === r.seat)?.handle.toLowerCase() ?? []);
   const handles = [...new Set(named.length ? named : spoke)];
   return handles.map((h) => `@${byHandle.get(h)!.handle} `).join("");

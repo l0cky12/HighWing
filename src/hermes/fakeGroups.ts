@@ -60,6 +60,26 @@ export const GROUPS_BUILDS = {
   bf0203a: { absent: false, continues: false, activityDetail: false, saysPush: false, pushes: false, worker: true },
 } as const satisfies Record<string, GroupsBuild>;
 
+/**
+ * Hermes's `resolve_mentions` (gateway/hosted_room_discussion.py), ported from its source and kept apart from the
+ * client's reader in roomMentions.ts: the stand-in must not agree with the client by construction. Both are held to
+ * the vectors in roomMentionVectors.json.
+ */
+export function resolveMentions<M extends { handle: string }>(texts: readonly string[], members: readonly M[], defaultAll: boolean): M[] {
+  const byHandle = new Set(members.map((m) => casefold(m.handle)));
+  const mentioned = new Set<string>();
+  let everyone = false;
+  for (const text of texts) {
+    for (const match of text.matchAll(MENTION)) {
+      const handle = casefold(match[1]);
+      if (handle === "all" || handle === "everyone") everyone = true;
+      else if (byHandle.has(handle)) mentioned.add(handle);
+    }
+  }
+  if (everyone || (defaultAll && !mentioned.size)) return [...members];
+  return members.filter((m) => mentioned.has(casefold(m.handle)));
+}
+
 export class FakeGroups {
   build: GroupsBuild = { ...GROUPS_BUILDS.ae2a81cc };
   script: (turn: TurnContext) => FakeTurn = (t) => ({ say: `${t.name} here.` });
@@ -252,7 +272,7 @@ export class FakeGroups {
     }
     const discussion: Discussion = { id, thread: payload.thread_id, text: payload.text, round: 0, continues: 0, messages: 0, said: [], next: [], status: "running" };
     room.discussions.push(discussion);
-    this.queue(room, discussion, this.mentioned([payload.text], room.members, true));
+    this.queue(room, discussion, resolveMentions([payload.text], room.members, true));
     this.changed(room);
     return answer(event, false);
   }
@@ -320,12 +340,6 @@ export class FakeGroups {
     return { tombstone: { room_id: room.room_id, disbanded_at: room.disbanded_at } };
   }
 
-  private mentioned(texts: readonly string[], members: readonly Member[], defaultAll: boolean): Member[] {
-    const named = new Set(texts.flatMap((t) => [...t.matchAll(MENTION)].map((m) => casefold(m[1]))));
-    const some = members.filter((m) => named.has(casefold(m.handle)));
-    return named.has("all") || named.has("everyone") || (defaultAll && !some.length) ? [...members] : some;
-  }
-
   private queue(room: Room, discussion: Discussion, members: readonly Member[]) {
     discussion.said = [];
     for (const member of members) room.tasks.push({ id: `task-${++this.ids}`, discussion, member, round: discussion.round, status: "queued" });
@@ -379,7 +393,7 @@ export class FakeGroups {
   }
 
   private decide(room: Room, d: Discussion) {
-    const next = this.mentioned(d.said, room.members, false);
+    const next = resolveMentions(d.said, room.members, false);
     const budget = d.continues + 1;
     const activity = (status: string, reason_code: string) =>
       this.append(room, "room.activity", { kind: "gateway", id: GATEWAY }, { status, reason_code, thread_id: d.thread, discussion_event_id: d.id }, `dactivity:${d.id}:${reason_code}${d.continues ? `:c${d.continues}` : ""}`);

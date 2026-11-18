@@ -8,14 +8,13 @@ import { cuFixture, type CuFixture } from "../hermes/cuFixtures";
 import { FakeHermes } from "../hermes/fakeHermes";
 import type { ApprovalChoice, Chat, Item } from "../hermes/model";
 import type { ScreenState } from "../hermes/screenControl";
-import { ScreenshotDesk, type ScreenshotApi } from "../hermes/screenshots";
 import { connect, type Hermes } from "../hermes/transport";
 import { ChatPane } from "./ChatPane";
 import { ScreenDeskProvider, type ScreenDesk } from "./ComputerUseCard";
+import { AttachmentDesk } from "../hermes/attachmentDesk";
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }));
 
-const noScreenshots: ScreenshotApi = { capture: () => Promise.reject(new Error("no screenshots in this test")), discard: async () => {} };
 const running: Hermes[] = [];
 beforeAll(() => {
   Element.prototype.scrollIntoView = () => {};
@@ -59,7 +58,7 @@ function pane(chat: Chat, desk: ScreenDesk = {}, onAnswer: (id: string, c: Appro
         status="connected"
         draft=""
         draftKey="draft"
-        screenshots={new ScreenshotDesk(noScreenshots)}
+        desk={new AttachmentDesk({ discard: async () => {} })}
         onDraft={() => {}}
         onDraftStep={() => undefined}
         onRetry={() => {}}

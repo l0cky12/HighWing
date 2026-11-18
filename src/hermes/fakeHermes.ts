@@ -310,7 +310,15 @@ const FS_MIME: Record<string, string> = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 };
 
+declare global {
+  var hermesWireTap: ((line: string) => void) | undefined;
+}
+
 export class FakeHermes {
+  private readonly tapOfTestThatMadeIt = globalThis.hermesWireTap;
+  private onWire(line: string) {
+    (this.tapOfTestThatMadeIt ?? globalThis.hermesWireTap)?.(line);
+  }
   /** Every request the client sent, in order. */
   readonly requests: Request[] = [];
   readonly restRequests: RestRequest[] = [];
@@ -1931,6 +1939,7 @@ export class FakeHermes {
     this.answersRequests = false;
     const restCall = (method: RestMethod, pathAndQuery: string, body?: string) => this.restCall(method, pathAndQuery, body);
     const send = async (text: string) => {
+      this.onWire(text);
       if (this.failSend !== undefined) throw new Error(this.failSend);
       const req = JSON.parse(text) as Request | Response;
       if (!("method" in req)) {
@@ -2024,6 +2033,7 @@ export class FakeHermes {
 
   /** One dashboard REST call as the Rust relay makes it: the answer's body on 2xx, or an error worded as Rust words it. */
   private async restCall(method: RestMethod, pathAndQuery: string, body?: string): Promise<string> {
+    this.onWire(`${method} ${pathAndQuery}${body === undefined ? "" : ` ${body}`}`);
     const url = new URL(pathAndQuery, "http://dashboard/");
     const req: RestRequest = { method, path: url.pathname, query: url.searchParams, body: body === undefined ? undefined : JSON.parse(body) };
     this.restRequests.push(req);

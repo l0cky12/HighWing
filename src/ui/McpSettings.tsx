@@ -4,7 +4,7 @@
 // catalog, edited in a dialog, removed after asking, tested and signed in to (OAuth) on the server. Env values and
 // bearer tokens are write-only: nothing fills them from Hermes, and a blank one keeps what Hermes has. Each change is
 // called saved only once Hermes's list, read again, shows it (mcp.ts). The profile's running gateway keeps a server
-// edited in place on its old connection, so Restart gateway shows beside it then (ADR 0204).
+// edited in place on its old connection, so Restart gateway shows beside it then (ADR 0205).
 import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 import { AlertTriangle, BookOpen, CheckCircle2, CircleAlert, Info, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { SettingNote, SettingRow, SettingsSection } from "./SettingRows";

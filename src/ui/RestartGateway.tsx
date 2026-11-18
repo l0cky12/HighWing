@@ -1,4 +1,4 @@
-// The Restart gateway button (ADR 0204), shown beside a change the profile's running gateway picks up only once it
+// The Restart gateway button (ADR 0205), shown beside a change the profile's running gateway picks up only once it
 // restarts: a Telegram or Discord change Hermes didn't hot-serve (Settings → Gateways), and an MCP server edited in place
 // (Settings → MCP servers). A restart cuts off running replies, so it asks first when Hermes says any are running.
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";

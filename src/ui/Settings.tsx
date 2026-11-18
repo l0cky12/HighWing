@@ -328,7 +328,7 @@ export function SettingsScreen({
   mcp?: McpApi;
   /** Each profile's Telegram and Discord gateways on Hermes (ADR 0073); without it there is no Gateways tab. */
   gateways?: GatewaysApi;
-  /** Restarts a profile's gateway, beside a change it picks up only then (ADR 0204); without it there is no Restart gateway button. */
+  /** Restarts a profile's gateway, beside a change it picks up only then (ADR 0205); without it there is no Restart gateway button. */
   gatewayRestart?: GatewayRestartApi;
   /** The shown profile's provider API keys on Hermes (ADR 0095); without it there is no Providers tab. */
   providers?: ProviderKeysApi;

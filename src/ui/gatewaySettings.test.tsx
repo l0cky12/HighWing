@@ -3,7 +3,7 @@
 // (fakeGateways.ts): the platform given (picked in Settings' tree, ADR 0160), the state, token rows that keep, replace or
 // remove, the switch, Save with its read back, a change on the server meanwhile, Check status, the three problems in
 // their own words, answers for another profile dropped, and Restart gateway beside a change the running gateway hasn't
-// picked up (ADR 0204). Every token here is synthetic.
+// picked up (ADR 0205). Every token here is synthetic.
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode, useState } from "react";

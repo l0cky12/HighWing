@@ -1,6 +1,6 @@
 # Gateways are Telegram and Discord, saved after a read and read back
 
-> **Partly superseded by [ADR 0204](0204-restart-gateway-shows-beside-a-change-the-running-gateway-picks-up-only-on-restart.md).** The app now restarts the profile's gateway when the owner presses Restart gateway, shown under a platform's Status after a change the running gateway hasn't picked up, and the relay passes `POST api/gateway/restart`.
+> **Partly superseded by [ADR 0205](0205-restart-gateway-shows-beside-a-change-the-running-gateway-picks-up-only-on-restart.md).** The app now restarts the profile's gateway when the owner presses Restart gateway, shown under a platform's Status after a change the running gateway hasn't picked up, and the relay passes `POST api/gateway/restart`.
 
 The owner wants to set up Hermes's Telegram and Discord gateways from the app: which are on, their bot tokens, who may talk to the bot, and whether it's connected (#104). The deployed Hermes (`f0d94882`, research checkout `~/.cache/hermes-src-168`, `hermes_cli/web_routers/messaging.py`) has three routes for this, each taking `?profile=`, so no Hermes change is needed:
 

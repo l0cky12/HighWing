@@ -3752,7 +3752,7 @@ div.export-preview.export-page { height: auto; padding: 10px 12px; background: v
 .gw-line.warn { color: var(--warn); }
 .gw-line.bad, .pk-line.bad, .gw-problem { color: var(--bad); }
 .gw-problem.missing-dependency, .gw-problem.permission { color: var(--warn); }
-/* Restart gateway (RestartGateway.tsx, ADR 0204): what waits for the restart, then the button, on one line. */
+/* Restart gateway (RestartGateway.tsx, ADR 0205): what waits for the restart, then the button, on one line. */
 .gw-restart { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .gw-restart-why { color: var(--muted); }
 

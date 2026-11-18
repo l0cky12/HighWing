@@ -1,6 +1,6 @@
 # Restart gateway beside a change that needs it
 
-Shots of the native app (`.claude/skills/verify-hermes-chat`), driven with real input against the stand-in dashboard. ADR 0204.
+Shots of the native app (`.claude/skills/verify-hermes-chat`), driven with real input against the stand-in dashboard. ADR 0205.
 
 | File | Shows |
 | --- | --- |

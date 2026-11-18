@@ -36,7 +36,7 @@ echo "evidence: $EVIDENCE"
 ln -sfn "$EVIDENCE" "$OUT/evidence"
 "$S/hv" doctor >/dev/null || fail "hv doctor"
 if [ "${RECORD:-}" = 1 ]; then
-  ffmpeg -loglevel error -y -f x11grab -video_size 1400x900 -framerate 10 -i ":$DISPLAY_NUM" -c:v libx264 -pix_fmt yuv420p "$EVIDENCE/flow.mp4" </dev/null &
+  ffmpeg -loglevel error -y -f x11grab -video_size 1400x900 -framerate 10 -i ":${DISPLAY_NUM#:}" -c:v libx264 -pix_fmt yuv420p "$EVIDENCE/flow.mp4" </dev/null &
   FFMPEG_PID=$!
 fi
 
@@ -57,6 +57,8 @@ step "sign in"
 "$S/wd.mjs" wait '[role=dialog]' "Model providers" 30000 >/dev/null
 "$S/wd.mjs" click button Skip >/dev/null
 "$S/wd.mjs" gone '[role=dialog]' 20000 >/dev/null
+# The private bus has no keyring, so sign-in raises a toast that sits over the composer until it times out.
+"$S/wd.mjs" gone .toast 60000 >/dev/null || fail "the sign-in toast never cleared"
 
 step "new room"
 "$S/wd.mjs" click '[role=tab][data-mode=bots]' >/dev/null

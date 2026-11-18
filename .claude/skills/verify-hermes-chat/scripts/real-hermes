@@ -17,7 +17,8 @@ up() {
   [ -x "$VENV/bin/hermes" ] || die "no Hermes at $VENV/bin/hermes; build the venv the SKILL names"
   RH_DIR=$(realpath -m "$1")
   [ ! -f "$RH_DIR/dashboard.pid" ] || ! kill -0 "$(cat "$RH_DIR/dashboard.pid")" 2>/dev/null || die "$RH_DIR is still running; real-hermes down first"
-  rm -rf "$RH_DIR/home" "$RH_DIR/web"
+  # A log left by an earlier run would satisfy the readiness check before the new dashboard truncates it.
+  rm -rf "${RH_DIR:?}"
   mkdir -p "$RH_DIR/home/.hermes" "$RH_DIR/web"
   echo '<!doctype html><title>stub</title>' >"$RH_DIR/web/index.html"
   local model_host=127.0.0.12 dash_host=127.0.0.13 model_port dash_port
@@ -42,13 +43,13 @@ EOF
     "$VENV/bin/hermes" dashboard --isolated --host $dash_host --port "$dash_port" --no-open --skip-build \
     >"$RH_DIR/dashboard.log" 2>&1 </dev/null &
   echo $! >"$RH_DIR/dashboard.pid"
-  local i
-  for ((i = 0; i < 120; i++)); do
-    grep -q HERMES_DASHBOARD_READY "$RH_DIR/dashboard.log" 2>/dev/null && break
-    kill -0 "$(cat "$RH_DIR/dashboard.pid")" 2>/dev/null || die "dashboard exited; see $RH_DIR/dashboard.log"
+  local started=$SECONDS limit=${RH_READY_S:-180}
+  until grep -q HERMES_DASHBOARD_READY "$RH_DIR/dashboard.log" 2>/dev/null; do
+    kill -0 "$(cat "$RH_DIR/dashboard.pid")" 2>/dev/null || { down >&2; die "dashboard exited; see $RH_DIR/dashboard.log"; }
+    ((SECONDS - started < limit)) || { down >&2; die "dashboard not ready in $limit s; see $RH_DIR/dashboard.log"; }
     sleep 0.5
   done
-  grep -q HERMES_DASHBOARD_READY "$RH_DIR/dashboard.log" || die "dashboard not ready in 60 s; see $RH_DIR/dashboard.log"
+  echo $((SECONDS - started)) >"$RH_DIR/ready-seconds"
   echo "http://$dash_host:$dash_port" >"$RH_DIR/url"
   echo "export RH_DIR=$RH_DIR"
   echo "dashboard: http://$dash_host:$dash_port  (username verify, password verify-pass; Hermes from $VENV)"

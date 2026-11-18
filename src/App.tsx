@@ -1766,12 +1766,15 @@ export function Main({
     const shown = active.chatId ? chats.find((c) => c.id === active.chatId) : undefined;
     return shown && screenUse(shown);
   }, [chats, active.chatId]);
-  const followed = useRef<string | undefined>(undefined);
+  // Every run followed, by connection, profile and chat, so coming back to a run's chat doesn't open the Screen again.
+  const followed = useRef(new Set<string>());
   useEffect(() => {
-    if (!followScreen || !shownUse?.running || followed.current === shownUse.key) return;
-    followed.current = shownUse.key;
+    if (!followScreen || !shownUse?.running || !active.chatId) return;
+    const run = JSON.stringify([scope, active.chatId, shownUse.key]);
+    if (followed.current.has(run)) return;
+    followed.current.add(run);
     openPanel("screen");
-  }, [followScreen, shownUse?.running, shownUse?.key, openPanel]);
+  }, [followScreen, shownUse?.running, shownUse?.key, active.chatId, scope, openPanel]);
 
   const listedFromHermes = hermes.hasListed();
   // Clears from the Inbox were kept on this computer until clearing a chat settled it (ADR 0090). Once Hermes has

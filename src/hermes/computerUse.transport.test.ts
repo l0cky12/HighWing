@@ -208,3 +208,189 @@ describe("FakeHermes's computer_use turn, as the app sees it", () => {
     expect(chat().running).toBe(false);
   });
 });
+
+describe("Stop during a computer-use turn", () => {
+  async function started(display = true) {
+    const server = new FakeHermes();
+    if (display)
+      server.display = { status: { supported: true, installed: true, missing: [], running: true }, lease: { holder: "agent", viewer_hash: null, since: 1, epoch: 0 }, minted: new Set() };
+    const hermes = await connect(server.openPipe);
+    open.push(hermes);
+    const id = await hermes.newChat();
+    await hermes.send(id, "Tidy the desktop");
+    const chat = (chatId = id) => hermes.getSnapshot().chats.find((c) => c.id === chatId)!;
+    return { server, hermes, id, chat, rid: server.runtimeIdOf(id)! };
+  }
+
+  /** A turn of captures that pauses after its first, until `next` lets it go on. */
+  function paused(server: FakeHermes, rid: string) {
+    let next!: () => void;
+    const turn = server.computerUseTurn(rid, { steps: [CU.capture(), CU.capture(), CU.capture()], reply: "never" }, (s) =>
+      s > 0.6 ? new Promise<void>((r) => (next = r)) : Promise.resolve(),
+    );
+    return { turn, next: () => next() };
+  }
+
+  const screenAsks = (server: FakeHermes) =>
+    server.requests.filter((r) => r.method === "display.observe" || r.method === "display.lease.acquire").map((r) => [r.method, r.params]);
+  const interrupts = (server: FakeHermes) => server.requests.filter((r) => r.method === "session.interrupt").map((r) => r.params);
+  const until = async (ok: () => boolean) => {
+    while (!ok()) await new Promise((r) => setTimeout(r, 2));
+  };
+
+  it("interrupts the reply and takes the screen, so the next turn's first call is refused until Hand back", async () => {
+    const { server, hermes, id, chat, rid } = await started();
+    const { turn, next } = paused(server, rid);
+    await until(() => chat().items.some((i) => i.kind === "tool"));
+    await hermes.stop(id);
+    expect(interrupts(server)).toEqual([{ session_id: rid }]);
+    expect(screenAsks(server)).toEqual([
+      ["display.observe", { profile: "default" }],
+      ["display.lease.acquire", { profile: "default", viewer_id: "viewer-1", reason: "Stopped from Highwing" }],
+    ]);
+    next();
+    await turn;
+    expect(foldRuns(chat().items).find((b): b is CuRun => b.kind === "cu-run")).toMatchObject({ steps: 1, state: "stopped" });
+    expect(server.display!.lease.holder).toBe("human");
+    expect(hermes.getSnapshot().screen?.holder.kind).toBe("you");
+    expect(chat().items.some((i) => i.kind === "error")).toBe(false);
+
+    await hermes.send(id, "Carry on");
+    await server.computerUseTurn(rid, { steps: [CU.click([10, 20])], reply: "You have the screen." });
+    expect(chat().items.some((i) => i.kind === "approval")).toBe(false);
+    expect(screenUse(chat())?.refused).toBe(HUMAN_HAS_CONTROL);
+
+    await hermes.screen.handBack();
+    expect(server.display!.lease.holder).toBe("agent");
+    expect(hermes.getSnapshot().screen?.holder).toEqual({ kind: "agent" });
+  });
+
+  it("times a call the Stop cut short until the reply ended, so the run's time is its whole span", async () => {
+    const { server, hermes, id, chat, rid } = await started();
+    const turn = server.computerUseTurn(rid, { steps: [CU.capture(), CU.click([10, 20])], reply: "never" });
+    await until(() => chat().items.some((i) => i.kind === "approval"));
+    await new Promise((r) => setTimeout(r, 30));
+    await hermes.stop(id);
+    await turn;
+    const run = foldRuns(chat().items).find((b): b is CuRun => b.kind === "cu-run")!;
+    expect(run.lines.map((l) => l.kind === "step" && l.step.outcome.kind)).toEqual(["done", "stopped"]);
+    expect(run.span.to! - run.span.from!).toBeGreaterThanOrEqual(30);
+  });
+
+  it("takes no screen when the reply used no computer_use", async () => {
+    const { server, hermes, id, rid } = await started();
+    server.event(rid, "message.start");
+    server.event(rid, "tool.start", { tool_id: "t1", name: "terminal", preview: "du -sh /srv" });
+    await hermes.stop(id);
+    expect(interrupts(server)).toEqual([{ session_id: rid }]);
+    expect(screenAsks(server)).toEqual([]);
+    expect(server.display!.lease.holder).toBe("agent");
+  });
+
+  it("judges a turn Hermes started by its own calls, not the computer use of the turn before it", async () => {
+    const { server, hermes, id, chat, rid } = await started();
+    await server.computerUseTurn(rid, { steps: [CU.capture()], reply: "Tidied." });
+    server.event(rid, "message.start");
+    server.event(rid, "tool.start", { tool_id: "t1", name: "terminal", preview: "du -sh /srv" });
+    await until(() => chat().items.some((i) => i.kind === "tool" && i.name === "terminal"));
+    expect(screenUse(chat())).toBeUndefined();
+    expect(await hermes.stopScreen()).toEqual({ stopped: [], hold: { kind: "held" } });
+    expect(interrupts(server)).toEqual([]);
+    await hermes.screen.handBack();
+    const asked = screenAsks(server).length;
+    await hermes.stop(id);
+    expect(interrupts(server)).toEqual([{ session_id: rid }]);
+    expect(screenAsks(server)).toHaveLength(asked);
+    expect(server.display!.lease.holder).toBe("agent");
+  });
+
+  it("counts only its own steps in a turn Hermes started that uses the screen, for follow mode and Stop", async () => {
+    const { server, chat, rid } = await started();
+    await server.computerUseTurn(rid, { steps: [CU.capture()], reply: "Tidied." });
+    const first = screenUse(chat())!.key;
+    void server.computerUseTurn(rid, { steps: [CU.capture(), CU.capture()], reply: "never" }, () => new Promise(() => {}));
+    await until(() => !!chat().running && chat().items.filter((i) => i.kind === "tool").length === 2);
+    expect(screenUse(chat())).toMatchObject({ running: true, steps: 1 });
+    expect(screenUse(chat())!.key).not.toBe(first);
+  });
+
+  it("sends the interrupt without waiting for the screen, and says why the screen couldn't be taken", async () => {
+    const { server, hermes, id, chat, rid } = await started();
+    const { turn, next } = paused(server, rid);
+    await until(() => chat().items.some((i) => i.kind === "tool"));
+    const observe = server.handlers["display.observe"];
+    let answer!: () => void;
+    server.handlers["display.observe"] = (r) => void (answer = () => observe(r));
+    server.handlers["display.lease.acquire"] = (r) => server.fail(r.id, 5300, "the screen is busy");
+    const stopping = hermes.stop(id);
+    await until(() => interrupts(server).length > 0);
+    answer();
+    await stopping;
+    next();
+    await turn;
+    expect(chat().items.filter((i) => i.kind === "error").map((i) => i.kind === "error" && i.text)).toEqual([
+      "Stopped the reply, but couldn't take the Bot Desktop: the screen is busy",
+    ]);
+    expect(chat().running).toBe(false);
+  });
+
+  it("the panic Stop stops every reply using the screen, leaves the others, and takes the screen once", async () => {
+    const { server, hermes, id, chat, rid } = await started();
+    const other = await hermes.newChat();
+    await hermes.send(other, "Count the logs");
+    const otherRid = server.runtimeIdOf(other)!;
+    server.event(otherRid, "message.start");
+    const { turn, next } = paused(server, rid);
+    await until(() => chat().items.some((i) => i.kind === "tool"));
+
+    expect(await hermes.stopScreen()).toEqual({ stopped: [id], hold: { kind: "held" } });
+    expect(interrupts(server)).toEqual([{ session_id: rid }]);
+    expect(chat(other).running).toBe(true);
+    expect(await hermes.stopScreen()).toEqual({ stopped: [], hold: { kind: "already" } });
+    expect(screenAsks(server).map(([m]) => m)).toEqual(["display.observe", "display.lease.acquire"]);
+    next();
+    await turn;
+    expect(server.display!.lease.holder).toBe("human");
+  });
+
+  it("takes no screen when Send now stops the reply to send a queued message", async () => {
+    const { server, hermes, id, chat, rid } = await started();
+    const { turn, next } = paused(server, rid);
+    await until(() => chat().items.some((i) => i.kind === "tool"));
+    expect(hermes.enqueue(id, "Open the browser instead")).toBeUndefined();
+    await hermes.sendQueuedNow(id, hermes.getSnapshot().queues[id].items[0].id, "the agent is busy");
+    await until(() => interrupts(server).length > 0);
+    next();
+    await turn;
+    expect(interrupts(server)).toEqual([{ session_id: rid }]);
+    expect(screenAsks(server)).toEqual([]);
+    expect(server.display!.lease.holder).toBe("agent");
+  });
+
+  it("shares one hold between overlapping Stops, so a Hand back after the first isn't undone", async () => {
+    const { server, hermes } = await started();
+    const acquire = server.handlers["display.lease.acquire"];
+    const waiting: (() => void)[] = [];
+    server.handlers["display.lease.acquire"] = (r) => void waiting.push(() => acquire(r));
+    const first = hermes.stopScreen();
+    const second = hermes.stopScreen();
+    await until(() => waiting.length > 0);
+    await new Promise((r) => setTimeout(r, 20));
+    waiting.shift()!();
+    expect(await first).toEqual({ stopped: [], hold: { kind: "held" } });
+    await hermes.screen.handBack();
+    waiting.splice(0).forEach((answer) => answer());
+    expect(await second).toEqual({ stopped: [], hold: { kind: "held" } });
+    expect(server.display!.lease.holder).toBe("agent");
+    expect(screenAsks(server).map(([m]) => m)).toEqual(["display.observe", "display.lease.acquire"]);
+  });
+
+  it("the panic Stop takes the screen with no reply running, and says when there is no screen to take", async () => {
+    const { server, hermes } = await started();
+    expect(await hermes.stopScreen()).toEqual({ stopped: [], hold: { kind: "held" } });
+    expect(server.display!.lease.holder).toBe("human");
+
+    const bare = await started(false);
+    expect(await bare.hermes.stopScreen()).toEqual({ stopped: [], hold: { kind: "no-screen", why: "This Hermes has no Bot Desktop." } });
+  });
+});

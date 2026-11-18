@@ -41,6 +41,7 @@ pub mod snapshot;
 #[cfg(target_os = "linux")]
 mod spell_check;
 mod ssh_guard;
+mod stop;
 pub mod summon;
 pub mod terminal;
 pub mod touch_keyboard;
@@ -726,6 +727,18 @@ async fn capture_sync_outbox(app: tauri::AppHandle, paths: Vec<String>) -> Resul
 #[tauri::command]
 fn chat_link_take(links: State<'_, links::Links>) -> Option<String> {
     links.take()
+}
+
+/// The `hermes-chat --stop` waiting for a signed-in window (stop.rs). Peeking leaves it waiting.
+#[tauri::command]
+fn stop_pending_request(stops: State<'_, stop::Stops>) -> Option<u64> {
+    stops.pending()
+}
+
+/// A live signed-in window started this Stop. A newer one stays waiting.
+#[tauri::command]
+fn stop_ack_request(stops: State<'_, stop::Stops>, id: u64) {
+    stops.acknowledge(id);
 }
 
 /// Stages a file pasted into the composer and returns its path. Its bytes come as the raw body, not JSON, so a big
@@ -1869,7 +1882,13 @@ fn attach_dropped(window: &tauri::Window, event: &tauri::WindowEvent) {
     }
 }
 
-pub fn run(link: Option<String>) {
+/// Starts the app. `link`: it was started to open a chat link, with no other Hermes Chat to open it (links.rs). `stop`:
+/// it was started by `hermes-chat --stop`, with no other Hermes Chat to stop (stop.rs).
+pub fn run(link: Option<String>, stop: bool) {
+    let stops = stop::Stops::default();
+    if stop {
+        stops.ask();
+    }
     std::thread::spawn(local_stt::sweep_scratch);
     let context = tauri::generate_context!();
     let mut builder = tauri::Builder::default();
@@ -1882,6 +1901,7 @@ pub fn run(link: Option<String>) {
         .manage(AppState::default())
         .manage(Staging::default())
         .manage(links::Links::new(link))
+        .manage(stops)
         .manage(update::Updates::default())
         .manage(tray::Tray::default())
         .on_window_event(tray::on_window_event)
@@ -1923,6 +1943,10 @@ pub fn run(link: Option<String>) {
             let handle = app.handle().clone();
             // Requests that came while the app started (main.rs took the bus name first) are handled now.
             remote::set_handler(move |request| match request {
+                remote::Request::Stop => {
+                    handle.state::<stop::Stops>().ask();
+                    let _ = handle.emit(stop::EVENT, ());
+                }
                 // A second launch or `--show` brings back this window, hidden to the tray or not (ADR 0034).
                 remote::Request::Show { token } => summon::activate(&handle, false, true, token),
                 remote::Request::Toggle { token } => summon::activate(&handle, true, true, token),
@@ -2049,6 +2073,8 @@ pub fn run(link: Option<String>) {
             capture_discard,
             capture_sync_outbox,
             chat_link_take,
+            stop_pending_request,
+            stop_ack_request,
             terminal_open,
             screen_apps_install,
             terminal_write,

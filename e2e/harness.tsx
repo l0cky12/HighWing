@@ -111,6 +111,7 @@ export async function boot(opts: BootOptions = {}) {
     update_install_kind: () => ({ kind: "unmanaged", version: "0.0.0" }),
     local_stt_state: () => ({ onThisComputer: false }),
     tray_inbox: () => undefined,
+    stop_pending_request: () => null,
     capture_sync_outbox: () => undefined,
     restart_drafts_read: () => ({ kind: "none" }),
     window_hidden: () => false,
@@ -148,7 +149,12 @@ export async function boot(opts: BootOptions = {}) {
     await Promise.all([...pipes.keys()].map((attempt) => commands.hermes_disconnect({ attempt })));
     launch();
   };
-  return { server, rust, relaunch, app: page.frameLocator(page.getByTitle("Highwing")) };
+  /** Sends a Tauri event to the app, as Rust's `emit` does: `stop-requested` for `hermes-chat --stop`, say. */
+  const emit = (event: string) => {
+    const frame = document.querySelector<HTMLIFrameElement>('iframe[title="Highwing"]')!.contentWindow as unknown as { __TAURI_INTERNALS__: { invoke: (cmd: string, args: unknown) => Promise<unknown> } };
+    return frame.__TAURI_INTERNALS__.invoke("plugin:event|emit", { event, payload: null });
+  };
+  return { server, rust, relaunch, emit, app: page.frameLocator(page.getByTitle("Highwing")) };
 }
 
 export async function shot(name: string) {

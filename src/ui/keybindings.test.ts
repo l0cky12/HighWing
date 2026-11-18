@@ -86,6 +86,7 @@ describe("Writing a key press down as a chord", () => {
     for (const id of COMMAND_IDS) expect(DEFAULT_BINDINGS[id].length, id).toBeGreaterThan(0);
     expect(DEFAULT_BINDINGS.search).toEqual(["Ctrl+K"]);
     expect(DEFAULT_BINDINGS.findNext).toEqual(["Enter", "ArrowDown"]);
+    expect(DEFAULT_BINDINGS.stopScreen).toEqual(["Ctrl+."]);
   });
 });
 

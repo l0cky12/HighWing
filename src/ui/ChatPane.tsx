@@ -15,8 +15,8 @@ import type { AttachmentDesk } from "../hermes/attachmentDesk";
 import type { Reference, ReferenceDesk } from "../hermes/chatReferences";
 import { ReferenceChips } from "./ReferenceChips";
 import { ApprovalCard } from "./ApprovalCard";
-import { ComputerUseCard, HumanHasControlBanner } from "./ComputerUseCard";
-import { foldRuns, type CuRun } from "../hermes/computerUse";
+import { ComputerUseCard, HumanHasControlBanner, RunStopProvider } from "./ComputerUseCard";
+import { foldRuns, screenUse, type CuRun } from "../hermes/computerUse";
 import { QuestionCard } from "./QuestionCard";
 import { Menu, PinItem, type ChatPin } from "./ChatMenu";
 import { agentSend, type AgentSend } from "../hermes/agentMessages";
@@ -616,6 +616,12 @@ export function ChatPane({
     (approvalId: string, choice: ApprovalChoice, confirmed?: boolean) => onAnswerRef.current(approvalId, choice, confirmed),
     [],
   );
+  const onStopRef = useRef(onStop);
+  onStopRef.current = onStop;
+  const stopping = !!chat.stopping;
+  const replying = !!chat.running;
+  const lastRun = screenUse(chat)?.key;
+  const runStop = useMemo(() => ({ onStop: () => onStopRef.current(), stopping, running: replying, lastRun }), [stopping, replying, lastRun]);
   const onQuestionRef = useRef(onQuestion);
   onQuestionRef.current = onQuestion;
   const question = useCallback((itemId: string, a: QuestionAnswer) => onQuestionRef.current(itemId, a), []);
@@ -1076,6 +1082,7 @@ export function ChatPane({
       >
         <JumpContext.Provider value={jumpTo}>
         <PathsIn folder={chat.folder} session={chat.id}>
+        <RunStopProvider value={runStop}>
         <div className="transcript-inner">
           {policy.readOnly === "jobRun" ? (
             <div className="imported-note">
@@ -1171,6 +1178,7 @@ export function ChatPane({
             </div>
           )}
         </div>
+        </RunStopProvider>
         </PathsIn>
         </JumpContext.Provider>
       </div>

@@ -32,7 +32,7 @@ import { PersonaApi } from "./persona";
 import { ProfileCloneApi } from "./profileClone";
 import { ProfilesApi, profileFailure, toProfileRows, type ProfileFailure } from "./profiles";
 import { FILTER_SEARCH_LIMIT } from "./chatFilter";
-import { APPROVAL_CHOICES, endedNote, isBroadGrant, isOutgoing, isQuestion, isStoredPrompt, isWaiting, offeredChoices, sameFields, sendNowRoute, turnStart, type ApprovalChoice, type ApprovalItem, type AttachCheck, type ClarifyQuestion, type QuestionAnswer, type QuestionItem, type QuestionKind, type Attachment, type Chat, type ChatQueue, type ConnectionStatus, type ContextUse, type Found, type Hit, type Item, type ListedChat, type LiveSession, type LiveSessions, type OtherProfiles, type Outgoing, type OutgoingItem, type Queued, type SavedSend, type SeenFailure, type SentImage, type SentImagePath, type SentReference, type SessionLive, type SideQuestion, type Source, QUEUE_LIMIT } from "./model";
+import { APPROVAL_CHOICES, endedNote, isBroadGrant, isOutgoing, isQuestion, isStoredPrompt, isWaiting, offeredChoices, sameFields, sendNowRoute, turnFrom, turnStart, type ApprovalChoice, type ApprovalItem, type AttachCheck, type ClarifyQuestion, type QuestionAnswer, type QuestionItem, type QuestionKind, type Attachment, type Chat, type ChatQueue, type ConnectionStatus, type ContextUse, type Found, type Hit, type Item, type ListedChat, type LiveSession, type LiveSessions, type OtherProfiles, type Outgoing, type OutgoingItem, type Queued, type SavedSend, type SeenFailure, type SentImage, type SentImagePath, type SentReference, type SessionLive, type SideQuestion, type Source, QUEUE_LIMIT } from "./model";
 import { catalogFromServer, fallbackCatalog, isEffort, modelKey, pickFromInfo, type ModelCatalog, type ModelPick } from "./models";
 import { approvalsOf, isApprovalMode, writesFor, type ApprovalPick } from "./approvals";
 import { CheckTimesStore, noOthers, OtherProfilesCheck } from "./otherProfiles";
@@ -101,8 +101,8 @@ import { restartHold } from "./unsaved";
 import { hostFileView, readServerFile, type FileView } from "./preview";
 import type { PathKind, ServerPath } from "./paths";
 import { parseDoctor, type CliResult, type DisplayLease, type ScreenApi } from "./screen";
-import { ScreenControl, type ScreenState } from "./screenControl";
-import { askOf, COMPUTER_USE } from "./computerUse";
+import { ScreenControl, type HoldOutcome, type ScreenState } from "./screenControl";
+import { askOf, COMPUTER_USE, screenUse } from "./computerUse";
 import { checkCommand, dockFile, foundPrograms, shellQuote } from "./screenApps";
 import { readScreenClipboard } from "./screenClipboard";
 import { agentFsEditIo } from "./artifacts";
@@ -592,6 +592,12 @@ export type Snapshot = {
   screen?: ScreenState;
 };
 
+/** What the panic Stop came to: the chats whose replies it stopped, and whether it got the Bot Desktop. */
+export type StopScreen = { stopped: string[]; hold: HoldOutcome };
+
+/** The lease's reason when a Stop takes the screen; other Hermes clients show it. */
+const STOP_REASON = "Stopped from Highwing";
+
 /**
  * What a connection is to the owner (ADR 0125). The composer target is the one they work in. A background one keeps
  * its socket and the chats it holds, shows their Approvals, and changes nothing on the server.
@@ -822,8 +828,6 @@ export class Hermes {
    * `unknown` when they can't be known, such as after reattaching mid-turn, so that reply shows no usage.
    */
   private usageFrom = new Map<string, UsageCounters | "unknown">();
-  /** Last item before a running turn, by stable id; null for an empty transcript. Older Failed messages can go away. */
-  private turnStart = new Map<string, string | null>();
   /** When each chat's running turn started (`message.start`), Unix ms: how long its reply took is timed from it. */
   private turnBegan = new Map<string, number>();
   /** What the app heard of each chat's turns, in memory, for the Run view (ADR 0178). */
@@ -3719,9 +3723,10 @@ export class Hermes {
     }
     if (!chat?.runtimeId || route !== "steer") {
       this.rushNext(chatId, id);
-      // A chat not loaded yet is loaded first, since only loading finds out whether a reply runs there to stop.
+      // A chat not loaded yet is loaded first, since only loading finds out whether a reply runs there to stop. The
+      // screen stays Hermes's: the message sent next may need it.
       void this.resume(chatId).then(
-        () => (this.snapshot.queues[chatId]?.rush?.id === id ? this.stop(chatId) : undefined),
+        () => (this.snapshot.queues[chatId]?.rush?.id === id ? this.interrupt(chatId) : undefined),
         (e) => this.profile === profile && this.pauseQueueFor(chatId, notLoaded(e)),
       );
       return undefined;
@@ -4203,6 +4208,26 @@ export class Hermes {
    * the reply keeps running.
    */
   async stop(chatId: string): Promise<void> {
+    await this.interrupt(chatId, (chat) => (screenUse(chat)?.running ? this.control.hold(STOP_REASON) : undefined));
+  }
+
+  /**
+   * The panic Stop, for the Stop shortcut and `hermes-chat --stop` (ADR 0221): stops every reply in the shown profile
+   * that is using the Bot Desktop, and takes the screen whether one is or not. Idempotent: a reply already stopping is
+   * left alone, and a screen this connection holds already is `already`.
+   */
+  async stopScreen(): Promise<StopScreen> {
+    const using = this.snapshot.chats.filter((c) => !c.stopping && screenUse(c)?.running).map((c) => c.id);
+    const holding = this.control.hold(STOP_REASON);
+    await Promise.all(using.map((id) => this.interrupt(id)));
+    return { stopped: using, hold: await holding };
+  }
+
+  /**
+   * `stop` without its screen. `alongside` starts with the interrupt, once the message is accepted; what it comes to
+   * never holds the interrupt back, and a screen it couldn't take is said in the chat.
+   */
+  private async interrupt(chatId: string, alongside?: (chat: Chat) => Promise<HoldOutcome> | undefined): Promise<void> {
     const stoppable = () => {
       const c = this.snapshot.chats.find((c) => c.id === chatId);
       return c?.running && !c.stopping ? c : undefined;
@@ -4216,6 +4241,7 @@ export class Hermes {
     const chat = stoppable();
     if (!chat?.runtimeId) return;
     this.patchChat(chatId, (c) => ({ ...c, stopping: true }));
+    const holding = alongside?.(chat);
     try {
       if (!(await this.protocol.stop(chat.runtimeId))) this.patchChat(chatId, (c) => ({ ...c, stopping: false }));
     } catch (e) {
@@ -4224,6 +4250,9 @@ export class Hermes {
         c.stopping ? { ...c, stopping: false, items: [...c.items, errorItem(c, `Couldn't stop the reply: ${(e as Error).message}`)] } : c,
       );
     }
+    const held = await holding;
+    if (held?.kind === "failed" || held?.kind === "no-screen")
+      this.patchChat(chatId, (c) => ({ ...c, items: [...c.items, errorItem(c, `Stopped the reply, but couldn't take the Bot Desktop: ${held.why}`)] }));
   }
 
   /**
@@ -4778,7 +4807,6 @@ export class Hermes {
       this.turnBegan.set(chat.id, began);
       this.recorder.begin(this.profile, chat.id, began, from === "unknown" ? undefined : from, unanswered ? { kind: "estimated", usd: 0 } : chat.usage?.cost);
       this.capabilities.noteTurnIds(typeof payload.turn_id === "string" && payload.turn_id !== "");
-      this.turnStart.set(chat.id, chat.items.at(-1)?.id ?? null);
       if (this.turns.has(this.profile, chat.id)) this.unprompted.delete(chat.id);
       else this.unprompted.add(chat.id);
       this.kanbanWatch.turnStarted([chat.id, ...(chat.lineage ?? [])]);
@@ -4801,10 +4829,10 @@ export class Hermes {
     const usage = counted && ms !== undefined ? { ...counted, ms } : counted;
     // Only a reply that finished counts toward how long replies take: a stopped or failed one ended early.
     if (ms !== undefined && (payload.status ?? "complete") === "complete" && !payload.error) this.cache.saveReplyTime(this.profile, { chat: chat.id, at: now, ms });
-    const from = this.turnStart.get(chat.id);
+    // The last item before the running turn, by stable id: `applyEvent` keeps it on the chat from `message.start` on.
+    const from = type === "message.start" ? (chat.items.at(-1)?.id ?? null) : chat.turnAfter;
     const unprompted = this.unprompted.has(chat.id);
     if (type === "message.complete" || type === "error") {
-      this.turnStart.delete(chat.id);
       this.turnBegan.delete(chat.id);
       this.unprompted.delete(chat.id);
     }
@@ -5201,7 +5229,6 @@ export class Hermes {
     this.earlyRequests.clear();
     // Runtime sessions end with the connection.
     this.usageFrom.clear();
-    this.turnStart.clear();
     this.turnBegan.clear();
     this.unprompted.clear();
     this.earlySideAnswers.clear();
@@ -5224,7 +5251,7 @@ export class Hermes {
         const subagents = onLost(c.subagents, Date.now());
         const left = subagents === c.subagents ? c : { ...c, subagents };
         return c.runtimeId || c.running
-          ? { ...left, runtimeId: undefined, live: undefined, running: false, stopping: false, sideQuestions: c.sideQuestions?.map(lostSide) }
+          ? { ...left, runtimeId: undefined, live: undefined, running: false, stopping: false, turnAfter: undefined, sideQuestions: c.sideQuestions?.map(lostSide) }
           : left;
       }),
     });
@@ -6693,16 +6720,18 @@ function errorItem(c: Chat, text: string): Item {
   return { kind: "error", id: nextId(c.items, "e"), text };
 }
 
-/** Ends a turn's tool calls that were still running when it ended. */
-const endRunningTools = (items: Item[], status: "done" | "stopped") =>
-  items.map((i): Item => (i.kind === "tool" && i.status === "running" ? { ...i, status } : i));
+/** Ends a turn's tool calls that were still running when it ended; with `now`, each with a start ran until then. */
+const endRunningTools = (items: Item[], status: "done" | "stopped", now?: number) =>
+  items.map((i): Item =>
+    i.kind === "tool" && i.status === "running" ? { ...i, status, ...(now !== undefined && i.at !== undefined && { durationS: Math.max(0, now - i.at) / 1000 }) } : i,
+  );
 
 /**
  * Marks the last reply interrupted and its running tool calls stopped. A reply stopped before it said anything gets
  * an empty one, so the transcript still shows the stop.
  */
-function markInterrupted(items: Item[], from?: string | null): Item[] {
-  const out = endRunningTools(items, "stopped");
+function markInterrupted(items: Item[], from: string | null | undefined, now: number): Item[] {
+  const out = endRunningTools(items, "stopped", now);
   const last = out[out.length - 1];
   if (last?.kind === "assistant" && last.id !== from) out[out.length - 1] = { ...last, interrupted: true };
   else out.push({ kind: "assistant", id: nextId(out, "a"), text: "", interrupted: true });
@@ -6726,17 +6755,6 @@ function withReplyUsage(items: Item[], usage: ReplyUsage, from?: string | null):
     return out;
   }
   return items;
-}
-
-/**
- * Where the running turn's items start: just after `from`, the last item before its `message.start` (`null`: the chat
- * had none), else after the owner's last message (`turnStart`). -1 when `from` is no longer in the chat.
- */
-function turnFrom(items: Item[], from?: string | null): number {
-  if (from === null) return 0;
-  if (from === undefined) return turnStart(items);
-  const at = items.findIndex((i) => i.id === from);
-  return at < 0 ? -1 : at + 1;
 }
 
 /**
@@ -6786,7 +6804,7 @@ function applyEvent(c: Chat, type: string, p: Record<string, unknown>, from?: st
   const last = tail?.id === from ? undefined : tail;
   switch (type) {
     case "message.start":
-      return { ...c, running: true, updatedAt: Date.now() };
+      return { ...c, running: true, turnAfter: from, updatedAt: Date.now() };
     // `thinking.delta` is Hermes's spinner and wait notices, not reasoning, so it isn't shown.
     case "reasoning.delta": {
       const text = p.text;
@@ -6884,16 +6902,16 @@ function applyEvent(c: Chat, type: string, p: Record<string, unknown>, from?: st
           replaceResponse(items, parts, text);
         } else if (p.response_reused !== true && (!answer || answer.sealed)) items.push({ kind: "assistant", id: nextId(items, "a"), text });
       }
-      const end = { ...c, live: withLive(c.live, undefined, p.usage), running: false, stopping: false, updatedAt: Date.now() };
+      const end = { ...c, live: withLive(c.live, undefined, p.usage), running: false, stopping: false, turnAfter: undefined, updatedAt: Date.now() };
       // Stopped here or from another Hermes client.
-      if (p.status === "interrupted") return { ...end, items: markInterrupted(endApprovals(items, "turn ended"), from) };
+      if (p.status === "interrupted") return { ...end, items: markInterrupted(endApprovals(items, "turn ended"), from, end.updatedAt) };
       const failure = p.error ?? (p.status === "error" ? p.failure_reason ?? "The turn failed." : undefined);
       if (failure) items.push(errorItem({ ...c, items }, textOf(failure) ?? "The turn failed."));
       return { ...end, items: endRunningTools(endApprovals(items, "turn ended"), "done") };
     }
     case "error":
       items.push(errorItem(c, textOf(p.message) ?? "Hermes reported an error."));
-      return { ...c, items: endApprovals(items, "turn ended"), running: false, stopping: false };
+      return { ...c, items: endApprovals(items, "turn ended"), running: false, stopping: false, turnAfter: undefined };
     default:
       return c;
   }

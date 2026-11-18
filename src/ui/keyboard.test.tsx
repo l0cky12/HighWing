@@ -4,6 +4,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { CU } from "../hermes/fakeComputerUse";
 import { FakeHermes, row } from "../hermes/fakeHermes";
 import { connect, type Hermes } from "../hermes/transport";
 import { Main } from "../App";
@@ -30,8 +31,9 @@ const deletes = (server: FakeHermes) => server.restRequests.filter((r) => r.meth
 const settle = (hermes: Hermes) => act(async () => void (await hermes.idle()));
 
 /** Signed in with two Active chats and the draft on screen, focus in its composer. */
-async function signedIn() {
+async function signedIn(seed?: (server: FakeHermes) => void, desktopStop?: (fn: () => void) => () => void) {
   const server = new FakeHermes();
+  seed?.(server);
   server.sessions = [
     row("backup", 1, { pinned: true, title: "Nightly backup" }),
     row("nas", 2, { pinned: true, title: "NAS disks", source: "telegram" }),
@@ -45,15 +47,15 @@ async function signedIn() {
   };
   const hermes = await connect(server.openPipe);
   const user = userEvent.setup();
-  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} />);
+  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} desktopStop={desktopStop} />);
   await screen.findByRole("button", { name: /Nightly backup/ });
   await settle(hermes);
   return { server, hermes, user };
 }
 
 /** A new chat whose reply is running, focus in its composer. */
-async function replying() {
-  const s = await signedIn();
+async function replying(...setup: Parameters<typeof signedIn>) {
+  const s = await signedIn(...setup);
   await s.user.type(composer(), "Clean up the logs{Enter}");
   await waitFor(() => expect(prompts(s.server)).toHaveLength(1));
   const runtime = String(prompts(s.server)[0].params.session_id);
@@ -242,6 +244,73 @@ describe("Interrupting by keyboard", () => {
     await s.user.keyboard("{Enter}");
     await settle(s.hermes);
     expect(interrupts(s.server).map((r) => r.params)).toEqual([{ session_id: s.runtime }]);
+  });
+});
+
+describe("The panic Stop", () => {
+  const withScreen = (server: FakeHermes) =>
+    void (server.display = { status: { supported: true, installed: true, missing: [], running: true }, lease: { holder: "agent", viewer_hash: null, since: 1, epoch: 0 }, minted: new Set() });
+  const acquires = (server: FakeHermes) => server.requests.filter((r) => r.method === "display.lease.acquire");
+
+  /** A reply using the Bot Desktop, paused in its first call, focus in the composer. */
+  async function usingScreen(desktopStop?: (fn: () => void) => () => void) {
+    const s = await replying(withScreen, desktopStop);
+    void s.server.computerUseTurn(s.runtime, { steps: [CU.capture(), CU.capture()], reply: "never" }, () => new Promise(() => {}));
+    await screen.findByText("running…");
+    return s;
+  }
+
+  it("stops a reply using the Bot Desktop and takes the screen on Ctrl+. in the composer", async () => {
+    const s = await usingScreen();
+    expect(focused()).toBe(composer());
+    await s.user.keyboard("{Control>}.{/Control}");
+    await waitFor(() => expect(acquires(s.server)).toHaveLength(1));
+    expect(interrupts(s.server).map((r) => r.params)).toEqual([{ session_id: s.runtime }]);
+    expect(s.server.display!.lease.holder).toBe("human");
+    expect(await screen.findByText("Stopped the reply using the Bot Desktop. You hold the Bot Desktop now, so Hermes can't use it until you hand it back.")).toBeTruthy();
+  });
+
+  it("does the same for hermes-chat --stop", async () => {
+    let asked!: () => void;
+    const s = await usingScreen((fn) => ((asked = fn), () => {}));
+    act(() => asked());
+    await waitFor(() => expect(acquires(s.server)).toHaveLength(1));
+    expect(interrupts(s.server).map((r) => r.params)).toEqual([{ session_id: s.runtime }]);
+  });
+
+  it("leaves hermes-chat --stop waiting while Hermes isn't connected, and takes it once connected", async () => {
+    let waiting = false;
+    let listener: (() => void) | undefined;
+    const take = () => {
+      if (!waiting || !listener) return;
+      waiting = false;
+      listener();
+    };
+    const s = await signedIn(withScreen, (fn) => {
+      listener = fn;
+      take();
+      return () => void (listener === fn && (listener = undefined));
+    });
+    s.server.refuse = "connection refused";
+    await act(async () => s.server.drop());
+    await waitFor(() => expect(s.hermes.getSnapshot().status).not.toBe("connected"));
+    act(() => void ((waiting = true), take()));
+    await settle(s.hermes);
+    expect(waiting).toBe(true);
+    expect(acquires(s.server)).toEqual([]);
+    s.server.refuse = undefined;
+    await act(async () => void (await s.hermes.reconnect().catch(() => {})));
+    await waitFor(() => expect(acquires(s.server)).toHaveLength(1));
+    expect(waiting).toBe(false);
+    expect(s.server.display!.lease.holder).toBe("human");
+  });
+
+  it("takes the screen on Ctrl+. without stopping a reply that isn't using it", async () => {
+    const s = await replying(withScreen);
+    await s.user.keyboard("{Control>}.{/Control}");
+    await waitFor(() => expect(acquires(s.server)).toHaveLength(1));
+    expect(interrupts(s.server)).toEqual([]);
+    expect(await screen.findByText(/^No reply was using the Bot Desktop\. You hold the Bot Desktop now/)).toBeTruthy();
   });
 });
 

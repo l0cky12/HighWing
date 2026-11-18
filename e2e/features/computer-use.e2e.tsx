@@ -2,7 +2,8 @@ import { expect, it } from "vitest";
 import { userEvent } from "vitest/browser";
 import { ARM_MS } from "../../src/ui/ApprovalCard";
 import { CU, type FakeCuStep } from "../../src/hermes/fakeComputerUse";
-import { boot, shot, sessionOfPrompt } from "../harness";
+import type { FakeHermes } from "../../src/hermes/fakeHermes";
+import { boot, shot, sessionOfPrompt, type Commands } from "../harness";
 
 const STEPS: FakeCuStep[] = [
   CU.capture(),
@@ -16,12 +17,17 @@ const STEPS: FakeCuStep[] = [
   CU.capture(),
 ];
 
-async function computerUseChat() {
+async function computerUseChat(opts: { running?: boolean; commands?: Commands } = {}) {
   const booted = await boot({
     seed: (s) => {
-      s.display = { status: { supported: true, installed: true, missing: [], running: false, geometry: "1280x800" }, lease: { holder: "agent", viewer_hash: null, since: 1, epoch: 0 }, minted: new Set() };
+      s.display = {
+        status: { supported: true, installed: true, missing: [], running: opts.running ?? false, geometry: "1280x800" },
+        lease: { holder: "agent", viewer_hash: null, since: 1, epoch: 0 },
+        minted: new Set(),
+      };
       s.cuGrants.always.add("cua:key:foreground");
     },
+    commands: opts.commands,
   });
   await booted.app.getByPlaceholder("Message Hermes").fill("Use the Bot Desktop to check /srv");
   await userEvent.keyboard("{Enter}");
@@ -131,4 +137,75 @@ it("marks the step denied when the owner denies it", async () => {
   expect(line.querySelector(".cu-outcome")?.textContent).toBe("denied");
   await expect.element(app.getByText("Denied")).toBeVisible();
   await shot("cua denied");
+});
+
+/** A run on a running Bot Desktop that pauses in its third step until the returned `go` lets it on. */
+async function pausedRun(opts: { commands?: Commands } = {}) {
+  const booted = await computerUseChat({ running: true, ...opts });
+  let go!: () => void;
+  const paused = new Promise<void>((r) => (go = r));
+  let n = 0;
+  const turn = booted.server.computerUseTurn(booted.session, { steps: [CU.capture(), CU.key("ctrl+l"), CU.capture(), CU.capture()], reply: "never" }, () => (++n === 3 ? paused : Promise.resolve()));
+  await expect.element(booted.app.getByText(/Computer use · step 3 · \d+:\d\d/)).toBeVisible();
+  return { ...booted, turn, go };
+}
+
+const screenAsks = (server: FakeHermes) => server.requests.filter((r) => r.method === "display.observe" || r.method === "display.lease.acquire").map((r) => r.method);
+const interrupts = (server: FakeHermes) => server.requests.filter((r) => r.method === "session.interrupt").map((r) => r.params);
+
+it("stops a run from its card, takes the screen, and the next turn is refused until Hand back", async () => {
+  const { app, server, session, turn, go } = await pausedRun();
+  await shot("live counter");
+  await app.getByRole("button", { name: "Stop", exact: true }).first().click();
+  await expect.poll(() => screenAsks(server)).toEqual(["display.observe", "display.lease.acquire"]);
+  expect(interrupts(server)).toEqual([{ session_id: session }]);
+  go();
+  await turn;
+  await expect.element(app.getByText(/^Computer use · 3 steps · \d+:\d\d$/)).toBeVisible();
+  await expect.element(app.getByText("You hold the screen")).toBeVisible();
+  await expect.element(app.getByRole("button", { name: "Hand back" })).toBeVisible();
+  await shot("stopped");
+
+  await app.getByPlaceholder("Message Hermes").fill("Carry on");
+  await userEvent.keyboard("{Enter}");
+  await expect.poll(() => server.last("prompt.submit")?.params.text).toBe("Carry on");
+  await server.computerUseTurn(session, { steps: [CU.click([620, 780], "background")], reply: "You have the screen, so I stopped." });
+  const banner = app.getByText("Hermes's computer use was refused because you hold the Bot Desktop.", { exact: false });
+  await expect.element(banner).toBeVisible();
+  expect(server.approvalAnswers).toEqual([]);
+  await shot("human has control");
+
+  await app.getByRole("button", { name: "Hand back" }).first().click();
+  await expect.element(banner).not.toBeInTheDocument();
+  expect(server.display!.lease.holder).toBe("agent");
+  await expect.element(app.getByText("Hermes drives the screen").first()).toBeVisible();
+  await shot("handed back");
+});
+
+it("stops a run and takes the screen on Ctrl+. from the composer", async () => {
+  const { app, server, session, turn, go } = await pausedRun();
+  await app.getByPlaceholder("Message Hermes").click();
+  await userEvent.keyboard("{Control>}.{/Control}");
+  await expect.poll(() => screenAsks(server)).toEqual(["display.observe", "display.lease.acquire"]);
+  expect(interrupts(server)).toEqual([{ session_id: session }]);
+  await expect.element(app.getByText("Stopped the reply using the Bot Desktop. You hold the Bot Desktop now", { exact: false })).toBeVisible();
+  go();
+  await turn;
+  await shot("shortcut");
+});
+
+it("stops a run and takes the screen when hermes-chat --stop asks", async () => {
+  let pending: number | null = null;
+  const { app, server, session, turn, go, emit } = await pausedRun({
+    commands: { stop_pending_request: () => pending, stop_ack_request: (args) => void (pending = pending === args.id ? null : pending) },
+  });
+  pending = 1;
+  await emit("stop-requested");
+  await expect.poll(() => screenAsks(server)).toEqual(["display.observe", "display.lease.acquire"]);
+  expect(interrupts(server)).toEqual([{ session_id: session }]);
+  expect(pending).toBeNull();
+  await expect.element(app.getByText("Stopped the reply using the Bot Desktop.", { exact: false })).toBeVisible();
+  go();
+  await turn;
+  await shot("desktop stop");
 });

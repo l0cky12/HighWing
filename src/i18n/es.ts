@@ -37,6 +37,10 @@ export const es: Catalogue = {
     computerUse: {
       title: "Uso del ordenador",
       steps: (n) => (n === 1 ? "1 paso" : `${n} pasos`),
+      step: (n) => `paso ${n}`,
+      stop: "Detener",
+      stopTip: "Detener la respuesta y tomar el Bot Desktop, para que Hermes no pueda usarlo hasta que se lo devuelvas",
+      stopping: "Deteniendo",
       state: { asking: "esperando tu aprobación", acting: "trabajando", refused: "rechazado", stopped: "detenido", done: "hecho" },
       holder: {
         agent: "Hermes maneja la pantalla",
@@ -107,6 +111,12 @@ export const es: Catalogue = {
         handBack: "Devolver",
         openScreen: "Abrir la Pantalla",
         failed: (why) => `No se pudo devolver la pantalla: ${why}`,
+      },
+      panic: {
+        stopped: (n) => (n === 0 ? "Ninguna respuesta estaba usando el Bot Desktop." : n === 1 ? "Se detuvo la respuesta que usaba el Bot Desktop." : `Se detuvieron ${n} respuestas que usaban el Bot Desktop.`),
+        held: "Ahora tienes el Bot Desktop, así que Hermes no puede usarlo hasta que se lo devuelvas.",
+        already: "Ya tienes el Bot Desktop.",
+        notHeld: (why) => `No se pudo tomar el Bot Desktop: ${why}`,
       },
       follow: {
         section: "Bot Desktop",

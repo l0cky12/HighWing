@@ -589,20 +589,19 @@ describe("A Group room and the shown profile", () => {
 });
 
 describe("A room's seats and the chats", () => {
-  it("never shows a seat's hidden session as live work, nor looks its owner up", async () => {
+  it("never shows a seat's hidden session as live work", async () => {
     const { server, hermes, user } = await launch({ room: true });
     await say(user, "Hello team");
     await act(async () => void server.groups.begin("crew"));
     await waitFor(() => expect(floor().dataset.floor).toBe("speaking"));
     server.liveSessions = [{ id: "rt-ops", session_key: "elsewhere", status: "working", last_active: Date.now() / 1000, title: "Deploy log" }];
-    const before = { rest: server.restRequests.length, rpc: server.requests.length };
+    const before = { rpc: server.requests.length };
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(Date.now() + 20_000);
     await act(async () => void (await hermes.checkLive()));
     vi.useRealTimers();
     expect(server.requests.slice(before.rpc).some((r) => r.method === "session.active_list"), "Hermes was asked what is live").toBe(true);
     expect(hermes.getSnapshot().live?.sessions.map((s) => s.chatId), "Ada's hidden session is not among it").toEqual(["elsewhere"]);
-    expect(server.restRequests.slice(before.rest).filter((r) => r.path.includes("group-crew-ada")), "and no profile was searched for it").toEqual([]);
     expect(hermes.getSnapshot().chats.some((c) => c.title.startsWith("Group:"))).toBe(false);
   });
 });

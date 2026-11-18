@@ -3009,6 +3009,21 @@ export class FakeHermes {
     return id;
   }
 
+  /**
+   * A Group room seat's session, working, as Hermes's room driver makes one in the bot's profile
+   * (`tui_gateway/hosted_room_server_rpc.py` at v0.23.2): stored hidden with source `bot_room` and titled
+   * `Group: <room>`, and listed in `session.active_list` with no profile, like every live row.
+   */
+  seatSession(profile: string, room: string, said: string): string {
+    const store = this.store(profile) ?? (this.otherProfiles[profile] = []);
+    const id = `seat-${room}-${profile}`;
+    const title = `Group: ${room}`;
+    store.push(row(id, 0, { source: "bot_room", hidden: true, title, message_count: 1, preview: said }));
+    this.storeMessage(id, { role: "assistant", text: said });
+    this.liveSessions.push({ id: `rt-${id}`, session_key: id, status: "working", last_active: now(), title });
+    return id;
+  }
+
   defaultModel(profile?: string | null): ModelInfo {
     return this.profileModel[profile || "default"] ?? { model: "claude-sonnet-4-5", provider: "anthropic", reasoning_effort: "medium", fast: false };
   }

@@ -39,8 +39,8 @@ Each feature file starts with an H1 and one paragraph describing the behaviour t
 - [Send a message](send-message.md): open a chat, send, watch the streamed reply, and confirm both messages on the server.
 - [New chat](new-chat.md): start a chat from the rail, the list panel or Ctrl+N, and see it created on the server and in the list.
 - [New bot](new-bot.md): rewrite a rough persona with AI, choose skills and tools, create, and read each back; the partial and narrow cases.
-- [MCP servers](mcp-servers.md): Settings → MCP servers: list, test, add, edit with write-only secrets, remove, switch, OAuth sign-in, catalog, another profile.
-- [Gateways](gateways.md): Settings → Gateways: Telegram and Discord state, token replace and remove with read-back, the switch, a turned-down token, a missing library, a change on the server meanwhile, Check status.
+- [MCP servers](mcp-servers.md): Settings → MCP servers: list, test, add, edit with write-only secrets, remove, switch, OAuth sign-in, catalog, another profile, Restart gateway after an edit.
+- [Gateways](gateways.md): Settings → Gateways: Telegram and Discord state, token replace and remove with read-back, the switch, a turned-down token, a missing library, a change on the server meanwhile, Check status, Restart gateway.
 - [Search chats](search.md): Ctrl+K or the rail opens search, a body-text match opens its chat, and a miss shows No matches.
 - [Chat list](chat-list.md): the Archived drawer at the foot (open, close, its own scroll, kept across a relaunch), Archive and Unarchive from the menu, Up and Down into the drawer, chats archived in Hermes in the same drawer, resizing the list from its edge, and zooming the app, with the `HV_LIST=24` seed.
 - [Rail inbox](rail-inbox.md): opened as the tray's Open Inbox is (an emitted event), then Check now, Clear done, and auto-dismissing old completed entries, with the `HV_INBOX=1` seed.

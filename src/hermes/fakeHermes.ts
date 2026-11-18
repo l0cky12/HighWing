@@ -13,6 +13,7 @@ import { FakeServerFiles } from "./fakeServerFiles";
 import { FakeProjectContext } from "./fakeProjectContext";
 import { FakeCheckpoints, inlineDiff, type FakeEdit } from "./fakeCheckpoints";
 import { FakeGoals } from "./fakeGoals";
+import { FakeGroups } from "./fakeGroups";
 import { ScheduleError, isoIn, parseSchedule, upcomingRuns } from "./schedule";
 import { skillInvocationText } from "./skillCommands";
 import { CANONICAL_READY } from "./canonicalVerbs";
@@ -489,6 +490,8 @@ export class FakeHermes {
   readonly runtimeProfile = new Map<string, string>();
   /** Goals (fakeGoals.ts, ADR 0187). `standingMissions` false: a Hermes without `session.control`, "method not found". */
   readonly goals = new FakeGoals();
+  /** Group rooms (fakeGroups.ts, ADR 0205): every `groups.*` request, unless a test put its own handler in `handlers`. */
+  readonly groups = new FakeGroups();
   standingMissions = true;
   /** Starts the turn that follows a goal's turn at once, as Hermes does; none in tests, which send turns themselves. */
   goalTurn?: (runtimeId: string, prompt: string) => void;
@@ -803,6 +806,7 @@ export class FakeHermes {
     for (const r of ["GET /api/health", "GET /api/files", "GET /api/files/read", "GET /api/fs/list"]) delete this.rest[r];
     this.status = { version: "0.16.0", release_date: "2026.6.8", auth_required: true, auth_providers: ["basic"] };
     this.botMode = "none";
+    this.groups.build.absent = true;
   }
 
   authority?: FakeAuthority;
@@ -1979,7 +1983,9 @@ export class FakeHermes {
       }
       this.requests.push(req);
       if (canonical) return canonical.request(req);
-      this.handlers[req.method]?.(req);
+      const handler = this.handlers[req.method];
+      if (handler) handler(req);
+      else if (req.method.startsWith("groups.")) this.groupsCall(req);
     };
     return {
       route: this.route,
@@ -2780,6 +2786,14 @@ export class FakeHermes {
     this.respond(id, { ...this.display.status, ...own, lease: this.display.lease, profile_key: "/home/lena/.hermes" });
   }
 
+  private groupsCall(r: Request) {
+    this.groups.onChange ??= (room_ids) => this.broadcast("groups.changed", { room_ids, broadcast_id: `e1:${++this.groupBroadcasts}` });
+    const answer = this.groups.handle(r.method, r.params);
+    if ("error" in answer) this.fail(r.id, answer.error.code, answer.error.message);
+    else this.respond(r.id, answer.result);
+  }
+  private groupBroadcasts = 0;
+
   /** A session-less broadcast such as `sessions.changed` (tui_gateway `_broadcast_global_event`). */
   broadcast(type: string, payload: Record<string, unknown> = {}) {
     this.event("", type, payload);
@@ -2875,6 +2889,8 @@ export class FakeHermes {
     const status = this.turnIsolation ? "working" : "waiting";
     const rows = this.liveSessions.map((l) => (asking.has(l.id) ? { ...l, status } : l));
     for (const [sid, stored] of asking) if (!rows.some((l) => l.id === sid)) rows.push({ id: sid, session_key: stored, status, last_active: Date.now() / 1000 });
+    // Each seat of a Group room answers in a hidden session of its own, live while its turn runs.
+    rows.push(...this.groups.liveRows());
     return rows;
   }
 

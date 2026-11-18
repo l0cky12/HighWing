@@ -179,8 +179,9 @@ export function foldRoom(log: RoomLog, events: readonly LogEvent[], seats: reado
         break;
       }
       case "turn.cancelled": {
+        // Hermes names only this reason; a turn Stop cancelled says "member turn cancelled", after `room.stop_requested`.
         const reason = str(e.p.reason);
-        entries.push({ ...base, kind: "cancelled", seat, why: reason === "superseded_by_newer_user_event" ? "steppedIn" : /stop/.test(reason) ? "stopped" : "other" });
+        entries.push({ ...base, kind: "cancelled", seat, why: reason === "superseded_by_newer_user_event" ? "steppedIn" : "other" });
         break;
       }
       case "room.activity": {

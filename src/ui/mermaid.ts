@@ -1,4 +1,5 @@
 import { errorText } from "../hermes/values";
+import { lru } from "./lru";
 
 export type Drawing = { svg: string } | { note: string };
 
@@ -92,7 +93,9 @@ async function draw(source: string, theme: Theme): Promise<Drawing> {
 
 type Held = { drawing: Promise<Drawing>; done?: Drawing };
 
-const drawings = new Map<string, Held>();
+const drawings = lru<Held>(50);
+
+const drawingKey = (source: string, theme: Theme) => theme + "\n" + source;
 
 export const themeNow = (): Theme => (document.documentElement.dataset.mode === "dark" ? "dark" : "default");
 
@@ -103,25 +106,17 @@ export function subscribeTheme(fn: () => void) {
 }
 
 export function drawnAlready(source: string, theme: Theme): Drawing | undefined {
-  return drawings.get(theme + "\n" + source)?.done;
+  return drawings.peek(drawingKey(source, theme))?.done;
 }
 
 export function drawDiagram(source: string, theme: Theme): Promise<Drawing> {
-  const key = theme + "\n" + source;
+  const key = drawingKey(source, theme);
   const held = drawings.get(key);
-  if (held) {
-    drawings.delete(key);
-    drawings.set(key, held);
-    return held.drawing;
-  }
+  if (held) return held.drawing;
   const drawing = queue.then(() => draw(source, theme));
   queue = drawing;
   const entry: Held = { drawing };
   void drawing.then((done) => (entry.done = done));
-  drawings.set(key, entry);
-  for (const [old] of drawings) {
-    if (drawings.size <= 50) break;
-    drawings.delete(old);
-  }
+  drawings.set(key, entry, 1);
   return entry.drawing;
 }

@@ -7,6 +7,7 @@ import { SKIP, visit } from "unist-util-visit";
 import type { Element, ElementContent, Root, RootContent } from "hast";
 import type { VFile } from "vfile";
 import { escapeRe } from "./bits";
+import { lru } from "./lru";
 import { remarkTranscriptSyntax } from "./markdownMath";
 import { findPaths, hrefPath, type PathMention } from "../hermes/paths";
 
@@ -77,29 +78,6 @@ const rehypePaths = () => (tree: Root) => {
   };
   walk(tree);
 };
-
-function lru<V>(limit: number) {
-  const held = new Map<string, { value: V; weight: number }>();
-  let weights = 0;
-  return {
-    get(key: string): V | undefined {
-      const hit = held.get(key);
-      if (!hit) return undefined;
-      held.delete(key);
-      held.set(key, hit);
-      return hit.value;
-    },
-    set(key: string, value: V, weight: number) {
-      held.set(key, { value, weight });
-      weights += weight;
-      for (const [old, { weight }] of held) {
-        if (weights <= limit) break;
-        held.delete(old);
-        weights -= weight;
-      }
-    },
-  };
-}
 
 // The highlighter is made once: rehype-highlight builds a fresh highlight.js instance, with every grammar to compile
 // again, each time the plugin is attached, and ReactMarkdown attaches its plugins on every render.

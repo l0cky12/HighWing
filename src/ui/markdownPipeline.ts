@@ -8,7 +8,7 @@ import type { Element, ElementContent, Root, RootContent } from "hast";
 import type { VFile } from "vfile";
 import { escapeRe } from "./bits";
 import { lru } from "./lru";
-import { remarkTranscriptSyntax } from "./markdownMath";
+import { remarkTranscriptSyntax } from "./markdownSyntax";
 import { findPaths, hrefPath, type PathMention } from "../hermes/paths";
 
 export const classes = (node: Element) => {

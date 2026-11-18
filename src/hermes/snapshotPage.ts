@@ -5,7 +5,7 @@
 // from the document is redacted again before it is escaped.
 import { fromMarkdown } from "mdast-util-from-markdown";
 import type { Definition, Nodes, Parents, RootContent } from "mdast";
-import { transcriptSyntax } from "../ui/markdownMath";
+import { transcriptSyntax } from "../ui/markdownSyntax";
 import { EXPORT_FORMATS } from "./exportChat";
 import { redactValues } from "./secrets";
 

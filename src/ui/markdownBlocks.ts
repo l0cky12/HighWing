@@ -1,6 +1,6 @@
 import { fromMarkdown } from "mdast-util-from-markdown";
 import type { Nodes } from "mdast";
-import { transcriptSyntax } from "./markdownMath";
+import { transcriptSyntax } from "./markdownSyntax";
 
 export type Block = { start: number; text: string; refs: boolean; open: boolean };
 

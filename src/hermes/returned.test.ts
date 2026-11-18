@@ -87,6 +87,38 @@ describe("A stored row that brings back handed-off work", () => {
     expect(returnedItem("  An older Hermes's plain result  ", "async_delegation_complete", undefined)?.body).toBe("An older Hermes's plain result");
   });
 
+  it("shows a teammate's message as from that bot, with Hermes's signature taken off", () => {
+    expect(returnedItem("Message from 🤖 hermes (@hermes): PING-C what is 2+2?", "internal_notification", { gateway_input_owner: "bot:default" })).toEqual({
+      body: "PING-C what is 2+2?",
+      process: false,
+      agent: { kind: "from", teammate: { name: "hermes", handle: "hermes" } },
+    });
+    expect(returnedItem(`Message from 🤖 Quill (@quill): Hello.\n\n${FOOTER}`, "internal_notification", undefined)?.body).toBe("Hello.");
+  });
+
+  it("shows any other notice of Hermes's as Hermes's, never as the owner's", () => {
+    expect(returnedItem("Heartbeat: check the queue.", "internal_notification", { display_text: "Heartbeat" })).toEqual({ title: "Heartbeat", body: "Heartbeat: check the queue.", process: false, agent: { kind: "from" } });
+    expect(returnedItem(SINGLE, "internal_notification", undefined)?.body).toBe("Backups fail because the NAS share is read-only.");
+  });
+
+  it("leaves a signed message the owner pasted as the owner's", () => {
+    expect(returnedItem("Message from 🤖 hermes (@hermes): PING-C what is 2+2?", undefined, undefined)).toBeUndefined();
+  });
+
+  it("shows the answer to a message this bot sent under Hermes's sentence for it, as a reply rather than a log", () => {
+    const output = '{"outcome": "@beta answered.", "reply": "It is **four**.", "status": "settled", "delivery_id": "d1"}';
+    const text = `[IMPORTANT: Background process proc_1 completed normally (exit code 0).\nCommand: python bot_mode_dm.py --run-delivery query-file /tmp/dm.txt hermes -p beta\nOutput:\n${output}\n]`;
+    const title = { display_text: "Background Process Finished: python bot_mode_dm.py --run-delivery" };
+    expect(returnedItem(text, "process_complete", title)).toEqual({ title: "@beta answered.", body: "It is **four**.", process: false, agent: { kind: "answer", deliveryId: "d1", status: "settled" } });
+    expect(returnedItem(`${text}\n\n${FOOTER}`, "process_complete", title)?.body).toBe("It is **four**.");
+  });
+
+  it("shows Hermes's sentence alone when no answer came back", () => {
+    const outcome = "@beta never answered: the request was cancelled.";
+    const text = `[IMPORTANT: Background process proc_1 exited with code 1.\nOutput:\n${JSON.stringify({ outcome, status: "cancelled", delivery_id: "d1" })}\n]`;
+    expect(returnedItem(text, "process_complete", { display_text: "Background Process Finished: python" })).toEqual({ body: outcome, process: false, agent: { kind: "answer", deliveryId: "d1", status: "cancelled" } });
+  });
+
   it("is no Returned result for any other row", () => {
     for (const kind of [undefined, "steer", "hidden", "model_switch", 3]) expect(returnedItem(SINGLE, kind, undefined)).toBeUndefined();
   });

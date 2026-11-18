@@ -1,11 +1,20 @@
-// A Returned result (ADR 0175): the stored user row that begins the turn Hermes runs when handed-off work comes back.
-// Hermes marks it with a display kind and a one-line title (`display_metadata.display_text`), and its text is the
-// model-facing notice (`tools/process_registry_notifications.py` at `bf0203a`). The owner is shown the title and the
-// result only, as the official desktop app's `asyncResultBody` strips it (`apps/desktop/src/lib/chat-messages/hydration.ts`).
+import { deliveryAnswer, teammateMessage, type DeliveryStatus, type Teammate } from "./agentMessages";
+// A Returned result (ADR 0175): the stored user row that begins a turn Hermes runs by itself. Hermes marks it with a
+// display kind and a one-line title (`display_metadata.display_text`), and its text is the model-facing notice
+// (`tools/process_registry_notifications.py` at `bf0203a`). The owner is shown the title and the result only, as the
+// official desktop app's `asyncResultBody` strips it (`apps/desktop/src/lib/chat-messages/hydration.ts`). Bot messaging
+// brings two more such rows (ADR 0205): a teammate's message, and the answer to one this bot sent.
 
-export type Returned = { title?: string; body: string; process: boolean };
+/**
+ * Bot messaging on a Returned result. `from`: the row is a message to this bot; `teammate` is who Hermes signed it
+ * as, and a notice with no signature is Hermes's own. `answer`: the row is the answer to a message this bot sent.
+ */
+export type AgentTurn = { kind: "from"; teammate?: Teammate } | { kind: "answer"; deliveryId: string; status: DeliveryStatus };
 
-const KINDS: Record<string, boolean> = { async_delegation_complete: false, process_complete: true };
+export type Returned = { title?: string; body: string; process: boolean; agent?: AgentTurn };
+
+/** The display kinds that are a Returned result, and whether each one's body is a process's log. */
+const KINDS: Record<string, boolean> = { async_delegation_complete: false, process_complete: true, internal_notification: false };
 
 /** `display_metadata` as an object: Hermes sends it as one, or as its JSON text from the stored row. */
 export function displayMetadata(raw: unknown): Record<string, unknown> | undefined {
@@ -62,13 +71,21 @@ function cleaned(body: string): string {
 }
 
 /**
- * The Returned result a stored user row is, or undefined for any other row. If nothing is left once the envelope goes,
- * the body is the whole text, so a result is never lost.
+ * The Returned result a stored user row is, or undefined for any other row. The display kind decides, so the same
+ * words typed by the owner are the owner's. If nothing is left once the envelope goes, the body is the whole text, so
+ * a result is never lost.
  */
 export function returnedItem(text: string, displayKind: unknown, metadata: unknown): Returned | undefined {
   if (typeof displayKind !== "string" || !Object.hasOwn(KINDS, displayKind)) return undefined;
   const shown = displayMetadata(metadata)?.display_text;
   const title = typeof shown === "string" && shown.trim() ? shown.trim() : undefined;
   const notice = withoutFooter(text);
+  if (displayKind === "internal_notification") {
+    const message = teammateMessage(notice);
+    return { ...(title && { title }), body: message?.text || (resultBody(notice) ?? notice.trim()), process: false, agent: { kind: "from", ...(message && { teammate: message.from }) } };
+  }
+  const answer = displayKind === "process_complete" ? deliveryAnswer(notice) : undefined;
+  // With a reply, Hermes's sentence for the outcome is the title. Without one it is all there is to read.
+  if (answer) return { ...(answer.reply && { title: answer.outcome }), body: answer.reply ?? answer.outcome, process: false, agent: { kind: "answer", deliveryId: answer.deliveryId, status: answer.status } };
   return { ...(title && { title }), body: resultBody(notice) ?? notice.trim(), process: KINDS[displayKind] };
 }

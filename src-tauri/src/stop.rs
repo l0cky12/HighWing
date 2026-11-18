@@ -1,4 +1,4 @@
-//! `hermes-chat --stop` is the panic Stop (ADR 0219): it asks the running app to stop every reply using the Bot Desktop
+//! `hermes-chat --stop` is the panic Stop (ADR 0221): it asks the running app to stop every reply using the Bot Desktop
 //! and to take the screen, so Hermes's next `computer_use` call is refused until the owner hands it back. It reaches
 //! the app as `Request::Stop` (remote.rs), as a chat link does; with none running, the app starts and does it once it
 //! is signed in.

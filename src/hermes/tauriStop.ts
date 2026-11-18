@@ -1,4 +1,4 @@
-// `hermes-chat --stop` reaches the webview from Rust (src-tauri/src/remote.rs, ADR 0219). Rust keeps the request until a
+// `hermes-chat --stop` reaches the webview from Rust (src-tauri/src/remote.rs, ADR 0221). Rust keeps the request until a
 // window connected to Hermes has started the Stop, so one made at the sign-in screen, while connecting, or one that
 // started the app, isn't lost.
 import { invoke } from "@tauri-apps/api/core";

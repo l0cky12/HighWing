@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { handoffs } from "./dispatched";
 import { FakeHermes, readRow, row } from "./fakeHermes";
 import { memoryCache } from "./memoryCache";
+import type { RoomSummary } from "./groupRooms";
 import { INBOX_PREFIX, blocksRestore, inboxAcks, inboxEntries, needsOwner, type InboxEntry, type InboxKind } from "./inbox";
 import type { OutgoingItem } from "./model";
 import { connect, type Hermes } from "./transport";
@@ -637,5 +638,47 @@ describe("what a restore waits for", () => {
     expect(blocksRestore(entry("approval", { taskId: "t_1" }))).toBe(false);
     expect(blocksRestore(entry("approval", { ended: true }))).toBe(false);
     expect(blocksRestore(entry("completed"))).toBe(false);
+  });
+});
+
+describe("Group rooms in the inbox", () => {
+  const seats = [{ id: "ada", profile: "ada", handle: "ada", name: "Ada" }];
+  const room = (id: string, attention?: RoomSummary["attention"], stale = false): RoomSummary => ({ id, name: `Room ${id}`, seats, updatedAt: 5, attention, stale });
+  const rooms = [
+    room("a", { kind: "approval", summary: "Ada is waiting for your approval.", at: 0, mark: "k1", needsOwner: true }),
+    room("p", { kind: "paused", summary: "The bots paused after 3 rounds.", at: 40, mark: "d1 0", needsOwner: true }),
+    room("s", { kind: "failed", summary: "Ada is asking through a tool a room can't show.", at: 30, mark: "clarify ada 9", needsOwner: true }),
+    room("d", { kind: "completed", summary: "The bots are done.", at: 20, mark: "", needsOwner: true }, true),
+    room("r", { kind: "running", summary: "The bots are talking.", at: 10, mark: "", needsOwner: false }),
+    room("quiet"),
+  ];
+  const list = () => inboxEntries({ profile: "default", chats: [], connected: true, others: { byName: {} }, rooms }).entries;
+
+  it("lists a room for what its floor asks, keyed by the room and the occasion, in no profile", () => {
+    expect(list().map((e) => [e.key, e.kind, e.roomId, e.profile, e.chatId, e.title, e.at])).toEqual([
+      ["room a approval k1", "approval", "a", "", "", "Room a", 0],
+      ["room p paused d1 0", "paused", "p", "", "", "Room p", 40],
+      ["room s failed clarify ada 9", "failed", "s", "", "", "Room s", 30],
+      ["room d completed", "completed", "d", "", "", "Room d", 20],
+      ["room r running", "running", "r", "", "", "Room r", 10],
+    ]);
+    expect(list().find((e) => e.roomId === "d")?.stale).toBe(true);
+  });
+
+  it("counts every room that needs the owner, and none that is only talking", () => {
+    expect(list().filter(needsOwner).map((e) => e.roomId)).toEqual(["a", "p", "s", "d"]);
+  });
+
+  it("never holds a restore up: Hermes runs a room whether this app is open or not", () => {
+    expect(list().filter(blocksRestore)).toEqual([]);
+  });
+
+  it("shows a dismissed pause again only when the bots pause another time", () => {
+    const acks = inboxAcks({ getItem: () => null, setItem: () => {} }, "server");
+    const [, paused] = list();
+    acks.dismiss(paused);
+    expect(acks.isDismissed(paused)).toBe(true);
+    const again = inboxEntries({ profile: "default", chats: [], connected: true, others: { byName: {} }, rooms: [room("p", { kind: "paused", summary: "The bots paused after 6 rounds.", at: 90, mark: "d1 1", needsOwner: true })] }).entries[0];
+    expect(acks.isDismissed(again)).toBe(false);
   });
 });

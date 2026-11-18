@@ -20,6 +20,7 @@ import {
   type CapabilityIO,
   checkpointsSettingOf,
 } from "./capabilities";
+import { APP_METHODS } from "./canonicalVerbs";
 import { RpcError } from "./transport";
 import { RestError } from "./pipe";
 
@@ -139,6 +140,16 @@ describe("the capability contract", () => {
       // A probe's method is never one its capability counts as a write.
       if (c.probe.kind === "rpc") expect(c.writeMethods?.test(c.probe.method) ?? false, c.id).toBe(false);
     }
+  });
+
+  it("guards every Group room method but the three reads, and never sends the one that writes a file on the server", () => {
+    const rooms = CAPABILITIES.find((c) => c.id === "groupRooms")!;
+    const sent = APP_METHODS.filter((m) => m.startsWith("groups."));
+    expect(sent.filter((m) => !rooms.writeMethods!.test(m))).toEqual(["groups.list", "groups.log", "groups.state"]);
+    expect(sent).toHaveLength(10);
+    expect((APP_METHODS as readonly string[]).includes("groups.capabilities")).toBe(false);
+    expect(rooms.probe).toMatchObject({ kind: "rpc", method: "groups.list" });
+    expect(rooms.probe?.kind === "rpc" && rooms.probe.params("default")).toEqual({ limit: 1 });
   });
 });
 

@@ -95,6 +95,7 @@ export function useBotActions({
   shown,
   onRefresh,
   onNote,
+  headExtra,
 }: {
   profiles: Omit<ProfilesWiring, "showTab">;
   botEdit: BotEditWiring;
@@ -103,6 +104,8 @@ export function useBotActions({
   shown: boolean;
   onRefresh: () => void;
   onNote: (text: string) => void;
+  /** More buttons for the head, before New bot: New room (ADR 0205). */
+  headExtra?: ReactNode;
 }) {
   const l = useLocale();
   const w = l.bots;
@@ -215,6 +218,7 @@ export function useBotActions({
     <>
       <div className="bots-head">
         {roster && <MessagingSwitch roster={roster} why={messagingWhy} save={botEdit.messaging} onNote={onNote} />}
+        {headExtra}
         <button ref={newBtn} className="icon-btn" title={newWhy ?? w.newBot} aria-label={w.newBot} disabled={!!newWhy} onClick={() => setMaking(true)}>
           <Plus size={15} />
         </button>

@@ -133,7 +133,8 @@ export function Inbox({
   }, [focusAt]);
 
   // An entry on another live connection leaves nothing here behind: this connection carries on in the background.
-  const open = (e: InboxEntry) => (!e.server && e.profile !== profile && leaving ? setAsking(e) : onOpen(e));
+  // A Group room is in no profile, so opening one switches nothing.
+  const open = (e: InboxEntry) => (!e.server && !e.roomId && e.profile !== profile && leaving ? setAsking(e) : onOpen(e));
   const dismiss = (e: InboxEntry) => {
     setFocusAt(shown.indexOf(e));
     onDismiss(e);

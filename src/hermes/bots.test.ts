@@ -159,10 +159,11 @@ describe("the roster", () => {
       bot_mode_protocol: true,
     });
     expect(bots).toEqual([
-      { profile: "default", name: "Hermes", description: "", isDefault: true, hasAvatar: false, hidden: false, pinned: false, block: "none", botChat: null, lastActive: 0 },
+      { profile: "default", name: "Hermes", handle: "hermes", description: "", isDefault: true, hasAvatar: false, hidden: false, pinned: false, block: "none", botChat: null, lastActive: 0 },
       {
         profile: "scribe",
         name: "Scribe",
+        handle: "scribe",
         description: "Writes release notes",
         isDefault: false,
         hasAvatar: true,
@@ -181,6 +182,24 @@ describe("the roster", () => {
     expect(botName({ name: "ops", display_name: "Operator" })).toBe("Operator");
     expect(botName({ name: "release_notes-bot" })).toBe("Release Notes Bot");
     expect(botName({ name: "default" })).toBe("Hermes");
+  });
+
+  it("gives the default profile the handle hermes and every other bot its profile's name, whatever it is called", () => {
+    const bots = rosterOf({
+      profiles: [
+        row({ name: "default", is_default: true, ui_meta: { "hermes-bots": { title: "Chief" } } }),
+        row({ name: "release_notes", display_name: "Scribe" }),
+      ],
+    });
+    expect(bots.map((b) => [b.name, b.handle])).toEqual([
+      ["Chief", "hermes"],
+      ["Scribe", "release_notes"],
+    ]);
+  });
+
+  it("leaves the default profile at @default while a profile named hermes holds that handle, as Hermes does", () => {
+    const bots = rosterOf({ profiles: [row({ name: "default", is_default: true }), row({ name: "hermes" })] });
+    expect(bots.map((b) => b.handle)).toEqual(["default", "hermes"]);
   });
 
   it("is unsupported when the rows don't report a Bot Chat at all", () => {
@@ -253,6 +272,7 @@ describe("what waits in the other bots", () => {
   const bot = (profile: string, more: Partial<Bot> = {}): Bot => ({
     profile,
     name: profile,
+    handle: profile,
     description: "",
     isDefault: false,
     hasAvatar: false,

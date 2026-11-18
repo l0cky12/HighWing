@@ -40,6 +40,7 @@ import { AttachmentChip, InlineSentImage, Previews, SentImages, readPreview } fr
 import { InlineMarks, type ComposerMark } from "./inlineMarks";
 import { sentWith } from "../hermes/sentImages";
 import { carried, highestMark, marksIn, markText, placeImages, sentText, withMarks, withoutMarks } from "../hermes/inlineImages";
+import { mentionsIn } from "../hermes/mentionPicker";
 import { Speaker } from "./speaker";
 import { DictationNoteView, DictationStrip, ListenButton, MicButton, type VoiceApi, listenBlocked, micBlocked, useDictation, useVoiceSetup } from "./Voice";
 import { withTranscript } from "../hermes/voice";
@@ -1932,6 +1933,7 @@ function Composer({
   compare?: Comparing;
 }) {
   const keys = useBindings();
+  const atWords = useLocale().chat.at;
   // The chat's staged attachments, kept by the desk under its Draft key so they outlive this composer (ADR 0145).
   const attachments = useSyncExternalStore(desk.subscribe, () => desk.stagedIn(draftKey));
   // Each staged image's number, which its mark in the words gives (inlineImages.ts, ADR 0200).
@@ -1940,7 +1942,7 @@ function Composer({
   useEffect(() => desk.reserve(draftKey, highestMark(text)), [desk, draftKey, text]);
   const marks: ComposerMark[] = useMemo(() => {
     const by = new Map(attachments.flatMap((a) => (numbers.has(a.path) ? [[numbers.get(a.path)!, a] as const] : [])));
-    return marksIn(text, (n) => by.has(n)).map((m) => ({ ...m, file: by.get(m.n)! }));
+    return marksIn(text, (n) => by.has(n)).map((m) => ({ ...m, kind: "image", file: by.get(m.n)! }));
   }, [text, attachments, numbers]);
   const spellCheck = useSpellCheck();
   const annotations = useSyncExternalStore(desk.subscribe, desk.annotationLabels);
@@ -2286,6 +2288,13 @@ function Composer({
     if (next !== textRef.current) onText(next);
   };
   const slash = useSlashCommands(commands, text, onText, taRef);
+  // The "@" word the menu is open on stays words until it is picked, so typing "@bram" in full doesn't flash a pill.
+  const bots = commands?.references?.bots;
+  const atButton = bots ? atWords.button : "Reference a chat";
+  const pills = useMemo<ComposerMark[]>(() => {
+    const named = mentionsIn(text, bots ?? []).filter((m) => m.start !== slash.typingAt && !marks.some((k) => m.start < k.end && m.end > k.start));
+    return named.length ? [...marks, ...named.map((m) => ({ ...m, kind: "bot" as const }))].sort((a, b) => a.start - b.start) : marks;
+  }, [text, bots, marks, slash.typingAt]);
   const step = (which: EditStep) => {
     const before = textRef.current;
     const after = onStep(which);
@@ -2500,15 +2509,19 @@ function Composer({
             }}
             onKeyDown={(e) => {
               if (slash.onKeyDown(e)) return;
-              // Backspace after a mark, or Delete before one, takes the whole mark out, and its image goes above the words.
+              // Backspace after a pill, or Delete before one, takes the whole of it out; an image's goes above the words. Backspace
+              // after a bot's pill and the space after it, where a pick leaves the caret, takes both.
               const ta = e.currentTarget;
+              const caret = ta.selectionStart;
               const mark =
-                (e.key === "Backspace" || e.key === "Delete") && !composing(e) && ta.selectionStart === ta.selectionEnd
-                  ? marks.find((m) => (e.key === "Backspace" ? m.end : m.start) === ta.selectionStart)
+                (e.key === "Backspace" || e.key === "Delete") && !composing(e) && caret === ta.selectionEnd
+                  ? pills.find((m) =>
+                      e.key === "Delete" ? m.start === caret : m.end === caret || (m.kind === "bot" && m.end + 1 === caret && text[m.end] === " "),
+                    )
                   : undefined;
               if (mark) {
                 e.preventDefault();
-                const next = text.slice(0, mark.start) + text.slice(mark.end);
+                const next = text.slice(0, mark.start) + text.slice(e.key === "Backspace" ? caret : mark.end);
                 caretTo.current = { text: next, from: mark.start, to: mark.start };
                 onText(next);
                 return;
@@ -2528,14 +2541,14 @@ function Composer({
               } else if (command === "newLine") typeNewLine(e);
             }}
           />
-          {marks.length > 0 && <InlineMarks ta={taRef} text={text} marks={marks} selection={selection} previews={(path) => previews.current?.get(path)} />}
+          {pills.length > 0 && <InlineMarks ta={taRef} text={text} marks={pills} selection={selection} previews={(path) => previews.current?.get(path)} />}
         </div>
         <div className="composer-bar">
           <button className="icon-btn" title="Attach files" onClick={() => void pick()}>
             <Paperclip size={16} />
           </button>
           {commands?.references && (
-            <button className="icon-btn" title="Reference a chat" aria-label="Reference a chat" onClick={slash.startReference}>
+            <button className="icon-btn" title={atButton} aria-label={atButton} onClick={slash.startReference}>
               <AtSign size={16} />
             </button>
           )}

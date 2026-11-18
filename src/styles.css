@@ -726,6 +726,11 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
 .inline-mark img, .inline-mark-blank { height: calc(100% - 6px); aspect-ratio: 1; border-radius: 4px; object-fit: cover; flex: none; background: var(--line-2); }
 .inline-mark-name { color: var(--accent); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .inline-mark-size { color: var(--muted); font-size: 0.82em; flex: none; }
+/* A bot's "@handle": the same size as the words under it, so it fits the box they take, in the bot's colour. */
+.inline-mark-pill.is-bot {
+  font-size: 1em; padding: 0 1px; border-radius: 4px; color: var(--accent);
+  background: color-mix(in srgb, currentColor 16%, var(--raised));
+}
 /* The other lines of a mark that wraps: the composer's own colour over the raw words, so only the chip shows. */
 .inline-mark-cover { position: absolute; background: var(--raised); }
 .composer-bar { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
@@ -1394,6 +1399,11 @@ div.route-result { display: flex; flex-direction: column; gap: 6px; }
 .cmd-scope.skill { background: var(--raised-3); color: var(--text-2); }
 .cmd-option.reference { display: flex; align-items: center; gap: 8px; color: var(--muted); }
 .cmd-option.reference .cmd-desc { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmd-option.bot { display: flex; align-items: center; gap: 8px; }
+.cmd-option.bot .cmd-bot-name { color: var(--text-strong); flex: none; }
+.cmd-option.bot .cmd-name { color: var(--muted); flex: none; }
+.cmd-option.bot .cmd-desc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmd-menu [role="listbox"] > :first-child > .cmd-group { margin-top: 0; border-top: 0; }
 .cmd-option.skill .cmd-desc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .skill-note { font-size: calc(12rem / 14); color: var(--muted); padding: 0 6px 8px; }
 .skill-note.error { color: var(--bad); }

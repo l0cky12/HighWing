@@ -1314,6 +1314,13 @@ export function Main({
     skillDirty.current = dirty;
     setSkillUnsaved(dirty);
   }, []);
+  // An unsaved Persona in the profile form (ProfileSettings.tsx, ADR 0203) lives only on screen too, and is guarded the same way.
+  const personaDirty = useRef(false);
+  const [personaUnsaved, setPersonaUnsaved] = useState<string>();
+  const onPersonaDirty = useCallback((dirty: boolean, profile: string) => {
+    personaDirty.current = dirty;
+    setPersonaUnsaved(dirty ? profile : undefined);
+  }, []);
   // Artifacts open to edit beside the chat (artifacts.ts, ADR 0029): their drafts live in memory for this sign-in, so
   // moving around the app keeps them, and only signing out or closing the window would drop one.
   const artifacts = useMemo(
@@ -1322,19 +1329,20 @@ export function Main({
   );
   const artSnap = useSyncExternalStore(artifacts.subscribe, artifacts.getSnapshot);
   const artifactUnsaved = [...artSnap.values()].some(isDirty);
-  const [leaving, setLeaving] = useState<{ edit: "memory" | "skill" | "artifact"; what: LeaveWhat; go: () => void; stay?: () => void }>();
+  const [leaving, setLeaving] = useState<{ edit: "memory" | "skill" | "persona" | "artifact"; what: LeaveWhat; go: () => void; stay?: () => void }>();
   /** Runs `go` now, or once the owner agrees to leave an unsaved memory, skill or artifact edit behind. `stay` runs if they don't. */
   const guard = (go: () => void, what: LeaveWhat = "leave", stay?: () => void) => {
     // Signing out or closing drops artifact edits too: once a settings edit is left, they are asked about in turn.
     const next = what === "signout" || what === "close" ? () => (artifacts.unsaved().length ? setLeaving({ edit: "artifact", what, go, stay }) : go()) : go;
     if (memoryDirty.current) return setLeaving({ edit: "memory", what, go: next, stay });
     if (skillDirty.current) return setLeaving({ edit: "skill", what, go: next, stay });
+    if (personaDirty.current) return setLeaving({ edit: "persona", what, go: next, stay });
     next();
   };
   const guardRef = useRef(guard);
   guardRef.current = guard;
   // Closing the window asks too, only while there is something to lose. A memory edit also holds a page reload.
-  useCloseGuard(memoryUnsaved || skillUnsaved || artifactUnsaved, (close) => guardRef.current(close, "close"));
+  useCloseGuard(memoryUnsaved || skillUnsaved || !!personaUnsaved || artifactUnsaved, (close) => guardRef.current(close, "close"));
   // A new object each time a row asks Settings to show the Text generation model; the rail's button opens it plainly.
   const [showTextGeneration, setShowTextGeneration] = useState<object>();
   /** Set to open Settings on its Memory tab, from the context inspector. */
@@ -3212,6 +3220,7 @@ export function Main({
   const copyText = (text: string) => (navigator.clipboard?.writeText ? navigator.clipboard.writeText(text) : Promise.reject(new Error("No clipboard")));
   const profilesWiring: Omit<ProfilesWiring, "showTab"> = {
     api: hermes.manageProfiles,
+    onPersonaDirty,
     clone: hermes.profileClone,
     capabilities: hermes.capabilities,
     inUse: profile,
@@ -4072,17 +4081,18 @@ export function Main({
           )}
         </div>
       )}
-      {(leaving?.edit === "memory" || leaving?.edit === "skill") && (
+      {(leaving?.edit === "memory" || leaving?.edit === "skill" || leaving?.edit === "persona") && (
         <LeaveMemoryEdit
           subject={leaving.edit}
-          profile={profile}
+          profile={leaving.edit === "persona" ? (personaUnsaved ?? profile) : profile}
           onStay={() => {
             leaving.stay?.();
             setLeaving(undefined);
           }}
           onDiscard={() => {
             setLeaving(undefined);
-            if (leaving.edit === "memory") {
+            if (leaving.edit === "persona") onPersonaDirty(false, "");
+            else if (leaving.edit === "memory") {
               onMemoryDirty(false);
               setMemoryDiscards((n) => n + 1);
             } else {

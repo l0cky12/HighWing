@@ -321,6 +321,25 @@ describe("A chat link and what the owner does meanwhile", () => {
     expect(memoryEntry().value).toMatch(/Unsaved words/);
   });
 
+  it("asks about an unsaved persona in the Edit profile form first, and Keep editing keeps it", async () => {
+    const { server, hermes, linkTo, open, user } = await launch();
+    server.souls.work = "You review code.\n";
+    await user.click(screen.getByRole("button", { name: /Settings/ }));
+    await user.click(screen.getByRole("tab", { name: /Profiles/ }));
+    const list = await screen.findByRole("listbox", { name: "Profiles" });
+    const work = await waitFor(() => within(list).getAllByRole("option").find((o) => o.getAttribute("data-profile") === "work")!);
+    await user.click(within(work).getByRole("button", { name: "Edit work" }));
+    const persona = within(screen.getByRole("dialog", { name: "Edit profile: work" })).getByLabelText<HTMLTextAreaElement>("Persona");
+    await waitFor(() => expect(persona.disabled).toBe(false));
+    await user.type(persona, "Be blunt.");
+    await open(linkTo("work", "deploy"));
+    const ask = await screen.findByRole("alertdialog", { name: "Discard your persona edit?" });
+    expect(ask.textContent).toMatch(/the persona of the work profile/);
+    await user.click(within(ask).getByRole("button", { name: "Keep editing" }));
+    expect(hermes.getSnapshot().profile).toBe("default");
+    expect(persona.value).toBe("You review code.\nBe blunt.");
+  });
+
   it("won't switch for a link a newer one replaced while the unsaved-edit question was open", async () => {
     const { hermes, linkTo, open, user } = await launch();
     await unsavedMemory(user);

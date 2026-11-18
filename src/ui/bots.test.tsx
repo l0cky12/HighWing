@@ -764,6 +764,55 @@ describe("A bot's menu in the Bots view", { timeout: 30_000 }, () => {
     expect(server.souls.scribe).toBe("Theirs.\nAgain.");
   });
 
+  it("Use Hermes's drops a rewrite still on its way, so its answer can't replace Hermes's persona", async () => {
+    const { server, user } = await launch(withSoul);
+    await openBots(user);
+    const dialog = await editBot(user);
+    const persona = await loaded(dialog);
+    await user.type(persona, "Mine.");
+    server.souls.scribe = "Theirs.\n";
+    await user.click(within(dialog).getByRole("button", { name: /Save changes/ }));
+    await within(dialog).findByRole("button", { name: "Use Hermes's" });
+    let go = () => {};
+    server.oneshotGate = new Promise<void>((r) => (go = r));
+    server.oneshotAnswer = "A rewrite of mine.";
+    const write = within(dialog).getByRole("button", { name: /Write with AI/ });
+    await waitFor(() => expect(write.getAttribute("aria-disabled")).toBeNull());
+    await user.click(write);
+    await within(dialog).findByRole("button", { name: "Stop" });
+    await user.click(within(dialog).getByRole("button", { name: "Use Hermes's" }));
+    await act(async () => go());
+    await act(async () => new Promise((r) => setTimeout(r, 20)));
+    expect(persona.value).toBe("Theirs.\n");
+  });
+
+  it("Edit bot's Undo is off while Save runs, so the screen can't show other text than the one saved", async () => {
+    const { server, user } = await launch((s) => {
+      withSoul(s);
+      s.oneshotAnswer = "You are Scribe. Draft release notes in plain words.";
+    });
+    await openBots(user);
+    const dialog = await editBot(user);
+    await loaded(dialog);
+    const write = within(dialog).getByRole("button", { name: /Write with AI/ });
+    await waitFor(() => expect(write.getAttribute("aria-disabled")).toBeNull());
+    await user.click(write);
+    const undo = await within(dialog).findByRole("button", { name: "Undo" });
+    let go = () => {};
+    const gate = new Promise<void>((r) => (go = r));
+    server.rest["PUT /api/profiles/scribe/soul"] = async (req) => {
+      await gate;
+      server.souls.scribe = String(req.body?.content);
+      return { ok: true };
+    };
+    await user.click(within(dialog).getByRole("button", { name: /Save changes/ }));
+    expect(undo).toHaveProperty("disabled", true);
+    await user.click(undo);
+    go();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: /Edit bot/ })).toBeNull());
+    expect(server.souls.scribe).toBe("You are Scribe. Draft release notes in plain words.");
+  });
+
   it("Edit bot's Write with AI rewrites the persona in place on the bot's own Text generation model, with Undo", async () => {
     const { server, user } = await launch((s) => {
       withSoul(s);

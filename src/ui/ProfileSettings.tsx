@@ -88,6 +88,8 @@ export type ProfilesWiring = {
   rephrase?: (profile: string) => RephraseWiring;
   /** Each profile's SOUL.md, which Edit reads as it opens and saves with the form (ADR 0203); without it Edit has no Persona. */
   persona?: PersonaApi;
+  /** Told whether the open form holds a persona Hermes doesn't have, and whose, so leaving the screen asks first. */
+  onPersonaDirty?: (dirty: boolean, profile: string) => void;
   /** New's Skills and Tools (ADR 0197): read from the profile in use, applied to the new profile and read back. */
   setup?: SetupApis;
   /** Tells the owner what a create came to once its form has closed, through the app's own notice. */
@@ -932,6 +934,7 @@ export function ProfileForm({
   // eslint-disable-next-line react-hooks/exhaustive-deps -- read once, when the dialog opens; Try again reads it again
   }, []);
   const soulReady = !row || soulRead.kind === "read";
+  const reportSoul = wiring.onPersonaDirty;
   useEffect(() => {
     if (focus === "persona" && soulReady) soulBox.current?.focus();
   }, [focus, soulReady]);
@@ -951,6 +954,9 @@ export function ProfileForm({
   // Compared as Hermes reads SOUL.md back, so a line end it changes on the way isn't an edit.
   const soulChanged = row ? soulRead.kind === "read" && asReadBack(soul) !== asReadBack(soulRead.base.content) : !!soul.trim();
   const dirty = (row ? nameChanged : !!trimmed) || descChanged || modelTouched || lookChanged || soulChanged || choosing(capabilities.setup);
+  const soulOwner = row?.name ?? (trimmed || wiring.inUse);
+  useEffect(() => reportSoul?.(soulChanged, soulOwner), [soulChanged, soulOwner, reportSoul]);
+  useEffect(() => () => reportSoul?.(false, ""), [reportSoul]);
 
   const issue = isDefault
     ? !trimmed
@@ -1497,8 +1503,11 @@ export function ProfileForm({
                     </button>
                   </div>
                 )}
-                <RephrasePanel r={rephrase} hintId={rephraseHint} focusBox={() => soulBox.current?.focus()} />
-                {stateNote<string>("soul", () => f.personaChanged, setSoul)}
+                <RephrasePanel r={rephrase} hintId={rephraseHint} disabled={saving} focusBox={() => soulBox.current?.focus()} />
+                {stateNote<string>("soul", () => f.personaChanged, (theirs) => {
+                  rephrase.stop();
+                  setSoul(theirs);
+                })}
               </div>
             )}
             {!row && <BotCapabilities state={capabilities} profile={wiring.inUse} disabled={saving} />}

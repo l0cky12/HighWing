@@ -143,7 +143,7 @@ export function RephraseButton({ r, disabled, hintId }: { r: PersonaRephraseStat
  * Under the Persona field: why Write with AI can't run or what runs it (`hintId`), then the call in flight with Stop,
  * what replaced the field with Undo, or why it failed. `focusBox` moves focus back to the field when a button goes.
  */
-export function RephrasePanel({ r, hintId, focusBox }: { r: PersonaRephraseState; hintId: string; focusBox: () => void }) {
+export function RephrasePanel({ r, hintId, focusBox, disabled }: { r: PersonaRephraseState; hintId: string; focusBox: () => void; disabled: boolean }) {
   const w = useLocale().profiles.form.rephrase;
   const { state } = r;
   const close = (then: () => void) => {
@@ -178,7 +178,7 @@ export function RephrasePanel({ r, hintId, focusBox }: { r: PersonaRephraseState
       {r.undoable && state.kind === "replaced" && (
         <div className="persona-rephrase-note small" role="status">
           {w.replaced}{" "}
-          <button className="btn" onClick={() => close(r.undo)}>
+          <button className="btn" disabled={disabled} onClick={() => !disabled && close(r.undo)}>
             {w.undo}
           </button>
         </div>

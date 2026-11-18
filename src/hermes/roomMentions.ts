@@ -181,6 +181,20 @@ export type KeyAction = "next" | "prev" | "pick" | "close" | "send" | "none";
  */
 export function keyAction(k: { key: string; shift: boolean; composing: boolean; pickerOpen: boolean }): KeyAction {
   if (k.composing) return "none";
-  if (k.pickerOpen) return { ArrowDown: "next", ArrowUp: "prev", Enter: "pick", Tab: "pick", Escape: "close" }[k.key] as KeyAction | undefined ?? "none";
+  if (k.pickerOpen) {
+    switch (k.key) {
+      case "ArrowDown":
+        return "next";
+      case "ArrowUp":
+        return "prev";
+      case "Enter":
+      case "Tab":
+        return "pick";
+      case "Escape":
+        return "close";
+      default:
+        return "none";
+    }
+  }
   return k.key === "Enter" && !k.shift ? "send" : "none";
 }

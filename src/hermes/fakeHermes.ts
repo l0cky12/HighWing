@@ -3010,9 +3010,9 @@ export class FakeHermes {
   }
 
   /**
-   * A Group room seat's session, working, as Hermes's room driver makes one in the bot's profile
-   * (`tui_gateway/hosted_room_server_rpc.py` at v0.23.2): stored hidden with source `bot_room` and titled
-   * `Group: <room>`, and listed in `session.active_list` with no profile, like every live row.
+   * A Group room seat's session, working, as Hermes's room driver makes one in the bot's profile: source `bot_room`
+   * and titled `Group: <room>` (`tui_gateway/hosted_room_driver.py` at v0.23.2), stored hidden
+   * (`hosted_room_server_rpc.py`), and listed in `session.active_list` with no profile, like every live row.
    */
   seatSession(profile: string, room: string, said: string): string {
     const store = this.store(profile) ?? (this.otherProfiles[profile] = []);

@@ -78,7 +78,7 @@
 // HV_ROOMS_BUILD=bf0203a|f0d9488 answers as that Hermes does: no `groups.continue`, no `max_continues`, no
 //   `groups.changed` push (the default is `ae2a81cc`, which has all three).
 // HV_SEAT=1 stores a Group room seat's session in `default`, as Hermes stores one: source `bot_room`, hidden, titled
-//   "Group: r1", holding the word "quokka", and listed as working in `session.active_list`. The app shows it nowhere.
+//   "Group: r1", holding the word "quokka", and listed as working in `session.active_list`.
 // HV_INBOX=1 gives the `work` profile two Unread chats for the Rail inbox: one last active 3 days ago, one an hour ago.
 // HV_EVERYWHERE=1 gives `work` a chat about the backup and adds a third profile, `ops`, with another, so an Everywhere
 //   search for "backup" finds a chat in three profiles. A second stand-in without it finds one in `default`.

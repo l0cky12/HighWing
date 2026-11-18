@@ -157,11 +157,10 @@ const STORED_PAGES = 10;
 const OLD_APP_SOURCE = "hermes-chat";
 /**
  * What Hermes stores as the source of a Group room seat's session (`ROOM_SESSION_SOURCE`,
- * `tui_gateway/hosted_room_driver.py` at v0.22.6 and v0.23.2). Such a session is hidden plumbing and never shows.
+ * `tui_gateway/hosted_room_driver.py` at v0.22.6 and v0.23.2). Such a session is hidden plumbing.
  */
 const ROOM_SEAT_SOURCE = "bot_room";
-/** How Hermes titles a seat's session. A live row with this title waits for its lookup, as it may be a seat's. */
-const ROOM_SEAT_TITLE = "Group: ";
+const ROOM_SEAT_TITLE_PREFIX = "Group: ";
 const READY_TIMEOUT_MS = 15_000;
 /** Waits before each try to reconnect a dropped connection. When the last try fails the app is Offline until the
  * owner asks to reconnect, so a wrong password isn't retried for ever. */
@@ -359,7 +358,6 @@ type SearchRow = Pick<SessionRow, "id" | "source" | "title" | "preview" | "start
   /** The compression lineage's first session, for a hit in a compressed chat. */
   lineage_root?: string;
 };
-/** The one profile that stores a live session, with that row's title and source. */
 type Owner = { profile: string; title: string; source: Source };
 /** Dashboard REST `GET /api/profiles` (`web_routers/profiles.py`), as far as this app reads it. */
 type ProfileList = { profiles: { name: string; model?: string | null; provider?: string | null }[] };
@@ -892,9 +890,9 @@ export class Hermes {
   private titlesSeen = new Map<string, string>();
   /**
    * The profile each live session is in, by `runtimeId storedId`, from looking its stored id up in every profile: the
-   * one profile that has it, null when more than one does (a copied profile keeps the ids), or `seat` when it is a
-   * Group room seat's. A runtime session doesn't change profile, so an answer is kept while it stays live; the same
-   * chat started again, perhaps in a profile copied since, is looked up afresh.
+   * one profile that has it, or null when more than one does (a copied profile keeps the ids). A runtime session
+   * doesn't change profile, so an answer is kept while it stays live; the same chat started again, perhaps in a
+   * profile copied since, is looked up afresh.
    */
   private sessionOwners = new Map<string, Owner | null | "seat">();
   /** When each live session not yet placed was last looked up, by the same key, so every one gets its turn. */
@@ -1913,14 +1911,13 @@ export class Hermes {
           const mine = typeof row?.id === "string" ? this.runtimeOwners.get(row.id) : undefined;
           const at = typeof row?.last_active === "number" ? row.last_active * 1000 : 0;
           const key = `${typeof row?.id === "string" ? row.id : ""} ${chatId}`;
-          const seatTitle = typeof row?.title === "string" && row.title.startsWith(ROOM_SEAT_TITLE);
+          const seatTitle = typeof row?.title === "string" && row.title.startsWith(ROOM_SEAT_TITLE_PREFIX);
           return status && chatId ? [{ chatId, status, at, key, seatTitle, ...(mine?.chatId === chatId && { profile: mine.profile }) }] : [];
         });
         // Answers about sessions no longer live are dropped.
         const live = new Set(sessions.map((s) => s.key));
         for (const m of [this.sessionOwners, this.ownerTried]) for (const k of m.keys()) if (!live.has(k)) m.delete(k);
-        // Rows don't say their profile or source. Each other session is looked up by its id in every profile, a few per
-        // check, the ones tried longest ago first, and among those the ones titled as a seat's first.
+        // Rows don't say their profile or source.
         const unknown = sessions
           .filter((s) => !s.profile && !this.sessionOwners.has(s.key))
           .sort((a, b) => (this.ownerTried.get(a.key) ?? 0) - (this.ownerTried.get(b.key) ?? 0) || Number(b.seatTitle) - Number(a.seatTitle))
@@ -1935,7 +1932,6 @@ export class Hermes {
         const placed = sessions.flatMap(({ key, seatTitle, ...s }): LiveSession[] => {
           if (s.profile) return [s];
           const owner = this.sessionOwners.get(key);
-          // A row titled as a seat's is held back until its lookup answers. The stored source decides it.
           if (owner === "seat" || (owner === undefined && seatTitle)) return [];
           return [owner ? { ...s, ...owner } : s];
         });
@@ -2062,9 +2058,8 @@ export class Hermes {
 
   /**
    * The one profile that has a stored session, by asking each for it (`GET /api/sessions/{id}?profile=`): its row's
-   * title and source with it, null when more than one profile has it, `seat` when one stores it as a Group room seat's,
-   * and undefined when none does yet (a new chat is stored with its first message) or a profile couldn't be asked, so
-   * it is looked up again later.
+   * title and source with it, null when more than one profile has it, and undefined when none does yet (a new chat is
+   * stored with its first message) or a profile couldn't be asked, so it is looked up again later.
    */
   private async ownerOf(chatId: string, profiles: string[]): Promise<Owner | null | "seat" | undefined> {
     const found: Owner[] = [];

@@ -6,7 +6,6 @@ import { connect, type Hermes } from "./transport";
 
 const nowS = () => Date.now() / 1000;
 
-/** Signed in to `default`, on a server that also has the bot profiles `ada` and `bram`. */
 async function signedIn() {
   const server = new FakeHermes();
   server.sessions = [readRow("home-1", 1)];
@@ -23,7 +22,6 @@ const inbox = (hermes: Hermes) => {
   return inboxEntries({ profile: s.profile, chats: s.chats, connected: s.status === "connected", others: s.others, live: s.live });
 };
 
-/** The next check, past the gap between two checks. */
 async function nextCheck(hermes: Hermes) {
   await vi.advanceTimersByTimeAsync(20_000);
   await hermes.checkOtherProfiles();

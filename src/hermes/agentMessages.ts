@@ -1,5 +1,5 @@
 import { isObj } from "./values";
-// Bot messaging (ADR 0206): what Hermes's own `message_agent` tool leaves in a Bot Chat, read at the boundary. Hermes
+// Bot messaging (ADR 0207): what Hermes's own `message_agent` tool leaves in a Bot Chat, read at the boundary. Hermes
 // gives a display kind or a tool name for every row this module reads, and that decides what the row is
 // (`returned.ts` `returnedItem`, `agentSend`). The parsers here only pull fields out of a row already classified, so
 // words the owner typed are never taken for a bot's.

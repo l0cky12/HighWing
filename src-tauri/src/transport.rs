@@ -1578,7 +1578,7 @@ impl Dashboard {
 
     /// One dashboard REST call for the webview: `GET`, `PATCH` or `DELETE` on a path under `api/`, with a
     /// JSON body. `POST` and `PUT` reach only Settings → Model's two writes (`POST api/model/set`,
-    /// `PUT api/config`), the scheduled-job writes (`cron_write`), Settings → Persona's
+    /// `PUT api/config`), the scheduled-job writes (`cron_write`), the profile form's Persona save,
     /// `PUT api/profiles/{name}/soul`, the Clone profile dialog's `POST api/profiles` (`profile_create_allowed`, ADR 0074),
     /// Settings → Profiles' description, model and written-for-me description (`profile_field_write`,
     /// `profile_describe_auto`, ADR 0156),
@@ -2740,7 +2740,7 @@ fn endpoint(base: &Url, path: &str) -> Url {
     url
 }
 
-/// `api/profiles/{name}/soul` for a Hermes profile id, the one write route Settings → Persona uses.
+/// `api/profiles/{name}/soul` for a Hermes profile id, the one write route the profile form's Persona and Clone use.
 fn is_profile_soul(path: &str) -> bool {
     path.strip_prefix("api/profiles/").and_then(|p| p.strip_suffix("/soul")).is_some_and(profile_id)
 }

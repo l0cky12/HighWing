@@ -4,7 +4,7 @@ import { isObj } from "./values";
 // display kind and a one-line title (`display_metadata.display_text`), and its text is the model-facing notice
 // (`tools/process_registry_notifications.py` at `bf0203a`). The owner is shown the title and the result only, as the
 // official desktop app's `asyncResultBody` strips it (`apps/desktop/src/lib/chat-messages/hydration.ts`). Bot messaging
-// brings two more such rows (ADR 0206): a teammate's message, and the answer to one this bot sent.
+// brings two more such rows (ADR 0207): a teammate's message, and the answer to one this bot sent.
 
 /**
  * Bot messaging on a Returned result. `from`: the row is a message to this bot; `teammate` is who Hermes signed it

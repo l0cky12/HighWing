@@ -242,7 +242,7 @@ export function configureParams(profile: string, block: Record<string, unknown> 
 }
 
 /**
- * Bot messaging (ADR 0206): whether Hermes offers `message_agent` in this install's Bot Chats. The rule is Hermes's
+ * Bot messaging (ADR 0207): whether Hermes offers `message_agent` in this install's Bot Chats. The rule is Hermes's
  * (`tools/bot_mode_probe.py` `is_bot_mode_managed` at 0.23.2): any profile with a Bot Mode block, empty or not. It is
  * read from the roster every time and kept nowhere, so it can't disagree with Hermes. `keptOnBy`: the bots whose
  * block holds something. While there is one, turning it off would take that bot's look with it, so it stays on.

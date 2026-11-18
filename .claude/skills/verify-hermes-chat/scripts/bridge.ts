@@ -72,8 +72,9 @@
 // HV_MEMORY_URL=<url> is the address `default`'s Honcho gives for its documentation and its API key's "Get one" link.
 // HV_BUNDLED=1 gives `default` five built-in skills (`provenance: bundled`), which a fresh profile is seeded with, for
 // New bot's Skills (ADR 0197).
-// HV_PERSONA_REPLY=<path>: an `llm.oneshot` whose input holds `<persona>` (New bot's Generate with AI) answers with that
-// file's text, read at each call; an empty file answers no text. Every other one-off call answers as FakeHermes does.
+// HV_PERSONA_REPLY=<path>: an `llm.oneshot` whose input holds `<persona>` (Write with AI on the Persona of New bot or
+// Edit bot) answers with that file's text, read at each call; an empty file answers no text. Every other one-off call
+// answers as FakeHermes does.
 // HV_SETTLING=<command>: a profile delete answers `settlement_pending` with that `retry_command` (empty: none).
 // HV_MODEL_ERROR=<text>: a profile create makes the profile but not its model, and answers `model_error` with the text.
 // `default`'s messaging gateway runs (FakeGateways), with Telegram and Discord off, so a Telegram token saved with the

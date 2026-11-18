@@ -1,4 +1,5 @@
-// Settings → Persona: the profile's SOUL.md on the Hermes server, read and written through dashboard REST.
+// A profile's SOUL.md on the Hermes server, read and written through dashboard REST: the profile form's Persona
+// (ADR 0206) and Clone profile's persona copy.
 //
 // At the deployed `bf0203a` (and upstream `c419cf7`) `hermes_cli/web_routers/profiles.py` has the only API for it:
 // - `GET /api/profiles/{name}/soul` → `{content, exists}`. `content` is `read_text(encoding="utf-8-sig")`, so a byte
@@ -22,7 +23,7 @@ export type Soul = { exists: boolean; content: string };
  * Why SOUL.md can't be read or written:
  * - `disconnected`: no connection to Hermes, or it couldn't be reached.
  * - `signed-out`: the dashboard sign-in expired.
- * - `unsupported`: this Hermes server has no persona route (older than the dashboard's persona editor).
+ * - `unsupported`: this Hermes server has no persona route (older than the dashboard's persona routes).
  * - `no-profile`: Hermes has no such profile now.
  * - `permission`: the server refused, or the file system denied Hermes access to the file.
  * - `error`: anything else.

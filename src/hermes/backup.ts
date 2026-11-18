@@ -41,7 +41,7 @@ export const LEFT_OUT = [
   "Chats, projects, folders, memory, persona, skills, scheduled jobs, toolsets and models: Hermes keeps those on the server.",
   "Saved copies and cached chat lists, which come back from Hermes.",
   "Failed messages, attachments and screenshots, including the files on queued messages.",
-  "An unsaved persona edit, transcript import history and inbox dismissals.",
+  "Transcript import history and inbox dismissals.",
 ];
 
 /** How the app reaches the dashboard, and as whom: the part of every kept scope before the profile. */

@@ -1,6 +1,6 @@
 # Returned work shows as an open result card, from Hermes's display kind
 
-> **Widened by [ADR 0206](0206-bots-message-each-other-through-hermess-message-agent-which-the-owner-turns-on-in-bots-mode.md).** A teammate's message to a bot and the answer to one a bot sent are Returned results too, and Hermes's footer for the model is taken off every one.
+> **Widened by [ADR 0207](0207-bots-message-each-other-through-hermess-message-agent-which-the-owner-turns-on-in-bots-mode.md).** A teammate's message to a bot and the answer to one a bot sent are Returned results too, and Hermes's footer for the model is taken off every one.
 
 When a chat's reply hands work off and the work comes back, Hermes starts a new turn in the chat by itself (ADR 0096). The row that begins that turn is a user row holding Hermes's notice to the model: `[ASYNC DELEGATION COMPLETE — …]` for a background subagent, `[IMPORTANT: Background process …]` for a process started with `notify_on_complete` (`tools/process_registry_notifications.py` at `bf0203a`). The app showed that row as it is, in a bubble that looked like the owner had typed it. The result sat under a wall of instructions written for the model, and the owner didn't find it.
 

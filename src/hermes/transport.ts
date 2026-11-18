@@ -1294,7 +1294,7 @@ export class Hermes {
    */
   readonly gatewayRestart = new GatewayRestartApi((method, pathAndQuery, body) => this.rest(method, pathAndQuery, body));
 
-  /** Settings → Persona's reads and writes of a profile's SOUL.md (persona.ts). Each call names its profile. */
+  /** Reads and writes of a profile's SOUL.md, for the profile form's Persona and Clone (persona.ts). Each call names its profile. */
   readonly persona = new PersonaApi((method, pathAndQuery, body) => this.rest(method, pathAndQuery, body));
   /** Settings → Skills' reads and writes of a profile's skills (skills.ts). Each call names its profile. */
   readonly skills = new SkillsApi((method, pathAndQuery, body) => {
@@ -2430,7 +2430,7 @@ export class Hermes {
   }
 
   /**
-   * Turns Bot messaging on or off for the whole install, and reads it back (ADR 0206): `messagingStep` on the roster
+   * Turns Bot messaging on or off for the whole install, and reads it back (ADR 0207): `messagingStep` on the roster
    * just read, each of its writes a compare-and-swap. When Hermes says a block moved meanwhile, the roster is read and
    * the step taken again. Never rejects. No state of the write is kept: an Off that stops between two deletes leaves
    * messaging on, and the next one deletes the rest. The roster every view shows is read again as part of it.

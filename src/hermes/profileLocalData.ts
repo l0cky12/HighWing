@@ -18,7 +18,6 @@ import { type ScopeSource, connectionScope, inScope, isPrefOf, prefScope, scopeP
 import { DRAFT_PREFIX, type Drafts } from "./drafts";
 import { IMPORTS_KEY } from "./importTranscripts";
 import { INBOX_PREFIX } from "./inbox";
-import { PERSONA_PREFIX, type PersonaStore } from "./personaStore";
 import { CONTEXT_LEDGER_KEY } from "./projectContextFiles";
 import { type DefaultsDoc, moveScopeKeys } from "./projectDefaults";
 import { PROJECTS_KEY } from "./projectLinks";
@@ -27,6 +26,12 @@ import { moveTagScopes, type TagsFile } from "./tags";
 import { getUIPrefs, setUIPrefs } from "./uiPrefs";
 import { sending, unsaved } from "./unsaved";
 import { isObj } from "./values";
+
+/**
+ * Settings → Persona's unsaved edits and replaced versions. Nothing writes them since the page went (ADR 0206), but
+ * copies an earlier version kept still go with their profile or connection.
+ */
+const PERSONA_PREFIX = "hermes-chat.persona.";
 
 /** Keys of one profile, or one of its chats: the prefix, then the scope as JSON, then `suffix` if it has one. */
 export const PROFILE_KEYS: readonly { prefix: string; suffix?: RegExp }[] = [
@@ -243,14 +248,14 @@ function movePrefs(c: ScopeSource, walk: Walk) {
 }
 
 /** The stores a walk moves besides this webview's storage: the swapped files every window shares, and in-memory copies. */
-export type LocalStores = { storage?: Store; defaults?: DefaultsDoc; tags?: TagsFile; persona?: PersonaStore; drafts?: Pick<Drafts, "move"> };
+export type LocalStores = { storage?: Store; defaults?: DefaultsDoc; tags?: TagsFile; drafts?: Pick<Drafts, "move"> };
 
 /**
  * One walk over every kind of per-profile data, in storage, in memory and in the shared files. Each move writes the
  * new copy before it removes the old one, and a failed one is left where it was: the walk goes on, then throws
  * `LocalMoveError` saying how many failed.
  */
-async function walkAll(c: ScopeSource, walk: Walk, { storage = localStorage as Store, defaults, tags, persona, drafts }: LocalStores) {
+async function walkAll(c: ScopeSource, walk: Walk, { storage = localStorage as Store, defaults, tags, drafts }: LocalStores) {
   let failed = 0;
   const attempt = async (step: () => unknown) => {
     try {
@@ -260,7 +265,6 @@ async function walkAll(c: ScopeSource, walk: Walk, { storage = localStorage as S
     }
   };
   const keyMove = (k: string) => movedKey(k, walk);
-  await attempt(() => persona?.move(keyMove));
   const keys: string[] = [];
   for (let i = 0; i < storage.length; i++) {
     const k = storage.key(i);

@@ -1,5 +1,5 @@
 // What Hermes's `message_agent` leaves in a Bot Chat, as Hermes 0.23.2 stored it for two bots on a headless gateway
-// (ADR 0206). The rows are that run's, with its paths shortened.
+// (ADR 0207). The rows are that run's, with its paths shortened.
 import { describe, expect, it } from "vitest";
 import { agentSend, deliveryAnswer, signed, teammateMessage } from "./agentMessages";
 

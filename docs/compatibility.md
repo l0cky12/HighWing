@@ -119,7 +119,7 @@ The switches also need `PUT /api/tools/toolsets/{name}`. Settings → Toolsets a
 
 ## Persona
 
-Needs `GET` and `PUT /api/profiles/{name}/soul`. Checked with the `GET`. Without them, Settings → Persona shows a note instead of the editor.
+Needs `GET` and `PUT /api/profiles/{name}/soul`. Checked with the `GET`. Without them, the Persona field of Edit profile and Edit bot says what is missing and stays off; the rest of the form still saves.
 
 ## Clone profile
 
@@ -200,7 +200,7 @@ The sign-in screen and Setup read the dashboard's public `GET /api/status` (`aut
 
 Needs `profiles.list` on `/api/ws` with each profile's Bot Chat in its rows (`canonical_session`, which is `null` for a profile without one), and `session.list` with `title` and `include_hidden` to look a Bot Chat up by its title. Checked with `profiles.list`. Hermes `f0d94882` has both. An older Hermes without `profiles.list`, or one whose rows don't report a Bot Chat, has no Bot Mode: the chat list has no Bots tab, and diagnostics says why. To start a Bot Chat, the app also uses `session.create` with `hidden` and `session.title`.
 
-**Bot messaging** (the **Bots message each other** switch, ADR 0206) needs `profiles.configure` with `ui_meta_expected_revisions`, as Pin and Hide do, and Hermes 0.21.6 or later. Every release tag from v0.21.6 to v0.23.2 has `message_agent` in a Bot Chat behind the same Bot Mode block gate; no older tag was available to check. A Hermes without the tool would still store the block the switch writes, and no answer of its would say so. So here the app goes by the version number, as it does for questions before 0.21.3: the switch is off, with that reason, when Hermes names a version older than 0.21.6. A Hermes that names no version, such as a git checkout, isn't treated as older. Checked against Hermes 0.23.2.
+**Bot messaging** (the **Bots message each other** switch, ADR 0207) needs `profiles.configure` with `ui_meta_expected_revisions`, as Pin and Hide do, and Hermes 0.21.6 or later. Every release tag from v0.21.6 to v0.23.2 has `message_agent` in a Bot Chat behind the same Bot Mode block gate; no older tag was available to check. A Hermes without the tool would still store the block the switch writes, and no answer of its would say so. So here the app goes by the version number, as it does for questions before 0.21.3: the switch is off, with that reason, when Hermes names a version older than 0.21.6. A Hermes that names no version, such as a git checkout, isn't treated as older. Checked against Hermes 0.23.2.
 
 ## Subagents
 

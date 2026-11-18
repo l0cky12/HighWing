@@ -357,9 +357,9 @@ export const CAPABILITIES: readonly CapabilitySpec[] = [
   {
     id: "persona",
     label: "Persona",
-    usedBy: "Settings → Persona",
+    usedBy: "The Persona field of Edit profile and Edit bot, and Clone profile's persona copy",
     needs: "GET and PUT /api/profiles/{name}/soul.",
-    without: "Settings → Persona explains what is missing, and reads or writes nothing.",
+    without: "Edit's Persona says what is missing and writes nothing; the rest of the form still saves.",
     anchor: "persona",
     probe: { kind: "rest", path: (profile) => `api/profiles/${encodeURIComponent(profile)}/soul`, shape: isObj },
     routes: [/^api\/profiles\/[^/]+\/soul$/],

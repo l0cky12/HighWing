@@ -4,7 +4,6 @@ import { CONNECTIONS_KEY, Connections, LEGACY_SIGN_IN_KEY, LIVE_LIMIT_DEFAULT, L
 import { draftKey, drafts } from "./drafts";
 import { forgetConnectionData } from "./forgetConnection";
 import { inboxScope } from "./inbox";
-import { PersonaStore, personaKey } from "./personaStore";
 import { defaultsDoc, storageDefaultsFile } from "./projectDefaults";
 import { PROJECTS_KEY, projectScope } from "./projectLinks";
 import { unsaved, sending, restartHold } from "./unsaved";
@@ -49,7 +48,6 @@ describe("Migrating the single saved sign-in", () => {
     expect(draftKey(c, "default", "chat-1")).toBe(draftKey(legacy, "default", "chat-1"));
     expect(drafts(localStorage).get(draftKey(c, "default", "chat-1"))).toBe("half-written");
     expect(projectScope(c, "default")).toBe(projectScope(legacy, "default"));
-    expect(personaKey(c, "default")).toBe(personaKey(legacy, "default"));
     expect(inboxScope(c)).toBe(inboxScope(legacy));
     expect(prefScope(c, "default")).toBe("default");
     expect(terminalTargetKey(c)).toBe(TERMINAL_TARGET_KEY);
@@ -229,15 +227,16 @@ describe("Removing a connection's local data", () => {
     const two = s.draft({ mode: "url", sshTarget: "", url: "https://b.example.com", username: "owner" }, "Home");
     s.save(one);
     s.save(two);
-    const persona = new PersonaStore(localStorage);
+    // Settings → Persona's edits, which an earlier version kept (ADR 0206).
+    const personaKey = (c: typeof one) => `hermes-chat.persona.${connectionScope(c, "default")}`;
     for (const c of [one, two]) {
       drafts(localStorage).set(draftKey(c, "default", null), `draft ${c.id}`);
       const cache = localChatCache(c);
       cache.save("default", [{ id: "x", title: "Same chat id", source: "app", settled: false, updatedAt: 1, items: [] }]);
       cache.rememberProfile("default");
       cache.saveQueue("default", "x", { items: [{ id: "q1", text: `queued for ${c.id}` }] });
-      persona.setDraft(personaKey(c, "default"), { text: `private ${c.id}`, base: { exists: true, content: "base" }, at: 1 });
-      persona.addEarlier(personaKey(c, "default"), { exists: true, content: `earlier ${c.id}` }, 1);
+      localStorage.setItem(`${personaKey(c)}.draft`, JSON.stringify({ text: `private ${c.id}`, base: { exists: true, content: "base" }, at: 1 }));
+      localStorage.setItem(`${personaKey(c)}.earlier`, JSON.stringify([{ exists: true, content: `earlier ${c.id}`, replacedAt: 1 }]));
       localStorage.setItem(`hermes-chat.inbox-dismissed.${inboxScope(c)}`, "{}");
       localStorage.setItem(terminalTargetKey(c), `me@${c.id}`);
     }
@@ -247,7 +246,7 @@ describe("Removing a connection's local data", () => {
     await defaults.save(projectScope(one, "default"), "p1", 0, { instructions: "one" });
     await defaults.save(projectScope(two, "default"), "p1", 0, { instructions: "two" });
 
-    await forgetConnectionData(one, { defaults, persona });
+    await forgetConnectionData(one, { defaults });
 
     const left = Object.keys(localStorage).filter((k) => k !== CONNECTIONS_KEY && k !== "hermes-ui-prefs");
     expect(left.some((k) => k.includes(one.id))).toBe(false);
@@ -260,9 +259,9 @@ describe("Removing a connection's local data", () => {
     expect(Object.keys(JSON.parse(localStorage.getItem(PROJECTS_KEY)!).scopes)).toEqual([projectScope(two, "default")]);
     expect(getUIPrefs().lastOpenChat).toEqual({ [prefScope(two, "default")]: "c2" });
     expect(getUIPrefs().modelPicker).toBeNull();
-    expect(persona.draft(personaKey(one, "default"))).toBeUndefined();
-    expect(persona.earlier(personaKey(one, "default"))).toEqual([]);
-    expect(persona.draft(personaKey(two, "default"))?.text).toBe(`private ${two.id}`);
+    expect(localStorage.getItem(`${personaKey(one)}.draft`)).toBeNull();
+    expect(localStorage.getItem(`${personaKey(one)}.earlier`)).toBeNull();
+    expect(localStorage.getItem(`${personaKey(two)}.draft`)).toContain(`private ${two.id}`);
     expect(await defaults.read(projectScope(one, "default"))).toEqual({});
     expect(await defaults.read(projectScope(two, "default"))).toMatchObject({ p1: { instructions: "two" } });
   });

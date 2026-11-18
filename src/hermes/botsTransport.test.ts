@@ -623,7 +623,7 @@ describe("Editing a bot (ADR 0189)", () => {
   });
 });
 
-describe("Bot messaging's switch (ADR 0206)", () => {
+describe("Bot messaging's switch (ADR 0207)", () => {
   const headless = (setup: (server: FakeHermes) => void = () => {}) =>
     signedIn(new FakeHermes(), (server) => {
       server.profileMeta = {};

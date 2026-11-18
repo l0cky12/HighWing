@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AppMethod } from "./canonicalVerbs";
+import type { PlainMethod } from "./sessionProtocol";
 import { FakeGroups, GROUPS_BUILDS, type FakeTurn, type GroupsBuild, type TurnContext } from "./fakeGroups";
 import { isDraft, roomDraft, type RoomDraft } from "./groupRooms";
 import { FOLLOW_MS, GroupRoomError, GroupRoomsStore, TAIL, nextReadIn, roomMarks } from "./groupRoomsStore";
@@ -21,7 +21,7 @@ function setup(build: GroupsBuild = GROUPS_BUILDS.ae2a81cc, script?: (t: TurnCon
   const groups = new FakeGroups();
   groups.build = { ...build };
   if (script) groups.script = script;
-  const net = { online: true, before: undefined as ((method: AppMethod) => void | Promise<void>) | undefined };
+  const net = { online: true, before: undefined as ((method: PlainMethod) => void | Promise<void>) | undefined };
   let ids = 0;
   const store = new GroupRoomsStore({
     rpc: async (method, params) => {

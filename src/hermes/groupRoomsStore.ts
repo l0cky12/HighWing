@@ -1,4 +1,4 @@
-import type { AppMethod } from "./canonicalVerbs";
+import type { PlainMethod } from "./sessionProtocol";
 import {
   EMPTY_LOG,
   FLOOR_SURFACE,
@@ -24,7 +24,7 @@ import {
 import { errorText } from "./values";
 
 export type GroupRoomsIO = {
-  rpc(method: AppMethod, params: Record<string, unknown>): Promise<unknown>;
+  rpc(method: PlainMethod, params: Record<string, unknown>): Promise<unknown>;
   ready(): boolean;
   now?: () => number;
   uuid?: () => string;
@@ -311,7 +311,7 @@ export class GroupRoomsStore {
     return room ? this.tick(room) : Promise.resolve();
   }
 
-  private async write(method: AppMethod, params: Record<string, unknown>): Promise<unknown> {
+  private async write(method: PlainMethod, params: Record<string, unknown>): Promise<unknown> {
     if (!this.io.ready()) throw new GroupRoomError("offline", "Not connected to Hermes.");
     try {
       return await this.io.rpc(method, params);

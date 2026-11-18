@@ -129,6 +129,14 @@ export class GatewayRestartApi {
         const said = lastLines(done.lines);
         return { kind: "failed", why: `The restart command failed (exit ${done.exitCode})${said ? `: ${said}` : "."}` };
       }
+      // Exit 0 with the old gateway left running, which `/api/status` can't tell from a restarted one (`hermes_cli/gateway.py`).
+      if (done.lines.some((l) => /linger is not enabled/i.test(l))) {
+        const fix = done.lines.map((l) => l.trim()).find((l) => /^Run:\s+sudo loginctl enable-linger/.test(l));
+        return {
+          kind: "failed",
+          why: `Hermes couldn't restart the gateway's service because linger isn't enabled for its user on the server.${fix ? ` ${clean(fix.replace(/\s+/g, " "))}` : ""}`,
+        };
+      }
     }
 
     let last: GatewayStatus | undefined;

@@ -63,6 +63,21 @@ describe("Gateway restart: restart", () => {
     expect(r).toEqual({ kind: "unconfirmed", why: "The restart command finished, but the gateway doesn't read back as running: it isn't running." });
   });
 
+  it("calls it failed when Hermes skipped a systemd restart for want of linger, though the old gateway still runs", async () => {
+    const { fake, api } = await setUp();
+    fake.restartPlan = {
+      exit: 0,
+      lines: ["⚠ Cannot restart gateway as a service — linger is not enabled.", "  The gateway user service requires linger to function on headless servers.", "  Run:  sudo loginctl enable-linger hermes"],
+      comesBack: false,
+    };
+    const r = await api.restart("default");
+    expect(r).toEqual({
+      kind: "failed",
+      why: "Hermes couldn't restart the gateway's service because linger isn't enabled for its user on the server. Run: sudo loginctl enable-linger hermes",
+    });
+    expect(fake.restarts).toEqual({});
+  });
+
   it("calls a refused restart failed, with Hermes's reason", async () => {
     const { fake, api } = await setUp();
     fake.refuseRestart = { status: 500, detail: "Failed to restart gateway: the system service needs passwordless sudo (sudo -n failed)" };

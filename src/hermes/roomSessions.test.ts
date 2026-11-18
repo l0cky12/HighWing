@@ -52,22 +52,30 @@ describe("a Group room seat's session", () => {
     expect(liveIds(hermes)).toEqual([]);
   });
 
-  it("holds a row titled Group: until its lookup has run, then shows it when the stored source isn't bot_room", async () => {
+  it("hides nothing by its title while a profile can't answer the lookup", async () => {
     vi.useFakeTimers();
     const { server, hermes } = await signedIn();
-    server.otherProfiles.bram.push(row("owner-x", 0, { title: "Group: x", source: "hermes-chat" }));
-    server.liveSessions.push({ id: "rt-x", session_key: "owner-x", status: "working", last_active: nowS(), title: "Group: x" });
-    const lookup = server.rest["GET /api/sessions/owner-x"];
-    server.rest["GET /api/sessions/owner-x"] = () => {
-      throw new RestError(503, "busy");
+    for (const [id, title] of [["tui-group", "Group: x"], ["tui-plain", "Plain x"]]) {
+      server.otherProfiles.ada.push(row(id, 0, { title, source: "tui" }));
+      server.liveSessions.push({ id: `rt-${id}`, session_key: id, status: "working", last_active: nowS(), title });
+    }
+    let storeReady = false;
+    server.restTap = (req) => {
+      if (!storeReady && req.query.get("profile") === "bram" && /^\/api\/sessions\/[^/]+$/.test(req.path))
+        throw new RestError(503, `{"detail":"Session store is not initialized"}`);
     };
     await hermes.checkOtherProfiles();
-    expect(liveIds(hermes)).toEqual([]);
+    expect(liveIds(hermes)).toEqual(["tui-group", "tui-plain"]);
+    expect(inbox(hermes).unmatched).toBe(2);
 
-    if (lookup) server.rest["GET /api/sessions/owner-x"] = lookup;
-    else delete server.rest["GET /api/sessions/owner-x"];
+    storeReady = true;
     await nextCheck(hermes);
-    expect(liveIds(hermes)).toEqual(["owner-x"]);
+    expect(hermes.getSnapshot().live?.sessions).toMatchObject([
+      { chatId: "tui-group", profile: "ada", title: "Group: x" },
+      { chatId: "tui-plain", profile: "ada", title: "Plain x" },
+    ]);
+    expect(inbox(hermes).entries.filter((e) => e.kind === "running").map((e) => e.title)).toEqual(["Group: x", "Plain x"]);
+    expect(inbox(hermes).unmatched).toBe(0);
   });
 
   it.each([

@@ -45,8 +45,8 @@ export class ScreenControl {
   private releasing?: Promise<void>;
   /** Broadcasts heard before the profile's screen was named, by its key. */
   private heard = new Map<string, DisplayLease>();
-  /** The connection `know` asked on. */
-  private askedOn?: object;
+  /** The connection and profile `know` last asked on. */
+  private asked?: { connection: object; profile: string };
 
   constructor(private readonly deps: ScreenControlDeps) {}
 
@@ -76,11 +76,15 @@ export class ScreenControl {
     return this.ask("display.status").then((s) => this.noteStatus(s as DisplayStatus));
   }
 
-  /** Asks who holds the screen, once per connection, when nothing is known of it yet. */
+  /**
+   * Asks who holds the screen, once per connection and profile. A lease kept from an earlier connection may be stale:
+   * the broadcasts that would have changed it went to no one while this app was away.
+   */
   know(): Promise<void> | undefined {
     const connection = this.deps.connection();
-    if (!connection || this.state() || this.askedOn === connection) return undefined;
-    this.askedOn = connection;
+    const profile = this.deps.profile();
+    if (!connection || (this.asked?.connection === connection && this.asked.profile === profile)) return undefined;
+    this.asked = { connection, profile };
     return this.status().then(
       () => {},
       () => {},

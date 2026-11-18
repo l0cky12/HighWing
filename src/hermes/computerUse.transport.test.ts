@@ -181,6 +181,20 @@ describe("FakeHermes's computer_use turn, as the app sees it", () => {
     expect(screenUse(chat())?.refused).toBe(HUMAN_HAS_CONTROL);
   });
 
+  it("asks who holds the screen again after a reconnect, so a person who took it meanwhile shows on the refusal", async () => {
+    const { server, hermes, id, chat, rid } = await started();
+    await server.computerUseTurn(rid, { steps: [CU.capture()], reply: "Captured." });
+    expect(hermes.getSnapshot().screen?.holder).toEqual({ kind: "agent" });
+    server.drop();
+    server.display!.lease = { holder: "human", viewer_hash: "0123456789ab", since: 2, epoch: 1 };
+    await hermes.reconnect();
+    await hermes.send(id, "Scroll down");
+    await server.computerUseTurn(server.runtimeIdOf(id)!, { steps: [CU.scroll("down", 3, "foreground")], reply: "Someone has the screen." });
+    await hermes.idle();
+    expect(screenUse(chat())?.refused).toBe(HUMAN_HAS_CONTROL);
+    expect(hermes.getSnapshot().screen?.holder).toEqual({ kind: "someone", since: 2 });
+  });
+
   it("ends between two calls when the owner stops the reply", async () => {
     const { server, hermes, id, chat, rid } = await started();
     let release!: () => void;

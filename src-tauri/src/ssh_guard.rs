@@ -1,6 +1,6 @@
 //! The arguments of every `ssh` this app starts: the sign-in tunnel, a server page's tunnel and the listing of the
-//! server's ports, Repository Git, and the Terminal. Each gets every option that only takes something away from ssh,
-//! and differs from the others only where its job needs it, as `Kind` names.
+//! server's ports, the Screen's app install, and the Terminal. Each gets every option that only takes something away
+//! from ssh, and differs from the others only where its job needs it, as `Kind` names.
 //!
 //! ssh keeps the first value it reads for an option, and reads the command line before the owner's ~/.ssh/config, so
 //! none of these can be undone there.

@@ -1,5 +1,7 @@
 # Worktrees are made on the server by the Repository helper, and recorded in the repository
 
+> **Superseded by [ADR 0202](0202-the-repository-automations-and-office-screens-are-removed.md).** The Worktrees view and starting a chat in a worktree are gone with the Repository screen. Worktrees it made, its `hermes-chat/managed-worktrees.json` record and its `refs/hermes-chat/kept/*` refs are left on the server as they are. Projects still lists a repository's worktrees and adds one as a folder.
+
 The Repository screen (ADR 0110) has a **Worktrees** view (#82). It lists the repository's worktrees on the server, makes new ones for parallel coding chats, runs their setup once, starts a chat in one, and removes one after a preview that keeps every change first. Every Git operation runs on the Hermes server, through the same constant helper over the owner's own `ssh`, with structured requests and no shell. Nothing runs Git on this computer.
 
 This supersedes ADR 0042, the first design for #82 (merged in #157), which made worktrees through the same helper but put each one at a fixed `<parent>/<repo>.worktrees/<branch>` and kept its record in another format. Worktrees that design made stay readable by Git and are listed here as not made by this app, so they are never removed, set up or attached to from here: its record (`hermes-chat/worktrees.json`) is left as it is, and its lock reason (`hermes-chat <id>`) isn't this one's.

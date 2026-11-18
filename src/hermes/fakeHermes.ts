@@ -1533,12 +1533,7 @@ export class FakeHermes {
       // (list_sessions_rich).
       const excluded = (query.get("exclude_sources") ?? "").split(",").filter(Boolean);
       const only = (query.get("sources") ?? query.get("source") ?? "").split(",").filter(Boolean);
-      // `cwd_prefix` (`_cwd_prefix_clause`): the folder itself or anything under it, never a sibling that shares a prefix.
-      const prefix = (query.get("cwd_prefix") ?? "").replace(/\/+$/, "");
-      const inFolder = (s: SessionRow) => !prefix || (!!s.cwd && (s.cwd === prefix || s.cwd.startsWith(`${prefix}/`)));
-      const visible = this.storeOrFail(query.get("profile")).filter(
-        (s) => !excluded.includes(s.source) && !s.unlisted && (!only.length || only.includes(s.source)) && inFolder(s),
-      );
+      const visible = this.storeOrFail(query.get("profile")).filter((s) => !excluded.includes(s.source) && !s.unlisted && (!only.length || only.includes(s.source)));
       const archived = query.get("archived") ?? "exclude";
       // order=created (the default): newest started first; order=recent: latest activity first.
       const at = (s: SessionRow) => (query.get("order") === "recent" ? (s.last_active ?? s.started_at) : s.started_at);

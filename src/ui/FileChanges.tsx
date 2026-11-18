@@ -8,7 +8,7 @@ import type { Chat } from "../hermes/model";
 import { errorText } from "../hermes/values";
 import { useLocale } from "../i18n/locale";
 import { useOpenPreview } from "./previewContext";
-import { PatchFile } from "./Repository";
+import { PatchFile } from "./PatchFile";
 import { Spinner } from "./bits";
 
 /** "2 files changed" under a finished reply, opening its files in the Preview. `off`: its profile has checkpoints off. */

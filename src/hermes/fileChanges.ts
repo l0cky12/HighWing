@@ -2,7 +2,7 @@
 // ties a checkpoint to nothing but its time, and `rollback.diff` compares a checkpoint with the files as they are now,
 // so everything here is worked out from the transcript and those two reads. No I/O: `fileUndo.ts` does the reading.
 import type { Item } from "./model";
-import { splitPatch } from "./repo";
+import { splitPatch } from "./diff";
 
 type ToolItem = Extract<Item, { kind: "tool" }>;
 

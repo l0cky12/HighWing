@@ -3901,142 +3901,15 @@ p.logs-status { margin: 0 0 8px; line-height: 1.5; }
   .log-row { flex-direction: column; gap: 0; }
 }
 
-/* The Repository screen (Repository.tsx, ADR 0110). It borrows Server files' head, bar, banners and diff lines. */
-.repo-edit-target { width: 22px; height: 22px; }
-.repo-target { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 22px 10px; }
-.repo-target label { font-size: calc(12.5rem / 14); color: var(--muted); }
-.repo-target input, .repo-path, .repo-diff-head select {
-  background: var(--raised); border: 1px solid var(--line-2); border-radius: 7px; padding: 5px 8px; color: var(--text); font-size: calc(12.5rem / 14);
-}
-.repo-target input { flex: 1; min-width: 220px; max-width: 420px; }
-.repo-target input:focus, .repo-path:focus { border-color: var(--line-3); outline: none; }
-.repo-bar { flex-wrap: wrap; row-gap: 6px; }
-.repo-path-label { display: inline-flex; align-items: center; gap: 6px; font-size: calc(12.5rem / 14); color: var(--muted); }
-.repo-path { flex: 1; min-width: 180px; max-width: 520px; }
-.repo-offers { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 22px 10px; }
-.repo-offers .chip { max-width: 100%; cursor: pointer; }
-.repo-offers .chip:hover:not(:disabled) { background: var(--raised-3); }
-.repo-empty { padding: 24px 22px; display: flex; align-items: center; gap: 8px; }
-.repo-failure { align-items: flex-start; }
-.repo-failure-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; overflow-wrap: anywhere; }
-.repo-hint { color: var(--text-2); }
-.repo-output {
-  margin: 2px 0 0; padding: 6px 8px; max-height: 220px; overflow: auto; white-space: pre-wrap; background: var(--code-bg); color: var(--text-2);
-  border-radius: 6px; font-size: calc(12rem / 14);
-}
-.repo-summary { padding: 4px 22px 8px; display: flex; flex-direction: column; gap: 6px; flex: none; }
-.repo-summary[data-stale] { opacity: 0.7; }
-.repo-summary-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-width: 0; }
-.repo-summary .files-banner { margin: 0; }
-.repo-top { color: var(--text-strong); overflow-wrap: anywhere; }
-.repo-branch { display: inline-flex; align-items: center; gap: 6px; color: var(--text); }
-.repo-branch svg { color: var(--muted); }
-.repo-body { flex: 1; min-height: 0; display: flex; border-top: 1px solid var(--line); }
-.repo-list { width: 100%; overflow: auto; padding: 8px 12px 40px 16px; }
-.repo-body.with-diff .repo-list { width: 340px; flex: none; border-right: 1px solid var(--line); }
-.repo-list[data-stale] { opacity: 0.7; }
-.repo-clean { padding: 8px 6px; }
-.repo-section + .repo-section { margin-top: 12px; }
-.repo-section h2 { font-size: calc(12rem / 14); color: var(--muted); font-weight: 600; margin: 4px 6px 4px; }
-.repo-section ul { list-style: none; margin: 0; padding: 0; }
-.repo-none { margin: 2px 6px 4px; }
-.repo-file {
-  width: 100%; display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; text-align: left; font-size: calc(12.5rem / 14);
-  color: var(--text-2); min-height: 28px;
-}
-.repo-file:hover { background: var(--hover-2); }
-.repo-file[aria-current] { background: var(--accent-soft); color: var(--text-strong); }
-.repo-file:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.repo-code { flex: none; width: 16px; text-align: center; font-family: var(--mono); font-size: calc(12rem / 14); font-weight: 600; color: var(--muted); }
-.repo-code.code-A, .repo-code.code-untracked { color: var(--ok); }
-.repo-code.code-D { color: var(--bad); }
-.repo-code.code-M, .repo-code.code-R, .repo-code.code-C, .repo-code.code-T { color: var(--warn); }
-.repo-code.code-U { color: var(--bad); }
-.repo-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.repo-file-dir { margin-left: 8px; font-size: calc(12rem / 14); }
-.repo-counts { flex: none; font-variant-numeric: tabular-nums; }
-.repo-counts .add, .repo-diff .add { color: var(--ok); }
-.repo-counts .del, .repo-diff .del { color: var(--bad); }
-.repo-diff { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.repo-diff-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-.repo-diff-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.repo-diff-path { overflow-wrap: anywhere; color: var(--text-strong); }
-.repo-diff-body { flex: 1; min-height: 0; overflow: auto; font-size: var(--mono-size); background: var(--raised); }
-.repo-diff-body[data-stale] { opacity: 0.7; }
-.repo-diff-body .files-diff-line.note { color: var(--muted); font-style: italic; }
-.repo-diff-body .files-diff-line.marker { background: rgba(245, 184, 74, 0.16); color: var(--warn); }
-.repo-diff-none { padding: 10px 12px; margin: 0; }
-.repo-notices { padding: 8px 12px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+/* A reply's file changes and their diffs (FileChanges.tsx, PatchFile.tsx, ADR 0180). The diff lines are Server files'. */
 .repo-notice { margin: 0; font-size: calc(12.5rem / 14); line-height: 1.5; color: var(--text-2); }
 .repo-notice.warn { color: var(--warn); }
-/* Narrow: the diff goes under the list. */
-@media (max-width: 860px) {
-  .repo-body.with-diff { flex-direction: column; }
-  .repo-body.with-diff .repo-list { width: 100%; max-height: 40%; border-right: 0; border-bottom: 1px solid var(--line); }
-}
-/* Repository, stage 2: staging and committing. */
-.repo-writing { color: var(--text-2); }
-.repo-row { display: flex; align-items: center; gap: 2px; }
-.repo-tick, .repo-tick-space { flex: none; width: 16px; margin: 0 2px 0 4px; }
-.repo-tick { accent-color: var(--accent); cursor: pointer; }
-.repo-section-head { display: flex; align-items: center; gap: 8px; margin: 0 0 2px; }
-.repo-section-head h2 { flex: 1; }
-.repo-section-act, .repo-stage-file, .repo-hunk-act { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; font-size: calc(12rem / 14); }
 .repo-hunk-head { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
 .repo-hunk-head > span { min-width: 0; overflow-wrap: anywhere; }
-.repo-hunk-act { flex: none; font-family: var(--ui-font, Inter), sans-serif; color: var(--text-2); }
-.repo-commit { margin-top: 16px; padding: 10px 6px 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
-.repo-commit-label { display: inline-flex; align-items: center; gap: 6px; font-size: calc(12rem / 14); color: var(--muted); font-weight: 600; }
-.repo-commit-message {
-  width: 100%; resize: vertical; min-height: 72px; background: var(--raised); border: 1px solid var(--line-2); border-radius: 7px; padding: 6px 8px;
-  color: var(--text); font-size: calc(12.5rem / 14); line-height: 1.45;
-}
-.repo-commit-message:focus { border-color: var(--line-3); outline: none; }
-.repo-commit-note { margin: 0; }
-.repo-commit-error { margin: 0; color: var(--bad); display: flex; gap: 5px; align-items: center; }
-.repo-commit-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
-.repo-commit-actions .btn { display: inline-flex; align-items: center; gap: 5px; }
-.leave-overlay .leave-dialog.repo-review { max-width: min(860px, 100%); width: 100%; max-height: calc(100vh - 32px); display: flex; flex-direction: column; }
-.repo-review-body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 4px; }
-.repo-review h3 { font-size: calc(12rem / 14); color: var(--muted); font-weight: 600; margin: 8px 0 2px; }
-.repo-review-status { display: flex; align-items: center; gap: 8px; color: var(--text-2); }
-.repo-review-facts { display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px; margin: 0; font-size: calc(12.5rem / 14); }
-.repo-review-facts dt { color: var(--muted); }
-.repo-review-facts dd { margin: 0; overflow-wrap: anywhere; }
-.repo-review-message { margin: 0; padding: 8px 10px; background: var(--code-bg); border-radius: 6px; white-space: pre-wrap; font-size: calc(12.5rem / 14); }
-.repo-review-files { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: calc(12.5rem / 14); }
-.repo-review-files li { display: flex; gap: 6px; align-items: baseline; overflow-wrap: anywhere; }
 .repo-review-diff { border: 1px solid var(--line); border-radius: 8px; background: var(--raised); font-size: var(--mono-size); margin-top: 6px; }
 .repo-review-file + .repo-review-file { border-top: 1px solid var(--line-2); }
 .repo-review-file-head { padding: 6px 10px; color: var(--text-strong); background: var(--raised-2); font-size: calc(12.5rem / 14); }
-.repo-review-done { display: flex; flex-direction: column; gap: 6px; }
-.repo-review-done .files-banner { margin: 0; }
 .repo-review-file .repo-notice { padding: 4px 10px; color: var(--muted); }
-/* Repository, stage 3: push and pull requests. */
-.repo-publish { margin-top: 18px; padding: 10px 6px 0; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
-.repo-publish .repo-section-head h2 { margin: 0; }
-.repo-card { border: 1px solid var(--line-2); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; background: var(--raised); }
-.repo-card h3 { margin: 0; font-size: calc(12.5rem / 14); font-weight: 600; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.repo-commits { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: calc(12.5rem / 14); }
-.repo-commits li { overflow-wrap: anywhere; }
-.repo-pr-form { display: flex; flex-direction: column; gap: 4px; }
-.repo-pr-form select, .repo-pr-title {
-  background: var(--raised-2); border: 1px solid var(--line-2); border-radius: 7px; padding: 5px 8px; color: var(--text); font-size: calc(12.5rem / 14);
-}
-.repo-pr-title:focus, .repo-pr-form select:focus { border-color: var(--line-3); outline: none; }
-.repo-pr-draft { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); margin-top: 4px; }
-.repo-pr-draft input { accent-color: var(--accent); }
-.repo-pr-status { display: flex; flex-direction: column; gap: 6px; }
-.repo-pr-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.repo-pr-head .btn { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; font-size: calc(12rem / 14); }
-.repo-pr-title-text { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
-.repo-pr-url { margin: 0; overflow-wrap: anywhere; }
-.repo-checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: calc(12.5rem / 14); }
-.repo-checks li { display: flex; align-items: center; gap: 6px; }
-.repo-check-pass { color: var(--ok); }
-.repo-check-fail { color: var(--bad); }
-.repo-check-pending { color: var(--warn); }
-.repo-link { width: 20px; height: 20px; }
 
 /* Connection diagnostics and the note a screen shows when Hermes lacks what it needs (src/ui/Diagnostics.tsx). Sized
    by its own width, so a narrow window or a split pane stacks the table. */
@@ -4070,63 +3943,6 @@ p.logs-status { margin: 0 0 8px; line-height: 1.5; }
   .diag-table tr { display: block; border-top: 1px solid var(--line); padding: 8px 0; }
   .diag-table tbody tr:first-child { border-top: 0; padding-top: 0; }
   .diag-table th, .diag-table td { display: block; width: auto !important; border: 0; padding: 2px 0; }
-}
-/* Repository → Worktrees (ADR 0043) */
-.repo-views { display: flex; gap: 4px; border-bottom: 1px solid var(--line); padding: 8px 22px 0; flex: none; }
-.repo-view { padding: 6px 12px; border-radius: 7px 7px 0 0; color: var(--muted); border: 1px solid transparent; border-bottom: none; margin-bottom: -1px; }
-.repo-view:hover { color: var(--text); }
-.repo-view.on { color: var(--text-strong); background: var(--raised); border-color: var(--line); }
-.repo-view:focus-visible { outline: 2px solid var(--line-3); outline-offset: -2px; }
-.repo-changes { flex: 1; min-height: 0; display: flex; flex-direction: column; padding-top: 8px; }
-.repo-worktrees { flex: 1; min-height: 0; overflow: auto; }
-.wt { display: flex; flex-direction: column; gap: 10px; padding: 12px 22px 32px; }
-.wt-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
-.wt-head h2 { margin: 0; font-size: calc(13.5rem / 14); display: flex; align-items: center; gap: 6px; }
-.wt-head > .muted { flex: 1 1 260px; }
-.wt-head-actions { display: flex; gap: 6px; margin-left: auto; }
-.wt-empty { margin: 4px 0; display: flex; gap: 8px; align-items: center; }
-.wt-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.wt-list[data-stale] { opacity: 0.7; }
-.wt-row { border: 1px solid var(--line-2); border-radius: 8px; padding: 10px 12px; background: var(--raised); display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.wt-row.current { border-color: var(--line-3); }
-.wt-row-main { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; }
-.wt-icon { color: var(--muted); flex: none; }
-.wt-path { overflow-wrap: anywhere; color: var(--text-strong); min-width: 0; }
-.wt-branch { display: inline-flex; align-items: center; gap: 4px; color: var(--text-2); }
-.wt-badges { display: inline-flex; flex-wrap: wrap; gap: 4px; }
-.wt-badges .badge { display: inline-flex; align-items: center; gap: 3px; }
-.wt-facts { margin: 0; display: flex; flex-wrap: wrap; gap: 2px 14px; color: var(--text-2); }
-.wt-chats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: calc(12.5rem / 14); }
-.wt-chats li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; }
-.wt-setup summary { cursor: pointer; font-size: calc(12.5rem / 14); color: var(--text-2); }
-.wt-setup pre { margin: 6px 0 0; max-height: 220px; overflow: auto; }
-.wt-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.wt-actions .btn { display: inline-flex; align-items: center; gap: 4px; }
-.wt-why { margin: 0; }
-.wt-confirm { margin-top: 6px; border: 1px solid var(--line-3); border-radius: 8px; padding: 10px 12px; background: var(--raised-2); }
-.wt-confirm p { margin: 0 0 8px; }
-.wt-section h3 { margin: 6px 0 4px; font-size: calc(12.5rem / 14); color: var(--muted); }
-.wt-dialog { gap: 8px; overflow: auto; }
-.wt-form { display: flex; flex-direction: column; gap: 4px; }
-.wt-form input[type="text"], .wt-form input:not([type]) {
-  background: var(--raised-2); border: 1px solid var(--line-2); border-radius: 7px; padding: 6px 8px; color: var(--text); font-size: calc(12.5rem / 14);
-}
-.wt-form input:not([type]):focus { border-color: var(--line-3); outline: none; }
-.wt-form label { font-size: calc(12.5rem / 14); color: var(--text-2); margin-top: 4px; }
-.wt-mode { border: none; padding: 0; margin: 0 0 4px; display: flex; flex-wrap: wrap; gap: 4px 16px; }
-.wt-mode legend { font-size: calc(12.5rem / 14); color: var(--text-2); padding: 0; margin-bottom: 2px; }
-.wt-mode label, .wt-check { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
-.wt-check { font-size: calc(12.5rem / 14); margin-top: 6px; }
-.wt-plan { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-.wt-setup-plan, .wt-files { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: calc(12.5rem / 14); overflow-wrap: anywhere; }
-.wt-files { max-height: 220px; overflow: auto; border: 1px solid var(--line-2); border-radius: 7px; padding: 6px 8px; background: var(--raised-2); }
-.wt-log { margin: 0; padding: 6px 8px 6px 28px; max-height: 180px; overflow: auto; border: 1px solid var(--line-2); border-radius: 7px; background: var(--code-bg); font-size: var(--mono-size); }
-.wt-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; max-width: 220px; }
-.wt-chip .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@media (max-width: 720px) {
-  .wt-head-actions { margin-left: 0; }
-  .wt-row { padding: 8px 10px; }
-  .wt-chip { max-width: 140px; }
 }
 
 /* ---------- Settings → MCP servers (McpSettings.tsx, ADR 0121) ---------- */

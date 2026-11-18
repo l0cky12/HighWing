@@ -517,6 +517,28 @@ describe("reading a backup", () => {
     expect([d.add, d.skipped]).toEqual([1, [{ reason: "This version can't use them", n: 1 }]]);
   });
 
+  it("restores one made while the removed Repository screen kept its folders and worktree chats, leaving those out", async () => {
+    const from = await populated();
+    from.storage.setItem("hermes-chat.repo-path", "/srv/app");
+    from.storage.setItem("hermes-chat.repo-target", "lena@hermes.lan");
+    from.storage.setItem("hermes-chat.worktree-chats", JSON.stringify({ v: 1, scopes: { [projectScope(conn, "default")]: { "chat-a": { path: "/srv/app-wt" } } } }));
+    let entries = await makeBackup(from, CATEGORY_IDS);
+    const settings = JSON.parse(entries[1].text);
+    settings.records.push({ key: "repoTarget", value: "lena@hermes.lan" });
+    const worktrees = JSON.stringify({ category: "worktreeChats", records: [{ place: "p1", key: "chat-a", value: { path: "/srv/app-wt" } }] });
+    const manifest = JSON.parse(entries[0].text);
+    manifest.files.settings = { ...manifest.files.settings, records: settings.records.length, sha256: await sha256(JSON.stringify(settings)) };
+    manifest.files.worktreeChats = { file: "worktree-chats.json", records: 1, sha256: await sha256(worktrees) };
+    entries = [...edit(edit(entries, "settings.json", () => JSON.stringify(settings)), "manifest.json", () => JSON.stringify(manifest)), { name: "worktree-chats.json", text: worktrees }];
+    const into = env();
+    const { backup, report } = await restore(entries, into);
+    expect(backup.unsupported).toEqual(["worktreeChats"]);
+    expect(report.outcomes.filter((o) => o.state === "failed")).toEqual([]);
+    expect(report.outcomes.find((o) => o.id === "settings")?.state).toBe("restored");
+    expect(into.storage.getItem("hermes-chat.terminal-target")).toBe("lena@hermes.lan");
+    expect([...into.storage.m.keys()].filter((k) => /repo|worktree/.test(k))).toEqual([]);
+  });
+
   it("refuses a record for a place the manifest doesn't name", async () => {
     let entries = await made();
     const text = JSON.stringify({ category: "drafts", records: [{ place: "p9", key: "chat-x", value: "x" }] });

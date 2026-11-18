@@ -102,8 +102,6 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - run: pipx install ruff==0.17.3
       - run: ruff check .
-      # Rust sends the two repo helpers to the server as one program (repo_git.rs, HELPER), so lint them as one too.
-      - run: cat src-tauri/src/repo_git_helper.py src-tauri/src/repo_worktree_helper.py | ruff check --stdin-filename src-tauri/src/repo_helper.py -
 
   audit:
     runs-on: ubuntu-24.04

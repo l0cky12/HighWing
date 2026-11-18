@@ -15,7 +15,6 @@ import { getUIPrefs, setUIPrefs } from "./uiPrefs";
 import { IMPORTS_KEY } from "./importTranscripts";
 import { SNOOZE_KEY } from "./snooze";
 import { TAGS_KEY } from "./tags";
-import { WORKTREE_CHATS_KEY } from "./worktrees";
 
 const legacy = { mode: "ssh" as const, sshTarget: "lena@hermes", url: "", username: "lena" };
 let ids = 0;
@@ -268,21 +267,21 @@ describe("Removing a connection's local data", () => {
     expect(await defaults.read(projectScope(two, "default"))).toMatchObject({ p1: { instructions: "two" } });
   });
 
-  it("also deletes its tags, snoozes, branch origins, imports record and worktree chats, and no other connection's", async () => {
+  it("also deletes its tags, snoozes, branch origins and imports record, and no other connection's", async () => {
     const s = store();
     const one = s.draft({ mode: "url", sshTarget: "", url: "https://a.example.com", username: "owner" }, "Home");
     const two = s.draft({ mode: "url", sshTarget: "", url: "https://b.example.com", username: "owner" }, "Home");
     s.save(one);
     s.save(two);
     const both = (v: unknown) => ({ [projectScope(one, "default")]: v, [projectScope(two, "default")]: v });
-    for (const key of [SNOOZE_KEY, IMPORTS_KEY, WORKTREE_CHATS_KEY]) localStorage.setItem(key, JSON.stringify({ v: 1, scopes: both({ c: 1 }) }));
+    for (const key of [SNOOZE_KEY, IMPORTS_KEY]) localStorage.setItem(key, JSON.stringify({ v: 1, scopes: both({ c: 1 }) }));
     const tagsFile = storageDefaultsFile(() => localStorage, TAGS_KEY);
     localStorage.setItem(TAGS_KEY, JSON.stringify({ v: 1, kept: "a newer app's field", scopes: both({ tags: [], chats: {}, filters: [] }) }));
     for (const c of [one, two]) localChatCache(c).saveBranches("default", { links: { b: { parent: "p", title: "t" } }, attempts: [] } as never);
 
     await forgetConnectionData(one, { tags: tagsFile });
 
-    for (const key of [SNOOZE_KEY, IMPORTS_KEY, WORKTREE_CHATS_KEY, TAGS_KEY])
+    for (const key of [SNOOZE_KEY, IMPORTS_KEY, TAGS_KEY])
       expect(Object.keys(JSON.parse(localStorage.getItem(key)!).scopes)).toEqual([projectScope(two, "default")]);
     expect(JSON.parse(localStorage.getItem(TAGS_KEY)!).kept).toBe("a newer app's field");
     const branchKeys = Object.keys(localStorage).filter((k) => k.startsWith("hermes-chat.branches."));

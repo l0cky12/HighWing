@@ -213,7 +213,7 @@ Which chats are in which project, one link per chat and project. Kept by Hermes 
 _Avoid_: sync conflict (for a change that is only waiting), assignment
 
 **Folder** (of a project):
-A path on the server that a project refers to, shown with the connection it is on. The one Hermes names primary is the project's **main folder**: every computer agrees on it, and the project's Context files are kept in its `context` folder. Highwing adds only a folder that is already there, and never moves or deletes one. It makes a folder in one case only: for Context files, it makes `context` in the main folder, and for a project with no folder it first makes `<profile's folder>/projects/<project's name>` on the server and adds it as the main folder (ADR 0135). A folder in a git repository shows its branch, and the repository's other worktrees can be added as folders too. Worktrees are made and removed only in the Repository screen's Worktrees view.
+A path on the server that a project refers to, shown with the connection it is on. The one Hermes names primary is the project's **main folder**: every computer agrees on it, and the project's Context files are kept in its `context` folder. Highwing adds only a folder that is already there, and never moves or deletes one. It makes a folder in one case only: for Context files, it makes `context` in the main folder, and for a project with no folder it first makes `<profile's folder>/projects/<project's name>` on the server and adds it as the main folder (ADR 0135). A folder in a git repository shows its branch, and the repository's other worktrees can be added as folders too.
 _Avoid_: directory, workspace, repo (unless it is one), primary folder (the main folder)
 
 **Context file** (of a project):
@@ -534,33 +534,9 @@ _Avoid_: attach, attachment (that is a file sent with a message), sync
 Changing a text file on the server from Server files, and saving it back. Save shows the changes first, and writes only if the server still has the version the edit started from. It counts as saved once Hermes, read back, has the edit. If the file changed on the server, nothing is written, and both versions stay: the owner merges them, takes the server's, or saves theirs as a copy (ADR 0024).
 _Avoid_: patch, sync, overwrite
 
-**Repository**:
-The rail's screen for a Git checkout on the Hermes server: its folder, branch, upstream, and changed files with their diffs. It reads through the owner's own ssh, the Terminal's target or the sign-in's, not through the dashboard, so it works while Hermes is away. Git runs there as the SSH user, with that user's config, hooks and credentials (ADR 0110).
-_Avoid_: repo (in the interface), project (a Project is Hermes's group of chats and folders), workspace
-
 **Worktree**:
-A separate working folder of a repository on the server, with its own branch, made by Git (`git worktree add`). The Repository screen's Worktrees view lists them all. A **managed** worktree is one Highwing made: it is recorded in the repository with its setup and the chats working in it, and only it can be removed from here. A chat started in a worktree works only there. A worktree with a chat **attached** can't be removed until the owner detaches it: a quiet chat still counts. A **Protected** worktree, the main checkout, and one Highwing didn't make are never removed (ADR 0043).
+A separate working folder of a git repository on the server, with its own branch, made by Git (`git worktree add`). A project folder in a repository shows the repository's other worktrees, and the owner can add any of them to the project as a folder. Highwing never makes or removes a worktree.
 _Avoid_: workspace, sandbox, clone (a clone has its own `.git`), checkout (for a worktree that isn't the main one)
-
-**Setup** (of a worktree):
-What runs once in a new worktree before a chat works there: the files and folders the repository's `.worktreeinclude` names, copied or linked from the checkout it was made from, as Hermes does for its own worktrees. Setup commands, such as an install script, aren't run. A failed or cut-off setup leaves the worktree, with Retry.
-_Avoid_: bootstrap, provisioning, install
-
-**Kept changes**:
-What a worktree's removal saved first: every changed and untracked file, as a commit on top of its HEAD (or HEAD itself, for commits no branch had), under `refs/hermes-chat/kept/` in the repository. Restore in a new worktree starts one from it. Nothing here deletes them.
-_Avoid_: stash (it isn't one), backup, archive (Hermes's own sweep uses `refs/hermes/archive/`)
-
-**Staged** / **Not staged** / **Untracked**:
-Where a change in the Repository screen is. Staged changes are in Git's index, what the next commit would hold. Not staged changes are in the working tree only. An Untracked file isn't in Git yet. One file can have changes in both of the first two, and the screen shows each side's diff on its own.
-_Avoid_: cached, added (for staged), dirty, unversioned
-
-**Commit preview**:
-What the Repository screen shows before it commits: every staged file, the whole staged diff, the message exactly as it will be committed, the author, the branch and the commit it goes on top of, and the hooks that will run. Commit happens only if the repository still has exactly that, on the same branch; otherwise nothing is committed and the preview is read again.
-_Avoid_: dry run, summary
-
-**Push** / **Create pull request**:
-The Repository screen's two separate ways to publish a branch. Push sends the commit shown to the remote branch shown, with the server's own credentials, and never forces. Create pull request asks GitHub, through `gh` on the server, for a pull request from a branch the remote already has. It never pushes. Each goes only where it showed: if the branch, its commit, the remote's URL or its GitHub repository changed meanwhile, it's refused and nothing is sent.
-_Avoid_: publish (for either one alone), sync, ship
 
 **Terminal**:
 The Side panel's tab with the owner's own shells: one on the Hermes server, through their ssh to the sign-in's SSH target (for a web-address sign-in, the address's host), or one typed for it, and one on this computer, their login shell. ssh asks there for anything it needs, such as a passphrase or a new host key. A switch at the top picks **Hermes server** or **This computer**. The tab opens on the one picked last, the server's until then, and says so plainly when the server has no SSH target. Each session runs on while the other is shown or the panel is closed, and the rail shows it; signing out ends both. They are the owner's shells, not Hermes's: nothing typed there reaches a chat, an Approval or the agent, and the app itself never types into one (ADR 0022, ADR 0039, ADR 0051, ADR 0055). A folder a reply names gets a Folder shell beside them.

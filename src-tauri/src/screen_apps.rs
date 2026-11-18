@@ -1,13 +1,11 @@
 //! Puts a terminal and a text editor on the Screen's Bot Desktop, and `xclip` for copying out of it (ADR 0193). Hermes
 //! installs neither `mousepad`, `xclip` nor, on a server where its own desktop install wasn't used, `xfce4-terminal`,
-//! and they need root. So the app installs them through the owner's own `ssh`, as the Repository screen reaches the
-//! server (ADR 0110).
+//! and they need root. So the app installs them through the owner's own `ssh`.
 //!
 //! The remote command is a constant, `screen_apps.sh`: nothing in it comes from the webview. The only thing the owner
 //! types, a sudo password, goes on ssh's stdin, which `sudo -S` reads. It is never an argument, so it never shows in a
 //! process list on either machine, and it is not logged or kept.
 
-use crate::repo_git::{ssh_failure, RepoError};
 use crate::ssh_guard::{self, Kind, Target};
 use serde::Serialize;
 use std::process::Stdio;
@@ -57,13 +55,35 @@ fn mode(password_given: bool) -> &'static str {
     }
 }
 
-/// `ssh` to `target`, running the script. The password, if any, is not passed here.
-pub fn ssh_command(target: &str, password_given: bool) -> Result<Command, RepoError> {
-    let target = Target::parse(target).ok_or(RepoError::BadTarget)?;
+const BAD_TARGET: &str = "Enter an SSH target such as lena@hermes or a host alias from ~/.ssh/config.";
+
+/// `ssh` to `target`, running the script, or None for a target that isn't one. The password, if any, is not passed here.
+pub fn ssh_command(target: &str, password_given: bool) -> Option<Command> {
+    let target = Target::parse(target)?;
     let remote = format!("exec sh -c '{}' highwing-screen-apps {}", one_line(), mode(password_given));
     let mut command = crate::tunnel::background_ssh();
     command.args(ssh_guard::args(target, Kind::Command { remote: &[&remote] }, Some(Duration::from_secs(15))));
-    Ok(command)
+    Some(command)
+}
+
+/// What ssh's own failure (exit status 255) was about, from what it printed, in the owner's words.
+fn ssh_failure(stderr: &str) -> &'static str {
+    let s = stderr.to_ascii_lowercase();
+    if s.contains("host key verification failed") || s.contains("remote host identification has changed") {
+        "ssh doesn't know this server's host key yet. Connect once from the Terminal and accept it, then try again."
+    } else if s.contains("permission denied") || s.contains("too many authentication failures") {
+        "ssh couldn't sign in to the server without asking. The key needs to be in your SSH agent, or unencrypted."
+    } else if s.contains("could not resolve")
+        || s.contains("connection refused")
+        || s.contains("connection timed out")
+        || s.contains("no route to host")
+        || s.contains("network is unreachable")
+        || s.contains("operation timed out")
+    {
+        "ssh couldn't reach the server."
+    } else {
+        "ssh failed."
+    }
 }
 
 /// What the script's exit `code` and output mean.
@@ -74,7 +94,7 @@ pub fn outcome(code: Option<i32>, stdout: &str, stderr: &str) -> Outcome {
         Some(10) => Outcome::NeedsPassword,
         Some(3) => Outcome::NoPackageManager,
         Some(4) => Outcome::NoSudo,
-        Some(255) => Outcome::Error { message: RepoError::Ssh { why: ssh_failure(stderr), detail: stderr.trim().to_owned() }.to_string() },
+        Some(255) => Outcome::Error { message: ssh_failure(stderr).into() },
         _ if said.contains("incorrect password") || said.contains("sorry, try again") => Outcome::WrongPassword,
         _ => Outcome::Failed { output: last_lines(if stderr.trim().is_empty() { stdout } else { stderr }, 8) },
     }
@@ -90,7 +110,7 @@ pub async fn run(mut command: Command, password: Option<&str>) -> Outcome {
     command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
     let mut child = match command.spawn() {
         Ok(c) => c,
-        Err(e) => return Outcome::Error { message: RepoError::Spawn(e.to_string()).to_string() },
+        Err(e) => return Outcome::Error { message: format!("Couldn't start ssh: {e}") },
     };
     let mut stdin = child.stdin.take().expect("piped stdin");
     if let Some(p) = password {
@@ -99,8 +119,8 @@ pub async fn run(mut command: Command, password: Option<&str>) -> Outcome {
     }
     drop(stdin);
     match tokio::time::timeout(LIMIT, child.wait_with_output()).await {
-        Err(_) => Outcome::Error { message: RepoError::Timeout(LIMIT.as_secs()).to_string() },
-        Ok(Err(e)) => Outcome::Error { message: RepoError::Spawn(e.to_string()).to_string() },
+        Err(_) => Outcome::Error { message: format!("The server didn't answer within {} s.", LIMIT.as_secs()) },
+        Ok(Err(e)) => Outcome::Error { message: format!("Couldn't start ssh: {e}") },
         Ok(Ok(out)) => outcome(out.status.code(), &String::from_utf8_lossy(&out.stdout), &String::from_utf8_lossy(&out.stderr)),
     }
 }
@@ -108,8 +128,8 @@ pub async fn run(mut command: Command, password: Option<&str>) -> Outcome {
 /// Installs them on the server `target` reaches.
 pub async fn install_over_ssh(target: &str, password: Option<&str>) -> Outcome {
     match ssh_command(target, password.is_some()) {
-        Ok(command) => run(command, password).await,
-        Err(e) => Outcome::Error { message: e.to_string() },
+        Some(command) => run(command, password).await,
+        None => Outcome::Error { message: BAD_TARGET.into() },
     }
 }
 
@@ -131,7 +151,7 @@ mod tests {
         let with_password = ssh_command("lena@hermes", true).unwrap();
         let last = with_password.as_std().get_args().last().unwrap().to_string_lossy().into_owned();
         assert!(last.ends_with("highwing-screen-apps password"));
-        assert_eq!(ssh_command("-oProxyCommand=x", false).err(), Some(RepoError::BadTarget));
+        assert!(ssh_command("-oProxyCommand=x", false).is_none());
     }
 
     #[test]
@@ -145,6 +165,10 @@ mod tests {
             outcome(Some(255), "", "ssh: connect to host hermes port 22: Connection refused"),
             Outcome::Error { message: "ssh couldn't reach the server.".into() }
         );
+        let Outcome::Error { message } = outcome(Some(255), "", "lena@hermes: Permission denied (publickey).") else { panic!("an ssh failure") };
+        assert!(message.starts_with("ssh couldn't sign in"));
+        let Outcome::Error { message } = outcome(Some(255), "", "Host key verification failed.") else { panic!("an ssh failure") };
+        assert!(message.starts_with("ssh doesn't know this server's host key"));
         let apt = "Reading package lists...\n\n".to_owned()
             + &(1..=10).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n")
             + "\nE: Unable to locate package mousepad\n";

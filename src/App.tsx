@@ -123,6 +123,8 @@ import { ModelControls } from "./ui/ModelPicker";
 import { PreviewPane } from "./ui/PreviewPane";
 import { stepHistory } from "./ui/previewHistory";
 import { PANE_MIN_WIDTH, SidePanel, type PanelTab } from "./ui/SidePanel";
+import { ScreenDeskProvider, type ScreenDesk } from "./ui/ComputerUseCard";
+import { screenUse } from "./hermes/computerUse";
 import { ScreenTab } from "./ui/Screen";
 import { LinksProvider, useOpenPreview } from "./ui/previewContext";
 import { SentImageReader } from "./ui/previews";
@@ -1515,7 +1517,7 @@ export function Main({
   // The model pick is sticky: new chats start on it, in this profile, until the owner picks another. It is kept on this
   // computer only and never becomes the profile's default. Picked in another profile, it gives way to this profile's
   // own model. A chat on screen shows the model it runs on, and a pick there switches that chat alone.
-  const { modelPicker, modelPicks, modelFavorites, previewWidth, sidebarWidth, inboxAutoDismissDays, summonSelection, chatListMode } = useSyncExternalStore(subscribeUIPrefs, getUIPrefs);
+  const { modelPicker, modelPicks, modelFavorites, previewWidth, sidebarWidth, inboxAutoDismissDays, summonSelection, chatListMode, followScreen } = useSyncExternalStore(subscribeUIPrefs, getUIPrefs);
   const keys = useBindings();
   const catalog = models?.profile === profile ? models : undefined;
   const sticky: ModelPick | undefined = modelPicks[pref] ?? (modelPicker?.profile === pref ? withoutProfile(modelPicker) : catalog?.defaultPick);
@@ -1544,6 +1546,11 @@ export function Main({
       openPanel("preview");
     },
     [openPanel],
+  );
+  // A computer-use run's Watch live, the refusal note's buttons, and follow mode (ADR 0213).
+  const screenDesk = useMemo<ScreenDesk>(
+    () => ({ screen: screenState, onWatch: () => openPanel("screen"), onHandBack: () => hermes.screen.handBack() }),
+    [screenState, openPanel, hermes],
   );
   // A path in a reply (ADR 0167): a file opens in the Preview, a folder in a folder shell on the Hermes server. One
   // opener for every pane, so the newest click wins whichever pane it was in.
@@ -1754,6 +1761,17 @@ export function Main({
   };
   const projectNames = (chatId: string) => listable.filter((p) => proj.chats[p.id]?.includes(chatId)).map((p) => p.name);
   useWindowTitle(windowTitle(active.chatId ? chats.find((c) => c.id === active.chatId)?.title : undefined, unreadChats.length));
+  // Follow mode (ADR 0213): the Screen opens once for each computer-use run that starts in the chat on screen.
+  const shownUse = useMemo(() => {
+    const shown = active.chatId ? chats.find((c) => c.id === active.chatId) : undefined;
+    return shown && screenUse(shown);
+  }, [chats, active.chatId]);
+  const followed = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!followScreen || !shownUse?.running || followed.current === shownUse.key) return;
+    followed.current = shownUse.key;
+    openPanel("screen");
+  }, [followScreen, shownUse?.running, shownUse?.key, openPanel]);
 
   const listedFromHermes = hermes.hasListed();
   // Clears from the Inbox were kept on this computer until clearing a chat settled it (ADR 0090). Once Hermes has
@@ -3220,6 +3238,7 @@ export function Main({
 
   return (
     <LinksProvider preview={openPreview} path={openPath} web={webPages} onToast={(text) => setToast({ text, at: Date.now() })}>
+    <ScreenDeskProvider value={screenDesk}>
     <SentImageReader.Provider value={sentImages}>
     <div className="app" inert={covered || restarting}>
       <Rail
@@ -3954,6 +3973,7 @@ export function Main({
         )}
     </div>
     </SentImageReader.Provider>
+    </ScreenDeskProvider>
     </LinksProvider>
   );
 }

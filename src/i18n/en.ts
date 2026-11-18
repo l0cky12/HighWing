@@ -38,6 +38,53 @@ export const en = {
       hide: "Hide the message",
       show: "Show the message",
     },
+    /** A computer-use run's card, its Watch live chip, and the note when Hermes couldn't use the screen (ADR 0213). */
+    computerUse: {
+      title: "Computer use",
+      steps: (n: number) => (n === 1 ? "1 step" : `${n} steps`),
+      state: { asking: "waiting for your approval", acting: "working", refused: "refused", stopped: "stopped", done: "done" },
+      holder: {
+        agent: "Hermes drives the screen",
+        you: "You hold the screen",
+        youBefore: "You still hold the screen from before",
+        someone: "Someone else holds the screen",
+      },
+      watch: "Watch live",
+      watchTip: "Open the Bot Desktop in the side panel's Screen",
+      hide: "Hide the steps",
+      show: "Show the steps",
+      foreground: "foreground",
+      foregroundTip: "Raises the window and moves the focus on the screen",
+      outcome: {
+        pending: "running…",
+        unrecorded: "not recorded",
+        unrecordedTip: "Hermes keeps no result of a computer-use step in the chat's history",
+        denied: "denied",
+        stopped: "stopped",
+        refused: "refused: a person holds the screen",
+        verify: "not confirmed",
+        escalate: "may not have landed",
+      },
+      capture: (size: string | undefined, app: string | undefined, elements: number | undefined) =>
+        [size, app, elements === undefined ? undefined : elements === 1 ? "1 element" : `${elements} elements`].filter(Boolean).join(" · "),
+      details: { thought: "Reasoning", hint: "Hermes's advice", args: "Arguments", result: "Result" },
+      /** An Approval's heading under the step it gates: Hermes's own words for the action. */
+      ask: (action: string) => `Hermes wants to ${action}`,
+      banner: {
+        you: "Hermes's computer use was refused because you hold the Bot Desktop. Hand it back so Hermes can carry on.",
+        youBefore: "Hermes's computer use was refused because you still hold the Bot Desktop from before the connection dropped. Take over in the Screen, then hand back.",
+        someone: "Hermes's computer use was refused because someone else holds the Bot Desktop. It waits until they hand it back.",
+        handBack: "Hand back",
+        openScreen: "Open the Screen",
+        failed: (why: string) => `Couldn't hand back the screen: ${why}`,
+      },
+      follow: {
+        section: "Bot Desktop",
+        name: "Follow computer use",
+        hint: "Open the side panel's Screen when Hermes starts using its Bot Desktop in the chat on screen.",
+        more: "It opens once for each run of computer-use steps, so closing it keeps it closed until the next run. A run's Watch live opens it whether this is on or not.",
+      },
+    },
     /** The chip under a reply that edited files on the server, and the Preview it opens (ADR 0180). */
     files: {
       changed: (n: number) => (n === 1 ? "1 file changed" : `${n} files changed`),

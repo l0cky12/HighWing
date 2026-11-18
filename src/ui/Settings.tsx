@@ -54,6 +54,7 @@ import { StartupSettings } from "./StartupSettings";
 import { SummonSettings } from "./SummonSettings";
 import { ChatSectionSettings } from "./ChatSectionSettings";
 import { InboxSettings } from "./InboxSettings";
+import { FollowScreenSettings } from "./FollowScreenSettings";
 import { FollowUpSettings } from "./FollowUpSettings";
 import { SpellCheckSettings } from "./SpellCheckSettings";
 import { VoiceSettings, useVoiceChanges } from "./Voice";
@@ -755,6 +756,7 @@ export function SettingsScreen({
       <>
         <ChatSectionSettings />
         <FollowUpSettings />
+        <FollowScreenSettings />
         <SpellCheckSettings />
         <InboxSettings />
       </>

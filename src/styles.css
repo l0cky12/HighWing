@@ -594,6 +594,37 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
   max-height: 220px; overflow: auto; white-space: pre-wrap;
 }
 
+/* A computer-use run (ComputerUseCard.tsx, ADR 0213): one card, a line per action on the Bot Desktop, open from the start. */
+.cu-state { flex: none; font-size: calc(12rem / 14); font-weight: 400; color: var(--muted); }
+.cu-state.asking, .cu-state.refused { color: var(--warn); }
+.cu-state.stopped { color: var(--faint); }
+.cu-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin: 2px 0 4px; }
+.cu-holder { font-size: calc(12rem / 14); color: var(--muted); }
+.cu-holder.you, .cu-holder.you-before { color: var(--accent); }
+.cu-holder.someone { color: var(--warn); }
+.cu-steps { list-style: none; margin: 0; padding: 0; }
+.cu-step > .tool-line { margin-left: 0; width: 100%; }
+.cu-step.latest > .tool-line { background: var(--hover); color: var(--text-2); }
+.cu-step > .approval { margin: 4px 0 8px 22px; }
+.cu-n { flex: none; min-width: 2ch; text-align: right; font-size: calc(12rem / 14); color: var(--faint); font-variant-numeric: tabular-nums; }
+.cu-icon { flex: none; color: var(--faint); }
+.cu-step.done .cu-icon { color: var(--ok); }
+.cu-step.failed .cu-icon, .cu-step.denied .cu-icon, .cu-step.refused .cu-icon { color: var(--warn); }
+.cu-action { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: calc(12.3rem / 14); color: var(--text-2); }
+.cu-app { flex: none; max-width: 20%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(12rem / 14); color: var(--faint); }
+.cu-tag { flex: none; font-size: calc(12rem / 14); color: var(--warn); border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); border-radius: 5px; padding: 0 5px; }
+.cu-outcome { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(12rem / 14); color: var(--faint); }
+.cu-step.failed .cu-outcome, .cu-step.denied .cu-outcome, .cu-step.refused .cu-outcome { color: var(--warn); }
+/* Above the composer when Hermes's last computer-use step was refused because a person holds the screen. */
+.cu-banner {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; width: calc(100% - 56px); max-width: var(--chat-width); margin: 0 auto 8px;
+  padding: 8px 10px 8px 12px; border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line-2)); border-radius: 12px; background: var(--raised);
+  font-size: calc(12.5rem / 14); color: var(--text-2);
+}
+.cu-banner > svg { flex: none; color: var(--warn); }
+.cu-banner-text { flex: 1; min-width: 14em; }
+.cu-banner-why { flex-basis: 100%; color: var(--bad); }
+
 /* approval */
 .approval {
   position: relative; z-index: 1;

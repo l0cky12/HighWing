@@ -59,7 +59,6 @@ export const RENAMES_KEY = "hermes-chat.profile-renames";
 
 /** Where the Outputs screen kept its index, every connection and profile in one document, until ADR 0170 removed it. */
 const RETIRED_OUTPUTS_KEY = "hermes-chat.outputs";
-/** Where Group rooms kept how far each room was read, one key per scope after this prefix, until the feature was removed. */
 const RETIRED_ROOM_READ_PREFIX = "hermes-chat.group-rooms-read.";
 const RETIRED_REPO_KEYS = ["hermes-chat.repo-path", "hermes-chat.repo-recent", "hermes-chat.repo-target", "hermes-chat.worktree-chats"];
 
@@ -98,7 +97,7 @@ export const NOT_PER_PROFILE: Record<string, string> = {
 
 /**
  * Deletes what this computer kept for a screen that is gone, so it isn't kept forever: the Outputs index (ADR 0170),
- * the Repository screen's folders and worktree chats (ADR 0204), and Group rooms' read marks.
+ * the Repository screen's folders and worktree chats (ADR 0204).
  */
 export function dropRetiredData(storage: Pick<Storage, "removeItem" | "key" | "length"> = localStorage) {
   try {

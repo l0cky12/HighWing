@@ -16,11 +16,10 @@ td, th { border: 1px solid #d0d7de; padding: 4px 8px; vertical-align: top; }
 td > p, th > p { margin: 0; }
 </style>`;
 
-type Drawn = { loading: true } | { error: string } | { done: true; pages?: number };
+type Drawn = { loading: true } | { error: string } | { pages: number } | { html: string };
 
 export function DocumentView({ format, bytes, name, size }: { format: DocumentFormat; bytes: Uint8Array; name: string; size: number }) {
   const [state, setState] = useState<Drawn>({ loading: true });
-  const [html, setHtml] = useState<string>();
   const pages = useRef<HTMLDivElement>(null);
   useEffect(() => {
     let live = true;
@@ -28,15 +27,15 @@ export function DocumentView({ format, bytes, name, size }: { format: DocumentFo
     const failed = (e: unknown) => live && setState({ error: errorText(e) });
     import("./documentRender").then(async ({ openPdf, docxHtml }) => {
       if (format === "docx") {
-        const body = await docxHtml(bytes);
-        if (live) (setHtml(body), setState({ done: true }));
+        const html = await docxHtml(bytes);
+        if (live) setState({ html });
         return;
       }
       const task = openPdf(bytes);
       destroy = () => void task.destroy();
       if (!live) return destroy();
       const pdf = await task.promise;
-      setState({ done: true, pages: pdf.numPages });
+      setState({ pages: pdf.numPages });
       const into = pages.current;
       for (let n = 1; n <= Math.min(pdf.numPages, PDF_MAX_PAGES) && live && into; n++) {
         const page = await pdf.getPage(n);
@@ -67,13 +66,13 @@ export function DocumentView({ format, bytes, name, size }: { format: DocumentFo
         </div>
       </div>
     );
-  const cut = "pages" in state && state.pages !== undefined && state.pages > PDF_MAX_PAGES;
+  const cut = "pages" in state && state.pages > PDF_MAX_PAGES;
   return (
     <div className="preview-text">
       <div className="preview-bar">
         <span className="preview-foot">
           {format === "pdf" ? "PDF" : "Word document"} · {formatBytes(size)}
-          {"pages" in state && state.pages !== undefined && ` · ${state.pages} ${state.pages === 1 ? "page" : "pages"}`}
+          {"pages" in state && ` · ${state.pages} ${state.pages === 1 ? "page" : "pages"}`}
         </span>
         {cut && <span className="preview-truncated">Showing the first {PDF_MAX_PAGES} pages.</span>}
       </div>
@@ -85,8 +84,8 @@ export function DocumentView({ format, bytes, name, size }: { format: DocumentFo
       {format === "pdf" ? (
         <div className="preview-pdf" ref={pages} />
       ) : (
-        html !== undefined && (
-          <iframe className="preview-frame doc" title={`Rendered ${name}`} sandbox="" referrerPolicy="no-referrer" srcDoc={sandboxedHtml(DOCX_STYLE + html)} />
+        "html" in state && (
+          <iframe className="preview-frame doc" title={`Rendered ${name}`} sandbox="" referrerPolicy="no-referrer" srcDoc={sandboxedHtml(DOCX_STYLE + state.html)} />
         )
       )}
     </div>

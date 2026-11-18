@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { returnedItem } from "./returned";
+import { returnedItem, storedReturned } from "./returned";
 
 // Shaped as `tools/process_registry_notifications.py` at `bf0203a` writes them.
 const SINGLE = [
@@ -121,5 +121,13 @@ describe("A stored row that brings back handed-off work", () => {
 
   it("is no Returned result for any other row", () => {
     for (const kind of [undefined, "steer", "hidden", "model_switch", 3]) expect(returnedItem(SINGLE, kind, undefined)).toBeUndefined();
+  });
+});
+
+describe("A teammate's message written back for a JSON export", () => {
+  it("redacts the sender's name and handle as it does the message", () => {
+    const hide = (s: string) => s.replaceAll("Quill", "[redacted]").replaceAll("quill", "[redacted]");
+    const stored = storedReturned({ body: "Quill here", process: false, agent: { kind: "from", teammate: { name: "Quill", handle: "quill" } } }, hide);
+    expect(stored.content).toBe("Message from 🤖 [redacted] (@[redacted]): [redacted] here");
   });
 });

@@ -108,6 +108,6 @@ export function storedReturned(r: Returned, text: (s: string) => string): { cont
     const answer = { deliveryId: r.agent.deliveryId, status: r.agent.status, outcome: text(r.title ?? r.body), ...(r.title && { reply: text(r.body) }) };
     return { content: answerNotice(answer), display_kind: "process_complete" };
   }
-  if (r.agent) return { content: r.agent.teammate ? signed(r.agent.teammate, text(r.body)) : text(r.body), display_kind: "internal_notification", ...title };
+  if (r.agent) return { content: r.agent.teammate ? signed({ name: text(r.agent.teammate.name), handle: text(r.agent.teammate.handle) }, text(r.body)) : text(r.body), display_kind: "internal_notification", ...title };
   return { content: text(r.body), display_kind: r.process ? "process_complete" : "async_delegation_complete", ...title };
 }

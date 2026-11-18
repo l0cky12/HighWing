@@ -67,7 +67,7 @@ function RestartNote() {
         <p className="update-warning small" role="note">
           Not kept: {files.length === 1 ? "a file" : `${files.length} files`} attached in a composer,{" "}
           <span className="selectable">{files.join(", ")}</span>. Send or remove {files.length === 1 ? "it" : "them"} first, or attach{" "}
-          {files.length === 1 ? "it" : "them"} again after the restart. A screenshot taken in Highwing can't be attached again.
+          {files.length === 1 ? "it" : "them"} again after the restart. A pasted file has to be pasted again.
         </p>
       )}
     </>

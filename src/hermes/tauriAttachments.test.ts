@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { syncScreenshotOutbox } from "./tauriScreenshot";
+import { syncStagedOutbox } from "./tauriAttachments";
 
 const { invoke, paths } = vi.hoisted(() => ({ invoke: vi.fn(), paths: vi.fn(() => [] as string[]) }));
 vi.mock("./chatCache", () => ({ outboxAttachmentPaths: paths, subscribeOutbox: () => () => {} }));
@@ -9,10 +9,10 @@ it("reads the latest outbox after Retry replaces its row, never the transient em
   vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
   paths.mockReturnValue([]);
   invoke.mockResolvedValue(undefined);
-  const sync = syncScreenshotOutbox();
+  const sync = syncStagedOutbox();
   // Retry removes one row and inserts its replacement before the microtask runs.
   paths.mockReturnValue(["/private/captures/1/0/retry.png"]);
   await sync;
-  expect(invoke).toHaveBeenLastCalledWith("screenshot_sync_outbox", { paths: ["/private/captures/1/0/retry.png"] });
+  expect(invoke).toHaveBeenLastCalledWith("capture_sync_outbox", { paths: ["/private/captures/1/0/retry.png"] });
   vi.unstubAllGlobals();
 });

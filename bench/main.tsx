@@ -6,7 +6,7 @@ import { flushSync } from "react-dom";
 import { X } from "lucide-react";
 import "../src/styles.css";
 import type { Chat, Item } from "../src/hermes/model";
-import { ScreenshotDesk } from "../src/hermes/screenshots";
+import { AttachmentDesk } from "../src/hermes/attachmentDesk";
 import { ChatPane } from "../src/ui/ChatPane";
 import { Split } from "../src/ui/Split";
 import { PaneDrop, TabStrip } from "../src/ui/Tabs";
@@ -15,7 +15,7 @@ import { REPLIES, hostile } from "./hostile";
 
 const root = createRoot(document.getElementById("root")!);
 let setChat: (c: Chat) => void = () => {};
-const screenshots = new ScreenshotDesk({ discard: async () => {} });
+const desk = new AttachmentDesk({ discard: async () => {} });
 
 function Host({ initial }: { initial: Chat }) {
   const [chat, set] = useState(initial);
@@ -38,7 +38,7 @@ function Host({ initial }: { initial: Chat }) {
           onAnswer={() => {}}
           onQuestion={() => {}}
           draftKey={chat.id}
-          screenshots={screenshots}
+          desk={desk}
         />
       </main>
     </div>
@@ -271,7 +271,7 @@ function SplitHost({ initial }: { initial: [Chat, Chat] }) {
           onAnswer={() => {}}
           onQuestion={() => {}}
           draftKey={chat.id}
-          screenshots={screenshots}
+          desk={desk}
           active={active}
           split
         />

@@ -13,11 +13,10 @@ import { memoryCache } from "../hermes/memoryCache";
 import type { Chat } from "../hermes/model";
 import { connect } from "../hermes/transport";
 import { ChatPane } from "./ChatPane";
-import { ScreenshotDesk, type ScreenshotApi } from "../hermes/screenshots";
+import { AttachmentDesk } from "../hermes/attachmentDesk";
 import { ImportDialog, type ImportWiring } from "./ImportTranscripts";
 import { RestError } from "../hermes/pipe";
 
-const noScreenshots: ScreenshotApi = { discard: async () => {} };
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }));
 
@@ -215,7 +214,7 @@ describe("Import transcripts", () => {
       <ChatPane
         chat={chat}
         status="connected"
-        draft="" draftKey="draft" screenshots={new ScreenshotDesk(noScreenshots)}
+        draft="" draftKey="draft" desk={new AttachmentDesk({ discard: async () => {} })}
         onDraft={() => {}}
         onDraftStep={() => undefined}
         onRetry={() => {}}

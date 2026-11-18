@@ -53,7 +53,7 @@ export function subscribeOutbox(fn: () => void): () => void {
   return () => void outboxListeners.delete(fn);
 }
 
-/** Drop failed-write outboxes/queues when a connection is removed, before screenshot retention is synchronized. */
+/** Drop failed-write outboxes/queues when a connection is removed, before Rust is told which staged files to keep. */
 export function forgetLiveChatData(parts: string[]) {
   for (const [prefix, rows] of [[OUTBOX_PREFIX, liveOutboxes], [QUEUE_PREFIX, liveQueues]] as const) {
     for (const key of rows.keys()) if (inScope(parts, key.slice(prefix.length))) rows.delete(key);
@@ -75,7 +75,7 @@ export function moveLiveChatData(move: (key: string) => string | null | undefine
   }
 }
 
-/** Attachment paths in every connection/profile's outbox and queue, for local screenshot lifetime management. */
+/** Attachment paths in every connection/profile's outbox and queue, so Rust keeps the staged files they hold. */
 export function outboxAttachmentPaths(): string[] {
   const read = (k: string): unknown => {
     try {

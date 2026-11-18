@@ -28,12 +28,12 @@ import { appUpdates } from "./hermes/tauriUpdates";
 import { tauriSnapshots } from "./hermes/snapshots";
 import { needsAttention, type Updater } from "./hermes/updates";
 import { desktopNotify } from "./hermes/tauriNotify";
-import { ScreenshotDesk, type ScreenshotApi } from "./hermes/screenshots";
+import { AttachmentDesk, type AttachmentDeskApi } from "./hermes/attachmentDesk";
 import { ReferenceDesk } from "./hermes/chatReferences";
 import { deadline } from "./hermes/remoteFiles";
 import { desktopSummon, type SummonApi, type Summoned } from "./hermes/summon";
 import { SelectionWatch, quoted, untilFocused } from "./hermes/selection";
-import { syncScreenshotOutbox, tauriScreenshots } from "./hermes/tauriScreenshot";
+import { syncStagedOutbox, tauriAttachments } from "./hermes/tauriAttachments";
 import { AtConnectionLimit, ConnectionManager, DisconnectConnection, RailConnections, RemoveConnection, SwitchConnection, atLimitText, liveCounts } from "./ui/Connections";
 import { chordLabel, pickApp, useBindings } from "./ui/keybindings";
 
@@ -284,7 +284,7 @@ const serverMethods = (d: SignInDetails) => readMethods((one, expect) => tauriRe
 
 /** Deletes what this computer keeps for a removed connection (forgetConnection.ts). */
 const forgetLocal = (c: SavedConnection) =>
-  forgetConnectionData(c, { defaults: savedDefaults, tags: savedTagsFile, drafts: savedDrafts, afterwards: syncScreenshotOutbox });
+  forgetConnectionData(c, { defaults: savedDefaults, tags: savedTagsFile, drafts: savedDrafts, afterwards: syncStagedOutbox });
 /** The stores a profile's rename moves and its delete forgets, beside this webview's storage (profileLocalData.ts). */
 const profileStores = () => ({ defaults: savedDefaults, tags: savedTagsFile, drafts: savedDrafts });
 
@@ -1118,11 +1118,11 @@ const draftChat = (draftError?: string): Chat => ({
   items: draftError ? [{ kind: "error", id: "e-draft", text: draftError }] : [],
 });
 /** The real calls behind the staging desk: deleting a staged file, and keeping the ones an outbox still holds. */
-export type Screenshots = {
-  api: ScreenshotApi;
+export type DeskWiring = {
+  api: AttachmentDeskApi;
   syncOutbox?: () => Promise<void>;
 };
-const tauriScreenshotWiring: Screenshots = { api: tauriScreenshots, syncOutbox: syncScreenshotOutbox };
+const tauriDeskWiring: DeskWiring = { api: tauriAttachments, syncOutbox: syncStagedOutbox };
 
 /** Each profile's chat on screen in this run, by prefScope; null: the New chat pane. */
 type ShownThisRun = Map<string, string | null>;
@@ -1150,7 +1150,7 @@ export function Main({
   localFiles = tauriLocalFiles,
   webPages = tauriWebPages,
   serverPages = tauriServerPages,
-  screenshots = tauriScreenshotWiring,
+  deskWiring = tauriDeskWiring,
   summon = desktopSummon,
   onSignOut,
   updates = appUpdates,
@@ -1238,7 +1238,7 @@ export function Main({
   webPages?: WebPages;
   /** Pages on the Hermes server's own loopback, through SSH (ADR 0114). */
   serverPages?: ServerPages;
-  screenshots?: Screenshots;
+  deskWiring?: DeskWiring;
   /** The Screen's install of a terminal and a text editor over the connection's ssh (ADR 0193). */
   screenApps?: ScreenAppsInstaller;
   /** Speech to text on this computer and where each recording goes, decided by Rust (ADR 0065, 0067). */
@@ -1961,11 +1961,11 @@ export function Main({
   // long as this signed-in window: signing out deletes any staged file not yet sent. Made in a layout effect, so
   // StrictMode's second mount gets a desk of its own before the first paint. No chat is drawn without it, as its
   // composer keeps its files there.
-  const [desk, setDesk] = useState<ScreenshotDesk>();
-  const screenshotsRef = useRef(screenshots);
+  const [desk, setDesk] = useState<AttachmentDesk>();
+  const deskWiringRef = useRef(deskWiring);
   useLayoutEffect(() => {
-    const d = new ScreenshotDesk(
-      screenshotsRef.current.api,
+    const d = new AttachmentDesk(
+      deskWiringRef.current.api,
       () => revealComposerRef.current(),
       (key) => savedDrafts.get(key),
     );
@@ -3017,10 +3017,10 @@ export function Main({
           focusItem={focusItem?.pane === p.key && focusItem.chatId === p.chatId ? focusItem : undefined}
           active={!covered && !covering && !previewCovers && (!split || isActive)}
           split={split}
-          screenshots={desk}
+          desk={desk}
           referenceDesk={referenceDesk}
           onTextGenerationSettings={openTextGeneration}
-          screenshotWiring={screenshots}
+          syncOutbox={deskWiring.syncOutbox}
           voice={voice}
           catalog={catalog}
           sticky={sticky}
@@ -3176,7 +3176,7 @@ export function Main({
           await forgetProfileLocally(connection, name, profileStores());
         } finally {
           acks.reload();
-          await syncScreenshotOutbox().catch(() => {});
+          await syncStagedOutbox().catch(() => {});
         }
       },
     },
@@ -4018,8 +4018,8 @@ function ChatView({
   onShowAt,
   onOpenTurn,
   previewControls,
-  screenshots,
-  screenshotWiring,
+  desk,
+  syncOutbox,
   voice,
   referenceDesk,
   onTextGenerationSettings,
@@ -4091,8 +4091,9 @@ function ChatView({
   /** Opens another version of a turn in this pane, at that turn (ADR 0035). */
   onOpenTurn: (chatId: string, turn: number) => void;
   previewControls: ReactNode;
-  screenshots: ScreenshotDesk;
-  screenshotWiring: Screenshots;
+  desk: AttachmentDesk;
+  /** Rust keeps the staged files every outbox holds (tauriAttachments.ts `syncStagedOutbox`). */
+  syncOutbox?: () => Promise<void>;
   voice: VoiceApi;
   /** The chats each unsent message references, by Draft key. */
   referenceDesk: ReferenceDesk;
@@ -4208,21 +4209,21 @@ function ChatView({
     delivers.set(paneKey, deliverRef);
     return () => void (delivers.get(paneKey) === deliverRef && delivers.delete(paneKey));
   }, [delivers, paneKey]);
-  // Screenshots are held and let go once for both compared chats: letting go after the first would delete a capture
-  // the second still uploads.
+  // Staged files are held and let go once for both compared chats: letting go after the first would delete a file the
+  // second still uploads.
   const send = async (text: string, attachments: Attachment[], skill?: SkillCall, references: SentReference[] = []) => {
     const paths = attachments.map((a) => a.path);
-    screenshots.hold(paths);
+    desk.hold(paths);
     const partner = compare?.partner();
     const both = Promise.all([deliver(text, attachments, skill, false, references), partner?.(text, attachments, skill, true, references)]);
     const [own, mirrored] = await (compare ? compare.track(both) : both);
-    if (!own && !mirrored) return screenshots.sent(shownDraft, attachments, false);
-    // The other chat's message holds the files now, and a screenshot goes once that message no longer needs it, so
+    if (!own && !mirrored) return desk.sent(shownDraft, attachments, false);
+    // The other chat's message holds the files now, and a staged file goes once that message no longer needs it, so
     // none can come back to this composer with the words.
     if (!own) onToast("This pane's chat couldn't start, so your message went only to the other chat, with its files.");
     try {
-      await screenshotWiring.syncOutbox?.();
-      screenshots.finish(paths);
+      await syncOutbox?.();
+      desk.finish(paths);
     } catch {
       // Retain ownership until Rust protects the outbox, as in the single-pane send path.
     }
@@ -4241,8 +4242,8 @@ function ChatView({
         add: (text, attachments) => {
           const why = hermes.enqueue(chat.id, text, attachments);
           if (why) return why;
-          // The queue keeps its screenshots now, until they go or the owner removes the message (chatCache.ts).
-          screenshots.hold(attachments.map((a) => a.path));
+          // The queue keeps its staged files now, until they go or the owner removes the message (chatCache.ts).
+          desk.hold(attachments.map((a) => a.path));
           savedDrafts.take(shownDraft);
           return undefined;
         },
@@ -4557,7 +4558,7 @@ function ChatView({
       active={active}
       visible={visible}
       split={split}
-      screenshots={screenshots}
+      desk={desk}
       voice={voice}
       // A Voice conversation's turn goes straight to the chat, as a slash command's message does: what the owner has
       // typed stays in the composer, and a failure is a Failed message (ADR 0111).

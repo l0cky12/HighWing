@@ -12,7 +12,7 @@ import { terminalTargetKey } from "./terminal";
 export const REMOVED_LOCALLY = [
   "its saved password or token and extra request headers, from the system keyring",
   "its address and username",
-  "drafts, Failed messages and Queued messages, with the screenshots waiting in them",
+  "drafts, Failed messages and Queued messages, with the files waiting in them",
   "the chat lists and Saved copies kept for reading offline, and which profile was shown",
   "which chats are in each project, and the projects' defaults for new chats",
   "tags, Saved filters, pins, snoozes, branch origins and the imports record",
@@ -27,8 +27,8 @@ type Store = Pick<Storage, "getItem" | "setItem" | "removeItem" | "key" | "lengt
 
 /**
  * Deletes everything this computer keeps for `c` but its keyring entries and the connection itself (account.ts
- * `removeConnection` does those). `defaults`: the project defaults file. `tags`: the tags file. `afterwards`: lets go of the screenshots no
- * message needs any more (tauriScreenshot.ts `syncScreenshotOutbox`).
+ * `removeConnection` does those). `defaults`: the project defaults file. `tags`: the tags file. `afterwards`: lets go of the staged files no
+ * message needs any more (tauriAttachments.ts `syncStagedOutbox`).
  */
 export async function forgetConnectionData(
   c: SavedConnection,

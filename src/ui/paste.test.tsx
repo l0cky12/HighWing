@@ -11,7 +11,7 @@ import type { Attachment } from "../hermes/model";
 import { connect } from "../hermes/transport";
 import { ChatPane, pasteAttaches, pastedName, refuseStrayFileDrops } from "./ChatPane";
 import { stagedFiles } from "../hermes/unsaved";
-import { ScreenshotDesk } from "../hermes/screenshots";
+import { AttachmentDesk } from "../hermes/attachmentDesk";
 
 type Invoke = (cmd: string, args?: unknown, opts?: { headers?: Record<string, string> }) => Promise<unknown>;
 const tauri = vi.hoisted(() => ({ invoke: (async () => undefined) as Invoke }));
@@ -24,14 +24,14 @@ beforeAll(() => {
   URL.createObjectURL ??= () => "blob:preview";
   URL.revokeObjectURL ??= () => {};
 });
-const desks: ScreenshotDesk[] = [];
+const desks: AttachmentDesk[] = [];
 afterEach(() => {
   cleanup();
   for (const d of desks.splice(0)) d.dispose();
   vi.restoreAllMocks();
 });
-const noCaptures = (discard = vi.fn(async (_path: string) => {})) => {
-  const desk = new ScreenshotDesk({ discard });
+const newDesk = (discard = vi.fn(async (_path: string) => {})) => {
+  const desk = new AttachmentDesk({ discard });
   desks.push(desk);
   return desk;
 };
@@ -41,7 +41,7 @@ const PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPh
 const PNG = Uint8Array.from(atob(PNG_B64), (c) => c.charCodeAt(0));
 
 /** A new chat's pane on a fake Hermes, with `draft` in its composer. `staged` lists what Rust was asked to save. */
-async function setUp(draft = "", screenshots = noCaptures()) {
+async function setUp(draft = "", desk = newDesk()) {
   const server = new FakeHermes();
   const hermes = await connect(server.openPipe);
   const id = await hermes.newChat();
@@ -74,10 +74,10 @@ async function setUp(draft = "", screenshots = noCaptures()) {
       onStop={() => {}}
       onAnswer={() => {}}
       onQuestion={() => {}}
-      screenshots={screenshots}
+      desk={desk}
     />,
   );
-  return { server, runtime: server.runtimeIdOf(id)!, staged, onSend, onDraft, desk: screenshots };
+  return { server, runtime: server.runtimeIdOf(id)!, staged, onSend, onDraft, desk };
 }
 
 const composer = () => screen.getByPlaceholderText<HTMLTextAreaElement>("Message Hermes");
@@ -99,7 +99,7 @@ const fileDrag = (type: "dragEnter" | "dragOver" | "drop", files: File[]) =>
 describe("A composer's staged files", () => {
   it("can't be drawn without the desk that keeps them", () => {
     // tsc checks this (npm run build): a composer with no desk would check the files the owner adds and keep none.
-    const needsDesk: undefined extends ComponentProps<typeof ChatPane>["screenshots"] ? false : true = true;
+    const needsDesk: undefined extends ComponentProps<typeof ChatPane>["desk"] ? false : true = true;
     expect(needsDesk).toBe(true);
   });
 });
@@ -178,7 +178,7 @@ describe("Pasting into the composer", () => {
 
   it("deletes a pasted file once it is removed from the composer, or the window signs out, but not when the composer goes", async () => {
     const discard = vi.fn(async (_path: string) => {});
-    const desk = noCaptures(discard);
+    const desk = newDesk(discard);
     const { staged } = await setUp("", desk);
     paste([new File([PNG], "a.png", { type: "image/png" })]);
     await waitFor(() => expect(chips()).toHaveLength(1));
@@ -197,7 +197,7 @@ describe("Pasting into the composer", () => {
 
   it("keeps a paste saved after its composer has gone in its chat, until the window signs out", async () => {
     const discard = vi.fn(async (_path: string) => {});
-    const desk = noCaptures(discard);
+    const desk = newDesk(discard);
     const { staged } = await setUp("", desk);
     const save = tauri.invoke;
     let land: (() => void) | undefined;
@@ -215,7 +215,7 @@ describe("Pasting into the composer", () => {
 
   it("deletes the files already saved when a paste fails part-way", async () => {
     const discard = vi.fn(async (_path: string) => {});
-    const { staged } = await setUp("", noCaptures(discard));
+    const { staged } = await setUp("", newDesk(discard));
     const save = tauri.invoke;
     let saves = 0;
     tauri.invoke = (cmd, args, opts) =>

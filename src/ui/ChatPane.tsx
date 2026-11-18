@@ -11,7 +11,7 @@ import { useLocale } from "../i18n/locale";
 import type { SkillCall } from "../hermes/skillCommands";
 import { BotFace, type BotLookShown } from "./BotFace";
 import { STEER, typedCommand } from "../hermes/commands";
-import type { ScreenshotDesk } from "../hermes/screenshots";
+import type { AttachmentDesk } from "../hermes/attachmentDesk";
 import type { Reference, ReferenceDesk } from "../hermes/chatReferences";
 import { ReferenceChips } from "./ReferenceChips";
 import { ApprovalCard } from "./ApprovalCard";
@@ -398,7 +398,7 @@ const savedWhen = (at: number) => new Date(at).toLocaleString(undefined, { dateS
  * Hermes is connected. `onRetry`, `onEdit` and `onDismiss` act on failed or unconfirmed messages. `modelControls`
  * contains the model picker; `footer` contains the status bar. Only the active pane answers Ctrl+F and takes focus as
  * it opens. Native drops attach to the pane under the pointer. Export, Copy chat link and Archive are in the header's More menu.
- * `screenshots` keeps every chat's staged attachments.
+ * `desk` keeps every chat's staged attachments.
  * `voice` supplies Dictation and Read aloud. `voiceSend` puts a Voice conversation's turn in the chat as the owner's
  * message; it is left out for a chat not started yet, where a conversation can't start (ADR 0111). `commands` runs the slash commands typed in the composer. `queue` is the
  * chat's queue of messages waiting to go after its reply, and `queueApi` changes it; it is left out for a chat not
@@ -443,7 +443,7 @@ export function ChatPane({
   split = false,
   voice,
   voiceSend,
-  screenshots,
+  desk,
   projects,
   server,
   bot,
@@ -515,7 +515,7 @@ export function ChatPane({
   split?: boolean;
   voice?: VoiceApi;
   voiceSend?: (text: string) => Promise<{ delivery: Delivery; itemId?: string }>;
-  screenshots: ScreenshotDesk;
+  desk: AttachmentDesk;
   /** The names of the projects the chat is in, or a new chat will be put in. */
   projects?: string[];
   /** The server and profile the chat is on, shown while more than one connection is live (ADR 0125). */
@@ -1226,7 +1226,7 @@ export function ChatPane({
         conversation={conversation}
         started={!!voiceSend}
         status={status}
-        screenshots={screenshots}
+        desk={desk}
         commands={commands}
         references={references}
         followUp={compare ? undefined : followUp}
@@ -1855,7 +1855,7 @@ function Composer({
   conversation,
   started = false,
   status,
-  screenshots,
+  desk,
   commands,
   references,
   followUp,
@@ -1895,7 +1895,7 @@ function Composer({
   started?: boolean;
   status: ConnectionStatus;
   /** Keeps the chat's staged attachments, and hands the composer a Preview annotation. */
-  screenshots: ScreenshotDesk;
+  desk: AttachmentDesk;
   commands?: CommandHost;
   /** The chats the message references, kept under `draftKey`. */
   references?: ComposerReferences;
@@ -1905,17 +1905,17 @@ function Composer({
 }) {
   const keys = useBindings();
   // The chat's staged attachments, kept by the desk under its Draft key so they outlive this composer (ADR 0145).
-  const attachments = useSyncExternalStore(screenshots.subscribe, () => screenshots.stagedIn(draftKey));
+  const attachments = useSyncExternalStore(desk.subscribe, () => desk.stagedIn(draftKey));
   // Each staged image's number, which its mark in the words gives (inlineImages.ts, ADR 0200).
-  const numbers = useSyncExternalStore(screenshots.subscribe, () => screenshots.numbersIn(draftKey));
+  const numbers = useSyncExternalStore(desk.subscribe, () => desk.numbersIn(draftKey));
   // A number a mark in the words has given stays taken after the mark goes, since Undo can bring it back.
-  useEffect(() => screenshots.reserve(draftKey, highestMark(text)), [screenshots, draftKey, text]);
+  useEffect(() => desk.reserve(draftKey, highestMark(text)), [desk, draftKey, text]);
   const marks: ComposerMark[] = useMemo(() => {
     const by = new Map(attachments.flatMap((a) => (numbers.has(a.path) ? [[numbers.get(a.path)!, a] as const] : [])));
     return marksIn(text, (n) => by.has(n)).map((m) => ({ ...m, file: by.get(m.n)! }));
   }, [text, attachments, numbers]);
   const spellCheck = useSpellCheck();
-  const annotations = useSyncExternalStore(screenshots.subscribe, screenshots.annotationLabels);
+  const annotations = useSyncExternalStore(desk.subscribe, desk.annotationLabels);
   const refs = useSyncExternalStore(references?.desk.subscribe ?? noDesk, () => references?.desk.in(draftKey) ?? NO_REFERENCES);
   const focused = useRef(autoFocus);
   focused.current = autoFocus;
@@ -2010,7 +2010,7 @@ function Composer({
   // Staged in this composer's chat even if it has closed meanwhile: the chat keeps what was added to it.
   const add = (paths: string[], at = anchorHere()) => busy(async () => {
     const got = await check(paths);
-    screenshots.change({ kind: "added", key: draftKey, attachments: got });
+    desk.change({ kind: "added", key: draftKey, attachments: got });
     place(at, got);
     return got.map((a) => a.path);
   });
@@ -2082,9 +2082,9 @@ function Composer({
   const place = (a: { key: string; at: number }, staged: readonly Attachment[]) => {
     anchors.current.delete(a);
     if (!alive.current || a.key !== draftKeyRef.current || !staged.length) return;
-    const numbered = screenshots.numbersIn(a.key);
+    const numbered = desk.numbersIn(a.key);
     const images = staged.filter((f) => f.kind === "image" && numbered.has(f.path));
-    const before = screenshots.stagedIn(a.key).some((f) => f.kind === "image" && !images.some((i) => i.path === f.path));
+    const before = desk.stagedIn(a.key).some((f) => f.kind === "image" && !images.some((i) => i.path === f.path));
     const marked = before ? images : images.slice(1);
     if (!marked.length) return;
     const now = textRef.current;
@@ -2108,7 +2108,7 @@ function Composer({
     let current = true;
     const pending = anchors.current;
     const placing = new Map<string, { key: string; at: number }>();
-    const stop = screenshots.attachTo({
+    const stop = desk.attachTo({
       key: draftKey,
       chat: chatTitle,
       check: (paths) =>
@@ -2132,7 +2132,7 @@ function Composer({
       for (const at of placing.values()) pending.delete(at);
       stop();
     };
-  }, [screenshots, autoFocus, draftKey, chatTitle]);
+  }, [desk, autoFocus, draftKey, chatTitle]);
 
   // Tauri's native drop event (off on Windows, below): it gives real file paths, so Rust can read the bytes. Every composer
   // hears every drop; with two panes, the one under the pointer takes it. Tauri gives the point in physical pixels.
@@ -2166,14 +2166,14 @@ function Composer({
           ),
       );
       const paths = saved.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
-      screenshots.own(paths);
+      desk.own(paths);
       const failed = saved.find((r): r is PromiseRejectedResult => r.status === "rejected");
       if (failed) {
-        screenshots.release(paths);
+        desk.release(paths);
         throw failed.reason;
       }
       const kept = await add(paths, at);
-      screenshots.release(paths.filter((p) => !kept.includes(p)));
+      desk.release(paths.filter((p) => !kept.includes(p)));
       const notes = tooBig.map((f) => overLimitNote(nameOf(f), f.size, LIMITS.file));
       if (notes.length) setRefused((cur) => (paths.length ? [...cur, ...notes] : notes));
     } catch (e) {
@@ -2343,7 +2343,7 @@ function Composer({
       if (offline || running) return;
       go([...attachments]);
     }
-    screenshots.change({ kind: "sent", key: draftKey, paths: attachments.map((a) => a.path) });
+    desk.change({ kind: "sent", key: draftKey, paths: attachments.map((a) => a.path) });
     setRefused(fellBack ? [fellBack] : []);
   };
   // What Enter, and the button beside the text, do now; Ctrl+Enter does the other while a reply runs.
@@ -2431,7 +2431,7 @@ function Composer({
                 file={f}
                 preview={previews.current?.get(f.path)}
                 annotation={annotations.get(f.path)}
-                onRemove={() => screenshots.change({ kind: "removed", key: draftKey, paths: [f.path] })}
+                onRemove={() => desk.change({ kind: "removed", key: draftKey, paths: [f.path] })}
               />
             ))}
           </div>

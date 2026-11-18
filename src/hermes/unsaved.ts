@@ -31,8 +31,8 @@ export function persist(storage: () => Pick<Storage, "setItem" | "removeItem">, 
 }
 
 /**
- * Files staged in every chat's composer and not sent yet, by screenshot desk (one for each signed-in window), whether
- * or not the chat is on screen. An update's restart doesn't keep them (a draft is text only, and a screenshot staged
+ * Files staged in every chat's composer and not sent yet, by attachment desk (one for each signed-in window), whether
+ * or not the chat is on screen. An update's restart doesn't keep them (a draft is text only, and a file the desk staged
  * there is deleted at the next launch), so Settings names them before the owner restarts (UpdateSettings).
  */
 export const stagedFiles = (() => {

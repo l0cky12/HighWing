@@ -9,7 +9,7 @@ import { highestMark } from "./inlineImages";
 import type { Attachment } from "./model";
 import { stagedFiles } from "./unsaved";
 
-export type ScreenshotApi = {
+export type AttachmentDeskApi = {
   discard: (path: string) => Promise<void>;
 };
 
@@ -19,7 +19,7 @@ export type ScreenshotApi = {
  * `check` took once they are staged, to mark where they go in the words. `note` shows a line above the composer.
  * `insert` puts text at the composer's cursor. `chat`: the chat's title, for the annotation review card.
  */
-export type ScreenshotSink = {
+export type ComposerSink = {
   key: string;
   chat?: string;
   check: (paths: string[]) => Promise<Attachment[]>;
@@ -51,7 +51,7 @@ const RESTORED = "Hermes didn't confirm it got your message, so its files are ba
  */
 type Waiting = { paths: string[]; words: string; to: string; live: () => boolean };
 
-export class ScreenshotDesk {
+export class AttachmentDesk {
   private readonly listeners = new Set<() => void>();
   /** Files the desk staged and hasn't discarded yet. */
   private readonly mine = new Set<string>();
@@ -59,7 +59,7 @@ export class ScreenshotDesk {
   private readonly sending = new Set<string>();
   private readonly staged = new Map<string, readonly Attachment[]>();
   private readonly numbers = new Map<string, { of: ReadonlyMap<string, number>; next: number }>();
-  private sink?: ScreenshotSink;
+  private sink?: ComposerSink;
   /** The chat whose composer was last on screen: an annotation goes there while a covering Preview hides it. */
   private last?: { chat?: string; key: string };
   private disposed = false;
@@ -71,7 +71,7 @@ export class ScreenshotDesk {
 
   /** `reveal`: an annotation is waiting for the composer last on screen, which something (a Preview covering a narrow window) hides. */
   constructor(
-    private readonly api: ScreenshotApi,
+    private readonly api: AttachmentDeskApi,
     private readonly reveal?: () => void,
     private readonly words: (key: string) => string = () => "",
   ) {}
@@ -134,7 +134,7 @@ export class ScreenshotDesk {
   }
 
   /** The composer now on screen takes annotations, and any that were waiting for it. Returns the function that stops it. */
-  attachTo(sink: ScreenshotSink): () => void {
+  attachTo(sink: ComposerSink): () => void {
     this.sink = sink;
     this.last = { chat: sink.chat, key: sink.key };
     const waiting = this.waiting;

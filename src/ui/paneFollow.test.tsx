@@ -3,9 +3,8 @@ import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import type { Chat, Item } from "../hermes/model";
 import { ChatPane } from "./ChatPane";
-import { ScreenshotDesk, type ScreenshotApi } from "../hermes/screenshots";
+import { AttachmentDesk } from "../hermes/attachmentDesk";
 
-const noScreenshots: ScreenshotApi = { discard: async () => {} };
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }));
 
@@ -78,7 +77,7 @@ function pane(turns: number) {
       status="connected"
       draft=""
       draftKey="draft"
-      screenshots={new ScreenshotDesk(noScreenshots)}
+      desk={new AttachmentDesk({ discard: async () => {} })}
       onDraft={() => {}}
       onDraftStep={() => undefined}
       onRetry={() => {}}

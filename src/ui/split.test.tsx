@@ -10,7 +10,7 @@ import { savedDefaults } from "../hermes/projectDefaults";
 import { projectScope } from "../hermes/projectLinks";
 import { connect, type Hermes } from "../hermes/transport";
 import { UI_PREFS_KEY } from "../hermes/uiPrefs";
-import { Main, type Screenshots } from "../App";
+import { Main, type DeskWiring } from "../App";
 import { RestError } from "../hermes/pipe";
 
 const drops = vi.hoisted(() => new Set<(e: { payload: unknown }) => void>());
@@ -542,13 +542,13 @@ describe("Compare", () => {
     const stop = subscribeOutbox(() => queueMicrotask(() => void syncOutbox()));
     const pasted = "/run/user/1000/hermes-chat/captures/4242/0/shot.png";
     staging.stage = () => ((server.files[pasted] = "\x89PNG\r\n\x1a\nscreen"), pasted);
-    const wiring: Screenshots = {
+    const wiring: DeskWiring = {
       api: { discard: async (path) => void (retained.has(path) || delete server.files[path]) },
       syncOutbox,
     };
     try {
       const user = userEvent.setup();
-      render(<Main hermes={hermes} connection={conn} onSignOut={async () => {}} screenshots={wiring} />);
+      render(<Main hermes={hermes} connection={conn} onSignOut={async () => {}} deskWiring={wiring} />);
       await waitFor(() => expect(hermes.hasListed()).toBe(true));
       await compareWith({ user, hermes }, 0, "gpt-5");
       const shot = new File(["\x89PNG"], "shot.png", { type: "image/png" });

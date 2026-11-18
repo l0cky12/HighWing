@@ -68,7 +68,7 @@ export const tauriAnnotator: Annotator = {
   pick: (key, still, x, y, up) => invoke<Pick>("preview_annotate_pick", { key, still, x, y, up }),
   read: async (path) => new Blob([await invoke<ArrayBuffer>("preview_annotate_read", { path })], { type: "image/png" }),
   stage: async (stillPath, n, rect, scale) => (await invoke<{ path: string }>("preview_annotate_stage", { stillPath, n, rect, scale })).path,
-  discard: (path) => invoke("screenshot_discard", { path }),
+  discard: (path) => invoke("capture_discard", { path }),
 };
 
 export type Listening = { port: number; process?: string };

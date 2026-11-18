@@ -10,7 +10,7 @@ import { FakeHermes, row } from "../hermes/fakeHermes";
 import { connect, type Hermes } from "../hermes/transport";
 import { localChatCache, outboxAttachmentPaths, subscribeOutbox } from "../hermes/chatCache";
 import { stagedFiles } from "../hermes/unsaved";
-import { Main, type Screenshots } from "../App";
+import { Main, type DeskWiring } from "../App";
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }));
 const rustSide = vi.hoisted(() => ({ picked: [] as string[], stage: (_bytes: ArrayBuffer, _name: string): string => "" }));
@@ -73,7 +73,7 @@ function fakeRust(server: FakeHermes) {
     staged.push(path);
     return path;
   };
-  const wiring: Screenshots = {
+  const wiring: DeskWiring = {
     api: {
       discard: async (path) => {
         if (!retained.has(path)) remove(path);
@@ -107,7 +107,7 @@ async function signedIn({ strict = false } = {}) {
   running.push(hermes);
   const rust = fakeRust(server);
   const user = userEvent.setup();
-  const main = <Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} screenshots={rust.wiring} />;
+  const main = <Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} deskWiring={rust.wiring} />;
   const view = render(strict ? <StrictMode>{main}</StrictMode> : main);
   await screen.findByRole("button", { name: /Nightly backup/ });
   await settle(hermes);

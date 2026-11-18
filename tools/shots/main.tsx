@@ -158,7 +158,7 @@ const trayWiring = {
   onOpenInbox: (fn: () => void) => ((shots.openInbox = fn), () => {}),
   reportInbox: () => {},
 };
-const screenshots = { api: { discard: async () => {} } };
+const deskWiring = { api: { discard: async () => {} } };
 createRoot(document.getElementById("root")!).render(
   <Main
     hermes={hermes}
@@ -168,7 +168,7 @@ createRoot(document.getElementById("root")!).render(
     onTestConnection={async () => ({ ok: true, route: { kind: "ssh", target: "lena@hermes", local: "127.0.0.1:9119" }, version: "0.22.6", unsecure: false }) as never}
     tray={trayWiring as never}
     summon={{ onSummoned: (fn: (s: { fromElsewhere: boolean }) => void) => ((shots.summon = fn), () => {}), readSelection: async () => shots.selection } as never}
-    screenshots={screenshots}
+    deskWiring={deskWiring}
     onSignOut={async () => {}}
   />,
 );

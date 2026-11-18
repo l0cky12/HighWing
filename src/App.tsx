@@ -3314,14 +3314,15 @@ export function Main({
       },
     },
     copyText,
-    // New's Generate with AI (ADR 0197): as the profile in use, on its Text generation model, only while connected.
+    // Persona's Write with AI (ADR 0197, 0203): as the profile named, on its Text generation model, only while connected.
     rephrase:
       status === "connected"
-        ? {
-            ask: (c) => hermes.askForEdit({ profile, instructions: c.instructions, input: c.input, maxTokens: c.maxTokens, task: TEXT_TASK }).then((r) => r.text),
-            model: () => hermes.modelSettings.textModel(),
-          }
+        ? (p) => ({
+            ask: (c) => hermes.askForEdit({ profile: p, instructions: c.instructions, input: c.input, maxTokens: c.maxTokens, task: TEXT_TASK }).then((r) => r.text),
+            model: () => hermes.modelSettings.textModel(p),
+          })
         : undefined,
+    persona: hermes.persona,
     setup: { skills: hermes.skills, toolsets: hermes.toolsets },
     // A command to run (a settling delete's) gets the toast's Copy; a notice of something gone wrong stays longer.
     notify: (n) => {
@@ -3337,7 +3338,6 @@ export function Main({
     botEdit,
     load: loadBots,
     onNote: (text) => setToast({ text, at: Date.now() }),
-    onPersona: (name) => openProfileSettings(name, "persona"),
   });
 
   return (

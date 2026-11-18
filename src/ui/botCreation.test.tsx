@@ -78,10 +78,10 @@ async function open({ connected = true, rephrase = true, setup = true, seed = ()
     copyText: async () => {},
     ...(rephrase &&
       connected && {
-        rephrase: {
-          ask: (c) => hermes.askForEdit({ profile: "default", instructions: c.instructions, input: c.input, maxTokens: c.maxTokens, task: TEXT_TASK }).then((r) => r.text),
-          model: () => hermes.modelSettings.textModel(),
-        },
+        rephrase: (p) => ({
+          ask: (c) => hermes.askForEdit({ profile: p, instructions: c.instructions, input: c.input, maxTokens: c.maxTokens, task: TEXT_TASK }).then((r) => r.text),
+          model: () => hermes.modelSettings.textModel(p),
+        }),
       }),
     ...(setup && { setup: { skills: hermes.skills, toolsets: hermes.toolsets } }),
     notify: notified,
@@ -776,7 +776,7 @@ describe("Skills, Tools and MCP servers", () => {
 });
 
 describe("Elsewhere", () => {
-  it("leaves Edit as it was: no Generate with AI, Skills, Tools or MCP servers", async () => {
+  it("leaves Skills, Tools and MCP servers out of Edit", async () => {
     const server = new FakeHermes();
     server.otherProfiles = { work: [] };
     const hermes = await connect(server.openPipe, undefined, memoryCache());
@@ -797,7 +797,7 @@ describe("Elsewhere", () => {
           switchTo: async () => true,
           local: { pending: () => undefined, note: () => {}, clear: () => {}, renamed: async () => {}, deleted: async () => {} },
           copyText: async () => {},
-          rephrase: { ask: async () => "x", model: async () => ({ provider: "p", model: "m" }) },
+          rephrase: () => ({ ask: async () => "x", model: async () => ({ provider: "p", model: "m" }) }),
           setup: { skills: hermes.skills, toolsets: hermes.toolsets },
           notify: () => {},
         }}
@@ -809,10 +809,9 @@ describe("Elsewhere", () => {
         onClose={() => {}}
       />,
     );
-    expect(within(dialog()).queryByRole("button", { name: /Generate with AI/ })).toBeNull();
     expect(within(dialog()).queryByRole("group", { name: "Skills" })).toBeNull();
     expect(within(dialog()).queryByRole("group", { name: "MCP servers" })).toBeNull();
-    expect(server.restRequests.filter((r) => r.path === "/api/model/auxiliary" || r.path === "/api/skills" || r.path === "/api/tools/toolsets")).toEqual([]);
+    expect(server.restRequests.filter((r) => r.path === "/api/skills" || r.path === "/api/tools/toolsets")).toEqual([]);
   });
 
   it("shows only catalogue words: the form, a rewrite, chosen lists and what didn't apply", async () => {
@@ -821,7 +820,7 @@ describe("Elsewhere", () => {
     const box = () => screen.getByRole("dialog");
     expect(untranslated(box())).toEqual([]);
     await user.type(within(box()).getByLabelText(p.profiles.form.name), "chef");
-    await user.type(within(box()).getByLabelText(p.profiles.form.persona), ROUGH);
+    await user.type(within(box()).getByLabelText(p.profiles.form.personaOptional), ROUGH);
     await waitFor(() => expect(within(box()).getByText(new RegExp(`Rewritten by`))).toBeTruthy());
     await user.click(within(box()).getByRole("button", { name: new RegExp(p.profiles.form.rephrase.generate.replace(/[⟦⟧]/g, ".")) }));
     await within(box()).findByRole("button", { name: p.profiles.form.rephrase.undo });

@@ -10,6 +10,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { FakeHermes, row } from "../hermes/fakeHermes";
 import { memoryCache } from "../hermes/memoryCache";
+import { RestError } from "../hermes/pipe";
 import { BOT_CHAT_TITLE, BotModeUnsupportedError, rosterOf, type Bot } from "../hermes/bots";
 import { getUIPrefs } from "../hermes/uiPrefs";
 import { Bots, BOTS_REFRESH_MS } from "./Bots";
@@ -428,7 +429,7 @@ describe("A bot's menu in the Bots view", { timeout: 30_000 }, () => {
     const { user } = await launch();
     await openBots(user);
     const menu = await menuOf(user, "Scribe");
-    expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Edit bot…", "Clone…", "Pin", "Hide", "Open in Settings → Profiles", "Delete bot…"]);
+    expect(within(menu).getAllByRole("menuitem").map((i) => i.textContent)).toEqual(["Edit bot…", "Edit persona…", "Clone…", "Pin", "Hide", "Open in Settings → Profiles", "Delete bot…"]);
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("menu")).toBeNull();
     expect(bots()).toBeTruthy();
@@ -442,7 +443,7 @@ describe("A bot's menu in the Bots view", { timeout: 30_000 }, () => {
       // The menu works from the keyboard: Down moves on from its first entry.
       expect(document.activeElement?.textContent).toBe("Edit bot…");
       await user.keyboard("{ArrowDown}");
-      expect(document.activeElement?.textContent).toBe("Clone…");
+      expect(document.activeElement?.textContent).toBe("Edit persona…");
       await user.keyboard("{Escape}");
       expect(screen.queryByRole("menu")).toBeNull();
       expect(bots()).toBeTruthy();
@@ -701,6 +702,126 @@ describe("A bot's menu in the Bots view", { timeout: 30_000 }, () => {
     const list = await screen.findByRole("listbox", { name: "Profiles" });
     await waitFor(() => expect(within(list).getAllByRole("option").find((o) => o.getAttribute("aria-selected") === "true")?.getAttribute("data-profile")).toBe("scribe"));
     expect(screen.getByRole("tab", { name: "Profiles" }).getAttribute("aria-selected")).toBe("true");
+  });
+
+  const SOUL = "You are Scribe. You draft release notes.\n";
+  const withSoul = (s: FakeHermes) => (s.souls.scribe = SOUL);
+  const personaOf = (dialog: HTMLElement) => within(dialog).getByLabelText<HTMLTextAreaElement>("Persona");
+  const loaded = async (dialog: HTMLElement) => {
+    await waitFor(() => expect(personaOf(dialog).disabled).toBe(false));
+    return personaOf(dialog);
+  };
+
+  it("Edit persona… opens Edit bot with the bot's SOUL.md in Persona, focused", async () => {
+    const { user } = await launch(withSoul);
+    await openBots(user);
+    await pickFrom(user, "Scribe", "Edit persona…");
+    const dialog = await screen.findByRole("dialog", { name: "Edit bot: Scribe" });
+    const persona = await loaded(dialog);
+    expect(persona.value).toBe(SOUL);
+    await waitFor(() => expect(document.activeElement).toBe(persona));
+  });
+
+  it("Edit bot saves a changed persona as the bot's SOUL.md, and writes none when it's unchanged", async () => {
+    const { server, user } = await launch(withSoul);
+    await openBots(user);
+    let dialog = await editBot(user);
+    await loaded(dialog);
+    await user.clear(within(dialog).getByLabelText("Description"));
+    await user.type(within(dialog).getByLabelText("Description"), "Drafts the changelog");
+    await user.click(within(dialog).getByRole("button", { name: /Save changes/ }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: /Edit bot/ })).toBeNull());
+    expect(writes(server)).toEqual(["PUT /api/profiles/scribe/description"]);
+
+    dialog = await editBot(user);
+    const persona = await loaded(dialog);
+    await user.type(persona, "Keep it short.");
+    await user.click(within(dialog).getByRole("button", { name: /Save changes/ }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: /Edit bot/ })).toBeNull());
+    expect(server.souls.scribe).toBe(`${SOUL}Keep it short.`);
+    expect(writes(server)).toEqual(["PUT /api/profiles/scribe/description", "PUT /api/profiles/scribe/soul"]);
+    expect(within(bots()).getByRole("status").textContent).toBe("Saved scribe.");
+  });
+
+  it("Edit bot writes nothing over a persona changed elsewhere, and offers Hermes's", async () => {
+    const { server, user } = await launch(withSoul);
+    await openBots(user);
+    const dialog = await editBot(user);
+    const persona = await loaded(dialog);
+    await user.type(persona, "Mine.");
+    server.souls.scribe = "Theirs.\n";
+    await user.click(within(dialog).getByRole("button", { name: /Save changes/ }));
+    expect((await within(dialog).findByRole("alert")).textContent).toMatch(/^The persona changed elsewhere since you opened this\./);
+    expect(server.souls.scribe).toBe("Theirs.\n");
+    expect(writes(server)).toEqual([]);
+    expect(persona.value).toBe(`${SOUL}Mine.`);
+    await user.click(within(dialog).getByRole("button", { name: "Use Hermes's" }));
+    expect(persona.value).toBe("Theirs.\n");
+    expect(within(dialog).getByRole("button", { name: /Save changes/ })).toHaveProperty("disabled", true);
+    await user.type(persona, "Again.");
+    await user.click(within(dialog).getByRole("button", { name: /Save changes/ }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: /Edit bot/ })).toBeNull());
+    expect(server.souls.scribe).toBe("Theirs.\nAgain.");
+  });
+
+  it("Edit bot's Write with AI rewrites the persona in place on the bot's own Text generation model, with Undo", async () => {
+    const { server, user } = await launch((s) => {
+      withSoul(s);
+      s.oneshotAnswer = "You are Scribe. Draft release notes in plain words.";
+    });
+    await openBots(user);
+    const dialog = await editBot(user);
+    const persona = await loaded(dialog);
+    const write = within(dialog).getByRole("button", { name: /Write with AI/ });
+    await waitFor(() => expect(write.getAttribute("aria-disabled")).toBeNull());
+    expect(document.getElementById(write.getAttribute("aria-describedby")!)?.textContent).toMatch(/the Text generation model of scribe,/);
+    await user.click(write);
+    await waitFor(() => expect(persona.value).toBe("You are Scribe. Draft release notes in plain words."));
+    expect(server.requests.filter((r) => r.method === "llm.oneshot").map((r) => [r.params.profile, r.params.input])).toEqual([["scribe", expect.stringContaining(`<persona>${SOUL}</persona>`)]]);
+    await user.click(within(dialog).getByRole("button", { name: "Undo" }));
+    expect(persona.value).toBe(SOUL);
+    await user.click(within(dialog).getByRole("button", { name: /Write with AI/ }));
+    await waitFor(() => expect(persona.value).toBe("You are Scribe. Draft release notes in plain words."));
+    await user.click(within(dialog).getByRole("button", { name: /Save changes/ }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: /Edit bot/ })).toBeNull());
+    expect(server.souls.scribe).toBe("You are Scribe. Draft release notes in plain words.");
+  });
+
+  it("Edit bot's Stop leaves the persona as it was, and Save waits while the rewrite runs", async () => {
+    const { server, user } = await launch(withSoul);
+    await openBots(user);
+    const dialog = await editBot(user);
+    const persona = await loaded(dialog);
+    let go = () => {};
+    server.oneshotGate = new Promise<void>((r) => (go = r));
+    await user.type(persona, "Short.");
+    const write = within(dialog).getByRole("button", { name: /Write with AI/ });
+    await waitFor(() => expect(write.getAttribute("aria-disabled")).toBeNull());
+    await user.click(write);
+    await waitFor(() => expect(persona.readOnly).toBe(true));
+    const save = within(dialog).getByRole("button", { name: /Save changes/ });
+    expect(save).toHaveProperty("disabled", true);
+    expect(save.getAttribute("title")).toBe("Wait for the persona's rewrite, or stop it, first.");
+    await user.click(within(dialog).getByRole("button", { name: "Stop" }));
+    await act(async () => go());
+    await act(async () => void (await new Promise((r) => setTimeout(r, 20))));
+    expect(persona.value).toBe(`${SOUL}Short.`);
+    expect(persona.readOnly).toBe(false);
+    expect(save).toHaveProperty("disabled", false);
+  });
+
+  it("Edit bot says why the persona couldn't be read, keeps it off, and reads it again on Try again", async () => {
+    const { server, user } = await launch((s) => {
+      withSoul(s);
+      s.soulReadError = new RestError(500, `{"detail":"disk on fire"}`);
+    });
+    await openBots(user);
+    const dialog = await editBot(user);
+    expect((await within(dialog).findByRole("alert")).textContent).toMatch(/^Couldn't read the persona, so it can't be changed here: .*disk on fire/);
+    expect(personaOf(dialog).disabled).toBe(true);
+    server.soulReadError = undefined;
+    await user.click(within(dialog).getByRole("button", { name: "Try again" }));
+    expect((await loaded(dialog)).value).toBe(SOUL);
   });
 });
 

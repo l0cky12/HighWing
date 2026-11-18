@@ -7,7 +7,7 @@
 // over a change made elsewhere. In the chat list panel a right-click on a row opens Chat, Settings and Delete (ADR
 // 0194), the same row's open, Edit bot and Delete bot. Every word comes from the catalogue (ADR 0100).
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowRight, ChevronDown, ChevronRight, Copy, EyeOff, Eye, Loader, MessageSquare, MoreHorizontal, Pencil, Pin, PinOff, Plus, RefreshCw, Search, Settings2, ShieldAlert, SquarePen, Trash2, X } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronRight, Copy, EyeOff, Eye, Loader, MessageSquare, MoreHorizontal, Pencil, Pin, PinOff, Plus, RefreshCw, Search, Settings2, ShieldAlert, Sparkles, SquarePen, Trash2, X } from "lucide-react";
 import { BotModeUnsupportedError, type Bot, type BotActivity, type BotLook } from "../hermes/bots";
 import type { EditResult, Edits } from "../hermes/fieldMerge";
 import { PROFILE_ROUTES, profileFailure, type ProfileAction, type ProfileRow } from "../hermes/profiles";
@@ -16,7 +16,7 @@ import type { Chat } from "../hermes/model";
 import { Menu } from "./ChatMenu";
 import { CloneProfileDialog } from "./CloneProfile";
 import { pick } from "./keybindings";
-import { CopyButton, DeleteProfile, MenuEntry, ProfileForm, blocked, failureText, useSwitchTo, type FormResult, type ProfilesWiring } from "./ProfileSettings";
+import { CopyButton, DeleteProfile, MenuEntry, ProfileForm, blocked, failureText, useSwitchTo, type FormFocus, type FormResult, type ProfilesWiring } from "./ProfileSettings";
 import { useLocale, type Locale } from "../i18n/locale";
 
 /** How often the roster is read again while the view is open. Hermes's desktop polls every 5 seconds; this is enough. */
@@ -39,7 +39,7 @@ export type BotEditWiring = {
 
 /** A dialog a bot's menu opened, on the profile's row as `GET /api/profiles` listed it just before. */
 type BotDialog =
-  | { kind: "edit"; bot: Bot; row: ProfileRow; rows: ProfileRow[]; look: BotLook }
+  | { kind: "edit"; bot: Bot; row: ProfileRow; rows: ProfileRow[]; look: BotLook; focus?: FormFocus }
   | { kind: "delete"; row: ProfileRow }
   | { kind: "clone"; source: string };
 
@@ -183,8 +183,11 @@ export function Bots({
 
   /** Each open's number: only the last one picked opens its dialog or says why it couldn't. */
   const opens = useRef(0);
-  /** Opens `dialog` on the bot's profile as Hermes lists it now, which Edit and Delete show and check against. */
-  const open = async (bot: Bot, kind: "edit" | "delete") => {
+  /**
+   * Opens `dialog` on the bot's profile as Hermes lists it now, which Edit and Delete show and check against. `focus`:
+   * the Edit field that takes focus once it can be typed in.
+   */
+  const open = async (bot: Bot, kind: "edit" | "delete", focus?: FormFocus) => {
     if (!profiles) return;
     const n = ++opens.current;
     setMade(undefined);
@@ -195,7 +198,7 @@ export function Bots({
         setMade({ text: l.profiles.form.gone(bot.profile), warn: true });
         return void read();
       }
-      setDialog(opened);
+      setDialog(opened.kind === "edit" && focus ? { ...opened, focus } : opened);
     } catch (e) {
       if (n !== opens.current) return;
       setMade({ text: w.openFailed(bot.name, failureText(l, profileFailure(e, "botLook"), bot.profile)), warn: true });
@@ -348,6 +351,17 @@ export function Bots({
               }}
             />
           )}
+          {botEdit && profiles.persona && (
+            <MenuEntry
+              icon={<Sparkles size={15} />}
+              label={w.menu.persona}
+              why={!connected ? l.profiles.notConnected : undefined}
+              onPick={() => {
+                setMenu(undefined);
+                void open(menu.bot, "edit", "persona");
+              }}
+            />
+          )}
           {profiles.clone && (
             <MenuEntry
               icon={<Copy size={15} />}
@@ -432,7 +446,7 @@ export function Bots({
           returnTo={menuFrom}
           heading={w.editTitle(dialog.bot.name)}
           bot={{ look: dialog.look, edit: botEdit.edit }}
-          onPersona={onProfileSettings && ((name) => onProfileSettings(name, "persona"))}
+          focus={dialog.focus}
           onDone={(result) => closeDialog({ text: result.notice?.text ?? "", warn: result.notice?.tone === "warn", focus: result.select })}
           // Closed without finishing: what saved meanwhile shows in the rows.
           onClose={() => closeDialog()}
@@ -477,21 +491,19 @@ export function Bots({
  * Bots view's Edit bot and Delete its Delete bot, on the profile as `GET /api/profiles` lists it then; only the last entry
  * picked opens. `element` is drawn outside bot mode, so a delete that switches away from the open bot's profile, which
  * leaves bot mode, runs to its end. `load` reads the roster again after either, and then a row whose focus went with it
- * (renamed or deleted) hands focus to the bot saved, else the open bot's row, the first bot's, or the profile switcher. `onNote`: what an action did, or why it couldn't. `onPersona`: shows
- * Settings → Persona on a profile.
+ * (renamed or deleted) hands focus to the bot saved, else the open bot's row, the first bot's, or the profile switcher.
+ * `onNote`: what an action did, or why it couldn't.
  */
 export function usePanelBotMenu({
   profiles,
   botEdit,
   load,
   onNote,
-  onPersona,
 }: {
   profiles: Omit<ProfilesWiring, "showTab">;
   botEdit: BotEditWiring;
   load: () => Promise<unknown>;
   onNote: (text: string) => void;
-  onPersona?: (profile: string) => void;
 }) {
   const l = useLocale();
   const w = l.bots;
@@ -595,7 +607,6 @@ export function usePanelBotMenu({
           returnTo={menuFrom}
           heading={w.editTitle(dialog.bot.name)}
           bot={{ look: dialog.look, edit: botEdit.edit }}
-          onPersona={onPersona}
           onDone={(result) => closeDialog(result.notice?.text, result.select)}
           // Closed without finishing: what saved meanwhile shows in the rows.
           onClose={() => closeDialog()}

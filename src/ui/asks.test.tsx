@@ -447,3 +447,48 @@ describe("A bot picked from the @ menu in an ordinary chat, in the app", { timeo
     expect(untranslated(card()!.querySelector(".returned-head")!)).toEqual([]);
   });
 });
+
+describe("An ordinary chat in Compare, in the app", { timeout: 30_000 }, () => {
+  const pane = (i: number) => document.querySelectorAll<HTMLElement>(".pane")[i];
+  const composerIn = (i: number) => within(pane(i)).getByPlaceholderText<HTMLTextAreaElement>("Message Hermes");
+  const settle = (hermes: Hermes) => act(async () => void (await hermes.idle()));
+
+  async function compare(user: ReturnType<typeof userEvent.setup>, hermes: Hermes) {
+    await act(() => hermes.loadModels());
+    await settle(hermes);
+    await user.click(screen.getByRole("button", { name: /^Model:/ }));
+    await user.click(screen.getByRole("button", { name: "Compare with another model" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Pick a model to compare with" })).getByRole("button", { name: /^gpt-5/ }));
+    await settle(hermes);
+    expect(document.querySelectorAll(".pane")).toHaveLength(2);
+  }
+
+  it("lists no bots in the menu", async () => {
+    const { hermes, user } = await inOrdinaryChat();
+    await compare(user, hermes);
+    await user.click(composerIn(0));
+    await user.keyboard("@");
+    expect(groups()).toEqual([]);
+    expect(options().map((o) => o.textContent)).toEqual(["Rotate nginx logs"]);
+  });
+
+  it("sends a picked bot's words to both chats as plain words, with the mark gone and no ask", async () => {
+    const { server, hermes, user } = await inOrdinaryChat();
+    await user.click(box());
+    await user.keyboard("@qu{Tab}what do you think?");
+    await waitFor(() => expect(backupChip("summary ready")).toBeTruthy());
+    await compare(user, hermes);
+    expect(composerIn(0).value).toBe(`@${PICK_MARK}quill what do you think?`);
+    expect(document.querySelector("[data-mention]")).toBeNull();
+    await user.click(composerIn(0));
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(submits(server)).toHaveLength(2));
+    expect(submits(server).map((r) => [r.params.profile, r.params.text])).toEqual([
+      ["default", "@quill what do you think?"],
+      ["default", "@quill what do you think?"],
+    ]);
+    expect(new Set(submits(server).map((r) => r.params.session_id)).size).toBe(2);
+    expect(card()).toBeNull();
+  });
+});
+

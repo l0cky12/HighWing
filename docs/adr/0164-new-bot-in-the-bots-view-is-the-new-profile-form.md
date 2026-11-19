@@ -1,5 +1,7 @@
 # New bot in the Bots view is the New profile form
 
+> **Superseded by [ADR 0227](0227-new-bot-asks-only-for-a-name-the-bot-interviews-the-owner-in-its-bot-chat-and-one-card-sets-it-up.md)** (#85), except its last decision: New bot is still off while the app isn't connected, while the server lacks `POST /api/profiles`, and on a Hermes without Bot Mode. New bot now asks only for a name, writes the typed name to the Bot Mode block, opens the new bot's Bot Chat as a visit, and starts Bot setup there with a hidden brief. Both options this ADR rejected, "a smaller bot form" and "open the new bot's Bot Chat at once", are now what the app does.
+
 > **Accepted.** It changes one line of ADR 0066: "This app doesn't create bots." The rest of ADR 0066 stands. **Partly superseded by [ADR 0203](0203-the-bots-view-folds-into-bots-mode-and-a-bot-opened-there-is-a-visit.md).** New bot is above the bots in the chat list's Bots mode, and the Bots view is gone.
 
 The owner wanted to set up bots from the Bots view and see the new bot there once made. Until now the view only listed bots. A bot is a profile (ADR 0066), and making one meant leaving for Settings → Profiles, making a profile there, and opening the Bots view again to find it.

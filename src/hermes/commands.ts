@@ -2,88 +2,189 @@
 // app already has, and Hermes commands whose behaviour was read in Hermes's source at the deployed `bf0203a`. Nothing
 // typed is forwarded to Hermes as a command unless it is in this list; any other text starting with "/" is sent as an
 // ordinary message.
-import { catalogSkills } from "./skillCommands";
+import { catalogSkills, type SkillCall } from "./skillCommands";
+import { EFFORTS } from "./models";
+import { hermesCommands } from "./hermesCommands";
 import { isObj } from "./values";
 import type { PlainMethod, SessionProtocol } from "./sessionProtocol";
 
 /**
  * `local`: an action of this app, which may write to Hermes through the same calls its buttons use. `server`: a command
- * Hermes runs for the chat's live session. `args`: the argument hint, `<required>` or `[optional]`. `destructive`: asks
- * first, as the chat list's Delete does.
+ * Hermes runs for the chat's live session, by a route of its own. `hermes`: one of Hermes's commands from its catalog,
+ * run through `slash.exec` as Hermes's own desktop runs it (hermesCommands.ts). `aliases`: Hermes's other names for it,
+ * which resolve only when typed whole. `args`: the argument hint, `<required>` or `[optional]`. `subcommands`: the words
+ * the menu suggests after the name. `suggests`: the menu suggests the profile's models instead. `destructive`: asks
+ * first, as the chat list's Delete does, and runs only when typed whole. `unavailable`: why it never runs from here.
  */
 export type CommandDef = {
   name: string;
+  aliases?: readonly string[];
   args?: string;
   description: string;
-  scope: "local" | "server";
+  scope: "local" | "server" | "hermes";
+  subcommands?: readonly string[];
+  suggests?: "models";
   destructive?: boolean;
+  unavailable?: string;
 };
 
 export const COMMANDS: readonly CommandDef[] = [
   { name: "help", description: "Show every command you can use here", scope: "local" },
-  { name: "new", description: "Start a new chat", scope: "local" },
-  { name: "rename", args: "<title>", description: "Rename this chat in every Hermes client", scope: "local" },
+  // Hermes's `/reset`, and its `/clear`, which Hermes's desktop also takes as a new chat.
+  { name: "new", aliases: ["reset", "clear"], description: "Start a new chat", scope: "local" },
+  // Hermes's `/title` renames the session, as Rename does.
+  { name: "rename", aliases: ["title"], args: "<title>", description: "Rename this chat in every Hermes client", scope: "local" },
   { name: "delete", description: "Delete this chat in every Hermes client, after asking", scope: "local", destructive: true },
   // `command.dispatch` `_cmd_steer` (tui_gateway/methods_tools.py): queued for after the running reply's next tool call.
-  { name: "steer", args: "<message>", description: "Tell the running reply something after its next tool call, without stopping it", scope: "server" },
+  { name: "steer", aliases: ["s"], args: "<message>", description: "Tell the running reply something after its next tool call, without stopping it", scope: "server" },
   // `prompt.btw` (tui_gateway/methods_prompt.py at the deployed `f0d94882`), as Hermes's own clients send it, not
   // `command.dispatch`: it answers later, as a `btw.complete` event (ADR 0070).
   { name: "btw", args: "<question>", description: "Ask a side question about this chat without interrupting the reply or adding to the chat", scope: "server" },
   // `slash.exec` `/context`, answered from the live session (tui_gateway/methods_slash.py `_format_live_context_output`).
-  { name: "context", description: "Show what fills this chat's context window, as Hermes counts it", scope: "server" },
+  { name: "context", aliases: ["ctx"], args: "[all]", subcommands: ["all"], description: "Show what fills this chat's context window, as Hermes counts it", scope: "server" },
   // `command.dispatch` `_cmd_goal` (tui_gateway/methods_tools.py at `bf0203a`). Typed, it opens Set a goal, which shows
   // the check before anything is saved (ADR 0187).
   { name: "goal", args: "[outcome]", description: "Set a goal Hermes keeps working toward until a check proves it done", scope: "server" },
+  // The model picker's own switch (`hermes.setModel`), not Hermes's `/model`, whose mirror drops a model Hermes asks to
+  // confirm and refuses mid-reply after its worker already ran it. Hermes's desktop hides its `/model` for its picker.
+  { name: "model", args: "[model]", suggests: "models", description: "Show this chat's model, or switch it", scope: "local" },
+  // The reasoning pill's switch, as the picker sets it. Hermes's `/reasoning` changes only its slash worker's agent.
+  { name: "reasoning", args: "[level]", subcommands: EFFORTS, description: "Show or set this chat's reasoning effort", scope: "local" },
+  // The context inspector's Compact now: Hermes moves the chat to a new stored session, which this app follows.
+  // Hermes's options for it (`here N`, `--preview`) are refused rather than sent to the chat as a message.
+  { name: "compress", aliases: ["compact"], args: "[options]", description: "Compact this chat's context now, between replies", scope: "local" },
 ];
 
 /** `/steer`, which the composer also uses for a message sent into a running reply (ADR 0057). */
 export const STEER: CommandDef = COMMANDS.find((c) => c.name === "steer")!;
-
-/**
- * The command typed: a "/" as the very first character, then a name, then whitespace or the end. The argument is the
- * rest with its outer whitespace trimmed and its inside, new lines included, kept as typed. Undefined for any other
- * text, which is then an ordinary message: a name that isn't in the registry, or words after a command that takes
- * none, as in "/help me read this log".
- */
-export function typedCommand(text: string): { def: CommandDef; arg: string } | undefined {
-  const m = /^\/(\S+)([\s\S]*)$/.exec(text);
-  const def = m && COMMANDS.find((c) => c.name === m[1].toLowerCase());
-  const arg = m ? m[2].trim() : "";
-  return def && (def.args || !arg) ? { def, arg } : undefined;
-}
 
 /** Why `arg` can't go with `def`, or undefined when it can. */
 export function argProblem(def: CommandDef, arg: string): string | undefined {
   return def.args?.startsWith("<") && !arg ? `/${def.name} needs ${def.args}.` : undefined;
 }
 
-/**
- * The menu's query while the owner types the command's name: what follows the leading "/", up to the caret at the end.
- * Undefined once there is whitespace, so the menu is gone while an argument or a new line is typed.
- */
-export function menuQuery(text: string): string | undefined {
-  return /^\/\S*$/.test(text) ? text.slice(1).toLowerCase() : undefined;
-}
-
-/**
- * The commands for a query: names starting with it first, then names containing it or descriptions with a word starting
- * with it, each in registry order.
- */
-export function matchCommands(query: string): CommandDef[] {
-  const q = query.toLowerCase();
-  const starts = COMMANDS.filter((c) => c.name.startsWith(q));
-  const words = (c: CommandDef) => c.description.toLowerCase().split(/\W+/);
-  return [...starts, ...COMMANDS.filter((c) => !starts.includes(c) && (c.name.includes(q) || words(c).some((w) => w.startsWith(q))))];
-}
-
 /** What the composer holds once a command is picked: its name, and a space for its argument if it takes one. */
-export const completion = (def: CommandDef) => `/${def.name}${def.args ? " " : ""}`;
+export const completion = (def: CommandDef) => `/${def.name}${takesArg(def) ? " " : ""}`;
+
+const takesArg = (def: CommandDef) => !!(def.args || def.subcommands?.length || def.suggests);
+
+/**
+ * What typed "/" text is. `command`: `def` with its argument, found `via` its name, an alias, or a prefix. `unclear`:
+ * a name that more than one thing starts (`candidates`), or a prefix of a destructive command, so nothing runs.
+ */
+export type Typed = Resolved & { arg: string };
+type Resolved = { kind: "command"; def: CommandDef; via: "name" | "alias" | "prefix" } | { kind: "unclear"; name: string; candidates: string[] };
+
+/** What the "/" menu offers: command names for `query`, or what follows `def`'s name (its subcommands or models). */
+export type CommandMenu = { stage: "name"; query: string } | { stage: "arg"; def: CommandDef; query: string };
+
+/**
+ * The commands "/" reaches in a composer: the app's own (COMMANDS) and Hermes's from its catalog (hermesCommands.ts).
+ * `others` is every other exact name "/" reaches there, lower case: the skills and extension commands offered.
+ */
+export type CommandSet = {
+  readonly all: readonly CommandDef[];
+  /** The command `text` runs, or undefined when it is an ordinary message, a skill or an extension command. */
+  typed(text: string, others: readonly string[]): Typed | undefined;
+  /** What the "/" menu shows while `text` is typed, with the caret at its end. */
+  menu(text: string, others: readonly string[]): CommandMenu | undefined;
+  /** The commands for a name query, best first. Whatever `typed` would run for "/query" is first. */
+  match(query: string): CommandDef[];
+};
+
+/**
+ * The app's commands, then those of `hermes` that the app doesn't do itself under a name or alias of its own.
+ *
+ * A typed name is resolved as Hermes's command line resolves one at the deployed `bf0203a` (`cli.py
+ * _expand_slash_prefix`), not as its docs say ("the first match in registry order"), which its code doesn't do: a name
+ * or alias typed whole; then, among every name and alias that starts with it (skills and extension commands too), the
+ * one, or the one shortest. A tie names them all and runs nothing. A skill or extension command found that way is the
+ * caller's to run. The command is sent to Hermes under its own name, which Hermes's side effects are keyed on.
+ */
+export function commandSet(hermes: readonly CommandDef[] = []): CommandSet {
+  const keys = new Map<string, CommandDef>();
+  const all: CommandDef[] = [];
+  const add = (def: CommandDef) => {
+    if (keys.has(def.name)) return;
+    const aliases = (def.aliases ?? []).filter((a) => !keys.has(a));
+    const kept = { ...def, ...(def.aliases && { aliases }) };
+    all.push(kept);
+    for (const k of [def.name, ...aliases]) keys.set(k, kept);
+  };
+  COMMANDS.forEach(add);
+  hermes.forEach(add);
+
+  const resolve = (typedName: string, others: readonly string[]): Resolved | undefined => {
+    const n = typedName.toLowerCase();
+    const exact = keys.get(n);
+    if (exact) return { kind: "command", def: exact, via: exact.name === n ? "name" : "alias" };
+    if (others.includes(n)) return undefined;
+    const found = [...new Set([...keys.keys(), ...others])].filter((k) => k.startsWith(n)).sort();
+    if (!found.length) return undefined;
+    const targets = new Set(found.map((k) => keys.get(k) ?? k));
+    const shortest = found.filter((k) => k.length === Math.min(...found.map((f) => f.length)));
+    const pick = targets.size === 1 ? found[0] : shortest.length === 1 ? shortest[0] : undefined;
+    if (pick === undefined) return { kind: "unclear", name: n, candidates: found };
+    const def = keys.get(pick);
+    if (!def) return undefined;
+    // A one-letter slip shouldn't lead to deleting a chat: Hermes has no such command, and no question before it.
+    if (def.destructive) return { kind: "unclear", name: n, candidates: [def.name] };
+    return { kind: "command", def, via: "prefix" };
+  };
+
+  return {
+    all,
+    typed(text, others) {
+      const m = /^\/(\S+)([\s\S]*)$/.exec(text);
+      const r = m && resolve(m[1], others);
+      if (!m || !r) return undefined;
+      const arg = m[2].trim();
+      if (r.kind === "unclear") return { ...r, arg };
+      // Words after a command that takes none are a message: "/help me read this log".
+      return takesArg(r.def) || !arg ? { ...r, arg } : undefined;
+    },
+    menu(text, others) {
+      if (/^\/\S*$/.test(text)) return { stage: "name", query: text.slice(1).toLowerCase() };
+      const m = /^\/(\S+)[ \t]+([^\n]*)$/.exec(text);
+      const r = m && resolve(m[1], others);
+      if (!m || r?.kind !== "command" || r.def.unavailable) return undefined;
+      // Models are found by any of their words; a subcommand is one word.
+      if (r.def.suggests) return { stage: "arg", def: r.def, query: m[2] };
+      return r.def.subcommands?.length && /^\S*$/.test(m[2]) ? { stage: "arg", def: r.def, query: m[2].toLowerCase() } : undefined;
+    },
+    match(query) {
+      const q = query.toLowerCase();
+      const r = q ? resolve(q, []) : undefined;
+      const names = (c: CommandDef) => [c.name, ...(c.aliases ?? [])];
+      const words = (c: CommandDef) => c.description.toLowerCase().split(/\W+/);
+      // Hermes's menu tiers (`slash_fuzzy.py`): exact, prefix, substring, then a word of the description.
+      const tiers = [
+        all.filter((c) => names(c).includes(q)),
+        r?.kind === "command" ? [r.def] : [],
+        all.filter((c) => names(c).some((k) => k.startsWith(q))),
+        all.filter((c) => c.name.includes(q)),
+        all.filter((c) => words(c).some((w) => w.startsWith(q))),
+      ];
+      return [...new Set(tiers.flat())];
+    },
+  };
+}
 
 /** How a request to Hermes goes: a JSON-RPC call on `/api/ws`. */
 export type Rpc = (method: PlainMethod, params: Record<string, unknown>) => Promise<unknown>;
 
 /** What a server command came back with: text to show, or a message Hermes wants sent as the chat's next turn. */
-export type CommandResult = { kind: "output"; text: string } | { kind: "send"; message: string; notice?: string };
+/**
+ * What a server command came back with. `output`: text to show. `send`: a message Hermes wants sent as the chat's next
+ * turn. `skill`: Hermes built a skill message for the next turn, which goes as the skill call `call` (sent again
+ * through `command.dispatch`, so its text isn't kept here, ADR 0015), shown as `display`. `prefill`: text Hermes puts back
+ * in the composer to edit.
+ */
+export type CommandResult =
+  | { kind: "output"; text: string }
+  | { kind: "send"; message: string; notice?: string }
+  | { kind: "skill"; call: SkillCall; display: string; notice?: string }
+  | { kind: "prefill"; text: string; notice?: string };
 
 const NO_SUCH_METHOD = -32601;
 
@@ -92,7 +193,7 @@ const NO_SUCH_METHOD = -32601;
  * (`replaced`); and those that might be replaced by one Hermes couldn't list (`unsure`). `skills`: the skills Hermes
  * would run as commands, key to description (`skillCommands.catalogSkills`), undefined when it can't say.
  */
-export type ServerCommandList = { listed: Set<string>; replaced: Set<string>; unsure: Set<string>; skills?: Map<string, string> };
+export type ServerCommandList = { listed: Set<string>; replaced: Set<string>; unsure: Set<string>; skills?: Map<string, string>; hermes: CommandDef[] };
 
 /**
  * Commands that go through `command.dispatch`, which runs a quick command (any shell command) or a plugin command before
@@ -135,25 +236,44 @@ export async function listServerCommands(rpc: Rpc, profile: string): Promise<Ser
     replaced,
     unsure,
     ...(skills && { skills }),
+    hermes: hermesCommands(res),
   };
 }
 
 /**
  * Runs a server command on the chat's live session `sessionId`. `/steer` goes through `command.dispatch` with the
- * argument as its own field, so its words reach Hermes exactly as typed. `/context` goes through `slash.exec`, which
- * Hermes answers from the live session without starting its slash worker.
+ * argument as its own field, so its words reach Hermes exactly as typed. Every other command goes through `slash.exec`
+ * under its own name, as Hermes's own desktop sends it (`runExec`): Hermes answers some from the live session, hands
+ * some to `command.dispatch`, and runs the rest in its slash worker. A `slash.exec` Hermes refuses is tried once as
+ * `command.dispatch`, and a quick command that is an alias of another runs that one, as the desktop does.
  */
 export async function runServerCommand(rpc: Rpc, sessions: Pick<SessionProtocol, "command">, sessionId: string, def: CommandDef, arg: string): Promise<CommandResult> {
-  const res =
-    def.name === "steer"
-      ? await sessions.command(sessionId, def.name, arg)
-      : def.name === "context"
-        ? await rpc("slash.exec", { command: `/${def.name}`, session_id: sessionId })
-        : undefined;
+  const exec = (line: string) => rpc("slash.exec", { command: line, session_id: sessionId });
+  let res: unknown;
+  if (def.name === "steer") res = await sessions.command(sessionId, def.name, arg);
+  else if (def.scope === "server") res = await exec(`/${def.name}${arg ? ` ${arg}` : ""}`);
+  else res = await exec(`/${def.name}${arg ? ` ${arg}` : ""}`).catch((e) => (isObj(e) && e.code === NO_SUCH_METHOD ? Promise.reject(e) : sessions.command(sessionId, def.name, arg)));
+  if (isObj(res) && res.type === "alias" && typeof res.target === "string" && res.target.trim())
+    res = await exec(res.target.trim().startsWith("/") ? res.target.trim() : `/${res.target.trim()}`);
+  return commandResult(def, arg, res);
+}
+
+const notice = (res: Record<string, unknown>) => (typeof res.notice === "string" && res.notice.trim() ? { notice: res.notice.trim() } : {});
+// Hermes strips colour from its worker's output, but not from a plugin's or a dispatched command's.
+const plain = (text: string) => text.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "");
+
+/** What Hermes's answer to `/name arg` asks of the app. */
+function commandResult(def: CommandDef, arg: string, res: unknown): CommandResult {
   if (!isObj(res)) throw new Error(`Hermes gave no answer to /${def.name}.`);
-  if (res.type === "send" && typeof res.message === "string")
-    return { kind: "send", message: res.message, ...(typeof res.notice === "string" && { notice: res.notice }) };
-  if ((res.type === undefined || res.type === "exec") && typeof res.output === "string") return { kind: "output", text: res.output };
+  const message = typeof res.message === "string" ? res.message : undefined;
+  if (res.type === "send" && message !== undefined) return { kind: "send", message, ...notice(res) };
+  if (res.type === "skill" && message?.trim())
+    return { kind: "skill", call: { name: def.name, arg }, display: typeof res.display === "string" && res.display.trim() ? res.display.trim() : `/${def.name}${arg ? ` ${arg}` : ""}`, ...notice(res) };
+  if (res.type === "prefill" && message !== undefined) return { kind: "prefill", text: message, ...notice(res) };
+  if ((res.type === undefined || res.type === "exec" || res.type === "plugin") && typeof res.output === "string") {
+    const warning = typeof res.warning === "string" && res.warning.trim() ? `${res.warning.trim()}\n\n` : "";
+    return { kind: "output", text: plain(`${warning}${res.output}`).trim() };
+  }
   throw new Error(`Hermes answered /${def.name} in a way this app doesn't handle.`);
 }
 

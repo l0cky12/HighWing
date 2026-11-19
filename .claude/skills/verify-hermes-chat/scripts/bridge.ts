@@ -126,6 +126,10 @@ const PASSWORD = "verify-pass";
 const server = new FakeHermes();
 const delayMs = Number(process.env.HV_DELAY_MS ?? 0);
 server.checkpoints.on = process.env.HV_CHECKPOINTS !== "off";
+// Hermes's own commands, as `commands.catalog` lists them at `bf0203a` (ADR 0225), and what two of them answer here.
+server.builtinCommands = true;
+server.slashAnswers.kanban = { output: "No tasks on the default board.\n\nkanban create \"<title>\" adds one." };
+server.slashAnswers.usage = { output: "Session tokens: 12,480 in / 3,210 out\nRate limit: 41 of 50 requests left this minute" };
 if (process.env.HV_COMPRESS === "rotate") server.compress = "rotate";
 
 // Synthetic seed data. Feature recipes in ../features/ name these titles; change both together.

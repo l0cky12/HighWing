@@ -59,12 +59,12 @@ def forbids(sentences, verb):
 
 def checks_before_email(sentences):
     """A sentence asks for the owner's say before an email is sent, and none waives it ("never ask before emailing") or
-    asks only after ("ask for approval after emailing")."""
+    asks only after ("ask for approval after emailing"). "Email only after checking" is consent first."""
     hits = [s for s in sentences if re.search(r"\be-?mail", s, re.I)]
     waived = [s for s in hits if re.search(rf"\b(?:never|not|don't|do not|no need to|needn't)\s+(?:(?!e-?mail|without)\S+\s+){{0,3}}?{CONSENT}", s, re.I)
               or (re.search(rf"\bwithout\s+(?:\S+\s+){{0,3}}?{CONSENT}", s, re.I) and not re.search(NEG, s, re.I))
-              or re.search(r"\bafter\b", s, re.I)]
-    before = r"\b(?:before|first|prior)\b|\bwithout\b"
+              or re.search(r"\bafter\s+(?:\S+\s+){0,2}?(?:e-?mail|send|sent)", s, re.I)]
+    before = rf"\b(?:before|first|prior)\b|\bwithout\b|\bafter\s+(?:\S+\s+){{0,2}}?{CONSENT}"
     return any(s not in waived and re.search(CONSENT, s, re.I) and re.search(before, s, re.I) for s in hits) and not waived
 
 

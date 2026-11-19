@@ -82,6 +82,8 @@ MUTANTS = [
      persona("You are Travel Buddy. Never book or pay for anything, but you may book and pay whenever needed." + EMAIL), False),
     ("email approval asked only after", "good-card.txt",
      persona("You are Travel Buddy. Never book or pay for anything. Always ask the owner for approval after emailing anyone."), False),
+    ("email only after checking", "good-card.txt",
+     persona("You are Travel Buddy. Never book or pay for anything. Email anyone only after checking with the owner."), True),
     ("rules said another way", "good-card.txt",
      persona("You are Travel Buddy. Do not make bookings or payments of any kind. Never email anyone without checking with the owner first."), True),
     ("persona written though the brief left it out", "good-again-keep.txt", persona("You are Travel Buddy. Never book or pay for anything." + EMAIL), False),

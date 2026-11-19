@@ -1,4 +1,4 @@
-import { Fragment, isValidElement, memo, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
+import { createContext, Fragment, isValidElement, memo, useContext, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import type { Element } from "hast";
 import { invoke } from "@tauri-apps/api/core";
@@ -83,6 +83,18 @@ function CodeBlock({ code, children }: { code: Element | undefined; children?: R
   );
 }
 
+/**
+ * Draws a fenced block the transcript knows in its own way, given its language, its text and the plain code block to
+ * fall back on; undefined draws every block as code. A Bot Chat draws Bot setup's block as its card (ADR 0231).
+ */
+export const FenceContext = createContext<((language: string, source: string, plain: ReactNode) => ReactNode) | undefined>(undefined);
+
+function Pre({ code, children }: { code: Element | undefined; children?: ReactNode }) {
+  const fence = useContext(FenceContext);
+  const plain = <CodeBlock code={code}>{children}</CodeBlock>;
+  return fence ? fence((code && languageOf(code)) || "", textOf(children), plain) : plain;
+}
+
 /** react-markdown has already emptied `data:` and other sources it doesn't allow. */
 function MarkdownImage({ src, alt, title }: { src?: string; alt?: string; title?: string }) {
   const [load, setLoad] = useState<"loading" | { dataUrl: string } | { failed: string }>();
@@ -119,7 +131,7 @@ function MarkdownImage({ src, alt, title }: { src?: string; alt?: string; title?
 // Made once, not on each render: a new `pre` function is a new component type to React, which remounts every code
 // block on each streamed delta.
 const components: Components = {
-  pre: ({ node, children }) => <CodeBlock code={node?.children.find((child) => child.type === "element")}>{children}</CodeBlock>,
+  pre: ({ node, children }) => <Pre code={node?.children.find((child) => child.type === "element")}>{children}</Pre>,
   a: ({ node, href, title, children }) => {
     const { dataPath, dataFolder } = node?.properties ?? {};
     return typeof dataPath === "string" ? (

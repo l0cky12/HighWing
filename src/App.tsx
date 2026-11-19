@@ -4677,6 +4677,7 @@ function ChatView({
       commands={commands}
       references={{ desk: referenceDesk, onTextModelSettings: onTextGenerationSettings }}
       ask={askHost}
+      setup={kind === "bot" ? hermes : undefined}
       onDismissSideQuestion={(id) => hermes.dismissSideQuestion(chat.id, id)}
       followUp={followUp}
       compare={compare}

@@ -28,7 +28,8 @@ import { SubagentsPanel, type SubagentsApi } from "./Subagents";
 import { SideQuestionPair } from "./SideQuestions";
 import { TurnCard } from "./TurnCard";
 import { AskCard, AskContext, type AskHost } from "./AskCard";
-import { Markdown } from "./Markdown";
+import { SetupContext, SetupItemContext, SetupLine, setupFence, useBotSetup, type BotSetupApi } from "./BotSetupCard";
+import { FenceContext, Markdown } from "./Markdown";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { chunkBlocks } from "./transcriptChunks";
 import { useTranscriptWindow } from "./transcriptWindow";
@@ -515,6 +516,7 @@ export function ChatPane({
   variants,
   onCheckpoints,
   ask,
+  setup,
 }: {
   chat: Chat;
   notLoaded?: boolean;
@@ -602,12 +604,15 @@ export function ChatPane({
    */
   onCheckpoints?: () => void;
   ask?: AskHost;
+  /** A Bot Chat's Bot setup (ADR 0231): its card in place of the bot's setup block, and Set it up. */
+  setup?: BotSetupApi;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const l = useLocale();
   const words = l.chat;
   const kind = chatKind(chat);
   const botOfChat = CHAT_POLICY[kind].ofBot ? bot : undefined;
+  const setupHost = useBotSetup(chat, kind === "bot" ? setup : undefined, botOfChat?.name ?? chat.title, status === "connected", (text) => onSend(text, []));
   const keys = useBindings();
   const labels = (chords: readonly Chord[]) => chords.map(chordLabel).join(" or ");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1109,6 +1114,8 @@ export function ChatPane({
         <PathsIn folder={chat.folder} session={chat.id}>
         <RunStopProvider value={runStop}>
         <AskContext.Provider value={ask}>
+        <SetupContext value={setupHost}>
+        <FenceContext value={setupHost ? setupFence : undefined}>
         <div className="transcript-inner">
           {policy.readOnly === "jobRun" ? (
             <div className="imported-note">
@@ -1203,6 +1210,8 @@ export function ChatPane({
             </div>
           )}
         </div>
+        </FenceContext>
+        </SetupContext>
         </AskContext.Provider>
         </RunStopProvider>
         </PathsIn>
@@ -1431,7 +1440,9 @@ const BlockView = memo(
       const usage = usageShown(block.usage, details);
       return (
         <div className="msg assistant" data-item={block.id} data-at={block.at}>
-          <Markdown text={block.text} query={query} streaming={live} />
+          <SetupItemContext value={block.id}>
+            <Markdown text={block.text} query={query} streaming={live} />
+          </SetupItemContext>
           {live && <span className="cursor" />}
           {block.interrupted && <div className="stopped">Stopped</div>}
           {!live && block.text.trim() && (
@@ -1467,7 +1478,7 @@ const BlockView = memo(
       );
     }
     if (block.kind === "thinking") return <Thought item={block} live={live} query={query} />;
-    if (block.kind === "returned") return <ReturnedCard item={block} query={query} date={date} />;
+    if (block.kind === "returned") return block.setup ? <SetupLine item={block} /> : <ReturnedCard item={block} query={query} date={date} />;
     if (block.kind === "approval")
       return <ApprovalCard item={block} offline={offline} movedAt={movedAt} onAnswer={(c, confirmed) => onAnswer(block.id, c, confirmed)} />;
     if (block.kind === "clarify" || block.kind === "sudo" || block.kind === "secret")

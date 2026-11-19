@@ -19,7 +19,7 @@ S=$(git rev-parse --show-toplevel)/.claude/skills/verify-hermes-chat/scripts; ex
 
 ```sh
 $S/hv bootstrap   # once per machine: Xvfb, xwd, xdotool, openbox, WebKitWebDriver, tauri-driver 2.1.0
-$S/hv build       # npm ci if needed, npm run build, cargo build --features tauri/custom-protocol --bins
+$S/hv build       # hv deps (npm ci if needed), npm run build, cargo build --features tauri/custom-protocol --bins
 ```
 
 - `bootstrap` uses system tools when present. On Debian without sudo it `apt-get download`s the packages and unpacks them under `~/.cache/hermes-verify/root`. On Arch it needs `xorg-server-xvfb` and `xdotool` installed, and fetches `webkitgtk-6.0` (which holds `WebKitWebDriver`), `openbox` and `xorg-xwd` from pacman's mirror, checks each against pacman's sync database, and unpacks them there. Done when it prints `hv: bootstrap ok`.
@@ -113,4 +113,4 @@ This ends the WebDriver session and kills the process groups this run started: t
 - `cargo test` with the same `CARGO_TARGET_DIR` rebuilds `debug/hermes-chat` without `custom-protocol`, and the app then shows "Could not connect to localhost". Run `hv build` again before `hv up`.
 - WebKitGTK allows one automation session per app process. `wd.mjs open` refuses to open a second session while `$HV_RUN/session` exists.
 - At high load (`uptime` 30 or more), raise `wait` timeouts rather than adding sleeps.
-- After changing `hv`, `wd.mjs` or `bridge.ts`, run `$S/selftest`. It needs only `hv bootstrap` (no build, no app). It checks `wait` timeouts, cleanup after a failed or interrupted `hv up` (including a child the driver left behind), that three concurrent `hv up` runs get three displays, and that the stand-in keeps serving after a WebSocket is closed or reset while it writes to it, and it prints `selftest: all ok`. CI runs it too, on every PR that touches this skill or the sources its stand-in bundles (`.github/workflows/verify-harness.yml`).
+- After changing `hv`, `wd.mjs` or `bridge.ts`, run `$S/selftest`. It needs only `hv bootstrap` (no build, no app), and runs `hv deps` itself. It checks `wait` timeouts, cleanup after a failed or interrupted `hv up` (including a child the driver left behind), that three concurrent `hv up` runs get three displays, and that the stand-in keeps serving after a WebSocket is closed or reset while it writes to it, and it prints `selftest: all ok`. CI runs it too, on every PR that touches this skill or the sources its stand-in bundles (`.github/workflows/verify-harness.yml`).

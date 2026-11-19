@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Launches and tears down an isolated, WebDriver-driven Hermes Chat for verification. See ../SKILL.md.
 #   hv bootstrap         install the headless tools privately under $HV_HOME (once per machine)
+#   hv deps              npm ci in this worktree when node_modules is missing or older than package-lock.json
 #   hv build             build the frontend and the debug app with the frontend embedded
 #   hv up [--dashboard URL]   start Xvfb, a window manager, a private D-Bus, the stand-in dashboard and tauri-driver
 #   hv doctor            read-only: is this run worth driving?
@@ -9,7 +10,7 @@
 #   hv x <xdotool args>  xdotool on the run's display, for native GTK dialogs WebDriver can't reach
 #   hv app <args>        run the built app on the run's display and bus, as a desktop key would (`hv app --stop`)
 #   hv down              stop everything this run started and delete its scratch state; evidence stays
-# Every command but bootstrap/build/up reads $HV_RUN, which `hv up` prints.
+# Every command but bootstrap/deps/build/up reads $HV_RUN, which `hv up` prints.
 set -euo pipefail
 
 HV_HOME=${HV_HOME:-$HOME/.cache/hermes-verify}
@@ -36,6 +37,8 @@ load() {
   # shellcheck disable=SC1091
   . "$HV_RUN/state.env"
 }
+# The stand-in's bundle needs this worktree's node_modules: without them rolldown still exits 0, leaving imports node can't load.
+deps_current() { [ "$REPO/node_modules/.package-lock.json" -nt "$REPO/package-lock.json" ]; }
 free_port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])'; }
 alive() { [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null; }
 # Process group $1 still has a member, even if its leader has exited (a driver whose WebKitWebDriver outlived it).
@@ -136,9 +139,11 @@ cmd_bootstrap() {
   echo "hv: bootstrap ok"
 }
 
+cmd_deps() { deps_current || (cd "$REPO" && npm ci --no-audit --no-fund); }
+
 cmd_build() {
   cd "$REPO"
-  [ -d node_modules ] && [ node_modules/.package-lock.json -nt package-lock.json ] || npm ci --no-audit --no-fund
+  cmd_deps
   npm run build
   CARGO_TARGET_DIR=$TARGET "$CARGO" build --manifest-path src-tauri/Cargo.toml --features tauri/custom-protocol --bins
   source_rev >"$TARGET/hv-build-rev"
@@ -149,6 +154,8 @@ cmd_up() {
   local dashboard=""
   while [ $# -gt 0 ]; do case $1 in --dashboard) dashboard=$2; shift 2 ;; *) die "unknown option $1" ;; esac; done
   [ -x "$APP" ] || die "no app at $APP; run \`hv build\`"
+  # Not installed here: concurrent `hv up`s in one worktree would run npm ci over each other.
+  [ -n "$dashboard" ] || deps_current || die "node_modules in $REPO is missing or older than package-lock.json; run \`hv deps\`"
   [ "$(cat "$TARGET/hv-build-rev" 2>/dev/null)" = "$(source_rev)" ] || echo "hv: WARNING the build is stale ($(cat "$TARGET/hv-build-rev" 2>/dev/null || echo none) vs source $(source_rev)); run \`hv build\` before proving a change" >&2
   local driver n
   driver=$(command -v tauri-driver || echo "$HV_HOME/cargo/bin/tauri-driver")
@@ -319,6 +326,6 @@ cmd_down() {
 }
 
 case "${1:-}" in
-  bootstrap | build | up | doctor | shot | state | x | app | down) c=$1; shift; "cmd_$c" "$@" ;;
-  *) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+  bootstrap | deps | build | up | doctor | shot | state | x | app | down) c=$1; shift; "cmd_$c" "$@" ;;
+  *) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac

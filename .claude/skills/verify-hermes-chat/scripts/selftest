@@ -84,6 +84,7 @@ SH
 chmod +x "$T/bin/tauri-driver"
 export PATH=$T/bin:$PATH
 hv() { "$HERE/hv" "$@"; }
+hv deps
 
 # A failed start leaves nothing running and no run dir, and keeps state.env with the evidence.
 code=0; FAKE_DRIVER=fail FAKE_CHILD=$T/driver-child.pid hv up >"$T/up.log" 2>&1 || code=$?

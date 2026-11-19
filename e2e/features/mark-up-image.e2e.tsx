@@ -1,4 +1,4 @@
-// Mark up a staged image (issue #32, ADR 0225): draw a box on a pasted, dropped or picked image, add a note, and send
+// Mark up a staged image (issue #32, ADR 0227): draw a box on a pasted, dropped or picked image, add a note, and send
 // the marked copy to Hermes with the note in the message words.
 import { expect, it } from "vitest";
 import { userEvent } from "vitest/browser";

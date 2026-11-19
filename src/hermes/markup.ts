@@ -1,4 +1,4 @@
-// Mark up (ADR 0225): the box the owner draws on a staged image, its note, and the words they add to the message. The
+// Mark up (ADR 0227): the box the owner draws on a staged image, its note, and the words they add to the message. The
 // composer's dialog draws the box into a copy of the image (MarkUp.tsx); these are its shapes and its words. Nothing
 // here knows about the Preview's pages: a staged image has no address, still or view.
 

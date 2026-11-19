@@ -1,4 +1,4 @@
-// Mark up (ADR 0225): a dialog over the chat pane where the owner drags one box on a staged image and types a note
+// Mark up (ADR 0227): a dialog over the chat pane where the owner drags one box on a staged image and types a note
 // about it. Confirming draws the box into a copy of the image and hands it to the composer, which swaps it in for the
 // original; Cancel changes nothing. The image shown is the chip's own thumbnail, so anything the chip draws can be
 // marked.

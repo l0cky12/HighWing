@@ -2203,7 +2203,7 @@ function Composer({
   const stageRef = useRef(stageFiles);
   stageRef.current = stageFiles;
 
-  // Mark up (ADR 0225): the image being marked, and what confirming does. The marked copy is staged as a pasted file
+  // Mark up (ADR 0227): the image being marked, and what confirming does. The marked copy is staged as a pasted file
   // is, so the original, maybe the owner's own file, is only read; the copy takes the original's place in the strip
   // and its number, and the original is let go only if the app made it. A string is why it couldn't, for the dialog.
   // `marking` is one open dialog: a copy staged after it closed (the chat changed, its image went) is let go unused.

@@ -89,7 +89,7 @@ export class Previews {
  * A staged attachment. An image whose preview is read, or still being read, is a square thumbnail with Remove over its
  * corner (ADR 0220). A file, or an image that couldn't be read or shown, is a small chip with a paperclip.
  * `annotation`: where an annotation's image came from, and whether the Preview's page has moved since (ADR 0094).
- * `onMarkUp`: an image the webview has drawn offers Mark up in its other corner (ADR 0225).
+ * `onMarkUp`: an image the webview has drawn offers Mark up in its other corner (ADR 0227).
  */
 export function AttachmentChip({
   file,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { markedName, markedType, markupWords, NOTE_MAX } from "./markup";
 
-describe("Mark up words and names (ADR 0225)", () => {
+describe("Mark up words and names (ADR 0227)", () => {
   it("names the box and the image as Hermes gets it, with the note on one line", () => {
     expect(markupWords("shot.png", 1, "  the Save button\n is cut off ")).toBe("Box 1 on shot.png: the Save button is cut off");
     expect(markupWords("shot.png", 2, "")).toBe("Box 2 on shot.png.");

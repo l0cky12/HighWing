@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// The Mark up dialog on its own (ADR 0225): one box, a note, and keys that never lose the owner's work by surprise.
+// The Mark up dialog on its own (ADR 0227): one box, a note, and keys that never lose the owner's work by surprise.
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Attachment } from "../hermes/model";

@@ -249,7 +249,7 @@ A pointer at part of a web page in the Preview, staged in the composer: an image
 _Avoid_: comment (the official desktop app's word), inspector
 
 **Mark up**:
-A box the owner draws on a staged image, with a note. The image is swapped for a copy with the box drawn on it, in the same place and with the same image number, and `Box N on name: note` goes in the words. One box a Mark up; marking again adds box 2. Unlike an **Annotation** it points at an attached image, not a page in the Preview, so its words have no address or time (ADR 0225).
+A box the owner draws on a staged image, with a note. The image is swapped for a copy with the box drawn on it, in the same place and with the same image number, and `Box N on name: note` goes in the words. One box a Mark up; marking again adds box 2. Unlike an **Annotation** it points at an attached image, not a page in the Preview, so its words have no address or time (ADR 0227).
 _Avoid_: annotate (an attached image), edit image
 
 **Keyboard shortcut**:

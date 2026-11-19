@@ -226,7 +226,7 @@ describe("A sent message's images", () => {
   });
 });
 
-describe("A marked-up image's thumbnail (ADR 0225)", () => {
+describe("A marked-up image's thumbnail (ADR 0227)", () => {
   it("shows the bytes the webview drew at once, never reads them back, and releases them once unstaged", async () => {
     const { previews, live, reads, land, changes } = setUp({ [rack.path]: "\x89PNG" });
     const marked = img("/home/lena/.cache/hermes-chat/captures/1/3/rack.png");

@@ -324,7 +324,7 @@ describe("Annotations on the desk (ADR 0094)", () => {
   });
 });
 
-describe("Mark up on the desk (ADR 0225)", () => {
+describe("Mark up on the desk (ADR 0227)", () => {
   it("puts the marked copy in the original's place with its number, and deletes the original only if the app made it", async () => {
     const rust = fakeApi();
     const desk = new AttachmentDesk(rust.api);

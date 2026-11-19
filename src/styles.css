@@ -3914,7 +3914,7 @@ div.export-preview.export-page { height: auto; padding: 10px 12px; background: v
 .annotate.reviewing .annotate-notes { border-bottom: 1px solid var(--line); }
 .chip-stale .chip-size { white-space: nowrap; }
 
-/* ---------- Mark up a staged image (MarkUp.tsx, ADR 0225) ---------- */
+/* ---------- Mark up a staged image (MarkUp.tsx, ADR 0227) ---------- */
 .chip-card .chip-card-markup { top: auto; right: auto; left: 5px; bottom: 5px; }
 .markup { position: absolute; inset: 0; z-index: 20; container-type: size; display: flex; flex-direction: column; background: var(--sidebar); color: var(--text); }
 .markup-bar { border-bottom: 1px solid var(--line); }

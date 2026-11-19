@@ -33,7 +33,7 @@ export type ComposerSink = {
  * back from a message Hermes didn't confirm. `sent`: they went with a message, which holds them from then on (`hold`,
  * `sent`, `finish`). `removed`: the owner took them out. `gone`: the chat was deleted or archived. `replaced`: Mark up
  * swapped an image for its marked copy (`to`, the desk's own), which takes its place, number and label, with one more
- * box drawn on it (ADR 0225); the original is let go. A file the desk owns
+ * box drawn on it (ADR 0227); the original is let go. A file the desk owns
  * is staged in one chat at a time, so it is deleted once it is removed, its chat goes, or its message no longer needs
  * it; signing out deletes them all (`dispose`). A file the owner picked from their own folders can be in several.
  */

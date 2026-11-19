@@ -188,6 +188,7 @@ cmd_up() {
   # bind(0) never hands out a bound port, and a program that sets SO_REUSEADDR (tauri-driver, WebKitWebDriver, node)
   # can still bind and listen on it (#88).
   local want_ports; read -ra want_ports <<<"${HV_TEST_PORTS:-0 0 0}"
+  mkfifo "$run/ports"
   python3 -c 'import os, signal, socket, sys, time
 signal.signal(signal.SIGINT, signal.SIG_IGN)
 socks = []
@@ -203,8 +204,7 @@ print(*(s.getsockname()[1] for s in socks), flush=True)
 while os.getppid() == int(sys.argv[1]):
     time.sleep(0.1)' "$$" "${want_ports[@]}" >"$run/ports" 2>"$run/ports.err" &
   PORT_HOLDER_PID=$!
-  wait_for "[ -s '$run/ports' ] || ! alive $PORT_HOLDER_PID" 10 || true
-  read -r driver_port native_port bridge_port <"$run/ports" ||
+  read -r -t 10 driver_port native_port bridge_port <"$run/ports" ||
     die "couldn't hold this run's ports: $(tail -1 "$run/ports.err" | grep . || echo "the holder printed none in 10 s")"
   save_state
 

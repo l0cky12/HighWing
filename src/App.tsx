@@ -62,6 +62,8 @@ import { LiveConnections, attention as attentionOf, withoutServer, type ChatRef,
 import { handoffs as handoffsOf, nextHandoffChange, outstandingIds, type Handoff, type StopWaiting } from "./hermes/dispatched";
 import { ChatPane, TeammatesContext, type Comparing, type FollowUpHost, type JumpTarget, type Teammates } from "./ui/ChatPane";
 import type { AskHost } from "./ui/AskCard";
+import { askedIn } from "./hermes/asks";
+import { withPicks } from "./hermes/mentionPicker";
 import type { ChatPin } from "./ui/ChatMenu";
 import { BranchDialog, BranchedFrom } from "./ui/Branch";
 import { MembershipDialog, MembershipStatus, needsOwner as membershipNeedsOwner } from "./ui/MembershipSync";
@@ -4354,23 +4356,24 @@ function ChatView({
   );
   const hermesList = serverCommands.state === "ready" ? serverCommands.list.hermes : undefined;
   const commandList = useMemo(() => commandSet(hermesList), [hermesList]);
-  // A message naming other bots goes to them (ADR 0233): the cards, and this chat as the chip it carries once it has
-  // something to summarize.
+  // A message naming other bots goes to them (ADR 0233, 0234): the cards, and this chat as the chip it carries once it
+  // has something to summarize. A chat that hasn't started has no transcript to hold a card.
   const asked = useSyncExternalStore(hermes.asks.subscribe, hermes.asks.list);
+  const askedHere = useMemo(() => askedIn(asked, chat.id, policy.ofBot), [asked, chat.id, policy.ofBot]);
   const hasHistory = chat.items.some((i) => (i.kind === "user" && !i.outgoing) || i.kind === "assistant");
   const askWords = useLocale().chat.ask;
-  const selfTitle = bot && askWords.referenceTitle(bot.name);
+  const selfTitle = policy.ofBot ? bot && askWords.referenceTitle(bot.name) : chat.title.trim();
   const askSelf = useMemo(() => (hasHistory && selfTitle ? { chatId: chat.id, title: selfTitle } : undefined), [hasHistory, selfTitle, chat.id]);
   const askHost: AskHost | undefined =
-    kind === "bot"
+    policy.asks !== "none" && started
       ? {
-          asks: asked,
+          asks: askedHere,
           bots: otherBots,
           self: askSelf,
           rule: askRule(policy, !!compare),
           connected: status === "connected",
           send: (to, text, refs) => {
-            const why = hermes.asks.send(chat.id, to, text, refs);
+            const why = hermes.asks.send(chat.id, to, text, refs, policy.ofBot ? undefined : chat.title);
             if (!why) savedDrafts.take(shownDraft);
             return why;
           },
@@ -4379,7 +4382,9 @@ function ChatView({
           edit: (id) => {
             const back = hermes.asks.takeBack(id);
             if (!back) return;
-            keepDraft(shownDraft, back.text);
+            // What the owner picked is picked again, as the words come back to a chat where only a picked bot asks.
+            const words = policy.asks === "picked" ? withPicks(back.text, otherBots.filter((b) => back.profiles.includes(b.profile))) : back.text;
+            keepDraft(shownDraft, words);
             referenceDesk.putBack(shownDraft, back.references);
             if (askSelf && !back.references.some((r) => r.chatId === askSelf.chatId)) referenceDesk.decline(shownDraft);
           },
@@ -4389,7 +4394,7 @@ function ChatView({
   const commands: CommandHost = {
     commands: commandList,
     models: { catalog, favorites, current: shownModel },
-    references: { chats: referable, bots: kind === "bot" ? otherBots : undefined, reference: (c) => referenceDesk.add(shownDraft, { chatId: c.id, title: c.title }) },
+    references: { chats: referable, bots: askHost && askHost.rule !== "none" && otherBots.length ? otherBots : undefined, reference: (c) => referenceDesk.add(shownDraft, { chatId: c.id, title: c.title }) },
     skills: status === "connected" ? skillCommands.skills : undefined,
     refreshSkills: skillCommands.refresh,
     guide: caps.caps.commands.state === "unsupported" ? () => openGuide(guideUrl("commands")) : undefined,

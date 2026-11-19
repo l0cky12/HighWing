@@ -1,7 +1,8 @@
-// The owner's "@" in a Bot Chat (ADR 0233). A message that names other bots goes to each named bot's own Bot Chat as
-// the owner's message, never the app relaying a bot's (ADR 0207), with the asking chat attached as a Referenced chat
-// (ADR 0165). The asking bot takes no turn. Hermes keeps nothing in the asking chat, so this computer keeps the asks of
-// each profile's Bot Chat: the words, the bots asked, where the card goes, and each reply once it has ended. The
+// The owner's "@" in a Bot Chat (ADR 0233), or in an ordinary chat with a bot picked from the menu (ADR 0234). A message
+// that names other bots goes to each named bot's own Bot Chat as the owner's message, never the app relaying a bot's
+// (ADR 0207), with the asking chat attached as a Referenced chat (ADR 0165). The asking bot takes no turn. Hermes keeps
+// nothing in the asking chat, so this computer keeps the asks of each profile's chats: the words, the bots asked, where
+// the card goes, and each reply once it has ended. The
 // message carries an ask id in its attached context, which joins the record to the asked bot's stored rows when the
 // app has to settle an ask it lost sight of. Nothing ever scans a Bot Chat for asks the record doesn't know.
 //
@@ -40,12 +41,19 @@ export type AskTarget = Who &
     | { state: "answered"; seat: AskSeat; reply: string; ended: "complete" | "interrupted" | "error" }
   );
 
+/** An ordinary chat an ask was sent from. Its `title` is as it was then, which a stamp sent again says. */
+export type AskChat = { id: string; title: string };
+
 /**
- * One message the owner sent from a Bot Chat. `afterRow`: that chat's newest stored row then, which places the card.
- * `titles`: the chats it referenced. `references`: kept while a bot may still have to be sent it again.
- * Invariant: `targets` is non-empty, one per profile.
+ * One message the owner sent from a chat. `chat`: the ordinary chat it came from; none for the profile's Bot Chat,
+ * which has no other, and for an ask kept before an ordinary chat could ask. `afterRow`: that chat's newest stored
+ * row then, which places the card. `titles`: the chats it referenced. `references`: kept while a bot may still have to
+ * be sent it again. Invariant: `targets` is non-empty, one per profile.
  */
-export type Ask = { id: AskId; text: string; at: number; afterRow?: number; titles: string[]; references?: SentReference[]; targets: AskTarget[] };
+export type Ask = { id: AskId; text: string; at: number; chat?: AskChat; afterRow?: number; titles: string[]; references?: SentReference[]; targets: AskTarget[] };
+
+/** The asks that belong on a chat's transcript: those sent from it, or, for a Bot Chat, from the profile's Bot Chat. */
+export const askedIn = (asks: readonly Ask[], chatId: string, ofBot: boolean): Ask[] => asks.filter((a) => (a.chat ? a.chat.id === chatId : ofBot));
 
 /** Why an ask didn't go: not connected, the background connection, or this computer couldn't keep it. */
 export type AskRefusal = "offline" | "background" | "unsaved";
@@ -63,12 +71,16 @@ export function askTargets<B extends { profile: string; handle: string }>(text: 
 const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
 const STAMPS = /^\[Asked from: .+ · ([0-9a-z]{10})\]$/gm;
 
-/** The block every ask's message starts its attached context with, before its references, so no summary takes it in. */
-export const askStampBlock = (id: AskId, from: { name: string; handle: string }) => {
+/**
+ * The block every ask's message starts its attached context with, before its references, so no summary takes it in. It
+ * says where the owner wrote the message: `chat` for an ordinary chat, none for the asker's Bot Chat. A chat's title
+ * can hold any text, so it goes through `oneLine` as the name does, and the line it is on still ends " · <id>]".
+ */
+export const askStampBlock = (id: AskId, from: { name: string; handle: string }, chat?: { title: string }) => {
   const name = oneLine(from.name);
-  return neutralize(
-    `[Asked from: Bot Chat with ${name} · ${id}]\nThe owner wrote this in their Bot Chat with ${name} (@${from.handle}) and sent it to you. ${name} takes no turn; the owner reads your reply there.`,
-  );
+  const title = chat && oneLine(chat.title);
+  const where = !chat ? `Bot Chat with ${name}` : title ? `chat "${title}" with ${name}` : `chat with ${name}`;
+  return neutralize(`[Asked from: ${where} · ${id}]\nThe owner wrote this in their ${where} (@${from.handle}) and sent it to you. ${name} takes no turn; the owner reads your reply there.`);
 };
 
 /**
@@ -172,6 +184,7 @@ export function toStoredAsk(v: unknown): Ask | undefined {
     id: v.id as AskId,
     text: v.text,
     at: v.at,
+    ...(isObj(v.chat) && str(v.chat.id) && str(v.chat.title) && { chat: { id: v.chat.id, title: v.chat.title } }),
     ...(typeof v.afterRow === "number" && { afterRow: v.afterRow }),
     titles: Array.isArray(v.titles) ? v.titles.filter(str) : [],
     ...(refs.length && { references: refs }),
@@ -184,12 +197,15 @@ export type Asks = {
   subscribe(fn: () => void): () => void;
   /** Oldest first; the same array until something changes. */
   list(): readonly Ask[];
-  /** Sends `text` from the Bot Chat `chatId` to each bot. The card is in `list()` before this returns; or why not. */
-  send(chatId: string, to: readonly Who[], text: string, references: readonly SentReference[]): AskRefusal | undefined;
+  /**
+   * Sends `text` from the chat `chatId` to each bot. `title`: that chat's, for an ordinary chat; none for a Bot Chat. The
+   * card is in `list()` before this returns; or why not.
+   */
+  send(chatId: string, to: readonly Who[], text: string, references: readonly SentReference[], title?: string): AskRefusal | undefined;
   /** A failed or unknown bot, sent again with the same id. An unknown one is looked for first, and sent only if missing. */
   retry(id: AskId, profile: string): void;
-  /** Edit: the failed bots come off the card; the words and references come back. */
-  takeBack(id: AskId): { text: string; references: SentReference[] } | undefined;
+  /** Edit: the failed bots come off the card; the words, those bots' profiles and the references come back. */
+  takeBack(id: AskId): { text: string; profiles: string[]; references: SentReference[] } | undefined;
   /** A bot comes off the card, in any state but `sending`; the card goes with its last bot. */
   dismiss(id: AskId, profile: string): void;
 };
@@ -396,7 +412,7 @@ export function createAsks(port: AskPort): { asks: Asks; wire: AskWire } {
     try {
       const session = await port.botChat(k.profile, t.name);
       const w = await watchOf(k.profile, session);
-      const context = [askStampBlock(ask.id, asker), ...(ask.references ?? []).map(referenceBlock)];
+      const context = [askStampBlock(ask.id, asker, ask.chat), ...(ask.references ?? []).map(referenceBlock)];
       w.busy++;
       let res: { held: boolean; userRowId?: number };
       try {
@@ -506,7 +522,7 @@ export function createAsks(port: AskPort): { asks: Asks; wire: AskWire } {
       return () => void listeners.delete(fn);
     },
     list: () => ledger(port.shown().profile),
-    send(chatId, to, text, references) {
+    send(chatId, to, text, references, title) {
       const why = port.cantSend();
       if (why) return why;
       const asker = port.shown();
@@ -515,6 +531,7 @@ export function createAsks(port: AskPort): { asks: Asks; wire: AskWire } {
         id: newAskId(),
         text,
         at: Date.now(),
+        ...(title !== undefined && { chat: { id: chatId, title } }),
         ...(afterRow !== undefined && { afterRow }),
         titles: references.map((r) => r.title),
         ...(references.length && { references: [...references] }),
@@ -548,7 +565,7 @@ export function createAsks(port: AskPort): { asks: Asks; wire: AskWire } {
       const profile = port.shown().profile;
       const ask = ledger(profile).find((a) => a.id === id);
       if (!ask?.targets.some((t) => t.state === "failed")) return undefined;
-      const back = { text: ask.text, references: ask.references ?? [] };
+      const back = { text: ask.text, profiles: ask.targets.flatMap((t) => (t.state === "failed" ? [t.profile] : [])), references: ask.references ?? [] };
       write(profile, (l) => l.flatMap((a) => (a.id !== id ? [a] : a.targets.some((t) => t.state !== "failed") ? [{ ...a, targets: a.targets.filter((t) => t.state !== "failed") }] : [])));
       return back;
     },

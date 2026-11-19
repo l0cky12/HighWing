@@ -1,8 +1,8 @@
 // The composer's slash commands (commands.ts, ADR 0015): the menu that opens as a "/" starts the message, the command
 // help, the question before a destructive command, and what a command answers. The same menu offers the profile's
 // skills after the commands, and a "$" anywhere in the message opens it with skills alone (skillCommands.ts). An "@"
-// opens it with the profile's other chats, to reference one (chatReferences.ts), and in a Bot Chat with the other bots
-// above them, to name one (mentionPicker.ts).
+// opens it with the profile's other chats, to reference one (chatReferences.ts), and in a chat that can ask a bot with
+// the other bots above them, to pick one (mentionPicker.ts).
 import { type KeyboardEvent, type ReactNode, type RefObject, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Link2, X } from "lucide-react";
 import { argProblem, commandSet, completion, type CommandDef, type CommandSet } from "../hermes/commands";
@@ -41,7 +41,8 @@ export type CommandHost = {
   extensions?: ExtensionCommands;
   /**
    * The chats an "@" can reference here, and adding one to the message. Picking one never sends. `bots`: the bots an
-   * "@" can name, set only in a Bot Chat: every bot on the connection but this chat's. Picking one puts its "@handle" in.
+   * "@" can name, set only where the chat can ask a bot (ADR 0234): every bot on the connection but this chat's. Picking
+   * one puts its "@handle" in, marked as picked.
    */
   references?: { chats: readonly ReferableChat[]; bots?: readonly NamedBot[]; reference(chat: ReferableChat): void };
 };

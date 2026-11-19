@@ -601,7 +601,7 @@ export function ChatPane({
    * a Hermes without the checkpoint methods.
    */
   onCheckpoints?: () => void;
-  /** A Bot Chat's asks of other bots (ADR 0233): its Asked cards, and the composer's route for a message naming a bot. */
+  /** A chat's asks of other bots (ADR 0233, 0234): its Asked cards, and the composer's route for a message naming a bot. */
   ask?: AskHost;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -2004,7 +2004,7 @@ function Composer({
   /** While a reply runs, Enter queues or steers by its `mode`, and Ctrl+Enter does the other. */
   followUp?: FollowUpHost;
   compare?: Comparing;
-  /** In a Bot Chat: a message whose pills name bots goes to them instead (ADR 0233). */
+  /** A message whose pills name bots goes to them instead (ADR 0233, 0234). */
   ask?: AskHost;
 }) {
   const keys = useBindings();
@@ -2421,7 +2421,7 @@ function Composer({
   // The "@" word the menu is open on stays words until it is picked, so typing "@bram" in full doesn't flash a pill.
   const bots = commands?.references?.bots;
   const atButton = bots ? atWords.button : "Reference a chat";
-  // The first bot named brings this chat along as a Referenced chat, which the owner can remove (ADR 0233).
+  // The first bot named brings this chat along as a Referenced chat, which the owner can remove (ADR 0233, 0234).
   const self = ask?.self;
   const rule = ask?.rule ?? "none";
   const naming = !!self && !!bots && askTargets(text, bots, rule).length > 0;

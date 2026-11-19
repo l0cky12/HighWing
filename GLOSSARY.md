@@ -6,7 +6,7 @@ A personal desktop chat client for the owner's own Hermes Agent servers, one at 
 
 **Chat**:
 One Hermes conversation as this app shows it, with its full message history.
-_Avoid_: session (Hermes's word for the same thing; keep it for server-side talk), conversation, thread (that is one of a bot's threads)
+_Avoid_: session (Hermes's word for the same thing; keep it for server-side talk), conversation, thread
 
 **Active**:
 The state of a chat the owner is currently working in: any chat that isn't Archived. The list doesn't label it. An Active chat shows in the Inbox when it needs the owner or is done, in Working while Hermes replies in it or waits on work it handed off, and in Snoozed while it is snoozed (ADR 0036, ADR 0063). A chat becomes Active when the owner starts it in this app, or when the owner sends a message in it from this app.
@@ -156,24 +156,12 @@ _Avoid_: conflict (in the interface), out of date, stale
 A bot's one chat that always continues: the profile's chat titled exactly "Bot Chat". Hermes finds it by that title each time it opens, never by a remembered id or by which chat is newest. It is created only when the bot has none, with no message sent. It stays out of the chat list's sections and search: its bot's row in Bots mode and Alt+B are the ways to it (ADR 0195). Alt+B opens the shown profile's, and from it goes back to the chat before. `/new` in it compacts it instead of starting a new chat (ADR 0066).
 _Avoid_: forever chat, canonical chat, DM, main chat
 
-**Thread**:
-Another conversation with a bot besides its Bot Chat, on one topic. A bot has any number. It is a hidden Hermes session in the bot's profile titled "Bot Thread: <topic>", and that title is how the app finds it each time, as "Bot Chat" finds the Bot Chat. It is listed under its bot's row in Bots mode and stays out of Chats mode and search. It can be renamed by topic and deleted, and `/new` in it compacts it. A compaction of the Bot Chat or of the thread leaves it under its bot (ADR 0211).
-_Avoid_: side chat, sub-chat, topic (that is what a thread is about), branch (a Branch is an ordinary chat in the list)
-
-**New thread**:
-The row under a bot's threads that starts a thread with no history. The owner types its topic, and Enter starts it. A topic that already has an empty thread opens that one (ADR 0211).
-_Avoid_: add thread, new topic
-
-**Thread from here**:
-The action under a message of a Bot Chat that starts a thread with the Bot Chat's history up to that message. Hermes copies the history, as for a Branch, and the preview says what is copied. The Bot Chat stays as it is (ADR 0211).
-_Avoid_: fork, branch to thread, split
-
 **Chats mode** / **Bots mode** (of the chat list):
-What the chat list panel shows, picked with the switch at its top: the shown profile's chats, or the bots. The owner picks the mode and it is kept across restarts; opening a chat, New chat and a profile switch leave it as it is. Ctrl+Shift+B flips it. The tab that isn't shown says what waits there: the Inbox's count, or how many bots in other profiles need the owner. Chats mode names a bot in another profile that needs the owner. Bots mode keeps New chat and Search above the bots, then New bot and Reload, and lists each bot's threads under its row (ADR 0195, ADR 0203, ADR 0211). A right-click on a bot there opens its menu (ADR 0194). A Hermes without Bot Mode has no switch.
+What the chat list panel shows, picked with the switch at its top: the shown profile's chats, or the bots. The owner picks the mode and it is kept across restarts; opening a chat, New chat and a profile switch leave it as it is. Ctrl+Shift+B flips it. The tab that isn't shown says what waits there: the Inbox's count, or how many bots in other profiles need the owner. Chats mode names a bot in another profile that needs the owner. Bots mode keeps New chat and Search above the bots, then New bot and Reload, and lists one row per bot (ADR 0195, ADR 0203, ADR 0225). A right-click on a bot there opens its menu (ADR 0194). A Hermes without Bot Mode has no switch.
 _Avoid_: Bot Mode (that is Hermes's feature), bot mode (its name while it followed the open chat, ADR 0066), bots sidebar
 
 **Bot visit**:
-A bot in another profile opened from Bots mode. The app switches to the bot's profile, since its Bot Chat opens only there, and keeps the profile the owner's chats are on and the chat they were in. Picking Chats or New chat goes back there, and the next launch opens there. A thread of that bot opens the same way and keeps the visit going (ADR 0211). Any other way to another profile, or an ordinary chat of the bot's profile, makes the bot's profile the owner's, and the visit ends (ADR 0203).
+A bot in another profile opened from Bots mode. The app switches to the bot's profile, since its Bot Chat opens only there, and keeps the profile the owner's chats are on and the chat they were in. Picking Chats or New chat goes back there, and the next launch opens there. Any other way to another profile, or an ordinary chat of the bot's profile, makes the bot's profile the owner's, and the visit ends (ADR 0203).
 _Avoid_: peek, temporary switch
 
 **Connection**:
@@ -270,7 +258,7 @@ _Avoid_: summon key
 
 **Branch**:
 A new chat that starts with another chat's history up to one message, made from that message with Branch from here. Hermes copies the history and keeps which chat the branch came from, so every Hermes client has it. Hermes copies what the owner and Hermes said, and Hermes's reasoning, but not tool outputs. A file a copied message refers to stays where it is on the server, for the branch to read while it's there. The chat it came from stays as it was. A branch has its own Draft and Queued messages, and what the owner sends goes to it alone. It is Active, runs on its parent's model in its parent's folder, and takes Hermes's name for it (the parent's title with a number) unless the owner gives one. Its top says where it came from. Which message that was is kept on this computer only. A branch can't be made while a reply is running or an Approval waits. Branching never undoes anything Hermes did on the server (ADR 0027).
-_Avoid_: fork, copy, clone, thread (a thread made by Thread from here is a bot's, hidden and under its bot)
+_Avoid_: fork, copy, clone, thread
 
 **Version** (of a turn):
 Another take on one turn of a chat, made with Edit under the owner's message or Regenerate under the turn's last reply. Each version is a Branch made through the owner's message. Hermes takes back the branch's copy of the message, then the message goes again in the branch: the owner's new words for Edit, the same words for Regenerate. The chat it was asked from keeps its message, its answer and everything after. Under the turn's last reply, a switcher shows which version this chat is (2 / 3), whether it is the Original, Edited or Regenerated, and the model and settings it ran on, and opens the others. A turn is numbered by the owner's messages before it, so it is the same in a chat and its branches. Which turn a version is of is kept on this computer only. A message sent with an image can't be sent again, so it has no versions (ADR 0035).

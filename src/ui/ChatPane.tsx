@@ -21,7 +21,6 @@ import { QuestionCard } from "./QuestionCard";
 import { Menu, PinItem, type ChatPin } from "./ChatMenu";
 import { agentSend, type AgentSend } from "../hermes/agentMessages";
 import { CHAT_POLICY, chatKind, policyOf } from "../hermes/chatKind";
-import { threadTopic } from "../hermes/threads";
 import { DeleteChatDialog } from "./DeleteChat";
 import { ExportChatDialog, type ExportMode } from "./ExportChat";
 import { QueuePanel, type QueueApi } from "./Queue";
@@ -57,7 +56,7 @@ import { replyFiles } from "../hermes/fileChanges";
 import { ShowInChatContext, type ShowInChat } from "./showInChat";
 import { linkTarget, previewName, toolTargets, withoutBidi } from "../hermes/preview";
 import { type CommandHost, useSlashCommands } from "./SlashCommands";
-import { BranchButton, ThreadButton } from "./Branch";
+import { BranchButton } from "./Branch";
 import { useWindowHidden } from "./windowState";
 import { EditButton, RegenerateButton, VariantNav } from "./Replay";
 import { RunButton } from "./RunView";
@@ -560,7 +559,7 @@ export function ChatPane({
   /** What sending does while the reply runs: queue or steer (ADR 0057). Without it, it queues. */
   followUp?: FollowUpHost;
   compare?: Comparing;
-  branch?: { blocked?: string; onBranch: (itemId: string) => void; onThread?: (itemId: string) => void };
+  branch?: { blocked?: string; onBranch: (itemId: string) => void };
   /** Opens a reply's Run view (ADR 0178). */
   onRun?: (itemId: string) => void;
   branchedFrom?: ReactNode;
@@ -577,7 +576,6 @@ export function ChatPane({
   const words = l.chat;
   const kind = chatKind(chat);
   const botOfChat = CHAT_POLICY[kind].ofBot ? bot : undefined;
-  const topic = botOfChat && kind === "thread" ? threadTopic(chat.title) : undefined;
   const keys = useBindings();
   const labels = (chords: readonly Chord[]) => chords.map(chordLabel).join(" or ");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -634,9 +632,6 @@ export function ChatPane({
   const branchRef = useRef(branch?.onBranch);
   branchRef.current = branch?.onBranch;
   const onBranch = useCallback((itemId: string) => branchRef.current?.(itemId), []);
-  const threadRef = useRef(branch?.onThread);
-  threadRef.current = branch?.onThread;
-  const onThread = useCallback((itemId: string) => threadRef.current?.(itemId), []);
   const runRef = useRef(onRun);
   runRef.current = onRun;
   const openRun = useCallback((itemId: string) => runRef.current?.(itemId), []);
@@ -959,21 +954,7 @@ export function ChatPane({
           {chat.source !== "app" && <SourceIcon source={chat.source} size={13} />}
           {botOfChat && <BotFace bot={botOfChat} size="sm" />}
           <span translate={botOfChat ? "no" : undefined}>{botOfChat?.name ?? chat.title}</span>
-          {topic !== undefined && (
-            <>
-              <span className="chat-title-sep" aria-hidden>
-                /
-              </span>
-              <span className="chat-title-topic" translate="no">
-                {topic}
-              </span>
-            </>
-          )}
-          {topic !== undefined ? (
-            <span className="badge" title={l.threads.badgeTip}>
-              {l.threads.badge}
-            </span>
-          ) : kind === "bot" ? (
+          {kind === "bot" ? (
             <span className="badge" title={words.botChatTip}>
               {words.botChat}
             </span>
@@ -1155,7 +1136,6 @@ export function ChatPane({
               canRetry={canRetry}
               onOutgoing={onOutgoing}
               onBranch={branch && onBranch}
-              onThread={branch?.onThread && onThread}
               branchBlocked={branch?.blocked}
               onRun={onRun && openRun}
               onReplay={replay && onReplay}
@@ -1305,7 +1285,6 @@ const BlockView = memo(
     canRetry,
     onOutgoing,
     onBranch,
-    onThread,
     branchBlocked,
     onRun,
     onReplay,
@@ -1328,7 +1307,6 @@ const BlockView = memo(
     canRetry: boolean;
     onOutgoing: (itemId: string, action: OutgoingAction) => void;
     onBranch?: (itemId: string) => void;
-    onThread?: (itemId: string) => void;
     branchBlocked?: string;
     onRun?: (itemId: string) => void;
     onReplay?: (itemId: string, kind: ReplayKind) => void;
@@ -1395,7 +1373,6 @@ const BlockView = memo(
               <CopyButton words={() => block.text} what="message" />
               {onReplay && <EditButton blocked={replayBlocked} onEdit={() => onReplay(block.id, "edit")} />}
               {onBranch && <BranchButton blocked={branchBlocked} onBranch={() => onBranch(block.id)} />}
-              {onThread && <ThreadButton blocked={branchBlocked} onThread={() => onThread(block.id)} />}
             </div>
           )}
           {nav}
@@ -1416,7 +1393,6 @@ const BlockView = memo(
                 <CopyButton words={() => replyMarkdown(block.text)} what="reply" />
                 {onReplay && <RegenerateButton blocked={replayBlocked} onRegenerate={() => onReplay(block.id, "regenerate")} />}
                 {onBranch && <BranchButton blocked={branchBlocked} onBranch={() => onBranch(block.id)} />}
-                {onThread && <ThreadButton blocked={branchBlocked} onThread={() => onThread(block.id)} />}
                 {run && <RunButton onOpen={run} />}
               </div>
             </div>
@@ -1465,7 +1441,6 @@ const BlockView = memo(
     a.canRetry === b.canRetry &&
     a.onOutgoing === b.onOutgoing &&
     a.onBranch === b.onBranch &&
-    a.onThread === b.onThread &&
     a.branchBlocked === b.branchBlocked &&
     a.onRun === b.onRun &&
     a.onReplay === b.onReplay &&
@@ -1497,7 +1472,6 @@ const TranscriptChunk = memo(
     canRetry,
     onOutgoing,
     onBranch,
-    onThread,
     branchBlocked,
     onRun,
     onReplay,
@@ -1522,7 +1496,6 @@ const TranscriptChunk = memo(
     canRetry: boolean;
     onOutgoing: (itemId: string, action: OutgoingAction) => void;
     onBranch?: (itemId: string) => void;
-    onThread?: (itemId: string) => void;
     branchBlocked?: string;
     onRun?: (itemId: string) => void;
     onReplay?: (itemId: string, kind: ReplayKind) => void;
@@ -1556,7 +1529,6 @@ const TranscriptChunk = memo(
                   canRetry={b.kind === "user" && !!b.outgoing && canRetry}
                   onOutgoing={onOutgoing}
                   onBranch={message ? onBranch : undefined}
-                  onThread={message ? onThread : undefined}
                   branchBlocked={onBranch && message ? branchBlocked : undefined}
                   onRun={b.kind === "assistant" || turns.failedOnly.has(b.id) ? onRun : undefined}
                   onReplay={(b.kind === "user" && turns.ofUser.has(b.id)) || (b.kind === "assistant" && turns.regenerable.has(b.id)) ? onReplay : undefined}
@@ -1590,7 +1562,6 @@ const TranscriptChunk = memo(
     a.canRetry === b.canRetry &&
     a.onOutgoing === b.onOutgoing &&
     a.onBranch === b.onBranch &&
-    a.onThread === b.onThread &&
     a.branchBlocked === b.branchBlocked &&
     a.onRun === b.onRun &&
     a.onReplay === b.onReplay &&

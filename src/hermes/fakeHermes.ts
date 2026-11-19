@@ -3037,15 +3037,6 @@ export class FakeHermes {
     this.runtime.set(runtimeId, tip);
   }
 
-  seedThread(profile: string, topic: string, { messages = [], hours = 1 }: { messages?: TranscriptMessage[]; hours?: number } = {}): string {
-    const store = this.store(profile) ?? (this.otherProfiles[profile] = []);
-    const id = `thread-${profile}-${store.length}`;
-    const said = messages.filter((m) => m.role === "user" || m.role === "assistant");
-    store.push(row(id, hours / 24, { title: `Bot Thread: ${topic}`, hidden: true, message_count: messages.length, preview: said[0]?.text ?? "" }));
-    this.transcripts[id] = messages;
-    return id;
-  }
-
   /**
    * A Group room seat's session, working, as Hermes's room driver makes one in the bot's profile: source `bot_room`
    * and titled `Group: <room>` (`tui_gateway/hosted_room_driver.py` at v0.23.2), stored hidden

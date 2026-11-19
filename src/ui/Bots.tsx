@@ -18,13 +18,9 @@ import { CloneProfileDialog } from "./CloneProfile";
 import { pick } from "./keybindings";
 import { DeleteProfile, MenuEntry, ProfileForm, blocked, failureText, useSwitchTo, type FormFocus, type FormResult, type ProfilesWiring } from "./ProfileSettings";
 import { useLocale } from "../i18n/locale";
-import { ThreadDisclosure, type BotThreads } from "./Threads";
 
 /** How often the roster is read again while the bots show. Hermes's desktop polls every 5 seconds; this is enough. */
 export const BOTS_REFRESH_MS = 15_000;
-export const THREADS_FRESH_MS = 60_000;
-const THREADS_ALL_EVERY_MS = 5 * 60_000;
-export const THREADS_EVERY_READS = THREADS_ALL_EVERY_MS / BOTS_REFRESH_MS;
 
 const NO_SUBSCRIBE = () => () => {};
 const NO_SNAPSHOT = () => undefined;
@@ -95,7 +91,6 @@ export function useBotActions({
   botEdit,
   roster,
   load,
-  threads,
   shown,
   onRefresh,
   onNote,
@@ -104,7 +99,6 @@ export function useBotActions({
   botEdit: BotEditWiring;
   roster?: readonly Bot[];
   load: () => Promise<unknown>;
-  threads?: { all: (olderThan: number) => Promise<void>; watched: () => Promise<void> };
   shown: boolean;
   onRefresh: () => void;
   onNote: (text: string) => void;
@@ -131,15 +125,11 @@ export function useBotActions({
   const [reloading, setReloading] = useState(false);
   const reads = useRef(0);
 
-  const threadsRef = useRef(threads);
-  threadsRef.current = threads;
-  const read = async (everyThread?: number) => {
+  const read = async () => {
     const n = ++reads.current;
     try {
       await load();
       if (n === reads.current) setFailed(undefined);
-      const t = threadsRef.current;
-      if (t) void (everyThread === undefined ? t.watched() : t.all(everyThread)).catch(() => {});
     } catch (e) {
       if (n === reads.current) setFailed((e as Error).message);
     }
@@ -148,9 +138,8 @@ export function useBotActions({
 
   useEffect(() => {
     if (!shown || !connected) return;
-    void read(THREADS_FRESH_MS);
-    let ticks = 0;
-    const every = setInterval(() => void read(++ticks % THREADS_EVERY_READS === 0 ? 0 : undefined), BOTS_REFRESH_MS);
+    void read();
+    const every = setInterval(() => void read(), BOTS_REFRESH_MS);
     return () => clearInterval(every);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `read` is new every render, so listing it would restart the poll on every render
   }, [shown, connected, load]);
@@ -159,7 +148,7 @@ export function useBotActions({
     if (reloading) return;
     setReloading(true);
     onRefresh();
-    void read(0).finally(() => setReloading(false));
+    void read().finally(() => setReloading(false));
   };
 
   /** `focus`: the Edit field that takes focus once it can be typed in. */
@@ -389,7 +378,6 @@ export function BotList({
   onOpen,
   onNewChat,
   onMenu,
-  threads,
 }: {
   bots: Bot[];
   pictures: Record<string, string>;
@@ -401,7 +389,6 @@ export function BotList({
   onNewChat: (bot: Bot) => void;
   /** Opens a bot's menu at a point of the window. `open`: opens the bot as its row does. */
   onMenu: (bot: Bot, x: number, y: number, open: () => void) => void;
-  threads?: BotThreads;
 }) {
   const l = useLocale();
   const w = l.bots;
@@ -426,7 +413,7 @@ export function BotList({
       return onMenu(bot, r.left + 24, r.bottom, () => go(bot, "open"));
     }
     if (composing(e) || (e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
-    const rows = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>(".bots-open, .bots-threads button"));
+    const rows = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>(".bots-open"));
     const at = rows.indexOf(document.activeElement as HTMLButtonElement);
     if (at < 0) return;
     e.preventDefault();
@@ -436,38 +423,19 @@ export function BotList({
   // Pinned bots first, then Hermes's order. Hidden ones wait behind a disclosure, as in Hermes's own list.
   const shown = bots.filter((b) => !b.hidden).sort((a, b) => Number(b.pinned) - Number(a.pinned));
   const hidden = bots.filter((b) => b.hidden);
-  const row = (b: Bot) => {
-    const shelf = threads?.shelves[b.profile];
-    const shownThread = b.profile === profile ? threads?.shown : undefined;
-    return [
-      <Row
-        key={b.profile}
-        bot={b}
-        picture={pictures[b.profile]}
-        activity={activity(b, bots)}
-        shown={b.profile === profile}
-        current={b.profile === current}
-        threads={shelf && (shelf.at > 0 || !shelf.error) ? shelf.threads.length : undefined}
-        onOpen={() => go(b, "open")}
-        onNewChat={() => go(b, "new")}
-        onMenu={(x, y) => onMenu(b, x, y, () => go(b, "open"))}
-      />,
-      threads && (
-        <ThreadDisclosure
-          key={`${b.profile} threads`}
-          bot={b}
-          shelf={shelf}
-          open={threads.expanded[b.profile] ?? (b.profile === current || !!shownThread)}
-          shown={shownThread}
-          onToggle={() => threads.onExpand(b.profile, !(threads.expanded[b.profile] ?? (b.profile === current || !!shownThread)))}
-          onOpen={(title) => going(b, () => threads.onOpen(b, title))}
-          onNew={(topic) => going(b, () => threads.onNew(b, topic))}
-          onRename={threads.onRename}
-          onDelete={threads.onDelete}
-        />
-      ),
-    ];
-  };
+  const row = (b: Bot) => (
+    <Row
+      key={b.profile}
+      bot={b}
+      picture={pictures[b.profile]}
+      activity={activity(b, bots)}
+      shown={b.profile === profile}
+      current={b.profile === current}
+      onOpen={() => go(b, "open")}
+      onNewChat={() => go(b, "new")}
+      onMenu={(x, y) => onMenu(b, x, y, () => go(b, "open"))}
+    />
+  );
 
   return (
     <>
@@ -533,7 +501,6 @@ function Row({
   activity,
   shown,
   current,
-  threads,
   onOpen,
   onNewChat,
   onMenu,
@@ -543,7 +510,6 @@ function Row({
   activity: BotActivity;
   shown: boolean;
   current: boolean;
-  threads?: number;
   onOpen: () => void;
   onNewChat: () => void;
   onMenu: (x: number, y: number) => void;
@@ -561,7 +527,6 @@ function Row({
       b.description,
       b.botChat?.preview ? w.rowLast(b.botChat.preview) : preview,
       when && w.rowActive(when),
-      threads !== undefined && l.threads.count(threads),
       shown && w.rowShown,
     ].filter((part): part is string => !!part),
   );

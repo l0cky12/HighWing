@@ -38,6 +38,8 @@ load() {
   . "$HV_RUN/state.env"
 }
 alive() { [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null; }
+# Process $1 has not exited. A zombie has; it only waits for its parent to reap it.
+running() { local s; s=$(ps -o stat= -p "$1" 2>/dev/null) && [[ $s != Z* ]]; }
 # Process group $1 still has a member, even if its leader has exited (a driver whose WebKitWebDriver outlived it).
 # The kernel doesn't hand out a PID still in use as a group ID, so its members are still the ones we started.
 group_alive() { [ -n "${1:-}" ] && pgrep -g "$1" >/dev/null 2>&1; }
@@ -60,8 +62,9 @@ port_who() {
   local who; who=$(listeners "$1" | awk '{print match($0, /users:.*/) ? substr($0, RSTART) : "a process of another user"}' | tr '\n' ' ')
   echo "${who:-nothing}"
 }
-# Waits up to $2 seconds for command $1 to succeed.
-wait_for() { local i; for ((i = 0; i < $2 * 5; i++)); do eval "$1" >/dev/null 2>&1 && return 0; sleep 0.2; done; return 1; }
+# Waits up to $2 seconds for command $1 to succeed. The check runs in a subshell so that its redirect is not in force
+# when a signal's trap runs; otherwise up_failed would report to /dev/null.
+wait_for() { local i; for ((i = 0; i < $2 * 5; i++)); do (eval "$1") >/dev/null 2>&1 && return 0; sleep 0.2; done; return 1; }
 # Display $1 is served by the X server in process group $2: its socket exists and its lock file names a member of
 # that group. Another run's server on the same number fails this, so a lost race is never taken for our own start.
 xvfb_ours() {
@@ -69,15 +72,22 @@ xvfb_ours() {
   lock_pid=$(tr -d ' \n' <"/tmp/.X$1-lock" 2>/dev/null) && [ -n "$lock_pid" ] && [ -S "/tmp/.X11-unix/X$1" ] &&
     [ "$(ps -o pgid= -p "$lock_pid" 2>/dev/null | tr -d ' ')" = "$2" ]
 }
+# A lock per X display, held while a run claims display $1 or clears a dead server's files from it, so the two never
+# interleave (a run could otherwise start its server on a display between another's dead-owner check and its rm). It
+# lives in /tmp beside the X locks, because displays are shared by every run whatever its HV_HOME. Extra args go to flock.
+display_lock() { { exec {DISPLAY_LOCK}>>"/tmp/.hv-display-$1.lock"; } 2>/dev/null && flock "${@:2}" "$DISPLAY_LOCK" || { display_unlock; return 1; }; }
+display_unlock() { [ -z "${DISPLAY_LOCK:-}" ] || exec {DISPLAY_LOCK}>&-; DISPLAY_LOCK=""; }
 # Starts Xvfb (1400x900, 24-bit) on display $1 in its own process group, logging to $2, and prints the group's PID.
-# A private Xvfb looks for xkbcomp in its compiled-in /usr/bin: overlay ours there.
+# A private Xvfb looks for xkbcomp in its compiled-in /usr/bin: overlay ours there. Reads cmd_up's $name.
 start_xvfb() {
+  # The server must not inherit the display lock, or it would hold the lock for its whole life.
+  display_unlock
   local xvfb; xvfb=$(tool Xvfb)
   if [ "$xvfb" = "$ROOT/usr/bin/Xvfb" ]; then
-    setsid bwrap --dev-bind / / --overlay-src /usr/bin --overlay-src "$ROOT/usr/bin" --ro-overlay /usr/bin \
+    HV_RUN_ID=$name setsid bwrap --dev-bind / / --overlay-src /usr/bin --overlay-src "$ROOT/usr/bin" --ro-overlay /usr/bin \
       "$xvfb" ":$1" -screen 0 1400x900x24 -nolisten tcp -xkbdir "$ROOT/usr/share/X11/xkb" >>"$2" 2>&1 </dev/null &
   else
-    setsid "$xvfb" ":$1" -screen 0 1400x900x24 -nolisten tcp >>"$2" 2>&1 </dev/null &
+    HV_RUN_ID=$name setsid "$xvfb" ":$1" -screen 0 1400x900x24 -nolisten tcp >>"$2" 2>&1 </dev/null &
   fi
   echo $!
 }
@@ -109,9 +119,18 @@ up_failed() {
   local code=$?
   trap - EXIT INT TERM
   kill "$PORT_HOLDER_PID" 2>/dev/null || true
+  # A signal can land while this shell claims a display; cmd_down takes that display's lock again to clear it.
+  display_unlock
   echo "hv: up failed; stopping what this run started" >&2
-  (HV_RUN=$1 cmd_down >&2) || true
+  if [ -f "$1/state.env" ]; then (HV_RUN=$1 cmd_down >&2) || true; else rm -rf "$1"; fi
   exit "$code"
+}
+# This run's live processes: the members of its recorded process groups, and every process carrying its tag. hv starts
+# each process with HV_RUN_ID=<run name>, so the tag also finds one started before hv could record its PID.
+members() {
+  local groups; groups=$(echo "$DRIVER_PID $BRIDGE_PID $WM_PID $XVFB_PID" | xargs | tr ' ' ,)
+  { [ -z "$groups" ] || pgrep -g "$groups"; grep -lz "^HV_RUN_ID=${RUN##*/}$" /proc/[0-9]*/environ 2>/dev/null | cut -d/ -f3; } |
+    sort -u | xargs -r ps -o pid=,stat= -p 2>/dev/null | awk '$2 !~ /^Z/ {print $1}' || true
 }
 
 cmd_bootstrap() {
@@ -175,21 +194,21 @@ cmd_up() {
   [ -x "$driver" ] && [ -n "$(tool WebKitWebDriver)" ] && [ -n "$(tool Xvfb)" ] || die "tools missing; run \`hv bootstrap\`"
   local name; name=$(date +%m%d-%H%M%S)-$$
   local run=$HV_HOME/runs/$name ev=$HV_HOME/evidence/$name
-  mkdir -p "$run"/{home,data,config,cache} "$ev"
-  install -d -m 700 "$run/runtime"
-  local display="" url="" bridge_port="" driver_port="" native_port="" dbus_addr="" xvfb_pid="" wm_pid="" dbus_pid="" bridge_pid="" driver_pid=""
-  save_state
   # From here on, any failure (or Ctrl-C) stops what this run started, through the same path as `hv down`.
   # shellcheck disable=SC2064
   trap "up_failed '$run'" EXIT
   trap 'exit 130' INT TERM
+  mkdir -p "$run"/{home,data,config,cache} "$ev"
+  install -d -m 700 "$run/runtime"
+  local display="" url="" bridge_port="" driver_port="" native_port="" dbus_addr="" xvfb_pid="" wm_pid="" dbus_pid="" bridge_pid="" driver_pid=""
+  save_state
   xenv
 
   # bind(0) never hands out a bound port, and a program that sets SO_REUSEADDR (tauri-driver, WebKitWebDriver, node)
   # can still bind and listen on it (#88).
   local want_ports; read -ra want_ports <<<"${HV_TEST_PORTS:-0 0 0}"
   local holder_out
-  exec {holder_out}< <(exec python3 -c 'import os, signal, socket, sys, time
+  exec {holder_out}< <(HV_RUN_ID=$name exec python3 -c 'import os, signal, socket, sys, time
 signal.signal(signal.SIGINT, signal.SIG_IGN)
 socks = []
 for p in sys.argv[2:]:
@@ -212,22 +231,25 @@ while os.getppid() == int(sys.argv[1]):
   # X server. Another run can take a free-looking display between our check and Xvfb's lock, so the display is ours
   # only once our Xvfb holds its lock. Otherwise our Xvfb exits (or is killed here) and we try the next number.
   for n in $(seq 140 199); do
-    { [ -e "/tmp/.X11-unix/X$n" ] || [ -e "/tmp/.X$n-lock" ]; } && continue
+    display_lock "$n" -n || continue
+    if [ -e "/tmp/.X11-unix/X$n" ] || [ -e "/tmp/.X$n-lock" ]; then display_unlock; continue; fi
     echo "hv: trying display :$n" >>"$ev/xvfb.log"
     xvfb_pid=$(start_xvfb "$n" "$ev/xvfb.log")
     save_state
     if wait_for "xvfb_ours $n $xvfb_pid || ! alive $xvfb_pid" 15 && xvfb_ours "$n" "$xvfb_pid"; then
       display=:$n
+      display_unlock
       break
     fi
     kill -KILL -- "-$xvfb_pid" 2>/dev/null || true
     xvfb_pid=""
+    display_unlock
   done
   [ -n "$display" ] || die "no display in :140-:199 came up for this run; see $ev/xvfb.log"
   save_state
 
   # A window manager, so GTK dialogs get focus; its theme lives in the private root when installed there.
-  XDG_DATA_DIRS="$ROOT/usr/share:/usr/share" XDG_CONFIG_DIRS="$ROOT/etc/xdg:/etc/xdg" DISPLAY=$display setsid "$(tool openbox)" >"$ev/openbox.log" 2>&1 &
+  HV_RUN_ID=$name XDG_DATA_DIRS="$ROOT/usr/share:/usr/share" XDG_CONFIG_DIRS="$ROOT/etc/xdg:/etc/xdg" DISPLAY=$display setsid "$(tool openbox)" >"$ev/openbox.log" 2>&1 &
   wm_pid=$!
   save_state
 
@@ -252,15 +274,15 @@ while os.getppid() == int(sys.argv[1]):
 </busconfig>
 XML
   local dbus_out
-  dbus_out=$(env HOME="$run/home" XDG_DATA_HOME="$run/data" XDG_CONFIG_HOME="$run/config" XDG_CACHE_HOME="$run/cache" \
+  dbus_out=$(env HV_RUN_ID="$name" HOME="$run/home" XDG_DATA_HOME="$run/data" XDG_CONFIG_HOME="$run/config" XDG_CACHE_HOME="$run/cache" \
     XDG_RUNTIME_DIR="$run/runtime" dbus-daemon --config-file="$run/bus.conf" --fork --print-address=1 --print-pid=1) ||
     die "the private D-Bus daemon didn't start"
   dbus_addr=$(sed -n 1p <<<"$dbus_out"); dbus_pid=$(sed -n 2p <<<"$dbus_out")
   save_state
 
   if [ -z "$dashboard" ]; then
-    (cd "$REPO" && npx rolldown "$HERE/bridge.ts" --platform node -o "$run/bridge.mjs" >/dev/null 2>&1) || die "bundling the stand-in failed: cd $REPO && npx rolldown $HERE/bridge.ts --platform node -o $run/bridge.mjs"
-    setsid node "$run/bridge.mjs" "$bridge_port" "$ev/server-state.json" >"$ev/bridge.log" 2>&1 &
+    (cd "$REPO" && HV_RUN_ID=$name npx rolldown "$HERE/bridge.ts" --platform node -o "$run/bridge.mjs" >/dev/null 2>&1) || die "bundling the stand-in failed: cd $REPO && npx rolldown $HERE/bridge.ts --platform node -o $run/bridge.mjs"
+    HV_RUN_ID=$name setsid node "$run/bridge.mjs" "$bridge_port" "$ev/server-state.json" >"$ev/bridge.log" 2>&1 &
     bridge_pid=$!
     save_state
     wait_for "grep -q 'stand-in dashboard ready' '$ev/bridge.log'" 20 || die "stand-in didn't start; see $ev/bridge.log"
@@ -271,7 +293,7 @@ XML
   fi
 
   # tauri-driver passes its environment through WebKitWebDriver to the app it launches.
-  env DISPLAY="$display" DBUS_SESSION_BUS_ADDRESS="$dbus_addr" HOME="$run/home" XDG_DATA_HOME="$run/data" \
+  env HV_RUN_ID="$name" DISPLAY="$display" DBUS_SESSION_BUS_ADDRESS="$dbus_addr" HOME="$run/home" XDG_DATA_HOME="$run/data" \
     XDG_CONFIG_HOME="$run/config" XDG_CACHE_HOME="$run/cache" XDG_RUNTIME_DIR="$run/runtime" \
     WEBKIT_DISABLE_DMABUF_RENDERER=1 HERMES_CHAT_NEW_INSTANCE=1 LIBGL_ALWAYS_SOFTWARE=1 NO_AT_BRIDGE=1 \
     setsid "$driver" --port "$driver_port" --native-port "$native_port" --native-driver "$(tool WebKitWebDriver)" >"$ev/driver.log" 2>&1 &
@@ -341,26 +363,31 @@ cmd_x() { load; xenv; DISPLAY=$DISPLAY_NUM "$(tool xdotool)" "$@"; }
 # A second launch hands its request to the running app over the run's private bus and exits (src-tauri/src/remote.rs).
 cmd_app() {
   load
-  env DISPLAY="$DISPLAY_NUM" DBUS_SESSION_BUS_ADDRESS="$DBUS_ADDR" HOME="$RUN/home" XDG_DATA_HOME="$RUN/data" XDG_CONFIG_HOME="$RUN/config" \
+  env HV_RUN_ID="${RUN##*/}" DISPLAY="$DISPLAY_NUM" DBUS_SESSION_BUS_ADDRESS="$DBUS_ADDR" HOME="$RUN/home" XDG_DATA_HOME="$RUN/data" XDG_CONFIG_HOME="$RUN/config" \
     XDG_CACHE_HOME="$RUN/cache" XDG_RUNTIME_DIR="$RUN/runtime" timeout 20 "$APP" "$@"
 }
 
 cmd_down() {
   load
   if [ -s "$RUN/session" ]; then curl -s -X DELETE "http://127.0.0.1:$DRIVER_PORT/session/$(cat "$RUN/session")" >/dev/null || true; fi
-  # Each was started with setsid, so its process group holds what it spawned (WebKitWebDriver, the app, the app's ssh).
-  local pid
-  for pid in "$DRIVER_PID" "$BRIDGE_PID" "$WM_PID" "$XVFB_PID"; do
-    group_alive "$pid" && kill -TERM -- "-$pid" 2>/dev/null || true
+  # TERM lets each clean up after itself (an X server removes its lock and socket); what is left after 5 s gets KILL.
+  local sig pids end n lock
+  for sig in TERM KILL; do
+    pids=$(members)
+    [ -n "$pids" ] || break
+    # shellcheck disable=SC2086
+    kill -"$sig" $pids 2>/dev/null || true
+    end=$((SECONDS + 5))
+    while [ -n "$(members)" ] && [ "$SECONDS" -lt "$end" ]; do sleep 0.1; done
   done
-  alive "$DBUS_PID" && kill -TERM "$DBUS_PID" 2>/dev/null || true
-  sleep 1
-  for pid in "$DRIVER_PID" "$BRIDGE_PID" "$WM_PID" "$XVFB_PID"; do
-    group_alive "$pid" && kill -KILL -- "-$pid" 2>/dev/null || true
-  done
-  # The app's own processes, if any escaped the group: only ones on this run's display.
-  [ -z "$DISPLAY_NUM" ] || ps -eo pid=,args= | awk -v a="$APP" '$2 == a {print $1}' | while read -r pid; do
-    grep -qz "^DISPLAY=$DISPLAY_NUM$" "/proc/$pid/environ" 2>/dev/null && kill -KILL "$pid" 2>/dev/null || true
+  # A KILLed X server leaves its lock and socket, and every later run skips that display. Free each display this run
+  # tried whose lock names a process that is gone; a lock naming a live one is another run's.
+  for n in $(sed -n 's/^hv: trying display :\([0-9]*\)$/\1/p' "$EVIDENCE/xvfb.log" 2>/dev/null); do
+    display_lock "$n" -w 30 || continue
+    if lock=$(tr -d ' \n' 2>/dev/null <"/tmp/.X$n-lock") && ! running "$lock"; then
+      rm -f "/tmp/.X$n-lock" "/tmp/.X11-unix/X$n" || true
+    fi
+    display_unlock
   done
   # Kept with the evidence: the display, ports and PIDs this run had.
   cp "$RUN/state.env" "$EVIDENCE/state.env" 2>/dev/null || true

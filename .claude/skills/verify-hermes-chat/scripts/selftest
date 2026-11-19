@@ -3,7 +3,9 @@
 #   wd.mjs: `wait` times out with exit 2, a bad [ms] is rejected, `gone` returns at once on no match,
 #           `wait|gone <css> <digits>` with no [ms] is refused with the `"" <ms>` form.
 #   hv up:  a failed start stops every process it started (and a child its driver left behind) and deletes its run dir;
-#           an interrupted start (TERM) does the same;
+#           an interrupted start (TERM) does the same, also mid-way through starting D-Bus, before the run dir is
+#           ready, and while waiting on the driver, where it still says so;
+#   hv down: stops an unrecorded process carrying the run's tag, and frees the display of an Xvfb that ignores TERM;
 #           its private D-Bus activates nothing (no Secret Service with the owner's HOME) and runs with the run's HOME.
 #   bridge: the stand-in survives a WebSocket closed or reset while it writes to it, and keeps serving.
 # Runs under a throwaway HV_HOME with a fake app and a fake tauri-driver, so it never touches a real run.
@@ -16,7 +18,8 @@ T=$(mktemp -d)
 FAILS=0
 pass() { echo "ok   $*"; }
 fail() { echo "FAIL $*"; FAILS=$((FAILS + 1)); }
-dead() { local p; for p in "$@"; do [ -z "$p" ] || ! kill -0 "$p" 2>/dev/null || return 1; done; }
+# A zombie counts as dead: it has exited, and only its parent hasn't reaped it yet.
+dead() { local p s; for p in "$@"; do [ -z "$p" ] || ! s=$(ps -o stat= -p "$p") || [[ $s == Z* ]] || return 1; done; }
 pids_of() { (. "$1"; echo "$XVFB_PID $WM_PID $DBUS_PID $BRIDGE_PID $DRIVER_PID"); }
 
 # --- wd.mjs against a fake WebDriver that never finds anything ---
@@ -66,9 +69,13 @@ mkdir -p "$HV_HOME" "$HV_TARGET/debug" "$T/bin"
 [ -d "$REAL_HOME/root" ] && ln -s "$REAL_HOME/root" "$HV_HOME/root"
 printf '#!/bin/sh\nexit 0\n' >"$HV_TARGET/debug/hermes-chat"; chmod +x "$HV_TARGET/debug/hermes-chat"
 cat >"$T/answer-200.py" <<'PY'
-import sys, threading, http.server as h
+import os, sys, threading, time, http.server as h
 class Ok(h.BaseHTTPRequestHandler):
-    def do_GET(self): self.send_response(200); self.end_headers(); self.wfile.write(b"{}")
+    def do_GET(self):
+        if os.environ.get("FAKE_DRIVER") == "slow":
+            open(os.environ["FAKE_MARK"], "w").close()
+            time.sleep(3)
+        self.send_response(200); self.end_headers(); self.wfile.write(b"{}")
     def log_message(self, *a): pass
 servers = [h.HTTPServer(("127.0.0.1", int(p)), Ok) for p in sys.argv[1:]]
 for s in servers[1:]: threading.Thread(target=s.serve_forever, daemon=True).start()
@@ -87,7 +94,8 @@ case ${FAKE_DRIVER:-} in
     echo "fake tauri-driver: failing on purpose" >&2
     exit 1 ;;
   foreign)
-    setsid python3 "$serve" "$port" </dev/null >/dev/null 2>&1 &
+    # Another process: not one this run started, so it doesn't carry the run's tag.
+    env -u HV_RUN_ID setsid python3 "$serve" "$port" </dev/null >/dev/null 2>&1 &
     echo $! >"$FAKE_FOREIGN"
     exec python3 "$serve" "$native" ;;
 esac
@@ -129,6 +137,150 @@ if [ "$code" = 130 ] && [ -n "$st" ] && [ -z "$(ls -A "$HV_HOME/runs")" ] && dea
   pass "hv up interrupted with TERM stopped what it had started ($(pids_of "$st"))"
 else
   fail "interrupted hv up: exit $code, state ${st:-missing}, pids $([ -n "$st" ] && pids_of "$st"), runs: $(ls "$HV_HOME/runs"); log: $(tail -3 "$T/int.log")"
+fi
+rm -rf "$HV_HOME/evidence"
+
+# TERM while the private D-Bus forks: the daemon is detached before hv learns its PID (#97).
+mkdir -p "$T/slowbus"
+printf '#!/bin/sh\n%s "$@"\ncode=$?\ntouch %s\nsleep 3\nexit $code\n' "$(command -v dbus-daemon)" "$T/bus.forked" >"$T/slowbus/dbus-daemon"
+chmod +x "$T/slowbus/dbus-daemon"
+PATH=$T/slowbus:$PATH "$HERE/hv" up >"$T/bus.log" 2>&1 &
+LAUNCHERS=($!)
+for _ in $(seq 150); do [ -e "$T/bus.forked" ] && break; sleep 0.1; done
+kill -TERM "${LAUNCHERS[0]}"
+code=0; wait "${LAUNCHERS[0]}" || code=$?
+LAUNCHERS=()
+bus=$(pgrep -f -- "--config-file=$HV_HOME/runs/" | tr '\n' ' ' || true)
+if [ -e "$T/bus.forked" ] && [ "$code" = 130 ] && [ -z "$bus" ] && [ -z "$(ls -A "$HV_HOME/runs")" ]; then
+  pass "hv up interrupted while D-Bus forked stopped the daemon"
+else
+  # shellcheck disable=SC2206
+  NON_RUN_PIDS+=($bus)
+  fail "hv up interrupted while D-Bus forked: exit $code, forked $([ -e "$T/bus.forked" ] && echo yes || echo no), daemon left: ${bus:-none}, runs: $(ls "$HV_HOME/runs"); log: $(tail -3 "$T/bus.log")"
+fi
+rm -rf "$HV_HOME/evidence"
+
+# SIGKILL while the stand-in bundles, then `hv down`: the bundler goes too, though no recorded group holds it.
+mkdir -p "$T/slownpx"
+printf '#!/bin/sh\necho $$ >%s\nexec sleep 300\n' "$T/npx.pid" >"$T/slownpx/npx"
+chmod +x "$T/slownpx/npx"
+PATH=$T/slownpx:$PATH "$HERE/hv" up >"$T/npx.log" 2>&1 &
+LAUNCHERS=($!)
+for _ in $(seq 150); do [ -s "$T/npx.pid" ] && break; sleep 0.1; done
+kill -KILL "${LAUNCHERS[0]}"
+wait "${LAUNCHERS[0]}" 2>/dev/null || true
+LAUNCHERS=()
+bundler=$(cat "$T/npx.pid" 2>/dev/null || true)
+r=$(ls -d "$HV_HOME"/runs/*/ 2>/dev/null | head -1 || true)
+[ -z "$r" ] || HV_RUN=${r%/} hv down >/dev/null 2>&1 || true
+if [ -n "$bundler" ] && [ -n "$r" ] && ! kill -0 "$bundler" 2>/dev/null; then
+  pass "hv down after a kill mid-bundle stopped the bundler"
+else
+  fail "kill mid-bundle: bundler ${bundler:-never started} $(kill -0 "${bundler:-0}" 2>/dev/null && echo "still running"), run ${r:-missing}"
+  [ -z "$bundler" ] || kill "$bundler" 2>/dev/null || true
+fi
+rm -rf "$HV_HOME/evidence"
+
+# TERM right after hv up creates the run dir, before it has written state.env (#100).
+mkdir -p "$T/slowinstall"
+printf '#!/bin/sh\necho $$ >%s\nsleep 2\nexec %s "$@"\n' "$T/install.started" "$(command -v install)" >"$T/slowinstall/install"
+chmod +x "$T/slowinstall/install"
+PATH=$T/slowinstall:$PATH "$HERE/hv" up >"$T/install.log" 2>&1 &
+LAUNCHERS=($!)
+for _ in $(seq 150); do [ -e "$T/install.started" ] && break; sleep 0.1; done
+kill -TERM "${LAUNCHERS[0]}"
+code=0; wait "${LAUNCHERS[0]}" || code=$?
+LAUNCHERS=()
+if [ -e "$T/install.started" ] && [ "$code" = 130 ] && [ -z "$(ls -A "$HV_HOME/runs")" ]; then
+  pass "hv up interrupted as it made the run dir deleted it"
+else
+  fail "hv up interrupted as it made the run dir: exit $code, runs: $(ls "$HV_HOME/runs"); log: $(tail -3 "$T/install.log")"
+  # Nothing was started yet: stop the install hv left waiting, and drop its run dir so later cases start clean.
+  kill "$(cat "$T/install.started")" 2>/dev/null || true
+  rm -rf "$HV_HOME"/runs/*
+fi
+rm -rf "$HV_HOME/evidence"
+
+# TERM while wait_for's check runs with its output sent to /dev/null: the cleanup still reports itself (#100).
+FAKE_DRIVER=slow FAKE_MARK=$T/slow.mark "$HERE/hv" up >"$T/slow.log" 2>&1 &
+LAUNCHERS=($!)
+for _ in $(seq 150); do [ -e "$T/slow.mark" ] && break; sleep 0.1; done
+kill -TERM "${LAUNCHERS[0]}"
+code=0; wait "${LAUNCHERS[0]}" || code=$?
+LAUNCHERS=()
+[ -e "$T/slow.mark" ] && [ "$code" = 130 ] && grep -q "^hv: up failed" "$T/slow.log" && grep -q "^hv: down" "$T/slow.log" &&
+  [ -z "$(ls -A "$HV_HOME/runs")" ] &&
+  pass "hv up interrupted inside wait_for printed that it failed and went down" ||
+  fail "hv up interrupted inside wait_for: exit $code, runs: $(ls "$HV_HOME/runs"); log: $(tail -3 "$T/slow.log" | tr '\n' ' ')"
+rm -rf "$HV_HOME/evidence"
+
+# hv down stops a process carrying the run's tag that state.env never named, as a signal mid-start leaves (#104), and
+# frees the display of an Xvfb that doesn't exit on TERM (#103).
+code=0; hv up >"$T/tag.log" 2>&1 || code=$?
+r=$(sed -n 's/^export HV_RUN=//p' "$T/tag.log")
+if [ "$code" = 0 ] && [ -n "$r" ]; then
+  (HV_RUN_ID=${r##*/} setsid sleep 300 </dev/null >/dev/null 2>&1 & echo $! >"$T/stray.pid")
+  stray=$(cat "$T/stray.pid")
+  NON_RUN_PIDS+=("$stray")
+  disp=$(. "$r/state.env"; echo "${DISPLAY_NUM#:}")
+  xvfb=$(tr -d ' \n' <"/tmp/.X$disp-lock")
+  kill -STOP "$xvfb"
+  start=$(date +%s%N); HV_RUN=$r hv down >/dev/null 2>&1 || true; ms=$((($(date +%s%N) - start) / 1000000))
+  dead "$stray" && pass "hv down stopped an unrecorded process carrying the run's tag" ||
+    fail "hv down left pid $stray, which carries the run's tag, running"
+  dead "$xvfb" && [ ! -e "/tmp/.X$disp-lock" ] && [ ! -e "/tmp/.X11-unix/X$disp" ] &&
+    pass "hv down freed display :$disp from an Xvfb stopped before TERM (${ms} ms)" ||
+    fail "hv down with Xvfb $xvfb stopped: $(dead "$xvfb" && echo exited || echo running), left: $(ls "/tmp/.X$disp-lock" "/tmp/.X11-unix/X$disp" 2>/dev/null | tr '\n' ' ')"
+else
+  fail "hv up for the tag and stopped-Xvfb cases: exit $code; $(tail -3 "$T/tag.log")"
+fi
+rm -rf "$HV_HOME/evidence"
+
+# TERM while hv up claims a display: its cleanup must not wait on the display lock this run still holds.
+mkdir -p "$T/hangx"
+printf '#!/bin/sh\necho $$ >%s\nexec sleep 300\n' "$T/hangx.pid" >"$T/hangx/Xvfb"
+chmod +x "$T/hangx/Xvfb"
+PATH=$T/hangx:$PATH "$HERE/hv" up >"$T/hangx.log" 2>&1 &
+LAUNCHERS=($!)
+for _ in $(seq 150); do [ -s "$T/hangx.pid" ] && break; sleep 0.1; done
+start=$(date +%s%N); kill -TERM "${LAUNCHERS[0]}"
+code=0; wait "${LAUNCHERS[0]}" || code=$?
+ms=$((($(date +%s%N) - start) / 1000000))
+LAUNCHERS=()
+[ -s "$T/hangx.pid" ] && [ "$code" = 130 ] && [ "$ms" -lt 15000 ] && [ -z "$(ls -A "$HV_HOME/runs")" ] && dead "$(cat "$T/hangx.pid")" &&
+  pass "hv up interrupted while it claimed a display went down in ${ms} ms" ||
+  fail "hv up interrupted mid-claim: exit $code after ${ms} ms, runs: $(ls "$HV_HOME/runs"); log: $(tail -2 "$T/hangx.log" | tr '\n' ' ')"
+rm -rf "$HV_HOME/evidence"
+
+# Claiming a display and clearing a dead server's files from it take the same per-display lock, so neither runs in the
+# middle of the other. hold_display <n> <seconds> holds that lock as another run would, and prints "held" once it has.
+hold_display() { python3 -c 'import fcntl, sys, time
+f = open(sys.argv[1], "a"); fcntl.flock(f, fcntl.LOCK_EX); print("held", flush=True); time.sleep(float(sys.argv[2]))' "/tmp/.hv-display-$1.lock" "$2"; }
+for n in $(seq 140 199); do [ -e "/tmp/.X11-unix/X$n" ] || [ -e "/tmp/.X$n-lock" ] || break; done
+hold_display "$n" 20 >"$T/hold.out" &
+NON_RUN_PIDS+=($!)
+for _ in $(seq 50); do [ -s "$T/hold.out" ] && break; sleep 0.1; done
+code=0; hv up >"$T/claim.log" 2>&1 || code=$?
+r=$(sed -n 's/^export HV_RUN=//p' "$T/claim.log")
+kill "${NON_RUN_PIDS[-1]}" 2>/dev/null || true
+if [ "$code" = 0 ] && [ -n "$r" ]; then
+  disp=$(. "$r/state.env"; echo "${DISPLAY_NUM#:}")
+  ev=$(. "$r/state.env"; echo "$EVIDENCE")
+  [ "$disp" != "$n" ] && ! grep -q "^hv: trying display :$n$" "$ev/xvfb.log" && flock -n "/tmp/.hv-display-$disp.lock" true &&
+    pass "hv up skipped display :$n while another run claimed it, and its own Xvfb holds no display lock" ||
+    fail "claimed display :$n: this run got :$disp; tried $(grep -c trying "$ev/xvfb.log") displays"
+  xvfb=$(tr -d ' \n' <"/tmp/.X$disp-lock")
+  kill -KILL "$xvfb"
+  for _ in $(seq 50); do dead "$xvfb" && break; sleep 0.1; done
+  hold_display "$disp" 3 >"$T/hold2.out" &
+  NON_RUN_PIDS+=($!)
+  for _ in $(seq 50); do [ -s "$T/hold2.out" ] && break; sleep 0.1; done
+  start=$(date +%s%N); HV_RUN=$r hv down >/dev/null 2>&1 || true; ms=$((($(date +%s%N) - start) / 1000000))
+  [ "$ms" -ge 2500 ] && [ ! -e "/tmp/.X$disp-lock" ] && [ ! -e "/tmp/.X11-unix/X$disp" ] &&
+    pass "hv down waited for a claim on display :$disp before it cleared the dead server's files (${ms} ms)" ||
+    fail "hv down during a claim on :$disp: ${ms} ms, left: $(ls "/tmp/.X$disp-lock" "/tmp/.X11-unix/X$disp" 2>/dev/null | tr '\n' ' ')"
+else
+  fail "hv up beside a claimed display: exit $code; $(tail -3 "$T/claim.log")"
 fi
 rm -rf "$HV_HOME/evidence"
 
@@ -179,7 +331,8 @@ fi
 kill "${NON_RUN_PIDS[-1]}" 2>/dev/null || true
 rm -rf "$HV_HOME/evidence"
 
-N=20
+# Fewer on a machine whose display range other sessions share.
+N=${SELFTEST_RUNS:-20}
 for i in $(seq $N); do
   (while [ ! -e "$T/go" ]; do sleep 0.01; done; exec "$HERE/hv" up) >"$T/up$i.log" 2>&1 &
   LAUNCHERS+=($!)

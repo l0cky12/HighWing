@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# One-time setup per machine for the hermes-app MCP server: hv's own bootstrap, then x11vnc and noVNC for the live view.
+# Arch and Debian, no root needed: packages are unpacked under $HV_HOME/root as `hv bootstrap` does.
+set -euo pipefail
+
+HV_HOME=${HV_HOME:-$HOME/.cache/hermes-verify}
+ROOT=$HV_HOME/root
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+NOVNC_VERSION=1.6.0
+NOVNC_SHA256=5066103959ef4e9b10f37e5a148627360dd8414e4cf8a7db92bdbd022e728aaa
+
+die() { echo "setup: $*" >&2; exit 1; }
+x11vnc_bin() { command -v x11vnc 2>/dev/null || { [ -x "$ROOT/usr/bin/x11vnc" ] && echo "$ROOT/usr/bin/x11vnc"; } || true; }
+
+"$HERE/../scripts/hv" bootstrap
+
+if [ -z "$(x11vnc_bin)" ]; then
+  mkdir -p "$HV_HOME/pkgs" "$ROOT"
+  if command -v apt-get >/dev/null; then
+    # x11vnc and whichever of its libraries this machine lacks; a headless box often has no X client libraries.
+    need=$(apt-cache depends --recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances x11vnc |
+      grep '^[a-z0-9]' | sort -u | while read -r p; do dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q 'ok installed' || echo "$p"; done)
+    echo "setup: fetching into $ROOT:" $need
+    mkdir -p "$HV_HOME/pkgs/x11vnc"
+    # shellcheck disable=SC2086
+    (cd "$HV_HOME/pkgs/x11vnc" && apt-get download $need >/dev/null)
+    for d in "$HV_HOME"/pkgs/x11vnc/*.deb; do dpkg -x "$d" "$ROOT"; done
+  elif command -v pacman >/dev/null; then
+    echo "setup: fetching x11vnc and libvncserver into $ROOT"
+    mirror=$(sed -n 's/^Server *= *//p' /etc/pacman.d/mirrorlist | head -1)
+    for name in x11vnc libvncserver; do
+      repo=$(pacman -Si "$name" | awk -F" *: " '/^Repository/{print $2; exit}')
+      ver=$(pacman -Si "$name" | awk -F" *: " '/^Version/{print $2; exit}')
+      desc=$(tar -xOf "/var/lib/pacman/sync/$repo.db" "$name-$ver/desc")
+      file=$(awk '/%FILENAME%/{getline; print}' <<<"$desc")
+      sum=$(awk '/%SHA256SUM%/{getline; print}' <<<"$desc")
+      curl -sSfLo "$HV_HOME/pkgs/$file" "$(echo "$mirror" | sed "s/\$repo/$repo/; s/\$arch/x86_64/")/$file" || die "couldn't fetch $file"
+      (cd "$HV_HOME/pkgs" && echo "$sum  $file" | sha256sum -c --quiet -) || die "$file doesn't match pacman's checksum"
+      tar --zstd -xf "$HV_HOME/pkgs/$file" -C "$ROOT" usr
+    done
+  else
+    die "install x11vnc with the system package manager"
+  fi
+fi
+missing=$(LD_LIBRARY_PATH="$ROOT/usr/lib/x86_64-linux-gnu:$ROOT/lib/x86_64-linux-gnu:$ROOT/usr/lib" ldd "$(x11vnc_bin)" | awk '/not found/{print $1}')
+[ -z "$missing" ] || die "x11vnc needs libraries this machine lacks: $missing"
+
+novnc=$HV_HOME/novnc-$NOVNC_VERSION
+if [ ! -f "$novnc/core/rfb.js" ]; then
+  echo "setup: fetching noVNC $NOVNC_VERSION"
+  tgz=$HV_HOME/pkgs/novnc-$NOVNC_VERSION.tgz
+  mkdir -p "$HV_HOME/pkgs" "$novnc"
+  curl -sSfLo "$tgz" "https://github.com/novnc/noVNC/archive/refs/tags/v$NOVNC_VERSION.tar.gz" || die "couldn't fetch noVNC"
+  echo "$NOVNC_SHA256  $tgz" | sha256sum -c --quiet - || die "noVNC tarball doesn't match its pinned sha256"
+  tar -xzf "$tgz" -C "$novnc" --strip-components=1
+fi
+
+# Claude reads the server from the checkout's .mcp.json. Codex won't launch a server from a project config, and Grok
+# starts one only in a trusted folder (each T3 worktree is a new one), so both get a user entry pointing at a launcher
+# that finds the checkout from the session's directory.
+install -D -m 755 "$HERE/launch" "$HV_HOME/bin/hermes-app-mcp"
+if command -v grok >/dev/null; then
+  grok mcp add --scope user hermes-app "$HV_HOME/bin/hermes-app-mcp" >/dev/null
+  echo "setup: registered hermes-app with Grok"
+fi
+if command -v codex >/dev/null; then
+  codex mcp add hermes-app -- "$HV_HOME/bin/hermes-app-mcp" >/dev/null
+  # Codex hands an MCP server only a few variables unless told; the thread id names the run in the live view.
+  python3 - "${CODEX_HOME:-$HOME/.codex}/config.toml" <<'PY'
+import re, sys
+p = sys.argv[1]; s = open(p).read()
+head = "[mcp_servers.hermes-app]\n"
+extra = 'env_vars = ["T3CODE_THREAD_ID", "HV_TARGET", "HV_HOME"]\ntool_timeout_sec = 180\n'
+i = s.index(head) + len(head)
+end = re.search(r"^\[", s[i:], re.M)
+table = s[i:i + end.start()] if end else s[i:]
+if "env_vars" not in table: s = s[:i] + extra + s[i:]
+open(p, "w").write(s)
+PY
+  echo "setup: registered hermes-app with Codex"
+fi
+
+echo "setup: ok (x11vnc $(x11vnc_bin), noVNC $novnc)"

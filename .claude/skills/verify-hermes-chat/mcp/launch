@@ -1,0 +1,8 @@
+#!/bin/sh
+# Codex launches MCP servers only from its user config, so setup registers this once: it runs the hermes-app server
+# from whichever hermes-chat checkout the session is in, and offers no tools anywhere else.
+server="$(git rev-parse --show-toplevel 2>/dev/null)/.claude/skills/verify-hermes-chat/mcp/server.mjs"
+[ -f "$server" ] && exec node "$server"
+exec node -e 'require("readline").createInterface({input: process.stdin}).on("line", (l) => { const m = JSON.parse(l); if (m.id === undefined) return;
+  const result = m.method === "initialize" ? { protocolVersion: m.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "hermes-app", version: "0" } } : { tools: [] };
+  process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: m.id, result }) + "\n"); })'

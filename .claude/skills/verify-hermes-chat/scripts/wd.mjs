@@ -10,6 +10,7 @@
 //   wd.mjs wheel <css> [text] -- <dy>   turn the scroll wheel by dy pixels over the match's middle
 //   wd.mjs drag <css> [text] -- <x0> <y0> <x1> <y1>   press at (x0, y0) from the match's top-left, move to (x1, y1) in
 //                                    steps, and release, as WebDriver pointer input
+//   wd.mjs where <css> [text]        scroll the match into view and print the viewport point a click lands on: x y
 //   wd.mjs rightclick <css> [text]   right-click the match with real X input (xdotool), which opens a context menu
 //   wd.mjs fill  <css> [text] -- <value>   clear the field, then type value as key presses
 //   wd.mjs select <css> [text] -- <option>   pick a native <select> option by its text (the popup itself never renders)
@@ -73,7 +74,7 @@ const HANDLES = `
   return [...document.querySelectorAll(css)]
     .filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== "hidden"; })
     .map((e) => [e.tagName.toLowerCase(), e.getAttribute("role") || e.type || "", e.getAttribute("aria-label") || (e.labels?.[0]?.textContent ?? "").trim(),
-      (e.matches("input, textarea") ? (e.value ? "value=" + e.value : "placeholder=" + e.placeholder) : e.textContent || "").trim().replace(/\\s+/g, " ").slice(0, 60), e.disabled ? "disabled" : ""].join(" | "));`;
+      (e.matches("input, textarea") ? (e.value ? "value=" + (e.type === "password" ? "(hidden)" : e.value) : "placeholder=" + e.placeholder) : e.textContent || "").trim().replace(/\\s+/g, " ").slice(0, 60), e.disabled ? "disabled" : ""].join(" | "));`;
 const find = (css, text) => exec(FIND, [css, text ?? ""]);
 const ELEMENT = "element-6066-11e4-a52e-4f735466cecf";
 const elId = (el) => el[ELEMENT];
@@ -133,6 +134,11 @@ try {
       await wd("POST", s(`/element/${await one(css, text)}/click`), {});
       console.log("clicked");
       break;
+    case "where": {
+      const point = "arguments[0].scrollIntoView({ block: 'nearest', inline: 'nearest' }); const r = arguments[0].getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)];";
+      console.log((await exec(point, [{ [ELEMENT]: await one(css, text) }])).join(" "));
+      break;
+    }
     case "wheel": {
       if (dashdash < 0) die("wheel needs `-- <dy>`");
       const middle = "const r = arguments[0].getBoundingClientRect(); return [Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)];";

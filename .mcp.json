@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "hermes-app": {
+      "command": "node",
+      "args": [".claude/skills/verify-hermes-chat/mcp/server.mjs"]
+    }
+  }
+}

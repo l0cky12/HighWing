@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hermes Chat live</title>
+<style>
+  :root { --bg: #0f1115; --panel: #171a21; --line: #262b36; --text: #d8dce4; --dim: #8a92a3; --click: #ff4d6d; --type: #3fb5ff; --select: #b78cff; --ok: #4ade80; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 13px/1.4 ui-sans-serif, system-ui, sans-serif; }
+  body { display: grid; grid-template-rows: auto 1fr; grid-template-columns: 1fr 260px; height: 100vh; }
+  header { grid-column: 1 / -1; display: flex; gap: 16px; align-items: center; padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header b { font-weight: 600; }
+  header .dim { color: var(--dim); }
+  #state::before { content: "●"; margin-right: 6px; color: var(--dim); }
+  #state.on::before { color: var(--ok); }
+  #stage { position: relative; overflow: hidden; }
+  #screen { position: absolute; inset: 0; }
+  #log { border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; padding: 8px 0; margin: 0; list-style: none; }
+  #log li { padding: 5px 12px; display: grid; grid-template-columns: 28px 1fr; gap: 6px; border-left: 3px solid transparent; }
+  #log li.new { animation: flash 1.2s ease-out; }
+  #log .n { color: var(--dim); font-variant-numeric: tabular-nums; }
+  #log .k { font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: .04em; }
+  #log .l { grid-column: 2; color: var(--dim); word-break: break-word; }
+  .mark { position: fixed; pointer-events: none; z-index: 10; }
+  .mark .ring { position: absolute; left: -22px; top: -22px; width: 44px; height: 44px; border-radius: 50%; border: 3px solid var(--c); animation: ring 1.4s ease-out forwards; }
+  .mark .dot { position: absolute; left: -6px; top: -6px; width: 12px; height: 12px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 2px #fff8; }
+  .mark .tag { position: absolute; left: 14px; top: -30px; white-space: nowrap; background: var(--c); color: #fff; font-weight: 600; font-size: 12px; padding: 2px 7px; border-radius: 4px; box-shadow: 0 2px 6px #0006; }
+  .mark.old { opacity: .35; transition: opacity .6s; }
+  .mark.gone { opacity: 0; transition: opacity 1.5s; }
+  .mark.old .tag, .mark.old .ring { display: none; }
+  @keyframes ring { from { transform: scale(.3); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
+  @keyframes flash { from { background: #ffffff18; } to { background: transparent; } }
+</style>
+</head>
+<body>
+<header>
+  <b>Hermes Chat live view</b>
+  <span class="dim">thread <span id="thread"></span></span>
+  <span class="dim">display <span id="display"></span></span>
+  <span id="state">connecting</span>
+</header>
+<div id="stage"><div id="screen"></div></div>
+<ol id="log"></ol>
+<script type="module">
+import RFB from "/novnc/core/rfb.js";
+const meta = __META__;
+const colors = { click: "var(--click)", type: "var(--type)", select: "var(--select)" };
+document.getElementById("thread").textContent = meta.thread;
+document.getElementById("display").textContent = meta.display;
+const state = document.getElementById("state");
+
+let rfb, stopped = false;
+function connectVnc() {
+  rfb = new RFB(document.getElementById("screen"), `ws://${location.host}/websockify`, { wsProtocols: ["binary"] });
+  rfb.viewOnly = true;
+  rfb.scaleViewport = true;
+  rfb.background = "#0f1115";
+  rfb.addEventListener("connect", () => { state.textContent = "live"; state.className = "on"; });
+  rfb.addEventListener("disconnect", () => {
+    if (stopped) return;
+    state.textContent = "disconnected, retrying"; state.className = "";
+    setTimeout(connectVnc, 1500);
+  });
+}
+connectVnc();
+
+// Display pixels to page pixels, through noVNC's scaled canvas.
+function toPage(x, y) {
+  const canvas = document.querySelector("#screen canvas");
+  if (!canvas || !canvas.width) return null;
+  const r = canvas.getBoundingClientRect();
+  return [r.left + (x * r.width) / canvas.width, r.top + (y * r.height) / canvas.height];
+}
+const marks = [];
+function mark(e) {
+  const at = toPage(e.x, e.y);
+  if (!at) return;
+  for (const m of marks) {
+    if (m.classList.contains("old")) continue;
+    m.classList.add("old");
+    setTimeout(() => m.classList.add("gone"), 2500);
+  }
+  const el = document.createElement("div");
+  el.className = "mark";
+  el.style.cssText = `left:${at[0]}px; top:${at[1]}px; --c:${colors[e.kind] ?? "var(--click)"}`;
+  el.innerHTML = `<div class="ring"></div><div class="dot"></div><div class="tag"></div>`;
+  el.querySelector(".tag").textContent = `${e.step} ${e.kind}: ${e.label}`;
+  document.body.append(el);
+  marks.push(el);
+  while (marks.length > 4) marks.shift().remove();
+}
+const log = document.getElementById("log");
+function logLine(e) {
+  const li = document.createElement("li");
+  if (!e.replay) li.className = "new";
+  li.style.borderLeftColor = colors[e.kind] ?? "transparent";
+  li.innerHTML = `<span class="n"></span><span class="k"></span><span class="l"></span>`;
+  li.querySelector(".n").textContent = e.step;
+  li.querySelector(".k").textContent = e.kind;
+  li.querySelector(".l").textContent = e.label;
+  log.append(li);
+  log.scrollTop = log.scrollHeight;
+}
+new EventSource("/events").onmessage = (m) => {
+  const e = JSON.parse(m.data);
+  logLine(e);
+  if (e.x !== undefined && !e.replay) mark(e);
+  if (e.kind === "stop") {
+    stopped = true;
+    state.textContent = "run stopped"; state.className = "";
+    for (const m of marks.splice(0)) m.remove();
+  }
+};
+</script>
+</body>
+</html>

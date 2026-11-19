@@ -990,9 +990,17 @@ export class FakeHermes {
       const live = [...this.agents.keys()].find((id) => this.runtime.get(id) === stored);
       const runtimeId = live ?? `rt-r${++this.resumed}`;
       if (!live) {
+        // A closed connection's session is parked in Hermes, not gone, so a Bot Chat changed meanwhile is still told
+        // once (spikes/s1v2.out). This fake reopens it under a new id with a fresh agent, as other suites expect, and
+        // keeps the one thing a Bot Chat's next turn compares against: the fingerprint it saw.
+        const parked = [...this.agents].find(([, a]) => a.stored === stored);
+        if (parked) {
+          this.agents.delete(parked[0]);
+          this.agentTools.delete(parked[0]);
+        }
         this.runtime.set(runtimeId, stored);
         this.runtimeProfile.set(runtimeId, (r.params.profile as string | undefined) || "default");
-        this.buildAgent(runtimeId, (r.params.profile as string | undefined) || "default");
+        this.buildAgent(runtimeId, (r.params.profile as string | undefined) || "default", parked?.[1].capsSeen);
       }
       // The row exists now, so the live session's first prompt doesn't add another.
       this.created.delete(runtimeId);
@@ -1941,10 +1949,11 @@ export class FakeHermes {
   /** Runtime session id -> the tool names its agent was built with, from its profile's list then (`tools.show`). */
   readonly agentTools = new Map<string, Set<string>>();
   /**
-   * Runtime session id -> the rest of what its agent was built with: the persona, the MCP tools it reaches, and the
-   * capability fingerprint its first turn saw (`bot_caps_seen`).
+   * Runtime session id -> the rest of what its agent was built with: the persona, the MCP tools it reaches, the
+   * capability fingerprint its first turn saw (`bot_caps_seen`), and its stored session (`session_key`). The stored
+   * session is kept here because opening a new connection clears `runtime` while the session stays live.
    */
-  private readonly agents = new Map<string, { soul?: string; mcp: string[]; capsSeen?: string }>();
+  private readonly agents = new Map<string, { soul?: string; mcp: string[]; capsSeen?: string; stored?: string }>();
   /** What each turn's model was shown, in order. */
   readonly modelCalls: ModelCall[] = [];
   /** The profiles whose first-contact offer has been made (`onboarding.seen.profile_build_offered`). */
@@ -1985,7 +1994,7 @@ export class FakeHermes {
 
   /** Builds a live session's agent from its profile as it is now. */
   private buildAgent(runtimeId: string, profile: string, capsSeen?: string) {
-    const agent = { soul: this.souls[profile], mcp: this.reachableMcp(profile), capsSeen };
+    const agent = { soul: this.souls[profile], mcp: this.reachableMcp(profile), capsSeen, stored: this.runtime.get(runtimeId) };
     this.agentTools.set(runtimeId, this.offeredTools(profile));
     this.agents.set(runtimeId, agent);
     return agent;

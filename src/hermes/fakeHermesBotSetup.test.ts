@@ -16,12 +16,18 @@ async function connected(setup: (server: FakeHermes) => void = () => {}) {
   setup(server);
   const answers = new Map<number, Frame>();
   const events: NonNullable<Frame["params"]>[] = [];
-  const pipe = await server.openPipe((e) => {
-    if (e.kind !== "frame") return;
-    const f = JSON.parse(e.text) as Frame;
-    if (typeof f.id === "number") answers.set(f.id, f);
-    if (f.method === "event" && f.params) events.push(f.params);
-  }, "default");
+  const open = () =>
+    server.openPipe((e) => {
+      if (e.kind !== "frame") return;
+      const f = JSON.parse(e.text) as Frame;
+      if (typeof f.id === "number") answers.set(f.id, f);
+      if (f.method === "event" && f.params) events.push(f.params);
+    }, "default");
+  let pipe = await open();
+  const reconnect = async () => {
+    await pipe.close();
+    pipe = await open();
+  };
   let next = 0;
   const call = async (method: string, params: Record<string, unknown> = {}) => {
     const id = ++next;
@@ -46,7 +52,7 @@ async function connected(setup: (server: FakeHermes) => void = () => {}) {
   const reply = (evs: { type: string; payload: Record<string, unknown> }[]) => evs.filter((e) => e.type === "message.complete").map((e) => String(e.payload.text)).join(" ");
   const stored = async (id: string, profile = BOT) => ((await rest("GET", `/api/sessions/${id}/messages?profile=${profile}`)).messages as Record<string, unknown>[]).map((m) => [m.role, m.display_kind, m.content]);
   const lookup = async (profile = BOT) => ((await call("session.list", { profile, title: "Bot Chat", include_hidden: true })).result!.sessions as { id: string }[]).map((s) => s.id);
-  return { server, call, rest, botChat, turn, reply, stored, lookup };
+  return { server, call, rest, botChat, turn, reply, stored, lookup, reconnect };
 }
 
 describe("a Bot Chat made with its brief seeded", () => {
@@ -210,14 +216,18 @@ describe("a Bot Chat whose capabilities change mid-chat", () => {
     expect((await h.turn(chat.sid, "three")).some((e) => e.type === "notice")).toBe(false);
   });
 
-  it("gets them after a reconnect too, told as before: the resume attaches the session still live", async () => {
+  it("gets them after a reconnect too, told once: Hermes parks the session, and its resume keeps what the last turn saw", async () => {
     const h = await connected();
     const chat = await h.botChat();
     await h.turn(chat.sid, "one");
     await change(h);
-    const sid = String((await h.call("session.resume", { session_id: chat.stored, profile: BOT })).result!.session_id);
+    await h.reconnect();
+    const resume = async () => String((await h.call("session.resume", { session_id: chat.stored, profile: BOT })).result!.session_id);
+    const sid = await resume();
     expect((await h.turn(sid, "two")).filter((e) => e.type === "notice")).toHaveLength(1);
     expect(h.server.modelCalls.at(-1)).toMatchObject({ soul: "Your name is After.\n", tools: expect.arrayContaining(["image_generate"]) });
+    await h.reconnect();
+    expect((await h.turn(await resume(), "three")).some((e) => e.type === "notice")).toBe(false);
   });
 
   it("is told once: every resume attaches the one live session, so a later unchanged turn isn't told again", async () => {

@@ -1,20 +1,25 @@
 // The live tests' guard and cleanup (liveSandbox.ts): the guard on a real file system, symlinks included, and the
 // cleanup against a stand-in profiles API.
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { removeAttempted, sandboxRefusal } from "./liveSandbox";
 
-const dir = mkdtempSync("/tmp/live-sandbox-");
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
-const ROOT = `${dir}/root`;
-const OWNER = `${dir}/owner`;
-mkdirSync(`${ROOT}/home/profiles/bot`, { recursive: true });
-mkdirSync(`${OWNER}/.hermes/profiles/mine`, { recursive: true });
-// What the review found the old guard let through: a home under /tmp by name that is the owner's Hermes.
-symlinkSync(`${OWNER}/.hermes`, `${ROOT}/linked`);
-symlinkSync(`${OWNER}/.hermes`, `${dir}/linked-root`);
-
-describe("sandboxRefusal", () => {
+// The guard only ever runs against a Linux sandbox under /tmp, and Windows has no /tmp to build this fixture in.
+describe.skipIf(process.platform === "win32")("sandboxRefusal", () => {
+  let dir = "";
+  let ROOT = "";
+  let OWNER = "";
+  beforeAll(() => {
+    dir = mkdtempSync("/tmp/live-sandbox-");
+    ROOT = `${dir}/root`;
+    OWNER = `${dir}/owner`;
+    mkdirSync(`${ROOT}/home/profiles/bot`, { recursive: true });
+    mkdirSync(`${OWNER}/.hermes/profiles/mine`, { recursive: true });
+    // What the review found the old guard let through: a home under /tmp by name that is the owner's Hermes.
+    symlinkSync(`${OWNER}/.hermes`, `${ROOT}/linked`);
+    symlinkSync(`${OWNER}/.hermes`, `${dir}/linked-root`);
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
   const refusal = (root: string | undefined, paths: string[]) => sandboxRefusal(root, OWNER, paths, realpathSync);
 
   it("lets a run touch a server whose every profile resolves inside the throwaway root", () => {

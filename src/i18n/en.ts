@@ -45,6 +45,35 @@ export const en = {
       noAnswer: "No answer came back",
       hide: "Hide the message",
       show: "Show the message",
+      /** A sent message's lines (ADR 0227), each from one thing Hermes sent. */
+      delivery: {
+        queued: (to: string) => `Queued for ${to}.`,
+        claimed: (to: string) => `${to}'s Bot Chat had already taken it.`,
+        was: {
+          idle: (to: string) => `${to} was idle when it was sent.`,
+          working: (to: string) => `${to} was busy with a turn when it was sent.`,
+          waiting_approval: (to: string) => `${to} was waiting for its owner to approve a command when it was sent.`,
+          waiting_clarify: (to: string) => `${to} was waiting for its owner to answer a question when it was sent.`,
+          paused: (to: string) => `${to} wasn't starting new turns when it was sent.`,
+        },
+        notifyOnly: (to?: string) => (to ? `Sent to ${to} as a notice: no answer comes back from ${to}.` : "Sent as a notice: no answer comes back."),
+        poll: "The answer comes back only when this bot asks Hermes for it.",
+        noWayBack: (why: string) => `Hermes couldn't arrange for the answer to come back here: ${why}`,
+        unconfirmed: (why: string) => `Hermes couldn't confirm it was delivered, and says not to send it again.${why ? ` ${why}` : ""}`,
+        silent: (to: string) => `Hermes doesn't report ${to}'s progress to this chat.`,
+        sentAgo: (age: string) => `Sent ${age} ago.`,
+        sentNow: "Sent just now.",
+        withdrawAsked: "This bot asked Hermes to withdraw it.",
+        withdrawRefused: (why: string) => `This bot asked Hermes to withdraw it. Hermes refused: ${why}`,
+        ended: {
+          settled: "Answered.",
+          failed: "The delivery failed.",
+          cancelled: "Withdrawn.",
+          pending: "Hermes stopped waiting for an answer. A later answer won't come back here.",
+          ambiguous: "Hermes can't tell whether it was delivered.",
+        },
+        goToAnswer: "Go to the answer",
+      },
     },
     /** A computer-use run's card, its Watch live chip, and the note when Hermes couldn't use the screen (ADR 0216). */
     computerUse: {

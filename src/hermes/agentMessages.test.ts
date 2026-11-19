@@ -1,7 +1,8 @@
 // What Hermes's `message_agent` leaves in a Bot Chat, as Hermes 0.23.2 stored it for two bots on a headless gateway
 // (ADR 0207). The rows are that run's, with its paths shortened.
 import { describe, expect, it } from "vitest";
-import { agentSend, deliveryAnswer, signed, teammateMessage } from "./agentMessages";
+import { agentSend, deliveryAnswer, deliveryLines, signed, teammateMessage, withdrawal } from "./agentMessages";
+import type { Item } from "./model";
 
 const ID = "8897be34bb46788935b30e88b64b3b3ec9a3d9a1f4eb13e0835d936b7686e6a0";
 const ACK = `{"status": "queued", "delivery_id": "${ID}", "to": "@beta", "detail": "Durably queued for the live Bot Chat owner. Do NOT wait or resend; finish your turn.", "process_id": "proc_d71a6d3ef006", "reply_delivery": "notification", "target_state": "idle"}`;
@@ -80,6 +81,8 @@ describe("The answer a delivery brought back", () => {
   });
 });
 
+const SENT = { kind: "queued", to: "@beta", recipients: [{ to: "@beta", deliveryId: ID, claimed: false, targetState: "idle" }], reply: "notification" };
+
 describe("A message_agent call", () => {
   const args = { target: "beta", message: "PING-C-1794974808162 what is 2+2?" };
 
@@ -89,7 +92,7 @@ describe("A message_agent call", () => {
   });
 
   it("carries Hermes's answer once the call has one", () => {
-    expect(agentSend({ name: "message_agent", status: "done", args, result: ACK })).toEqual({ to: "@beta", text: args.message, ack: { kind: "queued", deliveryId: ID, to: "@beta" } });
+    expect(agentSend({ name: "message_agent", status: "done", args, result: ACK })).toEqual({ to: "@beta", text: args.message, ack: SENT });
     const refused = JSON.stringify({ error: "This install is not Bot-Mode-managed.", reason: "not_managed" });
     expect(agentSend({ name: "message_agent", status: "done", args, result: refused })?.ack).toEqual({ kind: "refused", why: "This install is not Bot-Mode-managed." });
     expect(agentSend({ name: "message_agent", status: "done", args, result: "not json" })).toEqual({ to: "@beta", text: args.message });
@@ -101,7 +104,7 @@ describe("A message_agent call", () => {
     expect(agentSend({ name: "message_agent", status: "done", args: two, result: partial })).toEqual({
       to: "@beta",
       text: "Status?",
-      ack: { kind: "queued", deliveryId: "d-1", to: "@beta", failed: "@ghost: NOT sent: no such teammate" },
+      ack: { kind: "queued", to: "@beta", recipients: [{ to: "@beta", deliveryId: "d-1", claimed: false }], reply: "notification", failed: "@ghost: NOT sent: no such teammate" },
     });
     const none = JSON.stringify({ status: "failed", fan_out: [{ to: "@ghost", error: "NOT sent: no such teammate" }, { to: "@phantom", error: "NOT sent: no such teammate" }] });
     expect(agentSend({ name: "message_agent", status: "done", args: two, result: none })?.ack).toEqual({
@@ -120,5 +123,104 @@ describe("A message_agent call", () => {
 
   it("is nothing for any other tool, whatever its arguments", () => {
     expect(agentSend({ name: "terminal", status: "done", args })).toBeUndefined();
+  });
+});
+
+// Each ack below is one `tools/bot_mode_dm.py` (0.23.2) builds: `_dispatch`'s live-owner branch, its notify-only
+// branch, `_spawn_delivery` for a relay or a peer, `fan_out`, and an admission it couldn't confirm.
+describe("Hermes's answer to a message_agent call, in full", () => {
+  const args = { target: "beta", message: "Status?" };
+  const ack = (result: unknown) => agentSend({ name: "message_agent", status: "done", args, result: JSON.stringify(result) })?.ack;
+
+  it("says the teammate's chat had taken it, and where that chat stood, only as of the ack", () => {
+    expect(ack({ status: "claimed", delivery_id: "d1", to: "@beta", detail: "…", process_id: "proc_1", reply_delivery: "notification", target_state: "waiting_approval" })).toEqual({
+      kind: "queued",
+      to: "@beta",
+      recipients: [{ to: "@beta", deliveryId: "d1", claimed: true, targetState: "waiting_approval" }],
+      reply: "notification",
+    });
+    expect(ack({ status: "queued", delivery_id: "d1", to: "@beta", target_state: "a state from a later Hermes" })).toMatchObject({ recipients: [{ to: "@beta", deliveryId: "d1", claimed: false }] });
+  });
+
+  it("says how the answer comes back: here, only when asked for, or not at all", () => {
+    expect(ack({ status: "queued", delivery_id: "d1", to: "@beta", reply_delivery: "poll", process_id: "proc_1" })).toMatchObject({ reply: "poll" });
+    expect(ack({ status: "queued", delivery_id: "d1", to: "@beta", expects_reply: false, detail: "Sent as notify-only" })).toMatchObject({ reply: "none" });
+    expect(ack({ status: "queued", delivery_id: "d1", to: "@beta", notification_error: "no notify slot" })).toMatchObject({ reply: "notification", replyError: "no notify slot" });
+  });
+
+  it("isn't 'not sent' when Hermes couldn't confirm the admission, which may have gone", () => {
+    expect(ack({ status: "ambiguous", delivery_id: "d1", error: "Live delivery admission could not be confirmed: timeout. Do not resend.", evidence_file: "/tmp/x" })).toEqual({
+      kind: "unconfirmed",
+      deliveryId: "d1",
+      why: "Live delivery admission could not be confirmed: timeout. Do not resend.",
+    });
+  });
+
+  it("keeps each teammate of a fan-out apart, a notice-only one marked so", () => {
+    expect(ack({ status: "queued", fan_out: [{ to: "@beta", status: "queued", delivery_id: "d1" }, { to: "@gamma", status: "claimed", delivery_id: "d2", expects_reply: false }] })).toEqual({
+      kind: "queued",
+      to: "@beta, @gamma",
+      recipients: [
+        { to: "@beta", deliveryId: "d1", claimed: false },
+        { to: "@gamma", deliveryId: "d2", claimed: true, notifyOnly: true },
+      ],
+      reply: "notification",
+    });
+  });
+
+  it("names the request a withdrawal is for, and why Hermes refused it", () => {
+    expect(withdrawal({ name: "message_agent", args: { target: "beta", cancel: "d1" } })).toEqual({ deliveryId: "d1" });
+    expect(withdrawal({ name: "message_agent", args: { target: "beta", cancel: "d1" }, result: JSON.stringify({ error: "Only the agent that sent a request can cancel it. Do not retry." }) })).toEqual({
+      deliveryId: "d1",
+      refused: "Only the agent that sent a request can cancel it. Do not retry.",
+    });
+    expect(withdrawal({ name: "message_agent", args: { target: "beta", message: "hi" } })).toBeUndefined();
+    expect(withdrawal({ name: "terminal", args: { cancel: "d1" } })).toBeUndefined();
+  });
+});
+
+describe("A sent message's card lines", () => {
+  const args = { target: "beta", message: "Status?" };
+  const call = (result: unknown, id = "call-1"): Extract<Item, { kind: "tool" }> => ({ kind: "tool", id, callId: id, name: "message_agent", status: "done", args, result: JSON.stringify(result), at: 1000 });
+  const QUEUED = { status: "queued", delivery_id: "d1", to: "@beta", process_id: "proc_1", reply_delivery: "notification", target_state: "idle" };
+  const answer = (deliveryId: string, status: "settled" | "failed" | "cancelled" | "pending" | "ambiguous"): Item => ({ kind: "returned", id: `r-${deliveryId}`, body: "…", process: false, agent: { kind: "answer", deliveryId, status }, at: 5000 });
+  const lines = (sent: Extract<Item, { kind: "tool" }>, later: Item[] = []) => deliveryLines(agentSend(sent)!, later, sent.at);
+
+  it("is nothing before Hermes answers the call, and nothing more than the heading for a refused one", () => {
+    expect(lines({ ...call(QUEUED), result: undefined, status: "running" })).toEqual([]);
+    expect(lines(call({ error: "This install is not Bot-Mode-managed." }))).toEqual([]);
+  });
+
+  it("says, while no answer has come, that Hermes reports nothing of the teammate's work here", () => {
+    expect(lines(call(QUEUED))).toEqual([
+      { kind: "queued", to: "@beta", claimed: false, targetState: "idle" },
+      { kind: "silent", to: "@beta", since: 1000 },
+    ]);
+  });
+
+  it("joins the answer by delivery id only: another request's answer to the same bot isn't this one's", () => {
+    const other = answer("d2", "settled");
+    expect(lines(call(QUEUED), [other]).map((l) => l.kind)).toEqual(["queued", "silent"]);
+    expect(lines(call(QUEUED), [other, answer("d1", "failed")]).at(-1)).toEqual({ kind: "ended", status: "failed", itemId: "r-d1", at: 5000 });
+    expect(lines(call({ status: "queued", fan_out: [{ to: "@beta", delivery_id: "d1" }, { to: "@gamma", delivery_id: "d9" }] }), [answer("d1,d9", "settled")]).at(-1)).toMatchObject({ kind: "ended", status: "settled" });
+  });
+
+  it("never waits for an answer that can't come, and never calls a notice failed", () => {
+    expect(lines(call({ ...QUEUED, expects_reply: false, reply_delivery: undefined }))).toEqual([{ kind: "queued", to: "@beta", claimed: false, targetState: "idle" }, { kind: "notifyOnly" }]);
+    expect(lines(call({ ...QUEUED, notification_error: "no slot" })).map((l) => l.kind)).toEqual(["queued", "noWayBack"]);
+    expect(lines(call({ status: "ambiguous", delivery_id: "d1", error: "could not be confirmed" }))).toEqual([{ kind: "unconfirmed", why: "could not be confirmed" }]);
+  });
+
+  it("keeps a withdrawal asked apart from one done: only the answer's status says it was withdrawn", () => {
+    const cancel: Item = { kind: "tool", id: "call-2", callId: "call-2", name: "message_agent", status: "done", args: { target: "beta", cancel: "d1" }, result: JSON.stringify({ status: "cancelled", delivery_id: "d1" }), at: 3000 };
+    expect(lines(call(QUEUED), [cancel]).map((l) => l.kind)).toEqual(["queued", "withdrawAsked", "silent"]);
+    expect(lines(call(QUEUED), [cancel, answer("d1", "cancelled")]).slice(-2)).toEqual([
+      { kind: "withdrawAsked", at: 3000 },
+      { kind: "ended", status: "cancelled", itemId: "r-d1", at: 5000 },
+    ]);
+  });
+
+  it("says Hermes stopped waiting, not that it was answered, when the wait ran out", () => {
+    expect(lines(call(QUEUED), [answer("d1", "pending")]).at(-1)).toMatchObject({ kind: "ended", status: "pending" });
   });
 });

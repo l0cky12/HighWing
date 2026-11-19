@@ -57,7 +57,7 @@ const toast = () => document.querySelector<HTMLElement>(".toast")?.textContent;
 const configures = (server: FakeHermes) => server.requests.filter((r) => r.method === "profiles.configure");
 const botRow = (profile: string) => document.querySelector<HTMLElement>(`.sb-bots .bots-row[data-profile="${profile}"] .bots-open`)!;
 const cards = () => Array.from(document.querySelectorAll<HTMLElement>(".msg.returned"));
-const said = (card: HTMLElement) => Array.from(card.querySelectorAll(".returned-head, .returned-why, .returned-body")).flatMap(untranslated);
+const said = (card: HTMLElement) => Array.from(card.querySelectorAll(".returned-head, .returned-why, .returned-body, .delivery")).flatMap(untranslated);
 const pinned = (s: FakeHermes) => void (s.profileMeta.quill = { ui_meta: { "hermes-bots": { title: "Quill", pinned: true } } });
 
 describe("Bot messaging's switch", () => {
@@ -143,6 +143,9 @@ describe("A message between two bots, in their Bot Chats", () => {
     expect(sent.querySelector(".returned-body strong")?.textContent).toBe("backup window");
     expect(sent.closest(".tools")).toBeNull();
     expect(document.querySelector(".tools")).toBeNull();
+    expect(Array.from(sent.querySelectorAll(".delivery li")).map((li) => li.textContent)).toEqual(["Queued for @quill. @quill was idle when it was sent.", "Answered. Go to the answer"]);
+    await user.click(within(sent).getByRole("button", { name: "Go to the answer" }));
+    expect(document.activeElement).toBe(answer);
     expect(answer.querySelector(".returned-title")?.textContent).toBe("@quill answered.");
     expect(answer.querySelector(".returned-body")?.textContent).toContain(REPLIES.recipient);
     expect(answer.matches(".process")).toBe(false);

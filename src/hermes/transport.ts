@@ -413,6 +413,8 @@ const NO_SUCH_METHOD = -32601;
 const BOT_SAVE_ATTEMPTS = 3;
 /** The most pages of 100 stored rows the Run view reads back to find where a reply's turn began. */
 const RUN_PAGES = 5;
+/** The tools whose stored result `fillStoredResults` reads back after a resume, because their card reads it (ADR 0227). */
+const RESULT_READ_FOR: ReadonlySet<string> = new Set(["message_agent"]);
 /** "No window here shows this chat" (`NOT_SHOWN_CODE`, `tui_gateway/server_requests.py`): one client declining. */
 const NOT_SHOWN = 4404;
 /** Requests only the window showing the chat answers (the official app's `WINDOW_OWNED_REQUESTS` at `bf0203a`). */
@@ -808,6 +810,8 @@ export class Hermes {
    * can be in that text and also arrive as an event.
    */
   private resumedText = new Map<string, string>();
+  /** Stored results read back by `fillStoredResults`, by profile, chat and call; `null`: Hermes had no such row in reach. */
+  private storedResults = new Map<string, string | null>();
   /** Closed Question cards, answered here or that Hermes stopped waiting on, by request id. A resume replaces the
    * chat's cards with what Hermes lists, so this keeps one it lists again from coming back. */
   private closedQuestions = new PerProfile<QuestionItem>();
@@ -4312,6 +4316,40 @@ export class Hermes {
     }
   }
 
+  /**
+   * Puts back the results `session.resume` leaves out of the calls whose card reads them (ADR 0227): a
+   * `message_agent` call's ack. Hermes keeps each in the call's stored tool row, read here by `tool_call_id` from the
+   * newest page back. A result read once is kept for the connection, so a later resume puts it back without a read.
+   * A call whose row isn't found keeps no result, and its card shows the message alone, as before.
+   */
+  private async fillStoredResults(chatId: string): Promise<void> {
+    const [gen, profile] = [this.generation, this.profile];
+    const key = (callId: string) => `${profile}/${chatId}/${callId}`;
+    const wanted = () =>
+      (this.snapshot.chats.find((c) => c.id === chatId)?.items ?? []).flatMap((i) => (i.kind === "tool" && i.callId && i.result === undefined && i.status === "done" && RESULT_READ_FOR.has(i.name) ? [i.callId] : []));
+    const unread = new Set(wanted().filter((id) => !this.storedResults.has(key(id))));
+    const PAGE = 100;
+    for (let page = 0; unread.size && page < RUN_PAGES; page++) {
+      const query = new URLSearchParams({ profile, order: "latest", limit: String(PAGE), offset: String(page * PAGE), inline_images: "false" });
+      const res = (await this.rest("GET", `${sessionPath(chatId)}/messages?${query}`)) as { messages?: unknown[] };
+      if (gen !== this.generation) return;
+      const rows = (res.messages ?? []).filter(isObj);
+      for (const r of rows) {
+        if (r.role !== "tool" || typeof r.tool_call_id !== "string" || typeof r.content !== "string" || !unread.delete(r.tool_call_id)) continue;
+        this.storedResults.set(key(r.tool_call_id), r.content);
+      }
+      if (rows.length < PAGE) break;
+    }
+    for (const id of unread) this.storedResults.set(key(id), null);
+    const found = new Map(wanted().flatMap((id) => {
+      const result = this.storedResults.get(key(id));
+      return typeof result === "string" ? [[id, result] as const] : [];
+    }));
+    if (!found.size || gen !== this.generation) return;
+    this.patchChat(chatId, (c) => ({ ...c, items: c.items.map((i) => (i.kind === "tool" && i.callId && i.result === undefined && found.has(i.callId) ? { ...i, result: found.get(i.callId) } : i)) }));
+    this.saveTranscript(chatId);
+  }
+
   /** Reads the chat's subagent roster again, while it's open on Hermes; nothing otherwise. */
   refreshSubagents(chatId: string): Promise<void> {
     const runtimeId = this.snapshot.chats.find((c) => c.id === chatId)?.runtimeId;
@@ -5199,6 +5237,7 @@ export class Hermes {
         this.earlyEvents.delete(res.runtimeId);
         for (const e of heard) this.onEvent(e);
         this.track(this.listSubagents(chatId, res.runtimeId));
+        this.track(this.fillStoredResults(chatId));
         return res.runtimeId;
       } finally {
         this.resuming.delete(chatId);

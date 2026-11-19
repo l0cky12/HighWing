@@ -3,9 +3,9 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { isReady, readinessOf, type PrereqId, type ReadinessAnswers, type Verdict } from "./computerUseReadiness";
+import { afterRead, afterTurnOn, computerUseToolset, isReady, noticeOf, readinessOf, type DesktopNotice, type PrereqId, type ReadinessAnswers, type Verdict } from "./computerUseReadiness";
 import { parseDoctor, type CliResult, type DisplayStatus } from "./screen";
-import type { Toolset, ToolsetList } from "./toolsets";
+import type { Toolset, ToolsetChange, ToolsetList } from "./toolsets";
 
 const recorded = (file: string): Record<string, unknown>[] =>
   readFileSync(fileURLToPath(new URL(`./fixtures/computer-use/${file}`, import.meta.url)), "utf8")
@@ -153,5 +153,67 @@ describe("readinessOf over a setup that can't run computer use", () => {
       text: "Computer Use backend: hypruse (Hyprland) — available.",
     });
     expect(rows({ ...healthy, doctor: ok(parseDoctor({ blocked: false, code: 1, output: "Computer Use backend: hypruse (Hyprland) — not available.\n" })) }).driver.kind).toBe("bad");
+  });
+});
+
+describe("what a Bot Chat's Desktop control notice shows", () => {
+  const row = toolset(false);
+  const noteOf = (...toolsets: Toolset[]) => noticeOf(list(...toolsets));
+
+  it("is the notice only for a listed computer_use on the cli platform that is off and can be switched", () => {
+    expect(noteOf(row)).toEqual({ kind: "off", row });
+    expect(noteOf(toolset(true))).toEqual({ kind: "hidden" });
+    expect(noteOf()).toEqual({ kind: "hidden" });
+    expect(noteOf({ ...row, platform: "discord", platformLabel: "Discord" })).toEqual({ kind: "hidden" });
+    expect(noteOf({ ...row, configOnly: true })).toEqual({ kind: "hidden" });
+  });
+
+  it("reads the same row the readiness table does", () => {
+    expect(computerUseToolset(list(toolset(true)))?.enabled).toBe(true);
+    expect(computerUseToolset(list({ ...row, name: "web" }))).toBeUndefined();
+  });
+
+  describe("after Turn on", () => {
+    const on = list(toolset(true));
+    const off = list(row);
+    const results: [string, ToolsetChange, DesktopNotice][] = [
+      ["saved, with Hermes installing the driver", { kind: "saved", list: on, installing: "cua_driver" }, { kind: "on", installing: "cua_driver" }],
+      ["saved after an error Hermes read back as on", { kind: "saved", list: on, warning: "502" }, { kind: "on", warning: "502" }],
+      ["saved", { kind: "saved", list: on }, { kind: "on" }],
+      ["asked about something new", { kind: "confirm", list: off, cautions: [{ kind: "noMcp", platform: "cli" }] }, { kind: "ask", row, cautions: [{ kind: "noMcp", platform: "cli" }] }],
+      ["turned on elsewhere meanwhile", { kind: "conflict", list: on, now: true }, { kind: "hidden" }],
+      ["turned off elsewhere meanwhile", { kind: "conflict", list: off, now: false }, { kind: "off", row }],
+      ["no longer listed", { kind: "conflict", list: list() }, { kind: "hidden" }],
+      ["refused, with the list read again", { kind: "rejected", reason: "nope", list: off }, { kind: "off", row, why: { kind: "rejected", reason: "nope" } }],
+      ["refused, with no list", { kind: "rejected", reason: "nope" }, { kind: "off", row, why: { kind: "rejected", reason: "nope" } }],
+      ["taken but read back off", { kind: "mismatch", list: off }, { kind: "off", row, why: { kind: "mismatch" } }],
+      ["unconfirmed, then read as on", { kind: "unknown", reason: "lost", answered: false, list: on }, { kind: "on" }],
+      ["unconfirmed, then read as off", { kind: "unknown", reason: "lost", answered: false, list: off }, { kind: "off", row, why: { kind: "unknown", reason: "lost" } }],
+      ["unconfirmed, with no list", { kind: "unknown", reason: "lost", answered: false }, { kind: "off", row, why: { kind: "unknown", reason: "lost" } }],
+    ];
+    it.each(results)("%s", (_, change, notice) => expect(afterTurnOn(row, change)).toEqual(notice));
+  });
+
+  describe("after a read", () => {
+    const off: DesktopNotice = { kind: "off", row };
+    const hidden: DesktopNotice = { kind: "hidden" };
+    const asking: DesktopNotice = { kind: "ask", row, cautions: [] };
+    it("shows what was read, and keeps what it is for when the read failed", () => {
+      expect(afterRead(hidden, off)).toEqual(off);
+      expect(afterRead(off, hidden)).toEqual(hidden);
+      expect(afterRead(off, undefined)).toEqual(off);
+      expect(afterRead(hidden, undefined)).toEqual(hidden);
+    });
+    it("leaves a change under way, and the line saying it is on, alone", () => {
+      const busy: DesktopNotice = { kind: "busy", row, step: "saving" };
+      expect(afterRead(busy, hidden)).toEqual(busy);
+      expect(afterRead({ kind: "on" }, hidden)).toEqual({ kind: "on" });
+      expect(afterRead({ kind: "on" }, off)).toEqual(off);
+    });
+    it("drops a question once the toolset is no longer off, and keeps why a Turn on failed while it still is", () => {
+      expect(afterRead(asking, off)).toEqual(asking);
+      expect(afterRead(asking, hidden)).toEqual(hidden);
+      expect(afterRead({ ...off, why: { kind: "mismatch" } }, off)).toEqual({ ...off, why: { kind: "mismatch" } });
+    });
   });
 });

@@ -1549,8 +1549,13 @@ export function Main({
   );
   // A computer-use run's Watch live, the refusal note's buttons, and follow mode (ADR 0216).
   const screenDesk = useMemo<ScreenDesk>(
-    () => ({ screen: screenState, onWatch: () => openPanel("screen"), onHandBack: () => hermes.screen.handBack() }),
-    [screenState, openPanel, hermes],
+    () => ({
+      screen: screenState,
+      onWatch: () => openPanel("screen"),
+      onHandBack: () => hermes.screen.handBack(),
+      ...(status === "connected" && { toolsets: { profile, api: hermes.toolsets } }),
+    }),
+    [screenState, openPanel, hermes, status, profile],
   );
   // A path in a reply (ADR 0167): a file opens in the Preview, a folder in a folder shell on the Hermes server. One
   // opener for every pane, so the newest click wins whichever pane it was in.

@@ -630,6 +630,7 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
 .cu-banner > svg { flex: none; color: var(--warn); }
 .cu-banner-text { flex: 1; min-width: 14em; }
 .cu-banner-why { flex-basis: 100%; color: var(--bad); }
+.cu-banner-note { flex-basis: 100%; color: var(--text-2); }
 
 /* approval */
 .approval {

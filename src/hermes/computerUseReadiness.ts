@@ -2,7 +2,7 @@
 // is Hermes's own words where it has them (doctor's check messages and hints, `display.status`'s blocker), and a coded
 // sentence of this app's where it doesn't, so the screen writes it in the owner's language.
 import { isUnavailable, type DisplayStatus, type DoctorAnswer, type ScreenApi } from "./screen";
-import type { ToolsetList } from "./toolsets";
+import { changeableName, type Caution, type Toolset, type ToolsetChange, type ToolsetList } from "./toolsets";
 import { errorText } from "./values";
 
 /** The toolset Hermes names `computer_use`, which the owner switches in Settings → Toolsets. */
@@ -79,9 +79,12 @@ function driver(a: ReadinessAnswers): Verdict {
   return bad(hermes(why || d.output.trim()), hint ? { kind: "hint", say: hermes(hint) } : undefined);
 }
 
+/** The `computer_use` row of a profile's toolsets. Readiness's toolset row and a Bot Chat's notice both read it, so "off" means one thing. */
+export const computerUseToolset = (list: ToolsetList): Toolset | undefined => list.toolsets.find((t) => t.name === COMPUTER_USE_TOOLSET);
+
 function toolset(a: ReadinessAnswers): Verdict {
   if (a.toolsets.status === "rejected") return unknown({ kind: "readFailed", error: errorText(a.toolsets.reason) });
-  const t = a.toolsets.value.toolsets.find((x) => x.name === COMPUTER_USE_TOOLSET);
+  const t = computerUseToolset(a.toolsets.value);
   if (!t) return unknown({ kind: "toolsetNotListed" });
   return t.enabled ? { kind: "ok" } : bad({ kind: "toolsetOff" }, { kind: "toolsets" });
 }
@@ -130,4 +133,65 @@ export const readinessOf = (a: ReadinessAnswers): Readiness => PREREQS.map((id) 
 export async function checkReadiness(deps: { screen: Pick<ScreenApi, "doctor" | "status">; toolsets: () => Promise<ToolsetList> }): Promise<Readiness> {
   const [doctor, status, toolsets] = await Promise.allSettled([deps.screen.doctor(), deps.screen.status(), deps.toolsets()]);
   return readinessOf({ doctor, status, toolsets });
+}
+
+/** Why the last Turn on didn't turn desktop control on. */
+export type TurnOnFailed = { kind: "rejected"; reason: string } | { kind: "unknown"; reason: string } | { kind: "mismatch" } | { kind: "readFailed"; reason: string };
+
+/**
+ * What a Bot Chat's Desktop control notice shows (ADR 0227).
+ * `hidden`: on, not listed, not this app's to switch, or not read. `off`: the notice, with `why` the last Turn on didn't
+ * turn it on. `busy`: checking the cautions, or saving. `ask`: the cautions to confirm before anything is sent. `on`:
+ * the line saying it is on now, until the chat changes.
+ */
+export type DesktopNotice =
+  | { kind: "hidden" }
+  | { kind: "off"; row: Toolset; why?: TurnOnFailed }
+  | { kind: "busy"; row: Toolset; step: "checking" | "saving" }
+  | { kind: "ask"; row: Toolset; cautions: readonly Caution[] }
+  | { kind: "on"; installing?: string; warning?: string };
+
+/** Pure. A fresh read: the notice only for a listed `computer_use` on the `cli` platform that is off and can be switched. */
+export function noticeOf(list: ToolsetList): DesktopNotice {
+  const row = computerUseToolset(list);
+  return row && !row.enabled && !row.configOnly && row.platform === "cli" && changeableName(row.name) ? { kind: "off", row } : { kind: "hidden" };
+}
+
+/** Pure. Where a Turn on of `row` leaves the notice, for every kind of change. */
+export function afterTurnOn(row: Toolset, r: ToolsetChange): DesktopNotice {
+  const now = r.list && computerUseToolset(r.list);
+  switch (r.kind) {
+    case "saved":
+      return { kind: "on", ...(r.installing && { installing: r.installing }), ...(r.warning && { warning: r.warning }) };
+    case "confirm":
+      return { kind: "ask", row: now ?? row, cautions: r.cautions };
+    case "conflict":
+      return noticeOf(r.list);
+    case "rejected":
+      return { kind: "off", row: now ?? row, why: { kind: "rejected", reason: r.reason } };
+    case "mismatch":
+      return { kind: "off", row: now ?? row, why: { kind: "mismatch" } };
+    case "unknown":
+      return now?.enabled ? { kind: "on" } : { kind: "off", row: now ?? row, why: { kind: "unknown", reason: r.reason } };
+  }
+}
+
+/**
+ * Pure. What a read leaves on screen. A change under way, or a line saying it is on, isn't undone by an older answer;
+ * a reason a Turn on failed stays while the toolset still reads off. `fresh` undefined: the read failed.
+ */
+export function afterRead(current: DesktopNotice, fresh: DesktopNotice | undefined): DesktopNotice {
+  if (!fresh) return current;
+  switch (current.kind) {
+    case "busy":
+      return current;
+    case "ask":
+      return fresh.kind === "hidden" ? fresh : current;
+    case "on":
+      return fresh.kind === "off" ? fresh : current;
+    case "off":
+      return fresh.kind === "off" ? { ...fresh, ...(current.why && { why: current.why }) } : fresh;
+    case "hidden":
+      return fresh;
+  }
 }

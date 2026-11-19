@@ -15,7 +15,7 @@ import type { AttachmentDesk } from "../hermes/attachmentDesk";
 import type { Reference, ReferenceDesk } from "../hermes/chatReferences";
 import { ReferenceChips } from "./ReferenceChips";
 import { ApprovalCard } from "./ApprovalCard";
-import { ComputerUseCard, HumanHasControlBanner, RunStopProvider } from "./ComputerUseCard";
+import { ComputerUseCard, DesktopOffNotice, HumanHasControlBanner, RunStopProvider } from "./ComputerUseCard";
 import { foldRuns, screenUse, type CuRun } from "../hermes/computerUse";
 import { QuestionCard } from "./QuestionCard";
 import { Menu, PinItem, type ChatPin } from "./ChatMenu";
@@ -1208,6 +1208,7 @@ export function ChatPane({
       {goalBar}
       {queueApi && <QueuePanel chat={chat} queue={queue} status={status} api={queueApi} />}
       <HumanHasControlBanner chat={chat} />
+      {kind === "bot" && <DesktopOffNotice key={chat.id} />}
       {policy.readOnly === "imported" ? (
         // ADR 0031: an imported transcript is a record, not a session Hermes can carry on as it was.
         <div className="composer-wrap read-only-note" role="note">

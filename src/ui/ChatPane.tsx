@@ -15,7 +15,7 @@ import type { AttachmentDesk } from "../hermes/attachmentDesk";
 import type { Reference, ReferenceDesk } from "../hermes/chatReferences";
 import { ReferenceChips } from "./ReferenceChips";
 import { ApprovalCard } from "./ApprovalCard";
-import { ComputerUseCard, HumanHasControlBanner, RunStopProvider } from "./ComputerUseCard";
+import { ComputerUseCard, DesktopOffNotice, HumanHasControlBanner, RunStopProvider } from "./ComputerUseCard";
 import { foldRuns, screenUse, type CuRun } from "../hermes/computerUse";
 import { QuestionCard } from "./QuestionCard";
 import { Menu, PinItem, type ChatPin } from "./ChatMenu";
@@ -95,7 +95,7 @@ const toldWhy = new Set<string>();
 
 type ToolItem = Extract<Item, { kind: "tool" }>;
 type ThinkingItem = Extract<Item, { kind: "thinking" }>;
-/** A message this bot sent a teammate (ADR 0207), and its card's lines from what came after it (ADR 0227). */
+/** A message this bot sent a teammate (ADR 0207), and its card's lines from what came after it (ADR 0228). */
 type SentBlock = { kind: "sent"; id: string; tool: ToolItem; send: AgentSend; lines: DeliveryLine[] };
 type Block = { kind: "tools"; id: string; tools: ToolItem[] } | SentBlock | CuRun | Exclude<Item, ToolItem>;
 const isItem = (b: Block): b is Exclude<Item, ToolItem> => b.kind !== "tools" && b.kind !== "sent" && b.kind !== "cu-run";
@@ -149,7 +149,7 @@ function mayMatch(block: Block, finds: RegExp) {
 
 // A group is rebuilt on every render, so it counts as unchanged when it holds the same tool calls. A run's state also
 // reads the reply after it, so a run with the same calls changes when that reply is stopped. A sent message's lines
-// read the items after it (ADR 0227), so the same call changes when its lines do; they are small plain data.
+// read the items after it (ADR 0228), so the same call changes when its lines do; they are small plain data.
 const sameBlock = (a: Block, b: Block) =>
   a === b ||
   (a.kind === "tools" && b.kind === "tools" && a.tools.length === b.tools.length && a.tools.every((t, i) => t === b.tools[i])) ||
@@ -219,12 +219,16 @@ export type JumpTarget =
   | { rowId: number; callId?: undefined; turn?: undefined; itemId?: undefined; at: number }
   /** The owner's message that starts turn `turn` (from 0), and its reply: where a version of that turn is opened. */
   | { turn: number; callId?: undefined; rowId?: undefined; itemId?: undefined; at: number }
-  /** An item of this chat by its id, as a sent message's card goes to its answer (ADR 0227). */
+  /** An item of this chat by its id, as a sent message's card goes to its answer (ADR 0228). */
   | { itemId: string; callId?: undefined; rowId?: undefined; turn?: undefined; at: number };
 /** The tool call being gone to, for the tool rows and groups that hold it to open themselves. */
 const JumpContext = createContext<JumpTarget | undefined>(undefined);
 /** Goes to an item of this chat by its id, rendering its part of the transcript first when it is far from the view. */
 const GoToItemContext = createContext<(itemId: string) => void>(() => {});
+
+/** What a Messaged card's Open chip does for `handle`: nothing when it isn't a bot on this connection. App provides it; Replay and export don't. */
+export type Teammates = { open: (handle: string) => (() => void) | undefined };
+export const TeammatesContext = createContext<Teammates | undefined>(undefined);
 
 const STATUS_NOTE: Record<ConnectionStatus, string | undefined> = {
   connected: undefined,
@@ -1204,6 +1208,7 @@ export function ChatPane({
       {goalBar}
       {queueApi && <QueuePanel chat={chat} queue={queue} status={status} api={queueApi} />}
       <HumanHasControlBanner chat={chat} />
+      {kind === "bot" && <DesktopOffNotice key={chat.id} />}
       {policy.readOnly === "imported" ? (
         // ADR 0031: an imported transcript is a record, not a session Hermes can carry on as it was.
         <div className="composer-wrap read-only-note" role="note">
@@ -1722,6 +1727,11 @@ function SentCard({ block, query }: { block: SentBlock; query: string }) {
   const refused = send.ack?.kind === "refused" ? send.ack.why : undefined;
   const why = refused ?? (send.ack?.kind === "queued" ? send.ack.failed : undefined);
   const running = tool.status === "running";
+  const teammates = useContext(TeammatesContext);
+  const links = send.handles.flatMap((h) => {
+    const open = teammates?.open(h);
+    return open ? [{ h, open }] : [];
+  });
   return (
     <TurnCard
       kind="sent"
@@ -1731,6 +1741,17 @@ function SentCard({ block, query }: { block: SentBlock; query: string }) {
       data-item={tool.id}
       data-call={tool.callId}
       tabIndex={tool.callId ? -1 : undefined}
+      foot={
+        links.length > 0 && (
+          <div className="sent-open">
+            {links.map(({ h, open }) => (
+              <button key={h} className="preview-chip" title={l.openTip(`@${h}`)} onClick={open}>
+                <Bot size={12} aria-hidden /> {l.open(`@${h}`)}
+              </button>
+            ))}
+          </div>
+        )
+      }
     >
       {why && (
         <p className="returned-why" translate="no">

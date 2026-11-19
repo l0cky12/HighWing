@@ -32,7 +32,7 @@ export type Recipient = { to: string; deliveryId: string; claimed: boolean; targ
 
 /**
  * What Hermes answered a `message_agent` call with (`tools/bot_mode_dm.py` at 0.23.2), when the tool item holds it:
- * live, or read back from the stored row (ADR 0227).
+ * live, or read back from the stored row (ADR 0228).
  * - `queued`: Hermes took it for each of `recipients`. `failed`: for a message to several teammates, each one Hermes
  *   couldn't send to, with its reason. `reply`: how the answer comes back: as a turn Hermes starts here
  *   (`notification`), only when this bot asks for it (`poll`), or not at all (`none`, sent as a notice).
@@ -45,8 +45,11 @@ export type SendAck =
   | { kind: "unconfirmed"; deliveryId: string; why: string }
   | { kind: "refused"; why: string };
 
-/** One `message_agent` call in the sender's chat. `to`: Hermes's own label once it has answered, else `@` and each target. */
-export type AgentSend = { to: string; text: string; ack?: SendAck };
+/**
+ * One `message_agent` call in the sender's chat. `to`: Hermes's own label once it has answered, else `@` and each
+ * target. `handles`: each target as the call named it, without the `@`, which the card's Open chips look up.
+ */
+export type AgentSend = { to: string; handles: readonly string[]; text: string; ack?: SendAck };
 
 const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 const targetState = (v: unknown): TargetState | undefined => TARGET_STATES.find((s) => s === v);
@@ -118,11 +121,11 @@ export function agentSend(tool: { name: string; status: string; args?: Record<st
   const message = text(tool.args?.message);
   if (!targets.length || !message) return undefined;
   const ack = ackOf(tool.result);
-  return { to: ack?.kind === "queued" ? ack.to : targets.map((t) => `@${t}`).join(", "), text: message, ...(ack && { ack }) };
+  return { to: ack?.kind === "queued" ? ack.to : targets.map((t) => `@${t}`).join(", "), handles: targets, text: message, ...(ack && { ack }) };
 }
 
 /**
- * One line of a sent message's card (ADR 0227). Each comes from one thing Hermes sent, and none says more than it:
+ * One line of a sent message's card (ADR 0228). Each comes from one thing Hermes sent, and none says more than it:
  * - `queued`: the ack, per teammate. `claimed` and `targetState` were true when Hermes answered, and are never updated.
  * - `notifyOnly` / `poll` / `noWayBack`: how the answer comes back, from the ack.
  * - `unconfirmed`: Hermes couldn't confirm the teammate's chat took it.

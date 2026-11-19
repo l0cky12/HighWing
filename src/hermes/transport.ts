@@ -59,6 +59,8 @@ import type { Restored, RollbackIO } from "./fileUndo";
 import { ConnectionLostError, FILE_MARK, LIMITS, LegacyProtocol, PromptUnconfirmedError, ProtocolMismatchError, RpcError, negotiate, type Admitted, type AnswerOutcome, type BranchAnswer, type GoingOut, type Inbound, type PlainMethod, type Port, type RpcFrame, type ServerRequest, type SessionProtocol } from "./sessionProtocol";
 import type { AppMethod } from "./canonicalVerbs";
 import { policyOf } from "./chatKind";
+import { askFirstBlocks } from "./askFirst";
+import { getUIPrefs } from "./uiPrefs";
 import { projectStored, type TranscriptMessage } from "./storedTranscript";
 import {
   BOT_BLOCK_FIELDS,
@@ -413,7 +415,7 @@ const NO_SUCH_METHOD = -32601;
 const BOT_SAVE_ATTEMPTS = 3;
 /** The most pages of 100 stored rows the Run view reads back to find where a reply's turn began. */
 const RUN_PAGES = 5;
-/** The tools whose stored result `fillStoredResults` reads back after a resume, because their card reads it (ADR 0227). */
+/** The tools whose stored result `fillStoredResults` reads back after a resume, because their card reads it (ADR 0228). */
 const RESULT_READ_FOR: ReadonlySet<string> = new Set(["message_agent"]);
 /** "No window here shows this chat" (`NOT_SHOWN_CODE`, `tui_gateway/server_requests.py`): one client declining. */
 const NOT_SHOWN = 4404;
@@ -3753,7 +3755,7 @@ export class Hermes {
         const go = async () => {
           const asking = this.sendContext?.(profile, chatId);
           if (asking) told = await asking.catch(() => undefined);
-          const context = [...(told?.blocks ?? []), ...references.map(referenceBlock)];
+          const context = [...(told?.blocks ?? []), ...references.map(referenceBlock), ...askFirstBlocks(chat, getUIPrefs().askFirst)];
           if (!skill) return this.protocol.submit(runtimeId, { profile: this.profile, text, attachments, hold: !!queued, context }, goingOut);
           // Hermes builds the skill's text for this session; nothing reaches the chat until it is sent below.
           const ran = await runSkill(this.protocol, runtimeId, skill);
@@ -4319,7 +4321,7 @@ export class Hermes {
   }
 
   /**
-   * Puts back the results `session.resume` leaves out of the calls whose card reads them (ADR 0227): a
+   * Puts back the results `session.resume` leaves out of the calls whose card reads them (ADR 0228): a
    * `message_agent` call's ack. Hermes keeps each in the call's stored tool row, read here by `tool_call_id` from the
    * newest page back. A result read once is kept for the connection, so a later resume puts it back without a read.
    * A call whose row isn't found keeps no result, and its card shows the message alone, as before.
@@ -4941,7 +4943,7 @@ export class Hermes {
       const id = nextId(c.items, "w");
       const back = returnedItem(text, row.display_kind, row.display_metadata);
       const { rest, images } = peelImages(text);
-      const began: Item = back ? { kind: "returned", id, ...back, rowId, ...(at && { at }) } : { kind: "user", id, text: rest, ...(images.length && { images }), rowId, ...(at && { at }) };
+      const began: Item = back ? { kind: "returned", id, ...back, rowId, ...(at && { at }) } : { kind: "user", id, text: typedText(rest), ...(images.length && { images }), rowId, ...(at && { at }) };
       return { ...c, items: [...c.items.slice(0, start), began, ...c.items.slice(start)] };
     });
     this.saveTranscript(chatId);

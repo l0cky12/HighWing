@@ -71,6 +71,31 @@ describe("Branch from here: the boundary", () => {
     expect(locate(items, "a2", spine)).toEqual({ index: 3 });
   });
 
+  it("finds a message whose stored row ends with context both clients hide, such as a Bot Chat's ask-first rule", () => {
+    const spine = spineOf([
+      { id: 1, role: "user", content: "Open Chrome.\n\n--- Attached Context ---\n\n[The owner's rule for messaging other bots]\nAsk first." },
+      { id: 2, role: "assistant", content: "Opened." },
+    ]);
+    const items: Item[] = [
+      { kind: "user", id: "u1", text: "Open Chrome." },
+      { kind: "assistant", id: "a1", text: "Opened." },
+    ];
+    expect(locate(items, "u1", spine)).toEqual({ index: 0 });
+  });
+
+  it("finds a reply that quotes the hidden-context marker, which only the owner's messages carry", () => {
+    const quoted = "Highwing hides what follows this line:\n--- Attached Context ---\nin both clients.";
+    const spine = spineOf([
+      { id: 1, role: "user", content: "What does Highwing hide?" },
+      { id: 2, role: "assistant", content: quoted },
+    ]);
+    const items: Item[] = [
+      { kind: "user", id: "u1", text: "What does Highwing hide?", rowId: 1 },
+      { kind: "assistant", id: "a1", text: quoted },
+    ];
+    expect(locate(items, "a1", spine)).toEqual({ index: 1 });
+  });
+
   it("finds a message sent with images, which Hermes stores with their @image: lines after the words", () => {
     const rows = [
       { id: 1, role: "user", content: "What is on this screen?\n@image:/h/images/upload_1.png" },

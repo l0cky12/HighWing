@@ -54,6 +54,7 @@ import { StartupSettings } from "./StartupSettings";
 import { SummonSettings } from "./SummonSettings";
 import { ChatSectionSettings } from "./ChatSectionSettings";
 import { InboxSettings } from "./InboxSettings";
+import { AskFirstSettings } from "./AskFirstSettings";
 import { FollowScreenSettings } from "./FollowScreenSettings";
 import { FollowUpSettings } from "./FollowUpSettings";
 import { SpellCheckSettings } from "./SpellCheckSettings";
@@ -757,6 +758,7 @@ export function SettingsScreen({
         <ChatSectionSettings />
         <FollowUpSettings />
         <FollowScreenSettings />
+        <AskFirstSettings />
         <SpellCheckSettings />
         <InboxSettings />
       </>

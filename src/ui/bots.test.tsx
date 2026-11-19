@@ -1450,7 +1450,7 @@ describe("The chat list panel's two modes", () => {
     await user.click(panelBots()[0]);
     expect(screen.queryByRole("alertdialog")).toBeNull();
     await waitFor(() => expect(hermes.profile).toBe("default"));
-    expect(screen.getByRole("status").textContent).toMatch(/A reply is still running in scribe/);
+    expect(document.querySelector(".toast")?.textContent).toMatch(/A reply is still running in scribe/);
   });
 
   it("keeps a chat started while another bot's Bot Chat is on its way, and marks no bot current", async () => {

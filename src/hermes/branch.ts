@@ -104,7 +104,8 @@ const norm = (t: string) => t.replace(/\s+/g, " ").trim();
  */
 function sameMessage(row: { role: string; text: string }, item: { kind: string; text: string }): boolean {
   if (row.role !== item.kind) return false;
-  const a = norm(peelImages(row.text).rest);
+  const rest = peelImages(row.text).rest;
+  const a = norm(row.role === "user" ? typedText(rest) : rest);
   const b = norm(item.text);
   return a === b || (item.kind === "user" && !!b && a.endsWith(b));
 }
@@ -141,6 +142,24 @@ export function locate(items: Item[], itemId: string, spine: SpineRow[]): { inde
  * `agent/title_generator.py` at the deployed checkout). A ref named in the footer isn't one the owner sent again.
  */
 export const typedText = (text: string) => text.replace(/\n+--- (?:Context Warnings|Attached Context) ---\n[\s\S]*$/, "");
+
+const FOOTER_MARKERS = ["--- Attached Context ---", "--- Context Warnings ---"];
+
+/**
+ * A preview Hermes collapsed to one line and cut at 80 characters (`_latest_message_preview`), without what both
+ * clients hide: everything from either footer marker on, and the start of a marker the 80-character cut ended in.
+ */
+export function typedPreview(preview: string): string {
+  const whole = preview.replace(/(?:^|\s)--- (?:Context Warnings|Attached Context) ---.*$/s, "");
+  if (whole !== preview || !preview.endsWith("...")) return whole.trimEnd();
+  const head = preview.slice(0, -3);
+  for (const marker of FOOTER_MARKERS)
+    for (let k = marker.length; k >= 3; k--) {
+      const start = marker.slice(0, k);
+      if (head === start || head.endsWith(` ${start}`)) return head.slice(0, head.length - k).trimEnd();
+    }
+  return preview;
+}
 
 /** The `@file:` refs a message names (`file.attach` `ref_text`, quoted with `` ` ``, `"` or `'` when needed). */
 export function fileRefs(text: string): string[] {

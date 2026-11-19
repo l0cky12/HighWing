@@ -55,12 +55,12 @@ import { Inbox } from "./ui/Inbox";
 import { BotList, useBotActions, type BotEditWiring } from "./ui/Bots";
 import { CHAT_POLICY, chatKind, policyOf } from "./hermes/chatKind";
 import { jobRunTitle } from "./hermes/cronJobs";
-import { botActivity, botsWaiting, newInBotChatNote, type Bot } from "./hermes/bots";
+import { botActivity, botsWaiting, newInBotChatNote, teammateOf, type Bot } from "./hermes/bots";
 import { blocksRestore, inboxAcks, inboxEntries, inboxScope, needsOwner, type InboxAcks, type InboxEntry } from "./hermes/inbox";
 import { searchEverywhere, type EverywhereFilter, type EverywhereOutcome, type EverywhereRow } from "./hermes/everywhere";
 import { LiveConnections, attention as attentionOf, withoutServer, type ChatRef, type LiveSummary } from "./hermes/liveConnections";
 import { handoffs as handoffsOf, nextHandoffChange, outstandingIds, type Handoff, type StopWaiting } from "./hermes/dispatched";
-import { ChatPane, type Comparing, type FollowUpHost, type JumpTarget } from "./ui/ChatPane";
+import { ChatPane, TeammatesContext, type Comparing, type FollowUpHost, type JumpTarget, type Teammates } from "./ui/ChatPane";
 import type { ChatPin } from "./ui/ChatMenu";
 import { BranchDialog, BranchedFrom } from "./ui/Branch";
 import { MembershipDialog, MembershipStatus, needsOwner as membershipNeedsOwner } from "./ui/MembershipSync";
@@ -1549,8 +1549,13 @@ export function Main({
   );
   // A computer-use run's Watch live, the refusal note's buttons, and follow mode (ADR 0216).
   const screenDesk = useMemo<ScreenDesk>(
-    () => ({ screen: screenState, onWatch: () => openPanel("screen"), onHandBack: () => hermes.screen.handBack() }),
-    [screenState, openPanel, hermes],
+    () => ({
+      screen: screenState,
+      onWatch: () => openPanel("screen"),
+      onHandBack: () => hermes.screen.handBack(),
+      ...(status === "connected" && { toolsets: { profile, api: hermes.toolsets } }),
+    }),
+    [screenState, openPanel, hermes, status, profile],
   );
   // A path in a reply (ADR 0167): a file opens in the Preview, a folder in a folder shell on the Hermes server. One
   // opener for every pane, so the newest click wins whichever pane it was in.
@@ -2360,6 +2365,8 @@ export function Main({
   // owner's own bot ends it there. Chats and New chat go back to `home`; an ordinary chat of the bot's profile on screen
   // makes that profile the owner's. The next launch opens on `home` while a visit lasts.
   const visitBot = (b: Bot) => openBot(b, "open", b.profile === profile ? visit : b.profile === visit?.home ? undefined : (visit ?? { home: profile, before: active.chatId }));
+  const visitBotRef = useRef(visitBot);
+  visitBotRef.current = visitBot;
   const goHome = (v: BotVisit, to: "chats" | "new") =>
     guard(() => {
       if (to === "chats") setChatListMode("chats");
@@ -3230,9 +3237,21 @@ export function Main({
     onNote: (text) => setToast({ text, at: Date.now() }),
   });
 
+  // What a Messaged card's Open chip opens (ADR 0229): a bot on this connection, as a Bot visit.
+  const teammates = useMemo<Teammates>(
+    () => ({
+      open: (handle) => {
+        const b = teammateOf(bots?.roster ?? [], handle, profile);
+        return b && (() => visitBotRef.current(b));
+      },
+    }),
+    [bots?.roster, profile],
+  );
+
   return (
     <LinksProvider preview={openPreview} path={openPath} web={webPages} onToast={(text) => setToast({ text, at: Date.now() })}>
     <ScreenDeskProvider value={screenDesk}>
+    <TeammatesContext value={teammates}>
     <SentImageReader.Provider value={sentImages}>
     <div className="app" inert={covered || restarting}>
       <Rail
@@ -3938,6 +3957,7 @@ export function Main({
         )}
     </div>
     </SentImageReader.Provider>
+    </TeammatesContext>
     </ScreenDeskProvider>
     </LinksProvider>
   );

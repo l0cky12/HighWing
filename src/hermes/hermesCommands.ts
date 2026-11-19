@@ -1,4 +1,4 @@
-// Hermes's own slash commands, as its `commands.catalog` lists them for the profile (ADR 0225). Each is offered in the
+// Hermes's own slash commands, as its `commands.catalog` lists them for the profile (ADR 0226). Each is offered in the
 // composer and runs the way Hermes's own desktop runs it, through `slash.exec` (runServerCommand), unless this app does
 // it with a feature of its own (commands.ts, COMMANDS) or can't do it here, which `UNAVAILABLE` says why. Read in
 // Hermes's source at the deployed `bf0203a`: the catalog (`tui_gateway/command_discovery.py`), the desktop's routes

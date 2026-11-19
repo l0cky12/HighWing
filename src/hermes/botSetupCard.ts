@@ -1,4 +1,4 @@
-// Bot setup's review card (ADR 0227), as data: which setup block in a Bot Chat is the live card, what it would change
+// Bot setup's review card (ADR 0231), as data: which setup block in a Bot Chat is the live card, what it would change
 // in Hermes, and what the owner accepted at Set it up. Pure: the transport reads the rows and Hermes's lists, and the
 // card UI draws what this returns.
 // The block is the bot's words, so nothing in it reaches Hermes as given. Every skill, toolset, model, MCP server and

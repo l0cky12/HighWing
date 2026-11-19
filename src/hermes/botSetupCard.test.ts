@@ -1,4 +1,4 @@
-// Bot setup's review card as data (botSetupCard.ts, ADR 0227): which block is the live card, what it would change in
+// Bot setup's review card as data (botSetupCard.ts, ADR 0231): which block is the live card, what it would change in
 // Hermes, and what survives Set it up and a reload. Rows are shaped as Hermes stores them. All data is synthetic.
 import { describe, expect, it } from "vitest";
 import { BOT_SETUP_COLORS, BOT_SETUP_FENCE, botSetupBrief, type BotSetupBlock } from "./botSetupBrief";

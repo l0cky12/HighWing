@@ -3,7 +3,7 @@
 // without the routes, and that every call stays on the profile it names.
 import { afterEach, describe, expect, it } from "vitest";
 import { FakeHermes } from "./fakeHermes";
-import { asReadBack, PersonaApi, PersonaError, personaError, sameSoul, soulNotes } from "./persona";
+import { asReadBack, PersonaApi, PersonaError, personaError, sameSoul } from "./persona";
 import { connect, type Hermes } from "./transport";
 import { RestError, type RestMethod } from "./pipe";
 
@@ -264,11 +264,3 @@ describe("requests that never end, and a closed connection", () => {
 });
 
 type PersonaRest = (method: RestMethod, path: string, body?: unknown) => Promise<unknown>;
-
-describe("what Hermes does with it", () => {
-  it("notes an empty persona and one longer than Hermes includes in full", () => {
-    expect(soulNotes("# Fine\n")).toEqual([]);
-    expect(soulNotes("  \n")[0]).toMatch(/built-in identity/);
-    expect(soulNotes("x".repeat(20_001))[0]).toMatch(/20,001 characters.*up to 20,000/);
-  });
-});

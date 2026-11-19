@@ -80,6 +80,13 @@ it("keeps an image a PR links through a branch name, not one pinned to a commit"
   expect(out).toMatch(/unreferenced images:\n {2}docs\/screenshots\/a\/pinned\.png/);
 });
 
+it("keeps an image a PR links through a branch name under the repository's current name", () => {
+  const root = checkout({ "README.md": "nothing here", "docs/screenshots/a/renamed.png": "png" });
+  const prs = join(root, "prs.json");
+  writeFileSync(prs, JSON.stringify([{ number: 10, body: "![r](https://github.com/l0cky12/HighWing/blob/main/docs/screenshots/a/renamed.png?raw=true)", comments: [] }]));
+  expect(run(root, "--github", prs, "--all")).toContain("docs/screenshots/a/renamed.png\n    <- GitHub #10 (main)");
+});
+
 it("decodes a percent-encoded name, in a tracked file and in a PR's branch-name link", () => {
   const root = checkout({
     "README.md": "![s](docs/screenshots/a/chat%2Dshot.png)",

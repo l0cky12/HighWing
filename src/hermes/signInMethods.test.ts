@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { firstPick, methodLabel, methodsNote, offered, readMethods, withMethod } from "./signInMethods";
-import type { Methods, Reached, SignInDetails, SignInMethod } from "./tauriPipe";
+import { methodLabel, methodsNote, offered, readMethods, withMethod } from "./signInMethods";
+import type { Reached, SignInDetails, SignInMethod } from "./tauriPipe";
 
 const d: SignInDetails = { mode: "url", sshTarget: "", url: "http://hermes:9119", username: "lena", password: "hunter2" };
 const basic: SignInMethod = { method: "password", provider: "basic", label: "Basic" };
@@ -26,13 +26,9 @@ describe("Sign-in methods", () => {
     expect(none).toEqual({ methods: [{ method: "password", provider: "basic", label: "Password" }], note: "unread" });
   });
 
-  it("offers what the server lists, starts on the method used last, and keeps a token offered when the list couldn't be read", () => {
-    const both: Methods = { methods: [basic, token] };
+  it("offers what the server lists and keeps a token offered when the list couldn't be read", () => {
     const tok = { ...d, method: "token" as const };
     expect(offered(undefined, d)).toEqual([{ method: "password", provider: "basic", label: "Password" }]);
-    expect(firstPick(offered(both, tok), tok)).toEqual(token);
-    expect(firstPick(offered(both, d), d)).toEqual(basic);
-    expect(firstPick(offered({ methods: [token] }, d), d)).toEqual(token);
     expect(offered({ methods: [basic], note: "unread" }, tok)).toEqual([basic, token]);
     expect(offered({ methods: [basic] }, tok)).toEqual([basic]);
     // A status that was read and says no token isn't overruled by the connection's habit.

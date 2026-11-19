@@ -1,7 +1,6 @@
 // Setup: the first-run flow that connects Hermes Chat to a Hermes server (ADR 0009). It tests a sign-in before
 // keeping it, explains a failed test in terms of what to fix, and lists the model providers whose API key the owner
 // can give the server. The Rust side does the testing (`hermes_probe`) and the key saving (`hermes_save_provider_key`).
-import type { SavedSignIn } from "./account";
 import type { Route } from "./pipe";
 import type { Reached, SignInDetails } from "./tauriPipe";
 import { isUnsecure } from "./unsecure";
@@ -77,12 +76,6 @@ export type DashboardStatus = { version?: string; authRequired?: boolean; authPr
 
 /** The sign-in method Hermes Chat uses (`PASSWORD_PROVIDER` in transport.rs). */
 const PASSWORD_PROVIDER = "basic";
-
-/**
- * Whether this computer has a connection set up already, from the sign-in saved beside the keyring. An install
- * that has one never sees the first-run setup again: launch signs in, or the sign-in screen asks for the password.
- */
-export const isSetUp = (saved: SavedSignIn) => !!(saved.sshTarget.trim() || saved.url.trim() || saved.username.trim());
 
 /** The fields setup still needs before it can test, in words; empty when it can test. */
 export function missing(d: SignInDetails): string[] {

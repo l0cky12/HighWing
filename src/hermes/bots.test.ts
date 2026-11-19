@@ -4,7 +4,7 @@
 // botsTransport.test.ts.
 import { describe, expect, it } from "vitest";
 import { legacyOver } from "./fakeSessions";
-import { BOT_CHAT_TITLE, BotChats, BotModeUnsupportedError, botActivity, botName, botsWaiting, isBotChat, isBotChatOnScreen, isBotChatTitle, namedByProfile, newInBotChatNote, rosterOf, agentMessaging, messagingStep, rosterRows, type Bot, type BotActivity, type BotRpc } from "./bots";
+import { BOT_CHAT_TITLE, BotChats, BotModeUnsupportedError, botActivity, botName, botsWaiting, isBotChat, isBotChatTitle, namedByProfile, newInBotChatNote, rosterOf, agentMessaging, messagingStep, rosterRows, type Bot, type BotActivity, type BotRpc } from "./bots";
 
 type Call = { method: string; params: Record<string, unknown> };
 
@@ -221,15 +221,6 @@ describe("telling a Bot Chat apart", () => {
     // Renamed to the title in another client: in Hermes it is now the profile's Bot Chat.
     expect(isBotChat({ title: "Bot Chat" })).toBe(true);
     expect(isBotChat({ title: "Disk usage" })).toBe(false);
-  });
-
-  it("knows the Bot Chat on screen by its registry row or its lineage tip, for the /new guard", () => {
-    const bot = { botChat: { id: "root-1", resolvedId: "tip-9", preview: "", lastActive: 0, messageCount: 0 } };
-    expect(isBotChatOnScreen(bot, "root-1")).toBe(true);
-    expect(isBotChatOnScreen(bot, "tip-9")).toBe(true);
-    expect(isBotChatOnScreen(bot, "side-chat")).toBe(false);
-    expect(isBotChatOnScreen({ botChat: null }, "root-1")).toBe(false);
-    expect(isBotChatOnScreen(bot, undefined)).toBe(false);
   });
 });
 

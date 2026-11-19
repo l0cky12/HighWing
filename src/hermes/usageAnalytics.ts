@@ -10,7 +10,7 @@
 // Hermes's own sums (`GET /api/analytics/usage?days=`) can't be filtered by project, model, time zone or a custom
 // range, and have no cache writes or cost status, so they only cross-check a rolling period and give the usage of
 // Hermes's helper tasks, which no chat carries.
-import { chatUsageOf, costLabel, tokens as shortTokens, usd, type ChatUsage, type Cost } from "./usage";
+import { chatUsageOf, costLabel, usd, type ChatUsage, type Cost } from "./usage";
 import { instantsOf, isoIn, knownZone } from "./schedule";
 import { jobRunTitle } from "./cronJobs";
 import { statusOf } from "./pipe";
@@ -844,6 +844,3 @@ export function usageCsv(chats: UsageChat[], zone: string, projectNames: (c: Usa
 }
 
 export const csvFileName = (from: number, to: number, zone: string) => `hermes-usage-${dayIn(zone, from)}-to-${dayIn(zone, to - 1)}.csv`;
-
-/** A count in a few characters, for tables. */
-export const short = shortTokens;

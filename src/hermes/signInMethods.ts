@@ -40,9 +40,6 @@ export function offered(methods: Methods | undefined, d: SignInDetails): SignInM
   return methods.methods;
 }
 
-/** The method to start on: the one `d` signs in with, if offered; otherwise the first offered. */
-export const firstPick = (list: SignInMethod[], d: SignInDetails): SignInMethod => list.find((m) => isPicked(m, d)) ?? list[0];
-
 /** `d` signing in with `m`. A token typed for another method isn't kept, nor is a password for a token. */
 export function withMethod(d: SignInDetails, m: SignInMethod): SignInDetails {
   const { method: _method, provider: _provider, token: _token, ...rest } = d;

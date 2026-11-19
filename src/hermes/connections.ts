@@ -200,7 +200,7 @@ function toConnection(v: unknown): SavedConnection | undefined {
   });
 }
 
-/** The single sign-in kept before, if one is set up there (setup.ts `isSetUp`). */
+/** The single sign-in kept before, if one is set up there. */
 function readLegacy(storage: Storage_): Address | undefined {
   let v: unknown;
   try {

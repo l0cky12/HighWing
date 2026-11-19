@@ -295,15 +295,6 @@ export const isBotChatTitle = (title: unknown) => typeof title === "string" && t
  */
 export const isBotChat = (c: { bot?: boolean; title: string }) => !!c.bot || isBotChatTitle(c.title);
 
-/**
- * Whether the chat on screen, by its stored id, is this bot's Bot Chat: its registry row or the lineage's tip, which
- * is what opens once Hermes has compressed it. The `/new` guard reads this (Hermes's `isCanonicalChatOnScreen`).
- */
-export function isBotChatOnScreen(bot: Pick<Bot, "botChat"> | undefined, chatId: string | undefined): boolean {
-  const row = bot?.botChat;
-  return !!row && !!chatId && (chatId === row.id || chatId === row.resolvedId);
-}
-
 /** A Bot Chat this app found or created. `openId`: the stored session to open (the lineage tip). */
 export type BotChatOpen = { registryId: string; openId: string; created: boolean };
 

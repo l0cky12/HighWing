@@ -229,19 +229,3 @@ export class PersonaApi {
     return { kind: "changed", server: after, previous: before };
   }
 }
-
-// What Hermes does with SOUL.md (`agent/prompt_builder.py` `load_soul_md`, `_truncate_content` at `bf0203a`).
-
-/** Hermes includes at least this many characters of SOUL.md; more for a model whose context window is known and large. */
-export const SOUL_INCLUDED_CHARS = 20_000;
-
-/** What Hermes will do with this text when it next reads it, as notes for the owner. */
-export function soulNotes(content: string): string[] {
-  const notes: string[] = [];
-  if (!content.trim()) notes.push("It's empty, so Hermes uses its built-in identity, as if there were no SOUL.md.");
-  if (content.length > SOUL_INCLUDED_CHARS)
-    notes.push(
-      `It's ${content.length.toLocaleString("en-US")} characters. Hermes includes up to ${SOUL_INCLUDED_CHARS.toLocaleString("en-US")} characters of it, or more for a model with a large context window or a larger context_file_max_chars setting. Past its limit, Hermes keeps the beginning and the end and leaves out the middle.`,
-    );
-  return notes;
-}

@@ -68,7 +68,7 @@ const legibleGraph = `(() => {
 const sections = `(async () => {
   const h = window.shots.hermes;
   for (const id of ["caddy", "rust", "trip"]) await h.unsettle(id);
-  const scope = JSON.stringify(["ssh", "lena@hermes", "lena", h.getSnapshot().profile]);
+  const scope = JSON.stringify(["connection", "conn-home-0001", h.getSnapshot().profile]);
   localStorage.setItem("hermes-chat.snoozes", JSON.stringify({ v: 1, scopes: { [scope]: { trip: Date.now() + 3 * 3600e3, rust: Date.now() + 26 * 3600e3 } } }));
   window.dispatchEvent(new StorageEvent("storage", { key: "hermes-chat.snoozes" }));
   void h.send("nas", "Run a SMART check on every disk in tank");
@@ -94,9 +94,6 @@ const typeIn = (text) =>
   `(() => { const ta = document.querySelector("textarea[data-composer]"); ta.focus();
      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(ta, ${JSON.stringify(text)});
      ta.setSelectionRange(ta.value.length, ta.value.length); ta.dispatchEvent(new Event("input", { bubbles: true })); })()`;
-const pickPersona = (profile) =>
-  `(() => { const s = document.querySelector("select.persona-profile");
-     Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(s, ${JSON.stringify(profile)}); s.dispatchEvent(new Event("change", { bubbles: true })); })()`;
 // A computer_use capture as Hermes sends it with tool.complete (ADR 0060): its screenshot inline, as a 1440x900 PNG's
 // worth of base64 (the bytes are random; only the size is real), then the tool call opened.
 const capture = `(async () => {
@@ -191,21 +188,10 @@ const endAllSubagents = "window.shots.endAllSubagents()";
 // A click from a script leaves the focus ring a mouse click wouldn't: the shot shows what the owner sees.
 const unfocus = "document.activeElement.blur()";
 const scenes = {
-  "sidebar-sections": { query: "", steps: [sections, click(".section-toggle", "Snoozed"), click(".section-toggle", "Settled")] },
-  "sidebar-sections-light": { query: "?mode=light", steps: [sections, click(".section-toggle", "Snoozed"), click(".section-toggle", "Settled")] },
+  "sidebar-sections": { query: "", steps: [sections, click(".section-toggle", "Snoozed"), click(".section-toggle", "Archived")] },
+  "sidebar-sections-light": { query: "?mode=light", steps: [sections, click(".section-toggle", "Snoozed"), click(".section-toggle", "Archived")] },
   "snooze-menu": { query: "", steps: [sections, menuOn("caddy")] },
   "snooze-custom": { query: "", steps: [sections, menuOn("caddy"), click(".menu-item", "Custom…"), click(".snooze-dialog .segmented button", "Duration")] },
-  // A headless page never has focus and isn't hovered, so the actions a hover shows are shown on one top row (Settle) and
-  // one Settled row (Unsettle): the same icon-only button.
-  unsettle: {
-    query: "",
-    steps: [
-      sections,
-      click(".section-toggle", "Settled"),
-      `(() => { const s = document.head.appendChild(document.createElement("style"));
-         s.textContent = '.row:has([data-chat="backup"]) .row-action, .row:has([data-chat="zfs"]) .row-action { display: grid } .row:has([data-chat="backup"]) .row-meta, .row:has([data-chat="zfs"]) .row-meta { display: none }'; })()`,
-    ],
-  },
   "new-chat": { query: "", steps: [] },
   chat: { query: "", steps: [click("button", "Nightly backup")] },
   // A code block and inline code in the default code font, at 1280 × 800.
@@ -216,29 +202,14 @@ const scenes = {
   settings: { query: "", steps: [key(",", { ctrlKey: true })] },
   // Settings → General (#174), at 1920 × 1080 and at the window's 760 × 500 minimum.
   "general-connection": { query: "", ...hd, steps: [openSettings] },
-  "general-launch": { query: "", ...hd, steps: [openSettings, click(".subnav-item", "Launch")] },
-  "general-chats": { query: "", ...hd, steps: [openSettings, click(".subnav-item", "Chats")] },
-  "general-storage": { query: "", ...hd, steps: [openSettings, click(".subnav-item", "Storage")] },
+  "general-launch": { query: "", ...hd, steps: [openSettings, click(".settings-sub", "Launch")] },
+  "general-chats": { query: "", ...hd, steps: [openSettings, click(".settings-sub", "Chats")] },
+  "general-storage": { query: "", ...hd, steps: [openSettings, click(".settings-sub", "Storage")] },
   "general-search": { query: "", ...hd, steps: [openSettings, typeSearch("cache")] },
-  "general-more": { query: "", ...hd, steps: [openSettings, click(".subnav-item", "Launch"), click(".set-more-btn[aria-label='About Close to tray']")] },
-  "general-light": { query: "?mode=light", ...hd, steps: [openSettings, click(".subnav-item", "Storage")] },
+  "general-more": { query: "", ...hd, steps: [openSettings, click(".settings-sub", "Launch"), click(".set-more-btn[aria-label='About Close to tray']")] },
+  "general-light": { query: "?mode=light", ...hd, steps: [openSettings, click(".settings-sub", "Storage")] },
   "general-min": { query: "", width: 760, height: 500, steps: [openSettings] },
-  "general-min-launch": { query: "", width: 760, height: 500, steps: [openSettings, click(".subnav-item", "Launch")] },
-  // Settings → Persona (ADR 0117): the profile picker, another profile's SOUL.md picked, and the question before
-  // picking another while an edit is unsaved.
-  persona: { query: "?profiles=1", steps: [key(",", { ctrlKey: true }), click("[role=tab]", "Persona")] },
-  "persona-work": { query: "?profiles=1", steps: [key(",", { ctrlKey: true }), click("[role=tab]", "Persona"), pickPersona("work")] },
-  "persona-ask": {
-    query: "?profiles=1",
-    steps: [
-      key(",", { ctrlKey: true }),
-      click("[role=tab]", "Persona"),
-      `(() => { const t = document.querySelector("textarea.persona-text");
-         Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(t, t.value + "\\nAlways answer in British English.\\n");
-         t.dispatchEvent(new Event("input", { bubbles: true })); })()`,
-      pickPersona("research"),
-    ],
-  },
+  "general-min-launch": { query: "", width: 760, height: 500, steps: [openSettings, click(".settings-sub", "Launch")] },
   work: { query: "", ...hd, steps: [click("button[aria-label='Work']")] },
   "work-task": { query: "", steps: [click("button[aria-label='Work']"), click(".work-card", "Compare three NAS backup tools")] },
   "work-new": { query: "", steps: [click("button[aria-label='Work']"), click(".btn", "New task")] },
@@ -254,7 +225,7 @@ const scenes = {
   "skills-slash-menu-light": { query: "?mode=light", steps: [click("button", "Nightly backup"), typeIn("/")] },
   "computer-use-result": {
     query: "",
-    steps: [click("button", "NAS disk usage"), capture, click(".tool-line", "computer_use"), `document.querySelectorAll(".tool.open pre")[1].scrollTop = 150`],
+    steps: [click("button", "NAS disk usage"), capture, click(".tool-line", "capture"), `document.querySelectorAll(".tool-body pre")[1].scrollTop = 150`],
   },
   "subagents-list": { query: "", ...hd, steps: [click("button", "NAS disk usage"), subagents, openSubagents] },
   // Three of them end: only the running ones stay listed (ADR 0196).
@@ -307,7 +278,7 @@ const scenes = {
   "subagent-details-failed-small": { query: "", width: 1100, height: 760, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "Docker volumes"), endSubagents, unfocus] },
 };
 // Every Settings tab at 1920 × 1080 (#568): `settings-tab-<id>`, for a redesign's before and after.
-for (const [id, label] of Object.entries({ general: "General", appearance: "Appearance", keyboard: "Keyboard Shortcuts", snapshots: "Snapshots", model: "Model", providers: "Providers", voice: "Voice", toolsets: "Toolsets", mcp: "MCP servers", gateways: "Gateways", profiles: "Profiles", persona: "Persona", memory: "Memory", skills: "Skills", extensions: "Extensions", diagnostics: "Diagnostics" }))
+for (const [id, label] of Object.entries({ general: "General", appearance: "Appearance", keyboard: "Keyboard Shortcuts", snapshots: "Snapshots", model: "Model", providers: "Providers", voice: "Voice", toolsets: "Toolsets", mcp: "MCP servers", gateways: "Gateways", profiles: "Profiles", memory: "Memory", skills: "Skills", extensions: "Extensions", diagnostics: "Diagnostics" }))
   scenes[`settings-tab-${id}`] = { query: "?profiles=1", ...hd, steps: [openSettings, click("[role=tab]", label)] };
 // The sections a page shows one at a time, picked under it in the sidebar's tree (ADR 0160), and its narrow forms.
 const tab = (label) => click("[role=tab]", label);

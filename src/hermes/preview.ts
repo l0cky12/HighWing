@@ -1,7 +1,7 @@
 // What the preview pane beside the chat can show, and how it reads it. Terms follow GLOSSARY.md "Preview pane".
 // A Server file is read on the Hermes server through dashboard REST `GET /api/fs/read-text` and
 // `GET /api/fs/read-data-url` (research doc "Preview pane"). A Local file is one the owner picked on this computer in
-// the native Open dialog; Rust reads it (src-tauri/src/transport.rs `read_local_text`). Web pages load in a sandboxed
+// the native Open dialog; Rust reads it (src-tauri/src/transport.rs `PickedFiles::read`). Web pages load in a sandboxed
 // frame (ADR 0007). Everything shown is untrusted: nothing here turns it into HTML the app itself renders.
 import type { ExtensionId } from "./extensionManifest";
 import type { Item } from "./model";

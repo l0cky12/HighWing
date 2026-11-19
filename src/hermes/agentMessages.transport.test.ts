@@ -170,6 +170,30 @@ describe("One bot messages another", () => {
     expect(returnedItem(String(imported.content), imported.display_kind, undefined)).toEqual({ body: ASK, process: false, agent: FROM.agent });
   });
 
+  it("looks for an ack it didn't find again on the next connection, and never again for one it found", async () => {
+    const server = headless();
+    server.profileMeta.default = { ui_meta: { "hermes-bots": {} } };
+    await server.messageAgent("default", "beta", ASK, REPLIES);
+    const row = server.transcripts["alpha-bot"].find((m) => m.role === "tool")!;
+    const stored = row.row_id;
+    row.row_id = undefined;
+    const hermes = await signedIn(server);
+    const items = await botChat(hermes, "default");
+    const call = () => items().find((i): i is Extract<Item, { kind: "tool" }> => i.kind === "tool")!;
+    await until(hermes, () => returned(items()).length === 1);
+    expect(call().result).toBeUndefined();
+    const reads = () => server.restRequests.filter((r) => r.path === "/api/sessions/alpha-bot/messages").length;
+
+    row.row_id = stored;
+    const before = reads();
+    server.drop();
+    for (let n = 0; n < 300 && hermes.getSnapshot().status !== "connected"; n++) await new Promise((r) => setTimeout(r, 10));
+    await hermes.open("alpha-bot");
+    await until(hermes, () => call().result !== undefined);
+    expect(reads()).toBeGreaterThan(before);
+    expect(agentSend(call())?.ack).toMatchObject({ kind: "queued", recipients: [{ deliveryId: "delivery-1" }] });
+  });
+
   it("keeps the sent call's id and ack in the Saved copy, so a card drawn offline still finds its answer", async () => {
     const server = headless();
     const hermes = await signedIn(server);

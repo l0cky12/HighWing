@@ -25,8 +25,10 @@ export type TargetState = (typeof TARGET_STATES)[number];
 /**
  * One teammate a message went to, as Hermes's ack names it. `claimed`: the ack's `status` was `claimed`, so that Bot
  * Chat's owner already held the request when Hermes answered. `notifyOnly`: no answer comes back from this one.
+ * `unconfirmed`: Hermes couldn't confirm this one's admission (`status: "ambiguous"`), with its reason: it may have
+ * gone, and no answer waits for it.
  */
-export type Recipient = { to: string; deliveryId: string; claimed: boolean; targetState?: TargetState; notifyOnly?: boolean };
+export type Recipient = { to: string; deliveryId: string; claimed: boolean; targetState?: TargetState; notifyOnly?: boolean; unconfirmed?: string };
 
 /**
  * What Hermes answered a `message_agent` call with (`tools/bot_mode_dm.py` at 0.23.2), when the tool item holds it:
@@ -52,7 +54,14 @@ const targetState = (v: unknown): TargetState | undefined => TARGET_STATES.find(
 /** A teammate in an ack, or in one entry of a fan-out's. */
 function recipient(e: Record<string, unknown>, to: string): Recipient {
   const state = targetState(e.target_state);
-  return { to, deliveryId: text(e.delivery_id), claimed: e.status === "claimed", ...(state && { targetState: state }), ...(e.expects_reply === false && { notifyOnly: true }) };
+  return {
+    to,
+    deliveryId: text(e.delivery_id),
+    claimed: e.status === "claimed",
+    ...(state && { targetState: state }),
+    ...(e.expects_reply === false && { notifyOnly: true }),
+    ...(e.status === "ambiguous" && { unconfirmed: text(e.error) }),
+  };
 }
 
 function json(s: string): Record<string, unknown> | undefined {
@@ -75,8 +84,10 @@ function ackOf(result: string | undefined): SendAck | undefined {
   const how = { reply, ...(replyError && { replyError }) } as const;
   if (Array.isArray(answer.fan_out)) {
     const each = answer.fan_out.filter(isObj);
-    const failed = each.filter((e) => text(e.error)).map((e) => `${text(e.to)}: ${text(e.error)}`).join("\n");
-    const sent = each.filter((e) => !text(e.error) && text(e.delivery_id));
+    // An entry Hermes couldn't confirm carries an error too, but may have gone: it is a recipient, not a refusal.
+    const went = (e: Record<string, unknown>) => !!text(e.delivery_id) && (!text(e.error) || e.status === "ambiguous");
+    const failed = each.filter((e) => !went(e) && text(e.error)).map((e) => `${text(e.to)}: ${text(e.error)}`).join("\n");
+    const sent = each.filter(went);
     if (!sent.length) return { kind: "refused", why: failed || text(answer.detail) };
     const recipients = sent.map((e) => recipient(e, text(e.to)));
     return { kind: "queued", to: recipients.map((r) => r.to).join(", "), recipients, ...(failed && { failed }), ...how };
@@ -118,17 +129,18 @@ export function agentSend(tool: { name: string; status: string; args?: Record<st
  * - `silent`: nothing between the ack and the answer reaches this chat (`_wait_live_dm` polls in silence), so the
  *   card says so, with how long ago the message went (`since`), instead of a spinner.
  * - `withdrawAsked`: a later call asked Hermes to withdraw it. Only `ended` with `cancelled` says it was withdrawn.
- * - `ended`: the Returned result that answers it, joined by delivery id only.
+ * - `ended`: the Returned result that answers it, joined by delivery id only. `several`: one answer for a message to
+ *   several teammates, whose `status` is only the first that didn't settle, so it isn't said of them all.
  */
 export type DeliveryLine =
   | { kind: "queued"; to: string; claimed: boolean; targetState?: TargetState }
   | { kind: "notifyOnly"; to?: string }
   | { kind: "poll" }
   | { kind: "noWayBack"; why: string }
-  | { kind: "unconfirmed"; why: string }
+  | { kind: "unconfirmed"; why: string; to?: string }
   | { kind: "silent"; to: string; since?: number }
   | { kind: "withdrawAsked"; at?: number; refused?: string }
-  | { kind: "ended"; status: DeliveryStatus; itemId: string; at?: number };
+  | { kind: "ended"; status: DeliveryStatus; itemId: string; at?: number; several?: boolean };
 
 /**
  * The card's lines for a sent message, from its ack and the items after its call (`later`). `at`: when the call was
@@ -139,26 +151,28 @@ export function deliveryLines(send: AgentSend, later: readonly Item[], at?: numb
   const { ack } = send;
   if (!ack || ack.kind === "refused") return [];
   const ids = new Set(ack.kind === "queued" ? ack.recipients.map((r) => r.deliveryId) : [ack.deliveryId]);
-  let answer: { status: DeliveryStatus; itemId: string; at?: number } | undefined;
+  let answer: { status: DeliveryStatus; itemId: string; at?: number; several: boolean } | undefined;
   let asked: { at?: number; refused?: string } | undefined;
   for (const i of later) {
-    if (!answer && i.kind === "returned" && i.agent?.kind === "answer" && i.agent.deliveryId.split(",").some((d) => ids.has(d))) answer = { status: i.agent.status, itemId: i.id, at: i.at };
+    if (!answer && i.kind === "returned" && i.agent?.kind === "answer" && i.agent.deliveryId.split(",").some((d) => ids.has(d))) answer = { status: i.agent.status, itemId: i.id, at: i.at, several: i.agent.deliveryId.includes(",") };
     const w = !asked && i.kind === "tool" ? withdrawal(i) : undefined;
     if (w && ids.has(w.deliveryId)) asked = { at: i.kind === "tool" ? i.at : undefined, refused: w.refused };
   }
   const lines: DeliveryLine[] = [];
   if (ack.kind === "unconfirmed") lines.push({ kind: "unconfirmed", why: ack.why });
   else {
-    for (const r of ack.recipients) lines.push({ kind: "queued", to: r.to, claimed: r.claimed, ...(r.targetState && { targetState: r.targetState }) });
+    for (const r of ack.recipients)
+      lines.push(r.unconfirmed !== undefined ? { kind: "unconfirmed", why: r.unconfirmed, to: r.to } : { kind: "queued", to: r.to, claimed: r.claimed, ...(r.targetState && { targetState: r.targetState }) });
     for (const r of ack.recipients) if (r.notifyOnly && ack.reply !== "none") lines.push({ kind: "notifyOnly", to: r.to });
     if (ack.reply === "none") lines.push({ kind: "notifyOnly" });
     else if (ack.replyError) lines.push({ kind: "noWayBack", why: ack.replyError });
     else if (ack.reply === "poll") lines.push({ kind: "poll" });
   }
   if (asked) lines.push({ kind: "withdrawAsked", ...(asked.at !== undefined && { at: asked.at }), ...(asked.refused && { refused: asked.refused }) });
-  const comesBack = ack.kind === "queued" && ack.reply !== "none" && !ack.replyError;
-  if (answer) lines.push({ kind: "ended", status: answer.status, itemId: answer.itemId, ...(answer.at !== undefined && { at: answer.at }) });
-  else if (comesBack) lines.push({ kind: "silent", to: ack.to, ...(at !== undefined && { since: at }) });
+  // An answer comes back only for a teammate Hermes took and that owes one.
+  const owing = ack.kind === "queued" && ack.reply !== "none" && !ack.replyError ? ack.recipients.filter((r) => r.unconfirmed === undefined && !r.notifyOnly) : [];
+  if (answer) lines.push({ kind: "ended", status: answer.status, itemId: answer.itemId, ...(answer.at !== undefined && { at: answer.at }), ...(answer.several && { several: true }) });
+  else if (owing.length) lines.push({ kind: "silent", to: owing.map((r) => r.to).join(", "), ...(at !== undefined && { since: at }) });
   return lines;
 }
 

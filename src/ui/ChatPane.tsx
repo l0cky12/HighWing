@@ -212,12 +212,16 @@ const movesUp = (el: HTMLElement, node: Element | null) => {
  * branch's link back does. `at` tells one request from the next.
  */
 export type JumpTarget =
-  | { callId: string; rowId?: undefined; turn?: undefined; at: number }
-  | { rowId: number; callId?: undefined; turn?: undefined; at: number }
+  | { callId: string; rowId?: undefined; turn?: undefined; itemId?: undefined; at: number }
+  | { rowId: number; callId?: undefined; turn?: undefined; itemId?: undefined; at: number }
   /** The owner's message that starts turn `turn` (from 0), and its reply: where a version of that turn is opened. */
-  | { turn: number; callId?: undefined; rowId?: undefined; at: number };
+  | { turn: number; callId?: undefined; rowId?: undefined; itemId?: undefined; at: number }
+  /** An item of this chat by its id, as a sent message's card goes to its answer (ADR 0227). */
+  | { itemId: string; callId?: undefined; rowId?: undefined; turn?: undefined; at: number };
 /** The tool call being gone to, for the tool rows and groups that hold it to open themselves. */
 const JumpContext = createContext<JumpTarget | undefined>(undefined);
+/** Goes to an item of this chat by its id, rendering its part of the transcript first when it is far from the view. */
+const GoToItemContext = createContext<(itemId: string) => void>(() => {});
 
 const STATUS_NOTE: Record<ConnectionStatus, string | undefined> = {
   connected: undefined,
@@ -803,6 +807,10 @@ export function ChatPane({
   // Going to a tool call: once its row is on screen, scroll it to the middle, mark it and move focus to it. A history
   // that loaded without it says so; one still loading, or a Saved copy while offline without it, waits.
   const [jumping, setJumping] = useState<JumpTarget>();
+  const goToItem = useCallback((itemId: string) => {
+    stickToBottom.current = false;
+    setJumping({ itemId, at: Date.now() });
+  }, []);
   useEffect(() => {
     if (!jumpTo) return;
     stickToBottom.current = false;
@@ -813,7 +821,9 @@ export function ChatPane({
   useLayoutEffect(() => {
     if (!jumping) return;
     let el: HTMLElement | null | undefined;
-    if (jumping.rowId !== undefined) {
+    if (jumping.itemId !== undefined) {
+      el = scrollRef.current?.querySelector<HTMLElement>(`[data-item="${CSS.escape(jumping.itemId)}"]`);
+    } else if (jumping.rowId !== undefined) {
       const rowId = jumping.rowId;
       const item = chat.items.find((i) => (i.kind === "user" || i.kind === "returned" || i.kind === "assistant") && i.rowId === rowId);
       el = item && scrollRef.current?.querySelector<HTMLElement>(`[data-item="${CSS.escape(item.id)}"]`);
@@ -914,6 +924,9 @@ export function ChatPane({
         (b.kind === "tools" && b.tools.some((t) => t.callId === callId)) ||
         (b.kind === "sent" && b.tool.callId === callId) ||
         (b.kind === "cu-run" && b.items.some((i) => i.kind === "tool" && i.callId === callId));
+    } else if (jumping.itemId !== undefined) {
+      const id = jumping.itemId;
+      has = (b) => b.id === id;
     } else {
       const { rowId, turn } = jumping;
       const id =
@@ -1064,6 +1077,7 @@ export function ChatPane({
           stickToBottom.current = !up && el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
       >
+        <GoToItemContext.Provider value={goToItem}>
         <JumpContext.Provider value={jumpTo}>
         <PathsIn folder={chat.folder} session={chat.id}>
         <RunStopProvider value={runStop}>
@@ -1164,6 +1178,7 @@ export function ChatPane({
         </RunStopProvider>
         </PathsIn>
         </JumpContext.Provider>
+        </GoToItemContext.Provider>
       </div>
 
       <SubagentsPanel
@@ -1732,6 +1747,7 @@ function SentCard({ block, query }: { block: SentBlock; query: string }) {
 /** One line under a sent message: Hermes's own words (a reason) are data, the rest is the catalogue's. */
 function DeliveryLineRow({ line }: { line: DeliveryLine }) {
   const locale = useLocale();
+  const goTo = useContext(GoToItemContext);
   const d = locale.chat.agent.delivery;
   switch (line.kind) {
     case "queued":
@@ -1748,7 +1764,7 @@ function DeliveryLineRow({ line }: { line: DeliveryLine }) {
     case "noWayBack":
       return <li data-line={line.kind}>{d.noWayBack(line.why)}</li>;
     case "unconfirmed":
-      return <li data-line={line.kind}>{d.unconfirmed(line.why)}</li>;
+      return <li data-line={line.kind}>{d.unconfirmed(line.why, line.to)}</li>;
     case "withdrawAsked":
       return <li data-line={line.kind}>{line.refused ? d.withdrawRefused(line.refused) : d.withdrawAsked}</li>;
     case "silent": {
@@ -1768,17 +1784,8 @@ function DeliveryLineRow({ line }: { line: DeliveryLine }) {
     case "ended":
       return (
         <li data-line={line.kind} data-status={line.status}>
-          {d.ended[line.status]}{" "}
-          <button
-            type="button"
-            className="link"
-            onClick={(e) => {
-              // Item ids are a chat's own, so the answer is looked for in this card's chat only (two can be side by side).
-              const card = e.currentTarget.closest(".chat")?.querySelector<HTMLElement>(`[data-item="${CSS.escape(line.itemId)}"]`);
-              card?.scrollIntoView({ block: "center" });
-              card?.focus({ preventScroll: true });
-            }}
-          >
+          {line.several && line.status !== "settled" ? d.endedSeveral : d.ended[line.status]}{" "}
+          <button type="button" className="link" onClick={() => goTo(line.itemId)}>
             {d.goToAnswer}
           </button>
         </li>

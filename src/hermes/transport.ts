@@ -810,8 +810,10 @@ export class Hermes {
    * can be in that text and also arrive as an event.
    */
   private resumedText = new Map<string, string>();
-  /** Stored results read back by `fillStoredResults`, by profile, chat and call; `null`: Hermes had no such row in reach. */
-  private storedResults = new Map<string, string | null>();
+  /** Stored results read back by `fillStoredResults`, by profile, chat and call. A stored result never changes. */
+  private storedResults = new Map<string, string>();
+  /** Calls `fillStoredResults` found no row for, with the connection it looked on: looked for again on the next one. */
+  private storedResultMisses = new Map<string, number>();
   /** Closed Question cards, answered here or that Hermes stopped waiting on, by request id. A resume replaces the
    * chat's cards with what Hermes lists, so this keeps one it lists again from coming back. */
   private closedQuestions = new PerProfile<QuestionItem>();
@@ -4327,7 +4329,7 @@ export class Hermes {
     const key = (callId: string) => `${profile}/${chatId}/${callId}`;
     const wanted = () =>
       (this.snapshot.chats.find((c) => c.id === chatId)?.items ?? []).flatMap((i) => (i.kind === "tool" && i.callId && i.result === undefined && i.status === "done" && RESULT_READ_FOR.has(i.name) ? [i.callId] : []));
-    const unread = new Set(wanted().filter((id) => !this.storedResults.has(key(id))));
+    const unread = new Set(wanted().filter((id) => !this.storedResults.has(key(id)) && this.storedResultMisses.get(key(id)) !== gen));
     const PAGE = 100;
     for (let page = 0; unread.size && page < RUN_PAGES; page++) {
       const query = new URLSearchParams({ profile, order: "latest", limit: String(PAGE), offset: String(page * PAGE), inline_images: "false" });
@@ -4340,10 +4342,10 @@ export class Hermes {
       }
       if (rows.length < PAGE) break;
     }
-    for (const id of unread) this.storedResults.set(key(id), null);
+    for (const id of unread) this.storedResultMisses.set(key(id), gen);
     const found = new Map(wanted().flatMap((id) => {
       const result = this.storedResults.get(key(id));
-      return typeof result === "string" ? [[id, result] as const] : [];
+      return result === undefined ? [] : [[id, result] as const];
     }));
     if (!found.size || gen !== this.generation) return;
     this.patchChat(chatId, (c) => ({ ...c, items: c.items.map((i) => (i.kind === "tool" && i.callId && i.result === undefined && found.has(i.callId) ? { ...i, result: found.get(i.callId) } : i)) }));

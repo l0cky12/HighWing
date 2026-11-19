@@ -59,7 +59,7 @@ export const en = {
         notifyOnly: (to?: string) => (to ? `Sent to ${to} as a notice: no answer comes back from ${to}.` : "Sent as a notice: no answer comes back."),
         poll: "The answer comes back only when this bot asks Hermes for it.",
         noWayBack: (why: string) => `Hermes couldn't arrange for the answer to come back here: ${why}`,
-        unconfirmed: (why: string) => `Hermes couldn't confirm it was delivered, and says not to send it again.${why ? ` ${why}` : ""}`,
+        unconfirmed: (why: string, to?: string) => `Hermes couldn't confirm it was delivered${to ? ` to ${to}` : ""}, and says not to send it again.${why ? ` ${why}` : ""}`,
         silent: (to: string) => `Hermes doesn't report ${to}'s progress to this chat.`,
         sentAgo: (age: string) => `Sent ${age} ago.`,
         sentNow: "Sent just now.",
@@ -72,6 +72,8 @@ export const en = {
           pending: "Hermes stopped waiting for an answer. A later answer won't come back here.",
           ambiguous: "Hermes can't tell whether it was delivered.",
         },
+        /** One answer for a message to several teammates, when not every one was answered. */
+        endedSeveral: "Not every teammate answered. Hermes's answer says how each one ended.",
         goToAnswer: "Go to the answer",
       },
     },

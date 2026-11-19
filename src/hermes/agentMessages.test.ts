@@ -168,6 +168,21 @@ describe("Hermes's answer to a message_agent call, in full", () => {
     });
   });
 
+  it("keeps a fan-out teammate Hermes couldn't confirm as one it may have reached, not as not sent", () => {
+    const ambiguous = { to: "@gamma", status: "ambiguous", delivery_id: "d2", error: "Live delivery admission could not be confirmed. Do not resend." };
+    expect(ack({ status: "queued", fan_out: [{ to: "@beta", status: "queued", delivery_id: "d1" }, ambiguous] })).toMatchObject({
+      kind: "queued",
+      recipients: [{ to: "@beta", deliveryId: "d1" }, { to: "@gamma", deliveryId: "d2", unconfirmed: ambiguous.error }],
+    });
+    expect(ack({ status: "failed", fan_out: [ambiguous, { to: "@ghost", error: "NOT sent: no such teammate" }] })).toEqual({
+      kind: "queued",
+      to: "@gamma",
+      recipients: [{ to: "@gamma", deliveryId: "d2", claimed: false, unconfirmed: ambiguous.error }],
+      failed: "@ghost: NOT sent: no such teammate",
+      reply: "notification",
+    });
+  });
+
   it("names the request a withdrawal is for, and why Hermes refused it", () => {
     expect(withdrawal({ name: "message_agent", args: { target: "beta", cancel: "d1" } })).toEqual({ deliveryId: "d1" });
     expect(withdrawal({ name: "message_agent", args: { target: "beta", cancel: "d1" }, result: JSON.stringify({ error: "Only the agent that sent a request can cancel it. Do not retry." }) })).toEqual({
@@ -218,6 +233,22 @@ describe("A sent message's card lines", () => {
       { kind: "withdrawAsked", at: 3000 },
       { kind: "ended", status: "cancelled", itemId: "r-d1", at: 5000 },
     ]);
+  });
+
+  it("says, for a fan-out, which teammate Hermes couldn't confirm, and waits only when one owes an answer", () => {
+    const fanOut = (entries: unknown[]) => call({ status: "queued", fan_out: entries });
+    const unsure = { to: "@gamma", status: "ambiguous", delivery_id: "d2", error: "could not be confirmed" };
+    expect(lines(fanOut([{ to: "@beta", status: "queued", delivery_id: "d1" }, unsure]))).toEqual([
+      { kind: "queued", to: "@beta", claimed: false },
+      { kind: "unconfirmed", why: "could not be confirmed", to: "@gamma" },
+      { kind: "silent", to: "@beta", since: 1000 },
+    ]);
+    expect(lines(fanOut([unsure])).map((l) => l.kind)).toEqual(["unconfirmed"]);
+  });
+
+  it("doesn't say one teammate's ending of every teammate in a fan-out", () => {
+    const fanOut = call({ status: "queued", fan_out: [{ to: "@beta", delivery_id: "d1" }, { to: "@gamma", delivery_id: "d2" }] });
+    expect(lines(fanOut, [answer("d1,d2", "cancelled")]).at(-1)).toEqual({ kind: "ended", status: "cancelled", itemId: "r-d1,d2", at: 5000, several: true });
   });
 
   it("says Hermes stopped waiting, not that it was answered, when the wait ran out", () => {

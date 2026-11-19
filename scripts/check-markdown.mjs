@@ -14,6 +14,7 @@ const ALLOWED = [/^docs\/adr\/\d{4}-[a-z0-9-]+\.md$/, /^\.claude\/skills\//];
 
 /** Every other Markdown file the repo keeps, with why. Add a file here only when the owner asked for it. */
 const KEPT = new Map([
+  [".github/pull_request_template.md", "PR template explicitly requested by the owner"],
   ["AGENTS.md", "agent instructions"],
   ["CLAUDE.md", "imports AGENTS.md for Claude Code"],
   ["GLOSSARY.md", "the domain glossary, read per docs/agents/domain.md"],

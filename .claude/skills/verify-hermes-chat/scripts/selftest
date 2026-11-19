@@ -4,7 +4,6 @@
 #           `wait|gone <css> <digits>` with no [ms] is refused with the `"" <ms>` form.
 #   hv up:  a failed start stops every process it started (and a child its driver left behind) and deletes its run dir;
 #           an interrupted start (TERM) does the same;
-#           three concurrent `hv up`s each get their own display (their own Xvfb holds its lock), and `hv down` stops them.
 #           its private D-Bus activates nothing (no Secret Service with the owner's HOME) and runs with the run's HOME.
 #   bridge: the stand-in survives a WebSocket closed or reset while it writes to it, and keeps serving.
 # Runs under a throwaway HV_HOME with a fake app and a fake tauri-driver, so it never touches a real run.
@@ -30,13 +29,15 @@ node "$T/fake-wd.mjs" >"$T/fake-wd.port" &
 FAKE_WD=$!
 # `hv up`s still starting; cleanup stops them before it touches their run state.
 LAUNCHERS=()
+NON_RUN_PIDS=()
 # Also stops any run an interrupted self-test left up.
 cleanup() {
   local r p
   kill "$FAKE_WD" 2>/dev/null || true
+  for p in "${NON_RUN_PIDS[@]}"; do kill "$p" 2>/dev/null || true; done
   for p in "${LAUNCHERS[@]}"; do kill -TERM "$p" 2>/dev/null || true; done
   for p in "${LAUNCHERS[@]}"; do wait "$p" 2>/dev/null || true; done
-  for r in "$T"/hv/runs/*/; do [ -f "$r/state.env" ] && HV_HOME=$T/hv HV_RUN=${r%/} "$HERE/hv" down >/dev/null 2>&1; done
+  for r in "$T"/hv/runs/*/; do [ -f "$r/state.env" ] && HV_HOME=$T/hv HV_RUN=${r%/} "$HERE/hv" down >/dev/null 2>&1 || true; done
   rm -rf "$T"
 }
 trap cleanup EXIT
@@ -64,22 +65,33 @@ export HV_HOME=$T/hv HV_TARGET=$T/target
 mkdir -p "$HV_HOME" "$HV_TARGET/debug" "$T/bin"
 [ -d "$REAL_HOME/root" ] && ln -s "$REAL_HOME/root" "$HV_HOME/root"
 printf '#!/bin/sh\nexit 0\n' >"$HV_TARGET/debug/hermes-chat"; chmod +x "$HV_TARGET/debug/hermes-chat"
-# A tauri-driver stand-in. FAKE_DRIVER=fail leaves a child running (as a WebKitWebDriver would), writes its PID to
-# $FAKE_CHILD and exits at once; otherwise it answers 200 on --port.
-cat >"$T/bin/tauri-driver" <<'SH'
-#!/bin/sh
-if [ "${FAKE_DRIVER:-}" = fail ]; then
-  sleep 300 </dev/null >/dev/null 2>&1 &
-  echo $! >"$FAKE_CHILD"
-  echo "fake tauri-driver: failing on purpose" >&2
-  exit 1
-fi
-exec python3 -c 'import sys, http.server as h
-p = int(sys.argv[sys.argv.index("--port") + 1])
+cat >"$T/answer-200.py" <<'PY'
+import sys, threading, http.server as h
 class Ok(h.BaseHTTPRequestHandler):
     def do_GET(self): self.send_response(200); self.end_headers(); self.wfile.write(b"{}")
     def log_message(self, *a): pass
-h.HTTPServer(("127.0.0.1", p), Ok).serve_forever()' "$@"
+servers = [h.HTTPServer(("127.0.0.1", int(p)), Ok) for p in sys.argv[1:]]
+for s in servers[1:]: threading.Thread(target=s.serve_forever, daemon=True).start()
+servers[0].serve_forever()
+PY
+cat >"$T/bin/tauri-driver" <<SH
+#!/bin/sh
+serve=$T/answer-200.py
+SH
+cat >>"$T/bin/tauri-driver" <<'SH'
+while [ $# -gt 0 ]; do case $1 in --port) port=$2; shift 2 ;; --native-port) native=$2; shift 2 ;; *) shift ;; esac; done
+case ${FAKE_DRIVER:-} in
+  fail)
+    sleep 300 </dev/null >/dev/null 2>&1 &
+    echo $! >"$FAKE_CHILD"
+    echo "fake tauri-driver: failing on purpose" >&2
+    exit 1 ;;
+  foreign)
+    setsid python3 "$serve" "$port" </dev/null >/dev/null 2>&1 &
+    echo $! >"$FAKE_FOREIGN"
+    exec python3 "$serve" "$native" ;;
+esac
+exec python3 "$serve" "$port" "$native"
 SH
 chmod +x "$T/bin/tauri-driver"
 export PATH=$T/bin:$PATH
@@ -120,21 +132,67 @@ else
 fi
 rm -rf "$HV_HOME/evidence"
 
-# Concurrent starts get distinct displays, each held by its own Xvfb.
-for i in 1 2 3; do "$HERE/hv" up >"$T/up$i.log" 2>&1 & LAUNCHERS+=($!); done
+code=0; FAKE_DRIVER=foreign FAKE_FOREIGN=$T/foreign.pid hv up >"$T/foreign.log" 2>&1 || code=$?
+foreign=$(cat "$T/foreign.pid" 2>/dev/null || true)
+[ -z "$foreign" ] || NON_RUN_PIDS+=("$foreign")
+st=$(ls "$HV_HOME"/evidence/*/state.env 2>/dev/null | head -1 || true)
+driver_port=$([ -n "$st" ] && . "$st" && echo "$DRIVER_PORT" || true)
+run_pids=(); [ -z "$st" ] || read -ra run_pids <<<"$(pids_of "$st")"
+if [ "$code" != 0 ] && [ -n "$driver_port" ] && grep -q "port $driver_port: want this run's tauri-driver" "$T/foreign.log" &&
+  [ -z "$(ls -A "$HV_HOME/runs")" ] && dead "${run_pids[@]}" && [ -n "$foreign" ] && kill -0 "$foreign" 2>/dev/null; then
+  pass "hv up refused driver port $driver_port answered by another process, and left that process running"
+else
+  fail "foreign driver: exit $code, state ${st:-missing}, foreign pid ${foreign:-missing}, runs: $(ls "$HV_HOME/runs"); log: $(tail -3 "$T/foreign.log")"
+fi
+[ -z "$foreign" ] || kill "$foreign" 2>/dev/null || true
+rm -rf "$HV_HOME/evidence"
+
+python3 -c 'import socket, time; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1], flush=True); time.sleep(300)' >"$T/held.port" &
+NON_RUN_PIDS+=($!)
+for _ in $(seq 50); do [ -s "$T/held.port" ] && break; sleep 0.1; done
+held=$(cat "$T/held.port")
+code=0; HV_TEST_PORTS="$held 0 0" hv up >"$T/held.log" 2>&1 || code=$?
+st=$(ls "$HV_HOME"/evidence/*/state.env 2>/dev/null | head -1 || true)
+run_pids=(); [ -z "$st" ] || read -ra run_pids <<<"$(pids_of "$st")"
+[ "$code" != 0 ] && grep -q "port $held is in use" "$T/held.log" && [ -n "$st" ] && [ -z "$(ls -A "$HV_HOME/runs")" ] && dead "${run_pids[@]}" &&
+  pass "hv up asked for held port $held fails naming it, and leaves nothing" ||
+  fail "held port $held: exit $code, state ${st:-missing}, runs: $(ls "$HV_HOME/runs"); log: $(tail -3 "$T/held.log")"
+kill "${NON_RUN_PIDS[-1]}" 2>/dev/null || true
+rm -rf "$HV_HOME/evidence"
+
+N=20
+for i in $(seq $N); do
+  (while [ ! -e "$T/go" ]; do sleep 0.01; done; exec "$HERE/hv" up) >"$T/up$i.log" 2>&1 &
+  LAUNCHERS+=($!)
+done
+touch "$T/go"
 codes=()
 for p in "${LAUNCHERS[@]}"; do code=0; wait "$p" || code=$?; codes+=("$code"); done
 LAUNCHERS=()
-runs=() displays=()
-for i in 1 2 3; do
+owners() { ss -ltnpH "sport = :$1" | grep -o 'pid=[0-9]*' | cut -d= -f2 | xargs -r ps -o pgid= -p | tr -d ' ' | sort -u | tr '\n' ' '; }
+runs=() displays=() ports=() wrong=()
+for i in $(seq $N); do
   r=$(sed -n 's/^export HV_RUN=//p' "$T/up$i.log")
-  if [ "${codes[i-1]}" = 0 ] && [ -n "$r" ]; then runs+=("$r"); displays+=("$(. "$r/state.env"; echo "$DISPLAY_NUM")")
+  if [ "${codes[i-1]}" = 0 ] && [ -n "$r" ]; then
+    runs+=("$r")
+    read -r display dp np bp dpid bpid <<<"$(. "$r/state.env"; echo "$DISPLAY_NUM $DRIVER_PORT $NATIVE_PORT $BRIDGE_PORT $DRIVER_PID $BRIDGE_PID")"
+    displays+=("$display"); ports+=("$dp" "$np" "$bp")
+    for want in "$dp $dpid" "$np $dpid" "$bp $bpid"; do
+      read -r port group <<<"$want"
+      [ "$(owners "$port")" = "$group " ] || wrong+=("run $i's port $port is held by group(s) '$(owners "$port")', not $group")
+    done
   else fail "concurrent hv up $i: exit ${codes[i-1]}: $(tail -5 "$T/up$i.log")"; fi
 done
 uniq_displays=$(printf '%s\n' "${displays[@]}" | sort -u | wc -l)
-[ "${#runs[@]}" = 3 ] && [ "$uniq_displays" = 3 ] && pass "three concurrent hv up got displays ${displays[*]}" || fail "concurrent displays: ${displays[*]:-none}"
+[ "${#runs[@]}" = $N ] && [ "$uniq_displays" = $N ] && pass "$N concurrent hv up got displays ${displays[*]}" || fail "concurrent displays: ${displays[*]:-none}"
 raced=$(cat "$HV_HOME"/evidence/*/xvfb.log | grep -c "trying display" || true)
-echo "--   the three runs tried $raced displays to get 3 (more than 3 means a lost race was retried)"
+echo "--   the $N runs tried $raced displays to get $N (more than $N means a lost race was retried)"
+shared=$(printf '%s\n' "${ports[@]}" | sort | uniq -d | tr '\n' ' ')
+if [ "${#runs[@]}" = $N ] && [ "${#ports[@]}" = $((3 * N)) ] && [ -z "$shared" ] && [ ${#wrong[@]} = 0 ]; then
+  pass "$N concurrent pairs got distinct ports, each held by its own run"
+else
+  fail "concurrent ports: ${#runs[@]} runs, ${#ports[@]} ports, shared: ${shared:-none}; $(printf '%s; ' "${wrong[@]}")"
+fi
 # The private bus activates nothing: an app asking for the keyring with none running gets no daemon started for it,
 # least of all one with the owner's HOME (#497).
 if [ "${#runs[@]}" -gt 0 ]; then
@@ -186,14 +244,17 @@ JS
   grep -q "WS closed by the app: EPIPE" "$(. "$r/state.env"; echo "$EVIDENCE")/bridge.log" && pass "the stand-in logged the EPIPE it dropped" ||
     echo "--   the stand-in logged no EPIPE this time (the close above met another error, or none)"
 fi
+not_own=() pids=()
 for r in "${runs[@]}"; do
-  # The doctor exits non-zero here anyway (fake driver, no build); only its Xvfb line matters.
   doc=$(HV_RUN=$r hv doctor 2>&1 || true)
-  grep -q "^ok   Xvfb" <<<"$doc" && pass "doctor: $r's Xvfb is its own" || fail "doctor on $r: $(grep Xvfb <<<"$doc")"
-  pids=$(pids_of "$r/state.env")
-  HV_RUN=$r hv down >/dev/null 2>&1 || true
-  # shellcheck disable=SC2086
-  dead $pids && pass "hv down stopped $pids" || fail "hv down left some of $pids running"
+  grep -q "^ok   Xvfb" <<<"$doc" && grep -q "^ok   port" <<<"$doc" || not_own+=("$r: $(grep -E 'Xvfb|port' <<<"$doc" | tr '\n' ' ')")
+  read -ra p <<<"$(pids_of "$r/state.env")"
+  pids+=("${p[@]}")
 done
+[ "${#not_own[@]}" = 0 ] && pass "doctor: each run's Xvfb and stand-in port are its own" || fail "doctor: $(printf '%s; ' "${not_own[@]}")"
+for r in "${runs[@]}"; do HV_RUN=$r hv down >/dev/null 2>&1 & LAUNCHERS+=($!); done
+for p in "${LAUNCHERS[@]}"; do wait "$p" || true; done
+LAUNCHERS=()
+dead "${pids[@]}" && pass "hv down stopped all ${#runs[@]} runs (${#pids[@]} processes)" || fail "hv down left some of ${pids[*]} running"
 
 [ "$FAILS" = 0 ] && echo "selftest: all ok" || { echo "selftest: $FAILS failed"; exit 1; }

@@ -104,6 +104,28 @@ it("makes the heading at the top of the view current as the page scrolls, and th
   expect(current()).toEqual([names.at(-1)]);
 });
 
+it("marks the heading under the scroll at once, and moves the highlight once that heading stays", async () => {
+  vi.useFakeTimers();
+  try {
+    const { links, scrollTo, current } = await appearance();
+    const names = links().map((b) => b.textContent);
+    const highlighted = () => links().filter((b) => b.classList.contains("on")).map((b) => b.textContent);
+    expect(current()).toEqual([names[0]]);
+    expect(highlighted()).toEqual([names[0]]);
+
+    scrollTo(STEP + 10);
+    expect(current()).toEqual([names[1]]);
+    expect(highlighted()).toEqual([names[0]]);
+
+    await act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(highlighted()).toEqual([names[1]]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("keeps a clicked link current while its own scroll settles, then follows the scroll again", async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   try {

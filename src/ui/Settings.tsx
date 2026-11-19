@@ -1459,12 +1459,27 @@ function currentJump(): CurrentJump {
 type SubLink = { id: string; label: string; go: () => void } & ({ current: boolean; jump?: undefined } | { current?: undefined; jump: { here: CurrentJump; first: boolean } });
 const noJump: CurrentJump = currentJump();
 
+// A free-spin crosses several headings before the page stops. Writing the `on` class on each one restyles the page
+// mid-coast, so the highlight waits until the heading has stayed put. The accessible current heading does not wait.
+const HIGHLIGHT_SETTLE_MS = 200;
+
+function useSettledHighlight(defer: boolean, current: boolean): boolean {
+  const [painted, setPainted] = useState(current);
+  useEffect(() => {
+    if (!defer || painted === current) return;
+    const id = window.setTimeout(() => setPainted(current), HIGHLIGHT_SETTLE_MS);
+    return () => window.clearTimeout(id);
+  }, [defer, current, painted]);
+  return defer ? painted : current;
+}
+
 function SubLinkButton({ link, className, onClick }: { link: SubLink; className?: string; onClick: () => void }) {
   const here = link.jump?.here ?? noJump;
   const at = useSyncExternalStore(here.subscribe, here.get);
   const current = link.jump ? (at === undefined ? link.jump.first : at === link.id) : link.current;
+  const painted = useSettledHighlight(!!link.jump, current);
   return (
-    <button className={[className, current && "on"].filter(Boolean).join(" ")} aria-current={current ? (link.jump ? "location" : "page") : undefined} onClick={onClick}>
+    <button className={[className, painted && "on"].filter(Boolean).join(" ")} aria-current={current ? (link.jump ? "location" : "page") : undefined} onClick={onClick}>
       {link.label}
     </button>
   );

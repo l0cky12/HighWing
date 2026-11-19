@@ -1,5 +1,6 @@
 // Bot setup's review card as data (botSetupCard.ts, ADR 0231): which block is the live card, what it would change in
 // Hermes, and what survives Set it up and a reload. Rows are shaped as Hermes stores them. All data is synthetic.
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { BOT_SETUP_CAPS, BOT_SETUP_COLORS, BOT_SETUP_FENCE, botSetupBrief, type BotSetupAgainBlock, type BotSetupNewBlock } from "./botSetupBrief";
 import {
@@ -293,7 +294,7 @@ describe("the plan", () => {
   // Owner call 6: on a new bot the model row is greyed "Already in use" and not counted, unless the bot proposes another.
   it("shows the model already in use as a row that isn't counted, unless the block proposes another model", () => {
     const keep = planCard(card(), now());
-    expect(listedItem(keep, "model")).toEqual({ kind: "model", key: "model", name: "claude-sonnet-4.5", proposed: "claude-sonnet-4.5", before: "claude-sonnet-4.5", after: "claude-sonnet-4.5", over: "claude-sonnet-4.5", status: "same" });
+    expect(listedItem(keep, "model")).toEqual({ kind: "model", key: "model", name: "claude-sonnet-4.5", proposed: "claude-sonnet-4.5", before: "claude-sonnet-4.5", after: "claude-sonnet-4.5", over: [], status: "same" });
     expect(tickable(item(keep, "model"))).toBe(false);
     expect(tickedCount(keep)).toBe(10);
     const sameNamed = planCard(card(block({ model: "claude-sonnet-4.5" })), now());
@@ -485,16 +486,16 @@ describe("what the owner accepted", () => {
     const plan = onCard(card, now(), { persona: { to: "You are B." }, color: { to: "#3b82f6" }, "toolset:browser": { ticked: false } });
     const record = acceptedRecord(plan);
     expect(record.card).toBe(card.id);
-    expect(record.items.find((i) => i.key === "persona")).toEqual({ kind: "persona", key: "persona", proposed: block().persona, ticked: true, from: "", to: "You are B." });
-    expect(record.items.find((i) => i.key === "color")).toMatchObject({ proposed: BOT_SETUP_COLOR_HEX.teal, from: null, to: "#3b82f6" });
-    expect(record.items.find((i) => i.key === "toolset:browser")).toEqual({ kind: "toolset", key: "toolset:browser", proposed: "on", ticked: false, from: "off", to: "on" });
+    expect(record.items.find((i) => i.key === "persona")).toEqual({ kind: "persona", key: "persona", over: [block().persona], ticked: true, from: "", to: "You are B." });
+    expect(record.items.find((i) => i.key === "color")).toMatchObject({ over: [BOT_SETUP_COLOR_HEX.teal], from: null, to: "#3b82f6" });
+    expect(record.items.find((i) => i.key === "toolset:browser")).toEqual({ kind: "toolset", key: "toolset:browser", over: [], ticked: false, from: "off", to: "on" });
     expect(record.items.some((i) => i.key === "model")).toBe(false);
     const text = acceptedRecordBlock(record);
     expect(fencedBlocks(text, ACCEPTED_FENCE).map(readAcceptedRecord)).toEqual([record]);
   });
 
   it("refuses a record that is half right", () => {
-    const good = { v: 1, card: "s1:x", items: [{ kind: "persona", key: "persona", proposed: "A", ticked: true, from: "", to: "B" }] };
+    const good = { v: 1, card: "s1:x", items: [{ kind: "persona", key: "persona", over: ["A"], ticked: true, from: "", to: "B" }] };
     expect(readAcceptedRecord(JSON.stringify(good))).toEqual(good);
     const bad = [
       { ...good, v: 2 },
@@ -502,9 +503,10 @@ describe("what the owner accepted", () => {
       { ...good, items: [{ ...good.items[0], kind: "shell" }] },
       { ...good, items: [{ ...good.items[0], key: "skill:x" }] },
       { ...good, items: [{ ...good.items[0], ticked: "yes" }] },
-      { ...good, items: [{ kind: "skill", key: "skill:x", proposed: "on", ticked: true, from: "absent", to: "npx evil" }] },
-      { ...good, items: [{ kind: "skill", key: "skill:x", proposed: "npx evil", ticked: true, from: "absent", to: "on" }] },
-      { ...good, items: [{ kind: "color", key: "color", proposed: null, ticked: true, from: null, to: "url(https://evil.example)" }] },
+      { ...good, items: [{ ...good.items[0], over: "A" }] },
+      { ...good, items: [{ kind: "skill", key: "skill:x", over: ["on"], ticked: true, from: "absent", to: "npx evil" }] },
+      { ...good, items: [{ kind: "skill", key: "skill:x", over: ["off", "npx evil"], ticked: true, from: "absent", to: "on" }] },
+      { ...good, items: [{ kind: "color", key: "color", over: [null], ticked: true, from: null, to: "url(https://evil.example)" }] },
     ];
     for (const r of bad) expect(readAcceptedRecord(JSON.stringify(r)), JSON.stringify(r)).toBeNull();
   });
@@ -601,9 +603,36 @@ describe("what the owner accepted", () => {
     const echoed = cardOf([...rowsWith(block()), reply(3, JSON.stringify(block({ persona: "You are B." })))]).card;
     const plan = planCard(echoed, now(), null, pending);
     const record = acceptedRecord(plan);
-    expect(record.items.find((i) => i.key === "persona")).toMatchObject({ proposed: block().persona, to: "You are B." });
+    expect(record.items.find((i) => i.key === "persona")).toMatchObject({ over: [block().persona], to: "You are B." });
     const back = cardOf([...rowsWith(block()), reply(5, JSON.stringify(block({ color: "blue" })))]).card;
     expect(listedItem(planCard(back, applied(now(), plan, record), record), "persona")).toMatchObject({ status: "same", after: "You are B." });
+  });
+
+  it("keeps a choice the bot caught up with in the record, though Hermes already has the owner's value", () => {
+    const has = now({ persona: "You are B." });
+    const first = cardOf(rowsWith(block({ persona: "You are A-bot." }))).card;
+    const pending = [choose(listedItem(planCard(first, has), "persona"), { to: "You are B." })];
+    const echoed = cardOf(rowsWith(block({ persona: "You are B." }))).card;
+    const record = acceptedRecord(planCard(echoed, has, null, pending));
+    const back = cardOf(rowsWith(block({ persona: "You are A-bot." }))).card;
+    expect(listedItem(planCard(back, has, record), "persona")).toMatchObject({ status: "same", after: "You are B." });
+    expect(record.items.find((i) => i.key === "persona")).toMatchObject({ over: ["You are A-bot."], to: "You are B." });
+  });
+
+  it("makes a new choice on a kept item over the values the holding choice was made over", () => {
+    const again = (b: BotSetupAgainBlock) => cardOf([briefAgain("s1", "You are Z."), reply(2, JSON.stringify(b))]).card;
+    const first = again(keeping({ persona: "You are A." }));
+    const start = now({ persona: "You are Z." });
+    const plan = planCard(first, start, null, [choose(listedItem(planCard(first, start), "persona"), { to: "You are B." })]);
+    const record = acceptedRecord(plan);
+    const moved = { ...applied(start, plan, record), persona: "You are C." };
+    const kept = again(keeping());
+    const untick = choose(listedItem(planCard(kept, moved, record), "persona"), { ticked: false });
+    const second = acceptedRecord(planCard(kept, moved, record, [untick]), record);
+    const back = listedItem(planCard(again(keeping({ persona: "You are A." })), moved, second), "persona");
+    expect(back).toMatchObject({ after: "You are B." });
+    expect(tickable(back) && back.ticked).toBe(false);
+    expect(untick).toMatchObject({ over: ["You are A.", "You are C."], to: "You are B.", ticked: false });
   });
 
   it("uses the owner's latest choice on an item", () => {
@@ -646,5 +675,120 @@ describe("what the owner accepted", () => {
     const other = cardOf([brief("s2"), reply(2, JSON.stringify(block())), readyRow(3, record)]);
     expect(other.accepted).toBeNull();
     expect(planCard(other.card, now(), record)).toEqual(planCard(other.card, now()));
+  });
+});
+
+describe("the owner's choices, over generated runs", () => {
+  type Values = { persona: string; skill: string };
+  type Key = keyof Values;
+  type Shown = { persona: string | null; skill: "on" | "off" };
+  type Owned = { key: Key; away: string[]; to: string; ticked: boolean };
+  type Step = { op: "block"; persona: string | null; skill: "on" | "off" } | { op: "choose"; key: Key; to?: string; ticked?: boolean } | { op: "setItUp" } | { op: "hermes"; key: Key; to: string } | { op: "reload" };
+  type Run = { start: Values; first: Shown; steps: Step[] };
+
+  const [A, B, C] = ["You are A.", "You are B.", "You are C."];
+  const PERSONAS = [A, B, C];
+  const SWITCH = ["on", "off"] as const;
+  const KEYS = ["persona", "skill"] as const;
+  const ROW: Record<Key, string> = { persona: "persona", skill: "skill:find-nearby" };
+  const valueArb = (key: Key) => fc.constantFrom<string>(...(key === "persona" ? PERSONAS : SWITCH));
+  const keyArb = fc.constantFrom<Key>(...KEYS);
+  const stepArb: fc.Arbitrary<Step> = fc.oneof(
+    { weight: 4, arbitrary: fc.record({ op: fc.constant("block" as const), persona: fc.constantFrom(null, ...PERSONAS), skill: fc.constantFrom(...SWITCH) }) },
+    { weight: 4, arbitrary: keyArb.chain((key) => valueArb(key).map((to): Step => ({ op: "choose", key, to }))) },
+    { weight: 2, arbitrary: fc.tuple(keyArb, fc.boolean()).map(([key, ticked]): Step => ({ op: "choose", key, ticked })) },
+    { weight: 2, arbitrary: fc.constant<Step>({ op: "setItUp" }) },
+    { weight: 2, arbitrary: keyArb.chain((key) => valueArb(key).map((to): Step => ({ op: "hermes", key, to }))) },
+    { weight: 1, arbitrary: fc.constant<Step>({ op: "reload" }) },
+  );
+  const runArb: fc.Arbitrary<Run> = fc.record({
+    start: fc.record({ persona: fc.constantFrom(...PERSONAS), skill: fc.constantFrom(...SWITCH) }),
+    first: fc.record({ persona: fc.constantFrom(...PERSONAS), skill: fc.constantFrom(...SWITCH) }),
+    steps: fc.array(stepArb, { maxLength: 10 }),
+  });
+  const caughtUp: Run = {
+    start: { persona: B, skill: "on" },
+    first: { persona: A, skill: "on" },
+    steps: [{ op: "choose", key: "persona", to: B }, { op: "block", persona: B, skill: "on" }, { op: "setItUp" }, { op: "block", persona: A, skill: "on" }],
+  };
+  const untickedWhenKept: Run = {
+    start: { persona: C, skill: "on" },
+    first: { persona: A, skill: "on" },
+    steps: [
+      { op: "choose", key: "persona", to: B },
+      { op: "setItUp" },
+      { op: "hermes", key: "persona", to: C },
+      { op: "block", persona: null, skill: "on" },
+      { op: "choose", key: "persona", ticked: false },
+      { op: "setItUp" },
+      { op: "block", persona: A, skill: "on" },
+    ],
+  };
+
+  const cardFor = (b: Shown) =>
+    cardOf([briefAgain("s1", "You are Z."), reply(2, JSON.stringify(keeping({ persona: b.persona, callOwner: null, skills: [{ name: "find-nearby", on: b.skill === "on" }], toolsets: [], mcp: [], copy: [] })))]).card;
+  const hermesOf = (v: Values) => now({ persona: v.persona, skills: [{ name: "find-nearby", enabled: v.skill === "on" }] });
+
+  it("never offers, ticked, a value the owner moved away from while their choice holds", () => {
+    fc.assert(
+      fc.property(runArb, ({ start, first, steps }) => {
+        const hermes: Values = { ...start };
+        let shown = first;
+        let card = cardFor(shown);
+        let record: AcceptedRecord | null = null;
+        let pending: ReturnType<typeof choose>[] = [];
+        let owned = { accepted: [] as Owned[], pending: [] as Owned[] };
+
+        const proposed = (key: Key) => shown[key] ?? hermes[key];
+        const holdsNow = (c: Owned) => shown[c.key] === null || [c.to, ...c.away].includes(shown[c.key] as string);
+        const active = (key: Key) => owned.pending.filter((c) => c.key === key && holdsNow(c)).at(-1) ?? owned.accepted.find((c) => c.key === key && holdsNow(c));
+        const plan = () => planCard(card, hermesOf(hermes), record, pending);
+        const check = (trail: string) => {
+          const p = plan();
+          for (const key of KEYS) {
+            const c = active(key);
+            const row = listedItem(p, ROW[key]);
+            if (!c || !tickable(row) || !row.ticked) continue;
+            expect(c.away, `${trail}: ${key} offers ${row.after}, ticked, though the owner chose ${JSON.stringify(c)}`).not.toContain(row.after);
+            expect(c.ticked, `${trail}: ${key} is ticked, though the owner unticked it`).toBe(true);
+          }
+        };
+
+        const trail: string[] = [];
+        check("start");
+        for (const step of steps) {
+          trail.push(JSON.stringify(step));
+          if (step.op === "block") {
+            shown = { persona: step.persona, skill: step.skill };
+            card = cardFor(shown);
+          } else if (step.op === "choose") {
+            const row = listedItem(plan(), ROW[step.key]);
+            if (step.ticked !== undefined && !tickable(row)) continue;
+            pending = [...pending, choose(row, step.ticked === undefined ? { to: step.to } : { ticked: step.ticked })];
+            const held = active(step.key);
+            const to = step.to ?? held?.to ?? proposed(step.key);
+            const away = [...new Set([...(held?.away ?? []), proposed(step.key)])].filter((v) => v !== to);
+            owned = { ...owned, pending: [...owned.pending, { key: step.key, away, to, ticked: step.ticked ?? (tickable(row) ? row.ticked : true) }] };
+          } else if (step.op === "setItUp") {
+            const p = plan();
+            record = acceptedRecord(p, record);
+            for (const key of KEYS) {
+              const row = listedItem(p, ROW[key]);
+              if (tickable(row) && row.ticked) hermes[key] = String(row.after);
+            }
+            owned = { accepted: KEYS.flatMap((key) => active(key) ?? []), pending: [] };
+            pending = [];
+          } else if (step.op === "hermes") {
+            hermes[step.key] = step.to;
+          } else {
+            record = record && readAcceptedRecord(fencedBlocks(acceptedRecordBlock(record), ACCEPTED_FENCE)[0]);
+            owned = { ...owned, pending: [] };
+            pending = [];
+          }
+          check(trail.join(" → "));
+        }
+      }),
+      { numRuns: 3000, examples: [[caughtUp], [untickedWhenKept]] },
+    );
   });
 });

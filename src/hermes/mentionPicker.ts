@@ -6,9 +6,12 @@ export const HANDLE_CHAR = "[\\p{L}\\p{M}\\p{N}_-]";
 const caseOnly = (s: string): string => s.normalize("NFC").toLowerCase().replaceAll("ς", "σ");
 const words = (s: string): string[] => caseOnly(s).split(/[^\p{L}\p{M}\p{N}]+/u);
 
+/** The bots whose handle or a word of whose name starts with the query, the one whose handle it is first, then in roster order. */
 export function matchBots<B extends Named>(query: string, bots: readonly B[]): B[] {
   const q = caseOnly(query);
-  return bots.filter((b) => caseOnly(b.handle).startsWith(q) || words(b.name).some((w) => w.startsWith(q)));
+  const exact = (b: B) => caseOnly(b.handle) === q;
+  const hits = bots.filter((b) => caseOnly(b.handle).startsWith(q) || words(b.name).some((w) => w.startsWith(q)));
+  return [...hits.filter(exact), ...hits.filter((b) => !exact(b))];
 }
 
 export function completeMention(text: string, start: number, caret: number, handle: string): { text: string; caret: number } {
@@ -19,12 +22,13 @@ export function completeMention(text: string, start: number, caret: number, hand
 
 export type Mention<B> = { start: number; end: number; bot: B };
 
-const MENTION = new RegExp(`(?<=^|\\s)@(${HANDLE_CHAR}+)`, "gu");
+const MENTION = new RegExp(`(?<=^|\\s)@(${HANDLE_CHAR}+)(?=[.,?!:;]*(?:\\s|$))`, "gu");
 
+/** Each "@handle" at the start or after a space that ends at a space, the end, or a run of . , ? ! : ; before either; a handle matches in any case, as in the menu. */
 export function mentionsIn<B extends { readonly handle: string }>(text: string, bots: readonly B[]): Mention<B>[] {
-  const by = new Map(bots.map((b) => [b.handle, b]));
+  const by = new Map(bots.map((b) => [caseOnly(b.handle), b]));
   return [...text.matchAll(MENTION)].flatMap((m) => {
-    const bot = by.get(m[1]);
+    const bot = by.get(caseOnly(m[1]));
     return bot ? [{ start: m.index, end: m.index + m[0].length, bot }] : [];
   });
 }

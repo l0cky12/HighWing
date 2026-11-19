@@ -31,6 +31,13 @@ describe("matchBots", () => {
     expect(matchBots("b", [{ handle: "x", name: "Ada Bram" }, BRAM]).map((b) => b.handle)).toEqual(["x", "bram"]);
   });
 
+  it("puts the bot whose handle is the query first, so @hermes and Tab pick @hermes when the default bot is named Hermes", () => {
+    const roster = [{ handle: "default", name: "Hermes" }, { handle: "hermes", name: "Hermes" }, ADA];
+    expect(matchBots("hermes", roster).map((b) => b.handle)).toEqual(["hermes", "default"]);
+    expect(matchBots("HERMES", roster).map((b) => b.handle)).toEqual(["hermes", "default"]);
+    expect(matchBots("herm", roster).map((b) => b.handle)).toEqual(["default", "hermes"]);
+  });
+
   it("never folds accents: a capital A-ring finds Zo\u00eb \u00c5ngstr\u00f6m and not Ada, a plain a finds Ada and not the A-ring", () => {
     expect(names("\u00c5")).toEqual([ANGSTROM]);
     expect(names("a")).toEqual(["Ada"]);
@@ -103,14 +110,33 @@ describe("mentionsIn", () => {
     ]);
   });
 
-  it("names nobody for an @ glued to a word, a longer word, another case or a handle not in the roster", () => {
-    expect(named("me@bram.org @bramble @Bram @cleo")).toEqual([]);
+  it("names nobody for an @ glued to a word, a longer word or a handle not in the roster", () => {
+    expect(named("me@bram.org @bramble @cleo")).toEqual([]);
   });
 
-  it("reads the handle up to a mark that can't be in one, so @bram. and @bram? name Bram", () => {
-    expect(named("@bram. @bram?")).toEqual([
+  it("reads a handle in any case, as Hermes folds it and the menu matches it", () => {
+    expect(named("@BRAM @Bram @aDa")).toEqual([
+      ["bram", "@BRAM"],
+      ["bram", "@Bram"],
+      ["ada", "@aDa"],
+    ]);
+  });
+
+  it("ends a handle at a space, the end, or sentence marks before either, so @bram, @bram. and @bram?! name Bram", () => {
+    expect(named("@bram, what @bram.\n@bram?! ask @bram.")).toEqual([
+      ["bram", "@bram"],
+      ["bram", "@bram"],
       ["bram", "@bram"],
       ["bram", "@bram"],
     ]);
+    expect(named("@ada; @ada: @ada!")).toEqual([
+      ["ada", "@ada"],
+      ["ada", "@ada"],
+      ["ada", "@ada"],
+    ]);
+  });
+
+  it("names nobody where the handle runs on into a longer token, as Hermes reads @bram.com as one handle", () => {
+    expect(named("see @bram.com @ada's @ada) @bram.:x @ada\u{1f600} @bram/ @ada\"")).toEqual([]);
   });
 });

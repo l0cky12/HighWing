@@ -439,6 +439,22 @@ describe("The @ menu in a Bot Chat", () => {
     expect(server.requests.filter((r) => r.method === "prompt.submit")).toEqual([]);
   });
 
+  it("draws the pill of a bot picked with the mouse at once, with the caret after it", { timeout: 30_000 }, async () => {
+    const { user } = await inAdasBotChat();
+    await user.click(box());
+    await user.keyboard("ask @br");
+    await user.click(within(menu()).getByRole("option", { name: /@bram/ }));
+    expect([box().value, box().selectionStart]).toEqual(["ask @bram ", 10]);
+    expect(pill()?.textContent).toBe("@bram");
+  });
+
+  it("draws a pill for a handle typed in another case, and none for a handle that runs into a longer word", { timeout: 30_000 }, async () => {
+    const { user } = await inAdasBotChat();
+    await user.click(box());
+    await user.keyboard("@BRAM see @cleo.com");
+    await waitFor(() => expect(Array.from(document.querySelectorAll(".inline-mark[data-mention]"), (p) => p.textContent)).toEqual(["@bram"]));
+  });
+
   it("puts the caret after the space when the pick leaves the words as they were, so Backspace takes the pill and the space", { timeout: 30_000 }, async () => {
     const { user } = await inAdasBotChat();
     await user.click(box());

@@ -1403,7 +1403,7 @@ div.route-result { display: flex; flex-direction: column; gap: 6px; }
 .cmd-option.bot .cmd-bot-name { color: var(--text-strong); flex: none; }
 .cmd-option.bot .cmd-name { color: var(--muted); flex: none; }
 .cmd-option.bot .cmd-desc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cmd-menu [role="listbox"] > :first-child > .cmd-group { margin-top: 0; border-top: 0; }
+.cmd-menu [role="listbox"] > :first-child > .at-group { margin-top: 0; border-top: 0; }
 .cmd-option.skill .cmd-desc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .skill-note { font-size: calc(12rem / 14); color: var(--muted); padding: 0 6px 8px; }
 .skill-note.error { color: var(--bad); }

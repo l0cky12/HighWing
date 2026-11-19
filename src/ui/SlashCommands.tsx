@@ -355,7 +355,7 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
                       </div>
                     )}
                     {(i === firstBot || i === firstChat) && (
-                      <div className="cmd-group" aria-hidden="true">
+                      <div className="cmd-group at-group" aria-hidden="true">
                         {i === firstBot ? words.bots : words.chats}
                       </div>
                     )}

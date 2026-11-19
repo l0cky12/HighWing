@@ -2288,6 +2288,16 @@ function Composer({
     if (next !== textRef.current) onText(next);
   };
   const slash = useSlashCommands(commands, text, onText, taRef);
+  const noteSelection = useCallback((ta: HTMLTextAreaElement) => {
+    const [from, to] = [ta.selectionStart, ta.selectionEnd];
+    caret.current = [from, to];
+    setSelection((s) => (s[0] === from && s[1] === to ? s : [from, to]));
+  }, []);
+  // A pick from a menu moves the caret in code, and after a click no select event follows, so where it went is read here.
+  useLayoutEffect(() => {
+    const ta = taRef.current;
+    if (ta && document.activeElement === ta) noteSelection(ta);
+  }, [text, noteSelection]);
   // The "@" word the menu is open on stays words until it is picked, so typing "@bram" in full doesn't flash a pill.
   const bots = commands?.references?.bots;
   const atButton = bots ? atWords.button : "Reference a chat";
@@ -2495,9 +2505,7 @@ function Composer({
             }}
             onSelect={(e) => {
               slash.inputProps.onSelect(e);
-              const [from, to] = [e.currentTarget.selectionStart, e.currentTarget.selectionEnd];
-              caret.current = [from, to];
-              setSelection((s) => (s[0] === from && s[1] === to ? s : [from, to]));
+              noteSelection(e.currentTarget);
             }}
             onPaste={(e) => {
               if (dragging) return;

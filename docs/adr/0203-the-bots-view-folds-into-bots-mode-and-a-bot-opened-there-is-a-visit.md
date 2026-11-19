@@ -1,5 +1,7 @@
 # The Bots view folds into Bots mode, and a bot opened there is a visit
 
+> **One line changed by [ADR 0231](0231-new-bot-asks-only-for-a-name-the-bot-interviews-the-owner-in-its-bot-chat-and-one-card-sets-it-up.md)** (#85). New bot opens a name dialog, not the New profile form. Once the bot is made, its Bot Chat opens as a visit and Bot setup starts there.
+
 > **Amended by [ADR 0206](0206-a-persona-is-edited-only-in-the-profile-form-and-write-with-ai-rewrites-it-in-place.md).** A bot's menu also has Edit persona…, after Settings, which opens Edit bot with focus in Persona.
 >
 > **Accepted.** It decides what ADR 0195 left open, "Folding the Bots view into Bots mode": the Bots view and the rail's Bots button that ADR 0066 added are gone. It changes one line of ADR 0066, "A bot in another profile switches the profile first, as the switcher does": from Bots mode that switch is now a visit. ADR 0194's menu gains Clone, Pin and Hide from ADR 0189's, and New bot (ADR 0164) moves above the bots. New bot, Reload and the menu are `useBotActions` in `src/ui/Bots.tsx`. The visit is `visit`, `visitBot` and `goHome` in `src/App.tsx`, and `Hermes.setVisitHome` in `src/hermes/transport.ts` keeps the next launch on the owner's profile. Tested in `src/ui/bots.test.tsx`, `src/ui/botsTranslated.test.tsx`, `e2e/features/bot-menu.e2e.tsx` and `e2e/features/chat-list-modes.e2e.tsx`. **Added to by [ADR 0207](0207-bots-message-each-other-through-hermess-message-agent-which-the-owner-turns-on-in-bots-mode.md):** the row above the bots also holds Bot messaging's switch.

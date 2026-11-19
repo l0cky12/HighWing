@@ -201,3 +201,52 @@ it("keeps a later image's mark in the words when it is marked up", async () => {
   expect(stagedNames(), "the dropped image keeps its place, second").toEqual([expect.stringMatching(/^clipboard-/), "image.png"]);
   await shot("second image marked");
 });
+
+it("changes nothing when the owner switches chats while the marked image is being added", async () => {
+  let hold: Promise<void> | undefined;
+  let letGo = () => {};
+  let staged = 0;
+  const { app, server } = await boot({
+    seed: (s) => {
+      seed(s);
+      s.sessions.push(row("dns", 1, { pinned: true, title: "DNS records" }));
+      s.transcripts.dns = [{ role: "user", text: "Check the DNS records." }, { role: "assistant", text: "They resolve." }];
+    },
+    commands: {
+      // As the harness stages a file, after `hold` lets it.
+      stage_clipboard_file: async (bytes, headers) => {
+        await hold;
+        staged++;
+        const path = `/home/owner/.cache/highwing/captures/${Object.keys(server.files).length}/${decodeURIComponent(headers?.["x-name"] ?? "")}`;
+        server.files[path] = Array.from(new Uint8Array(bytes as unknown as ArrayBuffer), (b) => String.fromCharCode(b)).join("");
+        return path;
+      },
+    },
+  });
+
+  await app.getByRole("button", { name: /Settings page layout/ }).click();
+  await expect.element(app.getByText("Paste a screenshot and show me where.")).toBeVisible();
+  const composer = app.getByPlaceholder("Message Hermes");
+  await composer.click();
+  paste(new File([await plainImage(200, 120)], "image.png", { type: "image/png" }));
+  await expect.element(app.getByRole("button", { name: /^Mark up clipboard-/ })).toBeVisible();
+  const pasted = Object.keys(server.files).find((p) => p.includes("/captures/"))!;
+
+  await app.getByRole("button", { name: /^Mark up clipboard-/ }).click();
+  await dragBox([0.2, 0.2], [0.8, 0.8]);
+  await app.getByRole("textbox", { name: "Note for box 1" }).fill("too late");
+  hold = new Promise((r) => (letGo = r));
+  await app.getByRole("button", { name: "Add to message" }).click();
+  await expect.element(app.getByRole("button", { name: "Adding…" })).toBeVisible();
+  await app.getByRole("button", { name: /DNS records/ }).click();
+  await expect.element(app.getByText("They resolve.")).toBeVisible();
+  letGo();
+  const captures = () => Object.keys(server.files).filter((p) => p.includes("/captures/"));
+  await expect.poll(() => staged, { message: "the copy was staged" }).toBe(2);
+  await expect.poll(() => captures().join("\n"), { message: "and, staged too late, deleted again" }).toBe(pasted);
+
+  await app.getByRole("button", { name: /Settings page layout/ }).click();
+  await expect.element(app.getByText("Paste a screenshot and show me where.")).toBeVisible();
+  expect(stagedNames(), "the original is still staged").toEqual([pasted.split("/").pop()]);
+  expect(composerText().value, "no note was added").toBe("");
+});

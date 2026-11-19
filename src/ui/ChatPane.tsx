@@ -2206,10 +2206,20 @@ function Composer({
   // Mark up (ADR 0225): the image being marked, and what confirming does. The marked copy is staged as a pasted file
   // is, so the original, maybe the owner's own file, is only read; the copy takes the original's place in the strip
   // and its number, and the original is let go only if the app made it. A string is why it couldn't, for the dialog.
-  const [marking, setMarking] = useState<Attachment>();
-  const markUp = (from: Attachment, m: Marked) =>
+  // `marking` is one open dialog: a copy staged after it closed (the chat changed, its image went) is let go unused.
+  const [marking, setMarking] = useState<{ file: Attachment }>();
+  const markingRef = useRef(marking);
+  markingRef.current = marking;
+  useEffect(
+    () => () => {
+      markingRef.current = undefined;
+    },
+    [],
+  );
+  const markUp = (open: { file: Attachment }, m: Marked) =>
     busy(async (): Promise<string | void> => {
       const key = draftKey;
+      const from = open.file;
       let path: string;
       try {
         path = await stageBytes(await m.bytes.arrayBuffer(), markedName(from.name, m.type));
@@ -2218,22 +2228,22 @@ function Composer({
       }
       desk.own([path]);
       const [to] = await check([path]);
-      if (!to) {
+      if (!to || markingRef.current !== open || draftKeyRef.current !== key) {
         desk.release([path]);
-        return "Hermes can't take the marked image.";
+        return to ? undefined : "Hermes can't take the marked image.";
       }
       previews.current?.put(to.path, m.bytes);
       desk.change({ kind: "replaced", key, from: from.path, to });
       if (!desk.stagedIn(key).some((a) => a.path === to.path)) return "The image was removed while you marked it up.";
       endMarking();
-      if (draftKeyRef.current === key) insertWords(markupWords(to.name, m.n, m.note));
+      insertWords(markupWords(to.name, m.n, m.note));
     });
   // The dialog goes with the image it marks, and with the chat.
   useEffect(() => {
-    if (marking && !attachments.some((a) => a.path === marking.path)) setMarking(undefined);
+    if (marking && !attachments.some((a) => a.path === marking.file.path)) setMarking(undefined);
   }, [attachments, marking]);
   useEffect(() => setMarking(undefined), [draftKey]);
-  const markingSrc = marking && previews.current?.get(marking.path);
+  const markingSrc = marking && previews.current?.get(marking.file.path);
   const endMarking = () => {
     setMarking(undefined);
     requestAnimationFrame(() => taRef.current?.focus());
@@ -2480,10 +2490,10 @@ function Composer({
         // Over the chat pane only, so a pane split beside it stays usable.
         createPortal(
           <MarkUpDialog
-            key={marking.path}
-            file={marking}
+            key={marking.file.path}
+            file={marking.file}
             src={markingSrc.url}
-            n={desk.boxesOn(marking.path) + 1}
+            n={desk.boxesOn(marking.file.path) + 1}
             onConfirm={(m) => markUp(marking, m)}
             onCancel={endMarking}
           />,
@@ -2511,7 +2521,7 @@ function Composer({
                 preview={previews.current?.get(f.path)}
                 annotation={annotations.get(f.path)}
                 onRemove={() => removeFile(f.path)}
-                onMarkUp={() => setMarking(f)}
+                onMarkUp={() => setMarking({ file: f })}
               />
             ))}
           </div>

@@ -68,4 +68,26 @@ describe("Mark up dialog", () => {
     expect(onConfirm).not.toHaveBeenCalled();
     expect((screen.getByRole("textbox", { name: "Note for box 1" }) as HTMLInputElement).value).toBe("this one");
   });
+
+  it("leaves Enter to an input method choosing a word, and keeps the app's shortcuts and Tab inside the dialog", async () => {
+    const { drag, onConfirm } = await open();
+    drag(10, 10, 110, 60);
+    const note = screen.getByRole("textbox", { name: "Note for box 1" });
+    fireEvent.keyDown(note, { key: "Enter", isComposing: true });
+    fireEvent.keyDown(note, { key: "Enter", ctrlKey: true, keyCode: 229 });
+    await new Promise((r) => setTimeout(r, 0));
+    // jsdom can't draw, so a confirm would show why it failed.
+    expect(screen.queryByRole("alert"), "nothing was confirmed").toBeNull();
+    expect(onConfirm).not.toHaveBeenCalled();
+
+    const reached = vi.fn();
+    window.addEventListener("keydown", reached);
+    fireEvent.keyDown(note, { key: "k", ctrlKey: true });
+    window.removeEventListener("keydown", reached);
+    expect(reached, "an app shortcut stops at the dialog").not.toHaveBeenCalled();
+
+    screen.getByRole("button", { name: "Cancel" }).focus();
+    fireEvent.keyDown(document.activeElement!, { key: "Tab" });
+    expect(screen.getByRole("dialog").contains(document.activeElement), "Tab from the last control wraps inside").toBe(true);
+  });
 });

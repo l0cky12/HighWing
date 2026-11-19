@@ -9,6 +9,8 @@ import { NOTE_MAX, markedType, type Marked, type MarkedType } from "../hermes/ma
 import { LIMITS } from "../hermes/transport";
 import { errorText, formatBytes } from "../hermes/values";
 import type { Attachment } from "../hermes/model";
+import { composing } from "./bits";
+import { useModal } from "./modal";
 
 /** How far the pointer moves, in screen pixels, before a press becomes a drag. */
 const DRAG_PX = 4;
@@ -46,6 +48,9 @@ export function MarkUpDialog({
   const img = useRef<HTMLImageElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const noteRef = useRef<HTMLInputElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  // Tab stays in the dialog and the app's shortcuts don't reach past it, so nothing behind it can drop the note.
+  const modalKeys = useModal(box);
 
   useEffect(() => stage.current?.focus(), [size]);
 
@@ -110,6 +115,8 @@ export function MarkUpDialog({
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (composing(e)) return;
+    modalKeys(e);
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       void confirm();
@@ -134,7 +141,7 @@ export function MarkUpDialog({
   const tooBig = size && size.width * size.height > MAX_PIXELS;
 
   return (
-    <div className="markup" role="dialog" aria-modal="true" aria-label={`Mark up ${file.name}`} onKeyDown={onKeyDown}>
+    <div ref={box} className="markup" role="dialog" aria-modal="true" aria-label={`Mark up ${file.name}`} onKeyDown={onKeyDown}>
       <div className="annotate-bar markup-bar">
         <SquareDashedMousePointer size={14} aria-hidden />
         <span className="annotate-hint">
@@ -199,7 +206,7 @@ export function MarkUpDialog({
                 disabled={adding}
                 onChange={(e) => setNote(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.ctrlKey && !e.metaKey) {
+                  if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && !composing(e)) {
                     e.preventDefault();
                     void confirm();
                   }

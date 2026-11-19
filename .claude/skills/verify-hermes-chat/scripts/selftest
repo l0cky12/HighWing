@@ -94,7 +94,8 @@ case ${FAKE_DRIVER:-} in
     echo "fake tauri-driver: failing on purpose" >&2
     exit 1 ;;
   foreign)
-    setsid python3 "$serve" "$port" </dev/null >/dev/null 2>&1 &
+    # Another process: not one this run started, so it doesn't carry the run's tag.
+    env -u HV_RUN_ID setsid python3 "$serve" "$port" </dev/null >/dev/null 2>&1 &
     echo $! >"$FAKE_FOREIGN"
     exec python3 "$serve" "$native" ;;
 esac

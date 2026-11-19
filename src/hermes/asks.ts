@@ -2,9 +2,9 @@
 // that names other bots goes to each named bot's own Bot Chat as the owner's message, never the app relaying a bot's
 // (ADR 0207), with the asking chat attached as a Referenced chat (ADR 0165). The asking bot takes no turn. Hermes keeps
 // nothing in the asking chat, so this computer keeps the asks of each profile's chats: the words, the bots asked, where
-// the card goes, and each reply once it has ended. The
-// message carries an ask id in its attached context, which joins the record to the asked bot's stored rows when the
-// app has to settle an ask it lost sight of. Nothing ever scans a Bot Chat for asks the record doesn't know.
+// the card goes, and each reply once it has ended. The message carries an ask id in its attached context, which joins
+// the record to the asked bot's stored rows when the app has to settle an ask it lost sight of. Nothing ever scans a
+// Bot Chat for asks the record doesn't know.
 //
 // The asked Bot Chat is attached to this connection with `session.resume` under its own profile, which moves its
 // events here (`_rebind_live_transport`, `tui_gateway/methods_session.py` at `ae2a81cc`), and is never shown: it isn't

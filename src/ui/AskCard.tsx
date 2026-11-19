@@ -1,4 +1,4 @@
-// The Asked card (ADR 0233): a message the owner sent from this Bot Chat to other bots with "@", with each bot's
+// The Asked card (ADR 0233, 0234): a message the owner sent from this chat to other bots with "@", with each bot's
 // reply under it, read from the asks this computer keeps (asks.ts).
 import { createContext, useContext } from "react";
 import { AtSign, CircleAlert, Link2, RotateCcw } from "lucide-react";
@@ -12,7 +12,7 @@ import type { NamedBot } from "./SlashCommands";
 import { Spinner } from "./bits";
 import { TurnCard } from "./TurnCard";
 
-/** What a Bot Chat's pane can do with asks: send one from the composer, and act on its cards. */
+/** What a chat's pane can do with asks: send one from the composer, and act on its cards. */
 export type AskHost = {
   asks: readonly Ask[];
   /** The other bots, as the "@" menu lists them, for each card's faces. */

@@ -76,6 +76,9 @@ async function openDefaults(s: FakeHermes, instructions?: string) {
   render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }} onSignOut={async () => {}} />);
   await waitFor(() => expect(hermes.hasListed()).toBe(true));
   await act(async () => void (await hermes.idle()));
+  // The connection's capability check would otherwise start 2 s in, inside a slow test, and its probes would count as
+  // sent by the dialog.
+  await act(() => hermes.capabilities.refresh());
   const user = userEvent.setup();
   await user.click(document.querySelector<HTMLElement>(".project-btn")!);
   await user.click(await screen.findByRole("option", { name: /Budget Tracker/ }));

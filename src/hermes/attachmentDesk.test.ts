@@ -323,3 +323,68 @@ describe("Annotations on the desk (ADR 0094)", () => {
     expect(desk.stagedIn("chat-a")).toEqual([]);
   });
 });
+
+describe("Mark up on the desk (ADR 0225)", () => {
+  it("puts the marked copy in the original's place with its number, and deletes the original only if the app made it", async () => {
+    const rust = fakeApi();
+    const desk = new AttachmentDesk(rust.api);
+    const own = "/home/lena/Pictures/rack.png";
+    desk.own(["/c/1/0/a.png"]);
+    desk.change({ kind: "added", key: "chat-a", attachments: [file("/c/1/0/a.png"), file(own), file("/c/1/2/b.png")] });
+    expect(desk.boxesOn(own)).toBe(0);
+
+    desk.own(["/c/1/3/rack.png"]);
+    desk.change({ kind: "replaced", key: "chat-a", from: own, to: file("/c/1/3/rack.png") });
+    desk.own(["/c/1/4/a.png"]);
+    desk.change({ kind: "replaced", key: "chat-a", from: "/c/1/0/a.png", to: file("/c/1/4/a.png") });
+    await tick();
+    expect(desk.stagedIn("chat-a").map((a) => a.path), "each copy where its original was").toEqual(["/c/1/4/a.png", "/c/1/3/rack.png", "/c/1/2/b.png"]);
+    expect([...desk.numbersIn("chat-a")], "and with its number, so its mark in the words still names it").toEqual([
+      ["/c/1/4/a.png", 1],
+      ["/c/1/3/rack.png", 2],
+      ["/c/1/2/b.png", 3],
+    ]);
+    expect(rust.discarded, "the pasted original is deleted, the owner's own file never").toEqual(["/c/1/0/a.png"]);
+    expect(desk.boxesOn("/c/1/3/rack.png"), "one box drawn on it").toBe(1);
+
+    desk.own(["/c/1/5/rack.png"]);
+    desk.change({ kind: "replaced", key: "chat-a", from: "/c/1/3/rack.png", to: file("/c/1/5/rack.png") });
+    await tick();
+    expect(desk.boxesOn("/c/1/5/rack.png"), "marking it again numbers on").toBe(2);
+    expect(rust.discarded).toEqual(["/c/1/0/a.png", "/c/1/3/rack.png"]);
+  });
+
+  it("does nothing when the same swap comes again, and deletes a copy whose original went while it was marked", async () => {
+    const rust = fakeApi();
+    const desk = new AttachmentDesk(rust.api);
+    desk.own(["/c/1/0/a.png", "/c/1/1/a.png"]);
+    desk.change({ kind: "added", key: "chat-a", attachments: [file("/c/1/0/a.png")] });
+    const swap = { kind: "replaced", key: "chat-a", from: "/c/1/0/a.png", to: file("/c/1/1/a.png") } as const;
+    desk.change(swap);
+    desk.change(swap);
+    await tick();
+    expect(desk.stagedIn("chat-a").map((a) => a.path), "the copy stays staged").toEqual(["/c/1/1/a.png"]);
+    expect(desk.boxesOn("/c/1/1/a.png")).toBe(1);
+    expect(rust.discarded).toEqual(["/c/1/0/a.png"]);
+
+    desk.own(["/c/1/2/b.png"]);
+    desk.change({ kind: "replaced", key: "chat-a", from: "/c/1/9/removed.png", to: file("/c/1/2/b.png") });
+    await tick();
+    expect(desk.stagedIn("chat-a").map((a) => a.path), "a copy with nowhere to go isn't staged").toEqual(["/c/1/1/a.png"]);
+    expect(rust.discarded, "and is deleted").toEqual(["/c/1/0/a.png", "/c/1/2/b.png"]);
+  });
+
+  it("keeps an annotation's label on its marked copy", async () => {
+    const desk = new AttachmentDesk(fakeApi().api);
+    const composer = sink();
+    desk.attachTo(composer.s);
+    desk.nextAnnotation();
+    expect(await desk.annotate("/c/1/0/annotation-1.png", "", page, { key: "chat-a", live: () => true })).toBe(true);
+    desk.pageMoved();
+    desk.own(["/c/1/1/annotation-1.png"]);
+    desk.change({ kind: "replaced", key: "chat-a", from: "/c/1/0/annotation-1.png", to: file("/c/1/1/annotation-1.png") });
+    expect([...desk.annotationLabels()], "the copy says where it came from, and that the page has moved since").toEqual([
+      ["/c/1/1/annotation-1.png", { ...page, stale: true }],
+    ]);
+  });
+});

@@ -31,14 +31,17 @@ export type ComposerSink = {
 /**
  * Every way a chat's staged attachments change, each chat's under its Draft key. `added`: attached in the composer, or
  * back from a message Hermes didn't confirm. `sent`: they went with a message, which holds them from then on (`hold`,
- * `sent`, `finish`). `removed`: the owner took them out. `gone`: the chat was deleted or archived. A file the desk owns
+ * `sent`, `finish`). `removed`: the owner took them out. `gone`: the chat was deleted or archived. `replaced`: Mark up
+ * swapped an image for its marked copy (`to`, the desk's own), which takes its place, number and label, with one more
+ * box drawn on it (ADR 0225); the original is let go. A file the desk owns
  * is staged in one chat at a time, so it is deleted once it is removed, its chat goes, or its message no longer needs
  * it; signing out deletes them all (`dispose`). A file the owner picked from their own folders can be in several.
  */
 export type Staging =
   | { kind: "added"; key: string; attachments: readonly Attachment[] }
   | { kind: "sent" | "removed"; key: string; paths: readonly string[] }
-  | { kind: "gone"; key: string };
+  | { kind: "gone"; key: string }
+  | { kind: "replaced"; key: string; from: string; to: Attachment };
 
 const NONE: readonly Attachment[] = [];
 const UNNUMBERED: ReadonlyMap<string, number> = new Map();
@@ -67,6 +70,8 @@ export class AttachmentDesk {
   private pageMoves = 0;
   private lastAnnotation = 0;
   private labels: ReadonlyMap<string, AnnotationLabel> = new Map();
+  /** How many boxes Mark up has drawn on each staged image, so the next one numbers on. */
+  private readonly boxes = new Map<string, number>();
 
   constructor(
     private readonly api: AttachmentDeskApi,
@@ -187,8 +192,26 @@ export class AttachmentDesk {
         letGo = now.map((a) => a.path);
         this.numbers.delete(e.key);
         break;
+      case "replaced": {
+        // Done already: the copy is staged in the original's place.
+        if (now.some((a) => a.path === e.to.path)) return;
+        const at = now.findIndex((a) => a.path === e.from);
+        // The original went (removed, sent, its chat gone) while it was marked: the copy has nowhere to go.
+        if (this.disposed || at < 0) return this.release([e.to.path]);
+        next = now.map((a, i) => (i === at ? e.to : a));
+        const nums = this.numbers.get(e.key);
+        const n = nums?.of.get(e.from);
+        if (nums && n !== undefined) this.numbers.set(e.key, { ...nums, of: new Map([...nums.of].map(([p, m]) => [p === e.from ? e.to.path : p, m])) });
+        const label = this.annotations.get(e.from);
+        if (label) this.annotations.set(e.to.path, label);
+        this.boxes.set(e.to.path, (this.boxes.get(e.from) ?? 0) + 1);
+        this.boxes.delete(e.from);
+        letGo = [e.from];
+        break;
+      }
     }
-    if (next.length === now.length) return this.release(letGo);
+    for (const p of letGo) this.boxes.delete(p);
+    if (next.length === now.length && next.every((a, i) => a === now[i])) return this.release(letGo);
     this.restage(e.key, next);
     this.stagedChanged();
     this.release(letGo);
@@ -200,6 +223,9 @@ export class AttachmentDesk {
    * Draft (`words`), so a mark that Undo, a restart or a message put back brings back never names another image.
    */
   numbersIn = (key: string): ReadonlyMap<string, number> => this.numbers.get(key)?.of ?? UNNUMBERED;
+
+  /** How many boxes Mark up has drawn on the staged image at `path`. */
+  boxesOn = (path: string): number => this.boxes.get(path) ?? 0;
 
   /** No staged image in the chat gets a number up to `n`: a mark in its words gives it. */
   reserve(key: string, n: number) {

@@ -225,3 +225,22 @@ describe("A sent message's images", () => {
     }
   });
 });
+
+describe("A marked-up image's thumbnail (ADR 0225)", () => {
+  it("shows the bytes the webview drew at once, never reads them back, and releases them once unstaged", async () => {
+    const { previews, live, reads, land, changes } = setUp({ [rack.path]: "\x89PNG" });
+    const marked = img("/home/lena/.cache/hermes-chat/captures/1/3/rack.png");
+    previews.sync([rack]);
+    previews.put(marked.path, new Blob(["\x89PNG marked"]));
+    expect(previews.get(marked.path)).toEqual({ url: "blob:preview-1" });
+    expect(changes()).toBe(1);
+
+    previews.sync([marked]);
+    await land();
+    expect(reads, "the original was read; the copy was not").toEqual([rack.path]);
+    expect([...live], "the original's read, landing after it was swapped out, is let go").toEqual(["blob:preview-1"]);
+
+    previews.sync([]);
+    expect([...live]).toEqual([]);
+  });
+});

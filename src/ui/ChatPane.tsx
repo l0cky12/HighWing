@@ -36,6 +36,9 @@ import { ariaKeys, chordLabel, chordParts, pick as pickCommand, pickApp, typeNew
 import type { EditKind } from "../hermes/editHistory";
 import { wakeFull } from "../hermes/snooze";
 import { AttachmentChip, InlineSentImage, Previews, SentImages, readPreview } from "./previews";
+import { MarkUpDialog } from "./MarkUp";
+import { markedName, markupWords, type Marked } from "../hermes/markup";
+import { createPortal } from "react-dom";
 import { InlineMarks, type ComposerMark } from "./inlineMarks";
 import { sentWith } from "../hermes/sentImages";
 import { carried, highestMark, marksIn, markText, placeImages, sentText, withMarks, withoutMarks } from "../hermes/inlineImages";
@@ -261,6 +264,10 @@ export type PasteAttaches =
   /** No text the page can see: WebKitGTK hides a clipboard image, and the text beside it, from the paste event. */
   | { kind: "clipboard images" }
   | { kind: "nothing" };
+
+/** Stages bytes with no file of their own (a paste, a Windows drop, a marked-up image) in Rust's private folder. */
+const stageBytes = (bytes: ArrayBuffer, name: string) =>
+  invoke<string>("stage_clipboard_file", bytes, { headers: { "x-name": encodeURIComponent(name) } });
 
 export function pasteAttaches(data: { types: readonly string[]; files: ArrayLike<File>; getData(type: string): string }): PasteAttaches {
   const files = Array.from(data.files);
@@ -2161,9 +2168,7 @@ function Composer({
       const saved = await Promise.allSettled(
         files
           .filter((f) => !tooBig.includes(f))
-          .map(async (f) =>
-            invoke<string>("stage_clipboard_file", await f.arrayBuffer(), { headers: { "x-name": encodeURIComponent(nameOf(f)) } }),
-          ),
+          .map(async (f) => stageBytes(await f.arrayBuffer(), nameOf(f))),
       );
       const paths = saved.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
       desk.own(paths);
@@ -2197,6 +2202,42 @@ function Composer({
   });
   const stageRef = useRef(stageFiles);
   stageRef.current = stageFiles;
+
+  // Mark up (ADR 0225): the image being marked, and what confirming does. The marked copy is staged as a pasted file
+  // is, so the original, maybe the owner's own file, is only read; the copy takes the original's place in the strip
+  // and its number, and the original is let go only if the app made it. A string is why it couldn't, for the dialog.
+  const [marking, setMarking] = useState<Attachment>();
+  const markUp = (from: Attachment, m: Marked) =>
+    busy(async (): Promise<string | void> => {
+      const key = draftKey;
+      let path: string;
+      try {
+        path = await stageBytes(await m.bytes.arrayBuffer(), markedName(from.name, m.type));
+      } catch (e) {
+        return `Couldn't add the marked image: ${errorText(e)}`;
+      }
+      desk.own([path]);
+      const [to] = await check([path]);
+      if (!to) {
+        desk.release([path]);
+        return "Hermes can't take the marked image.";
+      }
+      previews.current?.put(to.path, m.bytes);
+      desk.change({ kind: "replaced", key, from: from.path, to });
+      if (!desk.stagedIn(key).some((a) => a.path === to.path)) return "The image was removed while you marked it up.";
+      endMarking();
+      if (draftKeyRef.current === key) insertWords(markupWords(to.name, m.n, m.note));
+    });
+  // The dialog goes with the image it marks, and with the chat.
+  useEffect(() => {
+    if (marking && !attachments.some((a) => a.path === marking.path)) setMarking(undefined);
+  }, [attachments, marking]);
+  useEffect(() => setMarking(undefined), [draftKey]);
+  const markingSrc = marking && previews.current?.get(marking.path);
+  const endMarking = () => {
+    setMarking(undefined);
+    requestAnimationFrame(() => taRef.current?.focus());
+  };
 
   // On Windows the native drop handler is off (tauri.windows.conf.json), because there it takes every drag and a chat
   // dragged onto a tab strip never reached the page. Files dropped there come as HTML5 drops, with bytes but no path.
@@ -2432,6 +2473,22 @@ function Composer({
         </div>
       )}
       {slash.view}
+      {marking &&
+        markingSrc &&
+        "url" in markingSrc &&
+        dropZone.current &&
+        // Over the chat pane only, so a pane split beside it stays usable.
+        createPortal(
+          <MarkUpDialog
+            key={marking.path}
+            file={marking}
+            src={markingSrc.url}
+            n={desk.boxesOn(marking.path) + 1}
+            onConfirm={(m) => markUp(marking, m)}
+            onCancel={endMarking}
+          />,
+          dropZone.current,
+        )}
       <div className={`composer ${dragging ? "dragging" : ""}`}>
         {dragging && <div className="drop-overlay">Drop files to attach</div>}
         {refs.length > 0 && (
@@ -2454,6 +2511,7 @@ function Composer({
                 preview={previews.current?.get(f.path)}
                 annotation={annotations.get(f.path)}
                 onRemove={() => removeFile(f.path)}
+                onMarkUp={() => setMarking(f)}
               />
             ))}
           </div>

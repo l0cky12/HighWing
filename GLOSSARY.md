@@ -248,6 +248,10 @@ _Avoid_: chat reference or `ChatRef` (a chat named by connection, profile and id
 A pointer at part of a web page in the Preview, staged in the composer: an image of the page with the picked element or region marked, plus a block of words with the page's address, the time, the box and the owner's note. An element also adds its details. A region has none, and says why. The owner presses Annotate in the Preview, picks on a **still** of the page, which covers the live page while they annotate (the page stays loaded behind it), and reviews everything on a card before Add to message. Nothing is sent until the owner sends the message. On Windows every annotation is a region (ADR 0094, ADR 0153).
 _Avoid_: comment (the official desktop app's word), inspector
 
+**Mark up**:
+A box the owner draws on a staged image, with a note. The image is swapped for a copy with the box drawn on it, in the same place and with the same image number, and `Box N on name: note` goes in the words. One box a Mark up; marking again adds box 2. Unlike an **Annotation** it points at an attached image, not a page in the Preview, so its words have no address or time (ADR 0225).
+_Avoid_: annotate (an attached image), edit image
+
 **Keyboard shortcut**:
 Keys that run one of the app's commands: Search all chats, Send, Next chat in the list. Every command is listed under Settings → Keyboard Shortcuts with its keys and the condition they work under, and the owner can change any of them there; a change applies at once, shows in every hint, and is kept on this computer. Ctrl stands for Ctrl or Cmd. Keys match only with exactly the modifiers pressed, so Shift+Enter and Enter are different commands. No key answers an Approval or stops a reply, on purpose (ADR 0147).
 _Avoid_: keybinding (the code's word), hotkey, accelerator

@@ -153,7 +153,7 @@ Answers and notes stay in the composer, in memory, until you dismiss them or lea
 
 ![Two chats side by side, each with its own transcript and composer](screenshots/readme/split-panes.png)
 
-Click a split button at the end of the tab strip, or press Ctrl+\\, to open a second pane. Right-click a chat to open it in the left or right pane. The pane you click or tab into becomes active, marked by an accent line. The chat list, Search, New chat, and Find act on the active pane. Drag the divider to resize the panes, or double-click it to make them equal. When fewer than 646 pixels remain for the chats, a Left/Right switcher shows one pane at a time.
+Press Ctrl+\\, pick a split in a tab's menu, or drag a tab to a pane's edge to open a second pane ([ADR 0052](adr/0052-a-dragged-tab-moves-and-any-pane-edge-splits.md)). Right-click a chat to open it in the left or right pane. The pane you click or tab into becomes active, marked by an accent line. The chat list, Search, New chat, and Find act on the active pane. Drag the divider to resize the panes, or double-click it to make them equal. When fewer than 646 pixels remain for the chats, a Left/Right switcher shows one pane at a time.
 
 Different chats keep their own drafts, replies, and unread state. The same chat in both panes shares its draft, queued messages, and reply. Scroll position, Find, and unsent attachments belong to each pane. Closing a pane keeps the draft and any running reply, but discards unsent attachments in that pane. Switching profile returns to one pane. The split layout lasts only for the current run.
 

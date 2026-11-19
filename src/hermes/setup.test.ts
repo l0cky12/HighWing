@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { FakeHermes, fakeEnv } from "./fakeHermes";
 import { connect } from "./transport";
-import { explain, explainSignIn, isSetUp, missing, providerKeys, readStatus, readyProviders, SignInFailure, testConnection, type Probe, type ProbeFailure, type Probed } from "./setup";
+import { explain, explainSignIn, missing, providerKeys, readStatus, readyProviders, SignInFailure, testConnection, type Probe, type ProbeFailure, type Probed } from "./setup";
 import type { SignInDetails } from "./tauriPipe";
 import { RestError } from "./pipe";
 
@@ -19,14 +19,7 @@ const answering = (answer: Probed | ProbeFailure): Probe => ({
   cancel: () => {},
 });
 
-describe("Whether this computer is set up", () => {
-  it("counts any saved sign-in, so an existing install never sees first-run setup", () => {
-    expect(isSetUp({ mode: "ssh", sshTarget: "", url: "", username: "" })).toBe(false);
-    expect(isSetUp({ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "" })).toBe(true);
-    expect(isSetUp({ mode: "url", sshTarget: "", url: "http://hermes:9119", username: "lena" })).toBe(true);
-    expect(isSetUp({ mode: "ssh", sshTarget: " ", url: "", username: "lena" })).toBe(true);
-  });
-
+describe("What setup still needs", () => {
   it("names what is missing before a test can run", () => {
     expect(missing(ssh)).toEqual([]);
     expect(missing({ ...ssh, sshTarget: " ", password: "" })).toEqual(["the SSH target", "the dashboard password"]);

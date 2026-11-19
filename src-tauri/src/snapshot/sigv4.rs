@@ -4,8 +4,6 @@ use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 
 pub const ALGORITHM: &str = "AWS4-HMAC-SHA256";
-/// The SHA-256 of no bytes, the payload hash of a request without a body.
-pub const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 /// A presigned link signs no payload.
 pub const UNSIGNED_PAYLOAD: &str = "UNSIGNED-PAYLOAD";
 
@@ -128,6 +126,8 @@ mod tests {
     const KEY: Key = Key { id: "AKIAIOSFODNN7EXAMPLE", secret: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", region: "us-east-1" };
     const DATE: &str = "20130524T000000Z";
     const HOST: &str = "examplebucket.s3.amazonaws.com";
+    /// The SHA-256 of no bytes, the payload hash of a request without a body.
+    const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
     fn pairs(list: &[(&str, &str)]) -> Vec<(String, String)> {
         list.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()

@@ -947,11 +947,6 @@ async fn read_opened_text(file: std::sync::Arc<std::fs::File>) -> Result<LocalTe
     .map_err(|e| TransportError::File(e.to_string()))?
 }
 
-/// Reads the start of a local regular file. The preview IPC uses `PickedFiles::read` instead.
-pub async fn read_local_text(path: &str) -> Result<LocalText, TransportError> {
-    read_opened_text(std::sync::Arc::new(open_local_text(path)?)).await
-}
-
 /// Retains the files picked in the native dialog, so replacing a path cannot grant access to another file.
 #[derive(Default)]
 pub struct PickedFiles(Mutex<std::collections::HashMap<String, std::sync::Arc<std::fs::File>>>);

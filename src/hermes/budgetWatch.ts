@@ -33,7 +33,7 @@ import type { ChatUsage } from "./usage";
 import { statusOf } from "./pipe";
 import { errorText, isObj } from "./values";
 
-/** The document budgets and their marks are kept in: `{v, scopes: {[connectionScope]: Shelf}}` (profileLocalData.ts `SCOPED_DOCS`). */
+/** The document budgets and their marks are kept in: `{v, scopes: {[connectionScope]: {budgets, fired}}}` (profileLocalData.ts `SCOPED_DOCS`). */
 export const BUDGETS_KEY = "hermes-chat.budgets";
 const BUDGETS_VERSION = 1;
 

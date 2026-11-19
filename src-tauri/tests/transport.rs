@@ -1859,13 +1859,14 @@ async fn reads_the_start_of_a_local_file_for_the_preview() {
     let dir = scratch("local-text");
     let notes = dir.join("notes.md");
     std::fs::write(&notes, "# Notes\n\nCafé ☕\n").unwrap();
-    let t = transport::read_local_text(&path_of(&notes)).await.unwrap();
+    let picked = transport::PickedFiles::default();
+    let t = picked.read(&picked.allow(&path_of(&notes)).unwrap()).await.unwrap();
     assert_eq!(t, transport::LocalText { size: 19, truncated: false, binary: false, text: "# Notes\n\nCafé ☕\n".into() });
 
     // Only the first 512 KB is read, and the size says how big the file is.
     let big = dir.join("big.log");
     std::fs::write(&big, "x".repeat(transport::LOCAL_TEXT_MAX_BYTES as usize + 10)).unwrap();
-    let t = transport::read_local_text(&path_of(&big)).await.unwrap();
+    let t = picked.read(&picked.allow(&path_of(&big)).unwrap()).await.unwrap();
     assert!(t.truncated);
     assert_eq!(t.size, transport::LOCAL_TEXT_MAX_BYTES + 10);
     assert_eq!(t.text.len() as u64, transport::LOCAL_TEXT_MAX_BYTES);
@@ -1876,19 +1877,19 @@ async fn a_binary_local_file_comes_back_without_its_bytes() {
     let dir = scratch("local-binary");
     let bin = dir.join("disk.img");
     std::fs::write(&bin, b"\x7fELF\x02\x01\x01\0\0\0\0\0\0\0\0\0").unwrap();
-    let t = transport::read_local_text(&path_of(&bin)).await.unwrap();
+    let picked = transport::PickedFiles::default();
+    let t = picked.read(&picked.allow(&path_of(&bin)).unwrap()).await.unwrap();
     assert!(t.binary);
     assert_eq!(t.text, "");
     assert_eq!(t.size, 16);
 }
 
 #[tokio::test]
-async fn refuses_a_folder_a_missing_file_or_a_relative_path_for_the_preview() {
+async fn refuses_a_folder_or_a_missing_file_for_the_preview() {
     let dir = scratch("local-refused");
-    let err = |p: String| async move { transport::read_local_text(&p).await.err().unwrap().to_string() };
-    assert_eq!(err(path_of(&dir)).await, "it's a folder");
-    assert_eq!(err(path_of(&dir.join("gone.txt"))).await, std::io::Error::from_raw_os_error(2).to_string());
-    assert_eq!(err("notes.txt".into()).await, "it isn't a full path");
+    let err = |p: String| transport::PickedFiles::default().allow(&p).err().unwrap().to_string();
+    assert_eq!(err(path_of(&dir)), "it's a folder");
+    assert_eq!(err(path_of(&dir.join("gone.txt"))), std::io::Error::from_raw_os_error(2).to_string());
 }
 
 #[tokio::test]
@@ -1935,9 +1936,9 @@ async fn local_preview_refuses_fifos_and_devices_without_waiting_for_a_writer() 
     let cpath = std::ffi::CString::new(path_of(&fifo)).unwrap();
     assert_eq!(unsafe { libc::mkfifo(cpath.as_ptr(), 0o600) }, 0);
     for path in [path_of(&fifo), "/dev/zero".into()] {
-        let read = tokio::time::timeout(Duration::from_secs(2), transport::read_local_text(&path)).await.unwrap();
-        assert_eq!(read.err().unwrap().to_string(), "it isn't a regular file");
-        assert!(transport::PickedFiles::default().allow(&path).is_err());
+        let allow = tokio::task::spawn_blocking(move || transport::PickedFiles::default().allow(&path));
+        let allowed = tokio::time::timeout(Duration::from_secs(2), allow).await.unwrap().unwrap();
+        assert_eq!(allowed.err().unwrap().to_string(), "it isn't a regular file");
     }
 }
 

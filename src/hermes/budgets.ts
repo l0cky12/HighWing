@@ -525,7 +525,6 @@ export const BUDGET_NOTES = [
  */
 export type SavedScope = { kind: "server" } | { kind: "profile" } | { kind: "project"; project: string } | { kind: "model"; model: string };
 export type SavedBudget = Omit<Budget, "scope"> & { scope: SavedScope };
-export type Shelf = { budgets: SavedBudget[]; fired: Record<string, FiredMark> };
 
 export type ShelfName = { profile: string } | "connection";
 

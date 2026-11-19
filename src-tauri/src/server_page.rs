@@ -2048,7 +2048,6 @@ while True:
                 .map(|c| c.replace('\0', " "))
                 .collect::<Vec<_>>()
         };
-        eprintln!("right after: {:?}", ours());
         for _ in 0..100 {
             if ours().is_empty() {
                 return;

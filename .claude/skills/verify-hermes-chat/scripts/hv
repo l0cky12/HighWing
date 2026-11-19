@@ -72,9 +72,16 @@ xvfb_ours() {
   lock_pid=$(tr -d ' \n' <"/tmp/.X$1-lock" 2>/dev/null) && [ -n "$lock_pid" ] && [ -S "/tmp/.X11-unix/X$1" ] &&
     [ "$(ps -o pgid= -p "$lock_pid" 2>/dev/null | tr -d ' ')" = "$2" ]
 }
+# A lock per X display, held while a run claims display $1 or clears a dead server's files from it, so the two never
+# interleave (a run could otherwise start its server on a display between another's dead-owner check and its rm). It
+# lives in /tmp beside the X locks, because displays are shared by every run whatever its HV_HOME. Extra args go to flock.
+display_lock() { { exec {DISPLAY_LOCK}>>"/tmp/.hv-display-$1.lock"; } 2>/dev/null && flock "${@:2}" "$DISPLAY_LOCK" || { display_unlock; return 1; }; }
+display_unlock() { [ -z "${DISPLAY_LOCK:-}" ] || exec {DISPLAY_LOCK}>&-; DISPLAY_LOCK=""; }
 # Starts Xvfb (1400x900, 24-bit) on display $1 in its own process group, logging to $2, and prints the group's PID.
 # A private Xvfb looks for xkbcomp in its compiled-in /usr/bin: overlay ours there. Reads cmd_up's $name.
 start_xvfb() {
+  # The server must not inherit the display lock, or it would hold the lock for its whole life.
+  display_unlock
   local xvfb; xvfb=$(tool Xvfb)
   if [ "$xvfb" = "$ROOT/usr/bin/Xvfb" ]; then
     HV_RUN_ID=$name setsid bwrap --dev-bind / / --overlay-src /usr/bin --overlay-src "$ROOT/usr/bin" --ro-overlay /usr/bin \
@@ -222,16 +229,19 @@ while os.getppid() == int(sys.argv[1]):
   # X server. Another run can take a free-looking display between our check and Xvfb's lock, so the display is ours
   # only once our Xvfb holds its lock. Otherwise our Xvfb exits (or is killed here) and we try the next number.
   for n in $(seq 140 199); do
-    { [ -e "/tmp/.X11-unix/X$n" ] || [ -e "/tmp/.X$n-lock" ]; } && continue
+    display_lock "$n" -n || continue
+    if [ -e "/tmp/.X11-unix/X$n" ] || [ -e "/tmp/.X$n-lock" ]; then display_unlock; continue; fi
     echo "hv: trying display :$n" >>"$ev/xvfb.log"
     xvfb_pid=$(start_xvfb "$n" "$ev/xvfb.log")
     save_state
     if wait_for "xvfb_ours $n $xvfb_pid || ! alive $xvfb_pid" 15 && xvfb_ours "$n" "$xvfb_pid"; then
       display=:$n
+      display_unlock
       break
     fi
     kill -KILL -- "-$xvfb_pid" 2>/dev/null || true
     xvfb_pid=""
+    display_unlock
   done
   [ -n "$display" ] || die "no display in :140-:199 came up for this run; see $ev/xvfb.log"
   save_state
@@ -371,8 +381,11 @@ cmd_down() {
   # A KILLed X server leaves its lock and socket, and every later run skips that display. Free each display this run
   # tried whose lock names a process that is gone; a lock naming a live one is another run's.
   for n in $(sed -n 's/^hv: trying display :\([0-9]*\)$/\1/p' "$EVIDENCE/xvfb.log" 2>/dev/null); do
-    lock=$(tr -d ' \n' 2>/dev/null <"/tmp/.X$n-lock") || continue
-    if ! running "$lock"; then rm -f "/tmp/.X$n-lock" "/tmp/.X11-unix/X$n" || true; fi
+    display_lock "$n" -w 30 || continue
+    if lock=$(tr -d ' \n' 2>/dev/null <"/tmp/.X$n-lock") && ! running "$lock"; then
+      rm -f "/tmp/.X$n-lock" "/tmp/.X11-unix/X$n" || true
+    fi
+    display_unlock
   done
   # Kept with the evidence: the display, ports and PIDs this run had.
   cp "$RUN/state.env" "$EVIDENCE/state.env" 2>/dev/null || true

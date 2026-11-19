@@ -236,6 +236,38 @@ else
 fi
 rm -rf "$HV_HOME/evidence"
 
+# Claiming a display and clearing a dead server's files from it take the same per-display lock, so neither runs in the
+# middle of the other. hold_display <n> <seconds> holds that lock as another run would, and prints "held" once it has.
+hold_display() { python3 -c 'import fcntl, sys, time
+f = open(sys.argv[1], "a"); fcntl.flock(f, fcntl.LOCK_EX); print("held", flush=True); time.sleep(float(sys.argv[2]))' "/tmp/.hv-display-$1.lock" "$2"; }
+for n in $(seq 140 199); do [ -e "/tmp/.X11-unix/X$n" ] || [ -e "/tmp/.X$n-lock" ] || break; done
+hold_display "$n" 20 >"$T/hold.out" &
+NON_RUN_PIDS+=($!)
+for _ in $(seq 50); do [ -s "$T/hold.out" ] && break; sleep 0.1; done
+code=0; hv up >"$T/claim.log" 2>&1 || code=$?
+r=$(sed -n 's/^export HV_RUN=//p' "$T/claim.log")
+kill "${NON_RUN_PIDS[-1]}" 2>/dev/null || true
+if [ "$code" = 0 ] && [ -n "$r" ]; then
+  disp=$(. "$r/state.env"; echo "${DISPLAY_NUM#:}")
+  ev=$(. "$r/state.env"; echo "$EVIDENCE")
+  [ "$disp" != "$n" ] && ! grep -q "^hv: trying display :$n$" "$ev/xvfb.log" && flock -n "/tmp/.hv-display-$disp.lock" true &&
+    pass "hv up skipped display :$n while another run claimed it, and its own Xvfb holds no display lock" ||
+    fail "claimed display :$n: this run got :$disp; tried $(grep -c trying "$ev/xvfb.log") displays"
+  xvfb=$(tr -d ' \n' <"/tmp/.X$disp-lock")
+  kill -KILL "$xvfb"
+  for _ in $(seq 50); do dead "$xvfb" && break; sleep 0.1; done
+  hold_display "$disp" 3 >"$T/hold2.out" &
+  NON_RUN_PIDS+=($!)
+  for _ in $(seq 50); do [ -s "$T/hold2.out" ] && break; sleep 0.1; done
+  start=$(date +%s%N); HV_RUN=$r hv down >/dev/null 2>&1 || true; ms=$((($(date +%s%N) - start) / 1000000))
+  [ "$ms" -ge 2500 ] && [ ! -e "/tmp/.X$disp-lock" ] && [ ! -e "/tmp/.X11-unix/X$disp" ] &&
+    pass "hv down waited for a claim on display :$disp before it cleared the dead server's files (${ms} ms)" ||
+    fail "hv down during a claim on :$disp: ${ms} ms, left: $(ls "/tmp/.X$disp-lock" "/tmp/.X11-unix/X$disp" 2>/dev/null | tr '\n' ' ')"
+else
+  fail "hv up beside a claimed display: exit $code; $(tail -3 "$T/claim.log")"
+fi
+rm -rf "$HV_HOME/evidence"
+
 code=0; FAKE_DRIVER=foreign FAKE_FOREIGN=$T/foreign.pid hv up >"$T/foreign.log" 2>&1 || code=$?
 foreign=$(cat "$T/foreign.pid" 2>/dev/null || true)
 [ -z "$foreign" ] || NON_RUN_PIDS+=("$foreign")

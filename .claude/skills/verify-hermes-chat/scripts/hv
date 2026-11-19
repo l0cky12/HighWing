@@ -308,7 +308,7 @@ cmd_doctor() {
   if [ -s "$RUN/session" ]; then
     local sid; sid=$(cat "$RUN/session")
     curl -sf "http://127.0.0.1:$DRIVER_PORT/session/$sid/title" | grep -q '"value"' && ok "WebDriver session $sid answers (window title $(curl -s "http://127.0.0.1:$DRIVER_PORT/session/$sid/title" | python3 -c 'import json,sys; print(repr(json.load(sys.stdin)["value"]))'))" || no "WebDriver session $sid is dead: \`wd.mjs close\` then \`wd.mjs open\`"
-    local app_pid; app_pid=$(ps -eo pid=,args= | awk -v a="$APP" '$2 == a {print $1}' | while read -r p; do grep -qz "^DISPLAY=$DISPLAY_NUM$" "/proc/$p/environ" 2>/dev/null && echo "$p"; done | head -1)
+    local app_pid; app_pid=$(ps -eo pid=,args= | awk -v a="$APP" '$2 == a {print $1}' | while read -r p; do grep -qz "^DISPLAY=$DISPLAY_NUM$" "/proc/$p/environ" 2>/dev/null && echo "$p"; done | head -1) || true
     [ -n "$app_pid" ] && ok "app pid $app_pid on $DISPLAY_NUM" || no "no app process on $DISPLAY_NUM"
   else
     echo "--   no WebDriver session yet (\`wd.mjs open\` launches the app)"

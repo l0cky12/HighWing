@@ -42,7 +42,7 @@ afterEach(() => {
 
 describe("reading", () => {
   it("is the defaults when nothing is stored", () => {
-    expect(getUIPrefs()).toEqual({ theme: "system", reopenLastChat: false, checkUpdatesOnLaunch: true, lastOpenChat: {}, modelPicker: null, modelPicks: {}, modelFavorites: [], statusBar: ["context", "model", "status"], previewWidth: null, sidebarWidth: null, zoom: 1, templates: [], terminalKind: "server", followUp: "queue", idleCompact: { enabled: false, percent: 70, idleMinutes: 15 }, chatSectionsShown: ["pinned", "inbox", "snoozed", "working", "archived"], chatSectionsCollapsed: ["snoozed", "archived"], chatListMode: "chats", inboxAutoDismissDays: null, messageDetails: "time", spellCheck: true, summonSelection: true, followScreen: false, keybindings: {}, writingModels: {} });
+    expect(getUIPrefs()).toEqual({ theme: "system", reopenLastChat: false, checkUpdatesOnLaunch: true, lastOpenChat: {}, modelPicker: null, modelPicks: {}, modelFavorites: [], statusBar: ["context", "model", "status"], previewWidth: null, sidebarWidth: null, zoom: 1, templates: [], terminalKind: "server", followUp: "queue", idleCompact: { enabled: false, percent: 70, idleMinutes: 15 }, chatSectionsShown: ["pinned", "inbox", "snoozed", "working", "archived"], chatSectionsCollapsed: ["snoozed", "archived"], chatListMode: "chats", inboxAutoDismissDays: null, messageDetails: "time", spellCheck: true, summonSelection: true, followScreen: false, askFirst: true, keybindings: {}, writingModels: {} });
     expect(getUIPrefs()).toEqual(DEFAULT_UI_PREFS);
   });
 
@@ -99,9 +99,21 @@ describe("reading", () => {
       messageDetails: "time",
       summonSelection: true,
       followScreen: false,
+      askFirst: true,
       keybindings: { search: ["Ctrl+J"] },
       writingModels: {},
     });
+  });
+
+  it("asks first by default, keeps a stored choice, and goes back to asking for anything that isn't a boolean", () => {
+    expect(getUIPrefs().askFirst).toBe(true);
+    setUIPrefs({ askFirst: false });
+    expect(stored().askFirst).toBe(false);
+    expect(getUIPrefs().askFirst).toBe(false);
+    for (const bad of ["no", 0, null]) {
+      localStorage.setItem(UI_PREFS_KEY, JSON.stringify({ v: UI_PREFS_VERSION, askFirst: bad }));
+      expect(getUIPrefs().askFirst).toBe(true);
+    }
   });
 
   it("keeps the keyboard shortcuts the owner changed, by shape only, and drops anything that isn't lists of strings", () => {

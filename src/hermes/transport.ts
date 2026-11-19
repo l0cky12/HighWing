@@ -59,6 +59,8 @@ import type { Restored, RollbackIO } from "./fileUndo";
 import { ConnectionLostError, FILE_MARK, LIMITS, LegacyProtocol, PromptUnconfirmedError, ProtocolMismatchError, RpcError, negotiate, type Admitted, type AnswerOutcome, type BranchAnswer, type GoingOut, type Inbound, type PlainMethod, type Port, type RpcFrame, type ServerRequest, type SessionProtocol } from "./sessionProtocol";
 import type { AppMethod } from "./canonicalVerbs";
 import { policyOf } from "./chatKind";
+import { askFirstBlocks } from "./askFirst";
+import { getUIPrefs } from "./uiPrefs";
 import { projectStored, type TranscriptMessage } from "./storedTranscript";
 import {
   BOT_BLOCK_FIELDS,
@@ -3753,7 +3755,7 @@ export class Hermes {
         const go = async () => {
           const asking = this.sendContext?.(profile, chatId);
           if (asking) told = await asking.catch(() => undefined);
-          const context = [...(told?.blocks ?? []), ...references.map(referenceBlock)];
+          const context = [...(told?.blocks ?? []), ...references.map(referenceBlock), ...askFirstBlocks(chat, getUIPrefs().askFirst)];
           if (!skill) return this.protocol.submit(runtimeId, { profile: this.profile, text, attachments, hold: !!queued, context }, goingOut);
           // Hermes builds the skill's text for this session; nothing reaches the chat until it is sent below.
           const ran = await runSkill(this.protocol, runtimeId, skill);

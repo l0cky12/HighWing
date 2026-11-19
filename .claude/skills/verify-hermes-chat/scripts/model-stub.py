@@ -4,13 +4,27 @@ title request with "Stub title". Set STUB_DELAY_S=<seconds> to hold each reply t
     python3 model-stub.py <host> <port> <requests.jsonl>
 """
 import json
+import math
 import os
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOST, PORT, LOG = sys.argv[1], int(sys.argv[2]), sys.argv[3]
-DELAY_S = float(os.environ.get("STUB_DELAY_S") or 0)
+
+
+def delay_from_env():
+    raw = os.environ.get("STUB_DELAY_S") or "0"
+    try:
+        seconds = float(raw)
+    except ValueError:
+        seconds = math.nan
+    if not math.isfinite(seconds) or seconds < 0:
+        sys.exit(f"model-stub: STUB_DELAY_S must be a finite number of seconds, 0 or more, not {raw!r}")
+    return seconds
+
+
+DELAY_S = delay_from_env()
 
 
 def text_of(content):

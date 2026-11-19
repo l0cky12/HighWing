@@ -36,6 +36,12 @@ EOF
   done
   setsid python3 -I "$HERE/model-stub.py" $model_host "$model_port" "$RH_DIR/model-requests.jsonl" >"$RH_DIR/stub.log" 2>&1 </dev/null &
   echo $! >"$RH_DIR/stub.pid"
+  local stub_started=$SECONDS
+  until (: >"/dev/tcp/$model_host/$model_port") 2>/dev/null; do
+    kill -0 "$(cat "$RH_DIR/stub.pid")" 2>/dev/null || { down >&2; die "model stub exited: $(tail -n 3 "$RH_DIR/stub.log"); see $RH_DIR/stub.log"; }
+    ((SECONDS - stub_started < 10)) || { down >&2; die "model stub not answering on $model_host:$model_port after 10 s; see $RH_DIR/stub.log"; }
+    sleep 0.1
+  done
   setsid env -i PATH=/usr/bin:/bin HOME="$RH_DIR/home" HERMES_HOME="$RH_DIR/home/.hermes" HERMES_WEB_DIST="$RH_DIR/web" \
     HERMES_DASHBOARD_BASIC_AUTH_USERNAME=verify HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=verify-pass \
     HERMES_DASHBOARD_BASIC_AUTH_SECRET="real-hermes-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')" \

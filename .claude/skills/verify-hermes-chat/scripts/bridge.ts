@@ -69,8 +69,9 @@
 //   the providers with no sign-in on the server, and `hold: true` keeps each answer until `POST /__oneshot?release=1`
 //   (a test's control). `/__state` lists each profile's SOUL.md under `souls` and every call's params under `oneshots`.
 // HV_BOTS=1 adds three bots, the profiles `ada`, `bram` and `cleo`, each with a Bot Chat.
-// HV_SEAT=1 stores a room seat's session in `default`, as Hermes stores one: source `bot_room`, hidden, titled
-//   "Group: r1", holding the word "quokka", and listed as working in `session.active_list`.
+// HV_SEAT=1 stores a room seat's session in `default`: source `bot_room`, hidden, titled "Group: r1", holding the word
+//   "quokka", and listed as working in `session.active_list`. Real Hermes keeps a seat in the seated bot's own profile,
+//   titled `Group: <room id>` or from its prompt, such as `[Discussion: "Ada and Bram"] You are @bram, one…`.
 // HV_INBOX=1 gives the `work` profile two Unread chats for the Rail inbox: one last active 3 days ago, one an hour ago.
 // HV_EVERYWHERE=1 gives `work` a chat about the backup and adds a third profile, `ops`, with another, so an Everywhere
 //   search for "backup" finds a chat in three profiles. A second stand-in without it finds one in `default`.

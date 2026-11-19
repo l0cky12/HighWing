@@ -77,6 +77,21 @@ export function nameProblem(name: string, profiles: readonly Pick<ProfileRow, "n
   }
 }
 
+/**
+ * The id a new bot named `name` gets: Hermes's own `_suggest_profile_name` ("Travel Buddy" → travel-buddy), so the id
+ * matches what Hermes's clients would suggest; `bot` where nothing usable is left ("日本語"), where Hermes says my-work,
+ * which names no bot. An id that is reserved or in `taken` gets the first free -2, -3, … suffix, cut to fit 64.
+ */
+export function profileIdFor(name: string, taken: ReadonlySet<string>): string {
+  const base = name.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^[-_]+|[-_]+$/g, "").slice(0, 64) || "bot";
+  const free = (id: string) => !taken.has(id) && !RESERVED_PROFILE_NAMES.has(id);
+  if (free(base)) return base;
+  for (let n = 2; ; n++) {
+    const id = `${base.slice(0, 63 - String(n).length).replace(/[-_]+$/, "")}-${n}`;
+    if (free(id)) return id;
+  }
+}
+
 const trimmedNonBlank = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
 
 /** One `GET /api/profiles` row, or nothing for a row without a name Hermes's profile routes would take. */

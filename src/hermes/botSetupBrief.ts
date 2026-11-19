@@ -1,4 +1,4 @@
-// Bot setup's brief (ADR 0227): the hidden message seeded into a bot's Bot Chat that makes the bot interview the owner
+// Bot setup's brief (ADR 0231): the hidden message seeded into a bot's Bot Chat that makes the bot interview the owner
 // and then answer with one fenced setup block, which the app draws as the review card. The wording is what gpt-6.1-sol
 // followed in every run of tools/bot-setup-brief/run.py; a change to it is re-run there first.
 // The block's shape lives here too, so the card's parser reads exactly the format the brief asks for.

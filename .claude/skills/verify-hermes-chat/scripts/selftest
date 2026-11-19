@@ -236,6 +236,22 @@ else
 fi
 rm -rf "$HV_HOME/evidence"
 
+# TERM while hv up claims a display: its cleanup must not wait on the display lock this run still holds.
+mkdir -p "$T/hangx"
+printf '#!/bin/sh\necho $$ >%s\nexec sleep 300\n' "$T/hangx.pid" >"$T/hangx/Xvfb"
+chmod +x "$T/hangx/Xvfb"
+PATH=$T/hangx:$PATH "$HERE/hv" up >"$T/hangx.log" 2>&1 &
+LAUNCHERS=($!)
+for _ in $(seq 150); do [ -s "$T/hangx.pid" ] && break; sleep 0.1; done
+start=$(date +%s%N); kill -TERM "${LAUNCHERS[0]}"
+code=0; wait "${LAUNCHERS[0]}" || code=$?
+ms=$((($(date +%s%N) - start) / 1000000))
+LAUNCHERS=()
+[ -s "$T/hangx.pid" ] && [ "$code" = 130 ] && [ "$ms" -lt 15000 ] && [ -z "$(ls -A "$HV_HOME/runs")" ] && dead "$(cat "$T/hangx.pid")" &&
+  pass "hv up interrupted while it claimed a display went down in ${ms} ms" ||
+  fail "hv up interrupted mid-claim: exit $code after ${ms} ms, runs: $(ls "$HV_HOME/runs"); log: $(tail -2 "$T/hangx.log" | tr '\n' ' ')"
+rm -rf "$HV_HOME/evidence"
+
 # Claiming a display and clearing a dead server's files from it take the same per-display lock, so neither runs in the
 # middle of the other. hold_display <n> <seconds> holds that lock as another run would, and prints "held" once it has.
 hold_display() { python3 -c 'import fcntl, sys, time

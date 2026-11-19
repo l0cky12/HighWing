@@ -119,6 +119,8 @@ up_failed() {
   local code=$?
   trap - EXIT INT TERM
   kill "$PORT_HOLDER_PID" 2>/dev/null || true
+  # A signal can land while this shell claims a display; cmd_down takes that display's lock again to clear it.
+  display_unlock
   echo "hv: up failed; stopping what this run started" >&2
   if [ -f "$1/state.env" ]; then (HV_RUN=$1 cmd_down >&2) || true; else rm -rf "$1"; fi
   exit "$code"

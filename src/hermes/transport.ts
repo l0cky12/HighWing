@@ -1648,6 +1648,7 @@ export class Hermes {
       const rows = transcriptMessages(res.messages).flatMap((m) => (m.row_id === undefined ? [] : [m.row_id]));
       return { runtimeId: res.runtimeId, ...(rows.length && { newestRow: Math.max(...rows) }) };
     },
+    said: (items, { type, payload }) => applyEvent({ id: "", title: "", source: "app", settled: true, updatedAt: 0, items: [...items] }, type, payload, null).items,
     submit: async (runtimeId, profile, { text, context }, goingOut) => {
       const res = await this.protocol.submit(runtimeId, { profile, text, attachments: [], hold: true, context }, goingOut);
       return { held: res.held, ...(res.userRowId !== undefined && { rowId: res.userRowId }) };

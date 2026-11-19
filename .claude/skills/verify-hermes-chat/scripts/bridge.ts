@@ -719,9 +719,11 @@ http.on("upgrade", async (req, sock: Socket) => {
         const prompt = typedText(String(text ?? ""));
         // One Hermes holds behind a running reply gets its turn when that reply ends (`heldTurn`).
         const held = msg.params.queued === true && server.turns.has(session_id);
+        // One Hermes turns down has no turn (`/__reject`).
+        const refused = !!server.rejectPrompt;
         setTimeout(() => {
           save();
-          if (held) return;
+          if (held || refused) return;
           if (/^computer use/i.test(prompt)) computerUse(session_id, prompt);
           else if (/delegate/i.test(prompt)) delegate(session_id, /queue/i.test(prompt));
           else if (/approval/i.test(prompt)) askApproval(session_id);

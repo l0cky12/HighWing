@@ -7,6 +7,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { BOT_CHAT_TITLE } from "../hermes/bots";
 import { FakeHermes, row } from "../hermes/fakeHermes";
 import { memoryCache } from "../hermes/memoryCache";
+import { mentionsIn } from "../hermes/mentionPicker";
 import { connect, type Hermes } from "../hermes/transport";
 import { LocaleContext, type Locale } from "../i18n/locale";
 import { pseudoLocale, untranslated } from "../i18n/pseudo";
@@ -157,6 +158,16 @@ describe("Naming a bot in a Bot Chat", () => {
       reply(server, "quill-bot", "Hi from Quill.");
     });
     await waitFor(() => expect(cards().map((c) => c.querySelector(".returned-body")?.textContent?.trim())).toEqual(["Hi from Quill.", "Hi from Nib."]));
+  });
+
+  // Pills are read in any case once this branch is on the fix to the "@" picker's PR (#87). Confirm it runs after the restack.
+  it.skipIf(!mentionsIn("@Quill", [{ handle: "quill" }]).length)("sends a message that names the bot in capitals to that bot", async () => {
+    const { server, user } = await launch();
+    await write(user, "@Quill what do you think?");
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(submits(server)).toHaveLength(1));
+    expect(submits(server)[0].params.profile).toBe("quill");
+    expect(heading(cards()[0])).toBe("Asked @quill");
   });
 
   it("goes without the reference once the owner removed its chip", async () => {

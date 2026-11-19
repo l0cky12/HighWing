@@ -518,7 +518,7 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
 }
 /* An Ask's card (AskCard.tsx, ADR 0225): the owner's message, then the bot's reply under its face and name. */
 .asked-text { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.msg.returned.asked .msg-files { margin-top: 6px; }
+.msg.returned.asked .msg-files { margin-top: 6px; justify-content: flex-start; }
 .asked-reply { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line-2); }
 .asked-from { display: flex; align-items: center; gap: 7px; font-size: calc(13rem / 14); font-weight: 600; color: var(--text-2); }
 .asked-note { margin: 6px 0 0; color: var(--text-2); font-size: calc(13rem / 14); line-height: 1.45; overflow-wrap: anywhere; }

@@ -8,7 +8,7 @@ import { referenceBlock } from "./chatReferences";
 import type { Ask, AskState, Item, OutgoingItem, SentReference } from "./model";
 import { neutralize } from "./projectContext";
 import { PromptUnconfirmedError } from "./sessionProtocol";
-import { errorText, isObj, textOrEmpty } from "./values";
+import { errorText, isObj } from "./values";
 
 /** What an Ask needs from the connection. Each is something the transport already does for a chat of the shown profile. */
 export type AskPort = {
@@ -23,6 +23,8 @@ export type AskPort = {
   botChat(bot: AskableBot): Promise<string>;
   /** Resumes a chat of another profile on this connection. `newestRow`: the newest stored row it has. */
   resume(chatId: string, profile: string): Promise<{ runtimeId: string; newestRow?: number }>;
+  /** What an event of a turn adds to the items the turn has shown so far, as a chat of the shown profile reads it. */
+  said(items: readonly Item[], event: TurnEvent): Item[];
   /** Submits for Hermes to hold behind a running reply, never into it. `goingOut`: called as it goes, with the words sent. */
   submit(runtimeId: string, profile: string, message: { text: string; context: string[] }, goingOut: (prompt: string) => void): Promise<{ held: boolean; rowId?: number }>;
   /** The bot's outbox on this computer: `keep` adds a message, false when storage refused it; `change` maps or removes one. */
@@ -50,6 +52,8 @@ type Trip = { from: string; fromBot: string; bot: AskableBot; text: string; refe
 
 export class AskDesk {
   private trips = new Map<string, Trip>();
+  /** What the turn of each Ask being answered has shown so far. */
+  private replies = new Map<string, Item[]>();
   private opening = new Map<string, Promise<Session>>();
   private sessions = new Map<string, Session>();
   /** Counts the connections this desk has stopped hearing, so what was opened on an earlier one is never used on the next. */
@@ -90,8 +94,9 @@ export class AskDesk {
   /** Sends an Ask Hermes didn't take, or may not have, again as a new message. The first leaves the bot's outbox. */
   retry(id: string) {
     const card = this.card(id);
-    if (!card || (card.state !== "failed" && card.state !== "unknown")) return;
-    this.unkeep(id);
+    const trip = this.trips.get(id);
+    if (!card || !trip || (card.state !== "failed" && card.state !== "unknown")) return;
+    this.unkeep(id, trip);
     if (!this.port.connected()) return this.set(id, { state: "waiting" });
     void this.go(id);
   }
@@ -100,7 +105,8 @@ export class AskDesk {
   dismiss(id: string) {
     const card = this.card(id);
     if (!card || (card.state !== "waiting" && card.state !== "failed" && card.state !== "unknown")) return;
-    this.unkeep(id);
+    const trip = this.trips.get(id);
+    if (trip) this.unkeep(id, trip);
     this.trips.delete(id);
     const shown = this.port.shown();
     const from = Object.keys(shown).find((chat) => shown[chat].some((a) => a.id === id));
@@ -131,6 +137,7 @@ export class AskDesk {
     this.heardNoMore++;
     this.opening.clear();
     this.sessions.clear();
+    this.replies.clear();
   }
 
   /** Whether the runtime session is one resumed for an Ask, so its events and requests are no chat's. */
@@ -174,7 +181,7 @@ export class AskDesk {
       const res = await this.port.submit(session.runtimeId, profile, { text, context }, (prompt) =>
         this.port.change(profile, chatId, id, (r) => ({ ...r, outgoing: { ...r.outgoing, sent: { prompt, ...(after !== undefined && { after }) } } })),
       );
-      this.unkeep(id);
+      this.unkeep(id, trip);
       this.trips.delete(id);
       this.noteRows(session, [res.rowId]);
       this.feed(session, { kind: "answered", ask: id, held: res.held });
@@ -221,21 +228,23 @@ export class AskDesk {
     }
   }
 
-  private heard(id: string, { type, payload }: TurnEvent) {
-    if (type !== "message.delta" || typeof payload.text !== "string" || !payload.text) return;
-    const more = payload.text;
-    this.patch(id, (a) => ({ ...a, reply: a.reply + more }), true);
+  /** The card's reply is the words the turn has shown: each stretch of them, apart from the tool calls between. */
+  private heard(id: string, event: TurnEvent): Item[] {
+    const items = this.port.said(this.replies.get(id) ?? [], event);
+    this.replies.set(id, items);
+    const reply = items.flatMap((i) => (i.kind === "assistant" && i.text.trim() ? [i.text.trim()] : [])).join("\n\n");
+    if (reply !== this.card(id)?.reply) this.patch(id, (a) => ({ ...a, reply }), true);
+    return items;
   }
 
-  private ended(session: Session, id: string, { type, payload }: TurnEvent) {
-    const receipt = isObj(payload.persisted_turn) ? payload.persisted_turn : {};
+  private ended(session: Session, id: string, event: TurnEvent) {
+    const receipt = isObj(event.payload.persisted_turn) ? event.payload.persisted_turn : {};
     this.noteRows(session, [receipt.user_row_id, receipt.final_assistant_row_id, ...(Array.isArray(receipt.row_ids) ? receipt.row_ids : [])]);
-    const said = textOrEmpty(payload.text).trim();
-    const failed = type === "error" || payload.status === "error" || !!payload.error;
-    const stopped = failed || payload.status === "interrupted";
-    const reason = failed ? textOrEmpty(payload.error) || textOrEmpty(payload.message) || undefined : undefined;
-    this.patch(id, (a) => ({ ...a, reply: said || a.reply }));
-    this.set(id, stopped ? { state: "stopped", ...(reason && { reason }) } : { state: "answered" });
+    const items = this.heard(id, event);
+    this.replies.delete(id);
+    const failure = items.find((i): i is Extract<Item, { kind: "error" }> => i.kind === "error");
+    const stopped = !!failure || items.some((i) => i.kind === "assistant" && i.interrupted);
+    this.set(id, stopped ? { state: "stopped", ...(failure && { reason: failure.text }) } : { state: "answered" });
   }
 
   private noteRows(session: Session, ids: unknown[]) {
@@ -243,9 +252,8 @@ export class AskDesk {
     if (seen.length) session.newestRow = Math.max(session.newestRow ?? -Infinity, ...seen);
   }
 
-  private unkeep(id: string) {
-    const trip = this.trips.get(id);
-    if (!trip?.kept) return;
+  private unkeep(id: string, trip: Trip) {
+    if (!trip.kept) return;
     this.port.change(trip.bot.profile, trip.kept.chatId, id, () => null);
     trip.kept = undefined;
   }

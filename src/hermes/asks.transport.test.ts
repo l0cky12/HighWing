@@ -115,6 +115,24 @@ describe("sending an Ask from Ada's Bot Chat", () => {
     expect(cards()[0]).toMatchObject({ state: "replying", reply: "Ship it." });
   });
 
+  it("keeps the words the bot said before a tool call, apart from its answer after it", async () => {
+    const { server, hermes, ask, cards, runtimeOf, sent } = await inAda();
+    ask(["bram"]);
+    await sent(1);
+    const sid = runtimeOf("bram-bot")!;
+    server.event(sid, "message.start");
+    server.event(sid, "message.delta", { text: "Let me read the changelog." });
+    server.event(sid, "tool.start", { tool_id: "call-1", name: "read_file" });
+    server.event(sid, "tool.complete", { tool_id: "call-1", result: "0.3: fixes" });
+    server.event(sid, "message.delta", { text: "It is ready." });
+    await until(hermes, () => cards()[0].reply.endsWith("It is ready."));
+    expect(cards()[0].reply).toBe("Let me read the changelog.\n\nIt is ready.");
+
+    server.event(sid, "message.complete", { text: "It is ready.", status: "complete" });
+    await until(hermes, () => cards()[0].state === "answered");
+    expect(cards()[0].reply).toBe("Let me read the changelog.\n\nIt is ready.");
+  });
+
   it("sends a message that names two bots to each, and shows a card for each", async () => {
     const { hermes, ask, cards, submits, runtimeOf, reply, sent } = await inAda();
     ask(["bram", "cleo"], "@bram @cleo hi");
@@ -301,6 +319,18 @@ describe("a reply this connection stops hearing", () => {
     server.drop();
     await until(hermes, () => cards()[0].state === "unheard");
     expect(cards()[0]).toMatchObject({ state: "unheard", reply: "Ship" });
+  });
+
+  it("keeps what the bot had said when its reply fails, and says why Hermes says it failed", async () => {
+    const { server, hermes, ask, cards, runtimeOf, sent } = await inAda();
+    ask(["bram"]);
+    await sent(1);
+    const sid = runtimeOf("bram-bot")!;
+    server.event(sid, "message.start");
+    server.event(sid, "message.delta", { text: "Ship it once" });
+    server.event(sid, "message.complete", { status: "error", text: "The model returned no content.", error: "The provider timed out." });
+    await until(hermes, () => cards()[0].state === "stopped");
+    expect(cards()[0]).toMatchObject({ state: "stopped", reason: "The provider timed out.", reply: "Ship it once" });
   });
 
   it("says the reply stopped when the bot's turn ends with an error", async () => {

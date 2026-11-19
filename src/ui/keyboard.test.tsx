@@ -264,9 +264,9 @@ describe("The panic Stop", () => {
     const s = await usingScreen();
     expect(focused()).toBe(composer());
     await s.user.keyboard("{Control>}.{/Control}");
-    await waitFor(() => expect(acquires(s.server)).toHaveLength(1));
+    await waitFor(() => expect(s.server.display!.lease.holder).toBe("human"));
+    expect(acquires(s.server)).toHaveLength(1);
     expect(interrupts(s.server).map((r) => r.params)).toEqual([{ session_id: s.runtime }]);
-    expect(s.server.display!.lease.holder).toBe("human");
     expect(await screen.findByText("Stopped the reply using the Bot Desktop. You hold the Bot Desktop now, so Hermes can't use it until you hand it back.")).toBeTruthy();
   });
 

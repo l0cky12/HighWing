@@ -68,7 +68,7 @@ const legibleGraph = `(() => {
 const sections = `(async () => {
   const h = window.shots.hermes;
   for (const id of ["caddy", "rust", "trip"]) await h.unsettle(id);
-  const scope = JSON.stringify(["ssh", "lena@hermes", "lena", h.getSnapshot().profile]);
+  const scope = JSON.stringify(["connection", "conn-home-0001", h.getSnapshot().profile]);
   localStorage.setItem("hermes-chat.snoozes", JSON.stringify({ v: 1, scopes: { [scope]: { trip: Date.now() + 3 * 3600e3, rust: Date.now() + 26 * 3600e3 } } }));
   window.dispatchEvent(new StorageEvent("storage", { key: "hermes-chat.snoozes" }));
   void h.send("nas", "Run a SMART check on every disk in tank");
@@ -188,8 +188,8 @@ const endAllSubagents = "window.shots.endAllSubagents()";
 // A click from a script leaves the focus ring a mouse click wouldn't: the shot shows what the owner sees.
 const unfocus = "document.activeElement.blur()";
 const scenes = {
-  "sidebar-sections": { query: "", steps: [sections, click(".section-toggle", "Snoozed"), click(".section-toggle", "Settled")] },
-  "sidebar-sections-light": { query: "?mode=light", steps: [sections, click(".section-toggle", "Snoozed"), click(".section-toggle", "Settled")] },
+  "sidebar-sections": { query: "", steps: [sections, click(".section-toggle", "Snoozed"), click(".section-toggle", "Archived")] },
+  "sidebar-sections-light": { query: "?mode=light", steps: [sections, click(".section-toggle", "Snoozed"), click(".section-toggle", "Archived")] },
   "snooze-menu": { query: "", steps: [sections, menuOn("caddy")] },
   "snooze-custom": { query: "", steps: [sections, menuOn("caddy"), click(".menu-item", "Custom…"), click(".snooze-dialog .segmented button", "Duration")] },
   "new-chat": { query: "", steps: [] },
@@ -202,14 +202,14 @@ const scenes = {
   settings: { query: "", steps: [key(",", { ctrlKey: true })] },
   // Settings → General (#174), at 1920 × 1080 and at the window's 760 × 500 minimum.
   "general-connection": { query: "", ...hd, steps: [openSettings] },
-  "general-launch": { query: "", ...hd, steps: [openSettings, click(".subnav-item", "Launch")] },
-  "general-chats": { query: "", ...hd, steps: [openSettings, click(".subnav-item", "Chats")] },
-  "general-storage": { query: "", ...hd, steps: [openSettings, click(".subnav-item", "Storage")] },
+  "general-launch": { query: "", ...hd, steps: [openSettings, click(".settings-sub", "Launch")] },
+  "general-chats": { query: "", ...hd, steps: [openSettings, click(".settings-sub", "Chats")] },
+  "general-storage": { query: "", ...hd, steps: [openSettings, click(".settings-sub", "Storage")] },
   "general-search": { query: "", ...hd, steps: [openSettings, typeSearch("cache")] },
-  "general-more": { query: "", ...hd, steps: [openSettings, click(".subnav-item", "Launch"), click(".set-more-btn[aria-label='About Close to tray']")] },
-  "general-light": { query: "?mode=light", ...hd, steps: [openSettings, click(".subnav-item", "Storage")] },
+  "general-more": { query: "", ...hd, steps: [openSettings, click(".settings-sub", "Launch"), click(".set-more-btn[aria-label='About Close to tray']")] },
+  "general-light": { query: "?mode=light", ...hd, steps: [openSettings, click(".settings-sub", "Storage")] },
   "general-min": { query: "", width: 760, height: 500, steps: [openSettings] },
-  "general-min-launch": { query: "", width: 760, height: 500, steps: [openSettings, click(".subnav-item", "Launch")] },
+  "general-min-launch": { query: "", width: 760, height: 500, steps: [openSettings, click(".settings-sub", "Launch")] },
   work: { query: "", ...hd, steps: [click("button[aria-label='Work']")] },
   "work-task": { query: "", steps: [click("button[aria-label='Work']"), click(".work-card", "Compare three NAS backup tools")] },
   "work-new": { query: "", steps: [click("button[aria-label='Work']"), click(".btn", "New task")] },
@@ -225,7 +225,7 @@ const scenes = {
   "skills-slash-menu-light": { query: "?mode=light", steps: [click("button", "Nightly backup"), typeIn("/")] },
   "computer-use-result": {
     query: "",
-    steps: [click("button", "NAS disk usage"), capture, click(".tool-line", "computer_use"), `document.querySelectorAll(".tool.open pre")[1].scrollTop = 150`],
+    steps: [click("button", "NAS disk usage"), capture, click(".tool-line", "capture"), `document.querySelectorAll(".tool-body pre")[1].scrollTop = 150`],
   },
   "subagents-list": { query: "", ...hd, steps: [click("button", "NAS disk usage"), subagents, openSubagents] },
   // Three of them end: only the running ones stay listed (ADR 0196).

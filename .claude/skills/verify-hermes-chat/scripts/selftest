@@ -34,7 +34,7 @@ NON_RUN_PIDS=()
 cleanup() {
   local r p
   kill "$FAKE_WD" 2>/dev/null || true
-  for p in "${NON_RUN_PIDS[@]}"; do kill "$p" 2>/dev/null || true; done
+  for p in "${NON_RUN_PIDS[@]}" $(cat "$T/foreign.pid" 2>/dev/null); do kill "$p" 2>/dev/null || true; done
   for p in "${LAUNCHERS[@]}"; do kill -TERM "$p" 2>/dev/null || true; done
   for p in "${LAUNCHERS[@]}"; do wait "$p" 2>/dev/null || true; done
   for r in "$T"/hv/runs/*/; do [ -f "$r/state.env" ] && HV_HOME=$T/hv HV_RUN=${r%/} "$HERE/hv" down >/dev/null 2>&1 || true; done
@@ -102,7 +102,7 @@ code=0; FAKE_DRIVER=fail FAKE_CHILD=$T/driver-child.pid hv up >"$T/up.log" 2>&1 
 st=$(ls "$HV_HOME"/evidence/*/state.env 2>/dev/null | head -1 || true)
 if [ "$code" != 0 ] && [ -n "$st" ] && [ -s "$T/driver-child.pid" ] && [ -z "$(ls -A "$HV_HOME/runs")" ]; then
   # shellcheck disable=SC2046
-  if dead $(pids_of "$st") "$(cat "$T/driver-child.pid")" && disp=$(. "$st"; echo "${DISPLAY_NUM#:}") && [ -n "$disp" ] && [ ! -e "/tmp/.X$disp-lock" ]; then
+  if dead $(pids_of "$st") "$(cat "$T/driver-child.pid")" && disp=$(. "$st"; echo "${DISPLAY_NUM#:}") && [ -n "$disp" ] && { [ ! -e "/tmp/.X$disp-lock" ] || kill -0 "$(tr -d ' \n' 2>/dev/null <"/tmp/.X$disp-lock")" 2>/dev/null; }; then
     pass "failed hv up stopped Xvfb :$disp, openbox, D-Bus, the stand-in, the driver and the child it left"
   else
     fail "failed hv up left processes or display :${disp:-?} behind ($(pids_of "$st"), driver child $(cat "$T/driver-child.pid" 2>/dev/null))"
@@ -157,6 +157,25 @@ run_pids=(); [ -z "$st" ] || read -ra run_pids <<<"$(pids_of "$st")"
 [ "$code" != 0 ] && grep -q "port $held is in use" "$T/held.log" && [ -n "$st" ] && [ -z "$(ls -A "$HV_HOME/runs")" ] && dead "${run_pids[@]}" &&
   pass "hv up asked for held port $held fails naming it, and leaves nothing" ||
   fail "held port $held: exit $code, state ${st:-missing}, runs: $(ls "$HV_HOME/runs"); log: $(tail -3 "$T/held.log")"
+kill "${NON_RUN_PIDS[-1]}" 2>/dev/null || true
+rm -rf "$HV_HOME/evidence"
+
+python3 -c 'import socket, time
+a = socket.socket(socket.AF_INET6); a.bind(("::1", 0)); a.listen()
+b = socket.socket(socket.AF_INET6); b.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1); b.bind(("::", 0)); b.listen()
+print(a.getsockname()[1], b.getsockname()[1], flush=True); time.sleep(300)' >"$T/v6.port" 2>/dev/null &
+NON_RUN_PIDS+=($!)
+for _ in $(seq 50); do [ -s "$T/v6.port" ] && break; sleep 0.1; done
+if read -r v6 v6only <"$T/v6.port" && [ -n "$v6only" ]; then
+  code=0; HV_TEST_PORTS="$v6 $v6only 0" hv up >"$T/v6.log" 2>&1 || code=$?
+  r=$(sed -n 's/^export HV_RUN=//p' "$T/v6.log")
+  [ "$code" = 0 ] && [ -n "$r" ] &&
+    pass "listeners on [::1]:$v6 and IPv6-only [::]:$v6only don't stop a run that holds 127.0.0.1 on both" ||
+    fail "run beside listeners on [::1]:$v6 and IPv6-only [::]:$v6only: exit $code; $(tail -2 "$T/v6.log")"
+  [ -z "$r" ] || HV_RUN=$r hv down >/dev/null 2>&1 || true
+else
+  echo "--   no ::1 on this machine; skipped the [::1] listener case"
+fi
 kill "${NON_RUN_PIDS[-1]}" 2>/dev/null || true
 rm -rf "$HV_HOME/evidence"
 

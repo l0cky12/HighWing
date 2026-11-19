@@ -41,6 +41,9 @@ alive() { [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null; }
 # Process group $1 still has a member, even if its leader has exited (a driver whose WebKitWebDriver outlived it).
 # The kernel doesn't hand out a PID still in use as a group ID, so its members are still the ones we started.
 group_alive() { [ -n "${1:-}" ] && pgrep -g "$1" >/dev/null 2>&1; }
+# The listeners a connection to 127.0.0.1:$1 reaches: on that address or a wildcard that takes IPv4. One on ::1, an
+# IPv6-only wildcard or another address can share the port number without ever answering this run's clients.
+listeners() { ss -ltnpeH "sport = :$1" 2>/dev/null | awk '$4 ~ /^(127\.0\.0\.1|0\.0\.0\.0|\*|\[::\]):[0-9]+$/ && !/ v6only:1 /'; }
 port_held_by_group() {
   local line p found=""
   while read -r line; do
@@ -49,12 +52,12 @@ port_held_by_group() {
       [ "$(ps -o pgid= -p "${p#pid=}" 2>/dev/null | tr -d ' ')" = "$2" ] || return 1
     done
     found=1
-  done < <(ss -ltnpH "sport = :$1" 2>/dev/null)
+  done < <(listeners "$1")
   [ -n "$found" ]
 }
-listened() { [ -n "$(ss -ltnH "sport = :$1" 2>/dev/null)" ]; }
+listened() { [ -n "$(listeners "$1")" ]; }
 port_who() {
-  local who; who=$(ss -ltnpH "sport = :$1" 2>/dev/null | awk '{print match($0, /users:.*/) ? substr($0, RSTART) : "a process of another user"}' | tr '\n' ' ')
+  local who; who=$(listeners "$1" | awk '{print match($0, /users:.*/) ? substr($0, RSTART) : "a process of another user"}' | tr '\n' ' ')
   echo "${who:-nothing}"
 }
 # Waits up to $2 seconds for command $1 to succeed.
@@ -200,8 +203,9 @@ print(*(s.getsockname()[1] for s in socks), flush=True)
 while os.getppid() == int(sys.argv[1]):
     time.sleep(0.1)' "$$" "${want_ports[@]}" >"$run/ports" 2>"$run/ports.err" &
   PORT_HOLDER_PID=$!
-  wait_for "[ -s '$run/ports' ] || ! alive $PORT_HOLDER_PID" 10
-  read -r driver_port native_port bridge_port <"$run/ports" || die "couldn't hold this run's ports: $(tail -1 "$run/ports.err")"
+  wait_for "[ -s '$run/ports' ] || ! alive $PORT_HOLDER_PID" 10 || true
+  read -r driver_port native_port bridge_port <"$run/ports" ||
+    die "couldn't hold this run's ports: $(tail -1 "$run/ports.err" | grep . || echo "the holder printed none in 10 s")"
   save_state
 
   # X server. Another run can take a free-looking display between our check and Xvfb's lock, so the display is ours

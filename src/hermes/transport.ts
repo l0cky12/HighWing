@@ -271,7 +271,6 @@ export type ChatCache = {
   loadSentHere(profile: string): SentHere[];
   /** Adds the images Hermes stored for a message sent in `chat`, dropping the oldest past `SENT_HERE_KEPT`. */
   saveSentHere(profile: string, chat: string, images: readonly SentImage[]): void;
-  /** The asks made from the profile's chats (asks.ts, ADR 0233, 0234), as stored; `createAsks` reads them. */
   loadAsks(profile: string): unknown;
   /** Keeps them; none deletes them. False: storage refused it, so they last until the app closes. */
   saveAsks(profile: string, asks: readonly Ask[]): boolean;
@@ -1690,7 +1689,6 @@ export class Hermes {
     save: (profile, asks) => this.cache.saveAsks(profile, asks),
     track: (work) => this.track(work),
   });
-  /** The owner's asks from the shown profile's chats to other bots (asks.ts, ADR 0233, 0234). */
   readonly asks: Asks = this.askDesk.asks;
   private readonly askWire: AskWire = this.askDesk.wire;
 

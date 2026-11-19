@@ -601,7 +601,6 @@ export function ChatPane({
    * a Hermes without the checkpoint methods.
    */
   onCheckpoints?: () => void;
-  /** A chat's asks of other bots (ADR 0233, 0234): its Asked cards, and the composer's route for a message naming a bot. */
   ask?: AskHost;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -2004,7 +2003,6 @@ function Composer({
   /** While a reply runs, Enter queues or steers by its `mode`, and Ctrl+Enter does the other. */
   followUp?: FollowUpHost;
   compare?: Comparing;
-  /** A message whose pills name bots goes to them instead (ADR 0233, 0234). */
   ask?: AskHost;
 }) {
   const keys = useBindings();
@@ -2421,7 +2419,6 @@ function Composer({
   // The "@" word the menu is open on stays words until it is picked, so typing "@bram" in full doesn't flash a pill.
   const bots = commands?.references?.bots;
   const atButton = bots ? atWords.button : "Reference a chat";
-  // The first bot named brings this chat along as a Referenced chat, which the owner can remove (ADR 0233, 0234).
   const self = ask?.self;
   const rule = ask?.rule ?? "none";
   const naming = !!self && !!bots && askTargets(text, bots, rule).length > 0;
@@ -2429,7 +2426,8 @@ function Composer({
   useEffect(() => {
     if (!self || !references) return;
     if (naming) references.desk.offer(draftKey, self);
-    else references.desk.withdraw(draftKey, !comparing);
+    else if (comparing) references.desk.hold(draftKey);
+    else references.desk.withdraw(draftKey);
   }, [naming, comparing, self, references, draftKey]);
   const pills = useMemo<ComposerMark[]>(() => {
     const named = mentionsFor(text, bots ?? [], rule).filter((m) => m.start !== slash.typingAt && !marks.some((k) => m.start < k.end && m.end > k.start));
@@ -2481,7 +2479,6 @@ function Composer({
     // Each mark numbered by its image's place among those sent, as Hermes stores them after the words.
     const written = sentText(text.trim(), attachments, numbers).trim();
     if (!written && !attachments.length) return;
-    // The one place the words leave the composer, so the pick marks (ADR 0234) go here, after the pills are read.
     const words = withoutPick(written);
     // A message that names bots goes to them, and this chat takes no turn, so whether its reply runs or its queue holds
     // anything doesn't matter (ADR 0233). It goes once, from this pane, even while comparing.

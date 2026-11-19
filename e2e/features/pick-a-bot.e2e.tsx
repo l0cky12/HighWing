@@ -27,7 +27,6 @@ async function inChat() {
   return { app, server, composer, box };
 }
 
-/** Types "@scr" and picks Scribe from the menu with Tab. */
 async function pickScribe(s: Awaited<ReturnType<typeof inChat>>) {
   await s.composer.click();
   await userEvent.keyboard("@scr");

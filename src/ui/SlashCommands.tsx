@@ -1,8 +1,3 @@
-// The composer's slash commands (commands.ts, ADR 0015): the menu that opens as a "/" starts the message, the command
-// help, the question before a destructive command, and what a command answers. The same menu offers the profile's
-// skills after the commands, and a "$" anywhere in the message opens it with skills alone (skillCommands.ts). An "@"
-// opens it with the profile's other chats, to reference one (chatReferences.ts), and in a chat that can ask a bot with
-// the other bots above them, to pick one (mentionPicker.ts).
 import { type KeyboardEvent, type ReactNode, type RefObject, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Link2, X } from "lucide-react";
 import { argProblem, commandSet, completion, type CommandDef, type CommandSet } from "../hermes/commands";
@@ -39,11 +34,6 @@ export type CommandHost = {
   refreshSkills?: () => void;
   /** The installed extensions' commands offered here (ADR 0126, section 5), after the commands and the skills. */
   extensions?: ExtensionCommands;
-  /**
-   * The chats an "@" can reference here, and adding one to the message. Picking one never sends. `bots`: the bots an
-   * "@" can name, set only where the chat can ask a bot (ADR 0234): every bot on the connection but this chat's. Picking
-   * one puts its "@handle" in, marked as picked.
-   */
   references?: { chats: readonly ReferableChat[]; bots?: readonly NamedBot[]; reference(chat: ReferableChat): void };
 };
 
@@ -158,7 +148,6 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
   const offeredExtensions = host?.extensions?.offered ?? [];
   // Every other name "/" reaches here, which a command's prefix never takes (commands.ts).
   const others = [...skills.map((s) => s.key), ...offeredExtensions.map((c) => c.name)];
-  // What a command, a skill or an extension is run with leaves the composer too, so the pick marks (ADR 0234) are gone.
   const plain = withoutPick(text);
   const typed = host ? set.typed(plain, others) : undefined;
   const menu = host && closedFor !== text ? set.menu(text, others) : undefined;

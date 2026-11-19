@@ -222,7 +222,6 @@ function QueueRow({
   };
   const save = () => {
     if (editing === undefined) return;
-    // A pill pasted from the composer keeps its pick mark, which goes no further than the composer (ADR 0234).
     if (!api.edit(item.id, withoutPick(editing).trim())) setGone(true);
     close();
   };

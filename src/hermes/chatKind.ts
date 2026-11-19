@@ -28,7 +28,6 @@ export type ChatPolicy = {
   rename: "title" | "none";
   ofBot: boolean;
   link: boolean;
-  /** Which "@handle" words ask a bot (ADR 0232, 0234): see `AskRule`. */
   asks: AskRule;
 };
 
@@ -42,10 +41,6 @@ export const CHAT_POLICY: Record<ChatKind, ChatPolicy> = {
   jobRun: { listed: false, inbox: false, session: "stored", readOnly: "jobRun", replay: false, branch: false, organize: false, remove: false, rename: "none", ofBot: false, link: true, asks: "none" },
 };
 
-/**
- * What counts as an ask in a chat now. Compare sends one message to two chats, and an ask goes to the named bot
- * instead of either, so an ordinary chat in it asks nobody (ADR 0234).
- */
 export const askRule = (policy: ChatPolicy, comparing: boolean): AskRule => (comparing && policy.asks === "picked" ? "none" : policy.asks);
 
 type Kinded = Pick<Chat, "source" | "bot" | "title">;

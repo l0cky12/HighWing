@@ -1,6 +1,4 @@
 // @vitest-environment jsdom
-// The owner's "@" in a Bot Chat, in the app (ADR 0233), and a bot picked from the "@" menu in an ordinary chat (ADR
-// 0234): the chip for this chat, the send to the named bot, the composer's refusals, and the Asked card with the reply.
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -233,7 +231,6 @@ describe("An @ in a Bot Chat, in the app", { timeout: 30_000 }, () => {
   });
 });
 
-/** Signed in, Bots mode, the ordinary chat "Nightly backup" open, with another chat beside it. */
 async function inOrdinaryChat(setup: (server: FakeHermes) => void = () => {}, locale?: Locale, title = "Nightly backup") {
   const server = new FakeHermes();
   server.sessions = [

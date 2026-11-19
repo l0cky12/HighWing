@@ -1,11 +1,3 @@
-// The owner's "@" in a Bot Chat (ADR 0233), or in an ordinary chat with a bot picked from the menu (ADR 0234). A message
-// that names other bots goes to each named bot's own Bot Chat as the owner's message, never the app relaying a bot's
-// (ADR 0207), with the asking chat attached as a Referenced chat (ADR 0165). The asking bot takes no turn. Hermes keeps
-// nothing in the asking chat, so this computer keeps the asks of each profile's chats: the words, the bots asked, where
-// the card goes, and each reply once it has ended. The message carries an ask id in its attached context, which joins
-// the record to the asked bot's stored rows when the app has to settle an ask it lost sight of. Nothing ever scans a
-// Bot Chat for asks the record doesn't know.
-//
 // The asked Bot Chat is attached to this connection with `session.resume` under its own profile, which moves its
 // events here (`_rebind_live_transport`, `tui_gateway/methods_session.py` at `ae2a81cc`), and is never shown: it isn't
 // in the snapshot. Every ask goes with `queued: true`, so a bot that is replying gets it next and is never interrupted.
@@ -41,18 +33,10 @@ export type AskTarget = Who &
     | { state: "answered"; seat: AskSeat; reply: string; ended: "complete" | "interrupted" | "error" }
   );
 
-/** An ordinary chat an ask was sent from. Its `title` is as it was then, which a stamp sent again says. */
 export type AskChat = { id: string; title: string };
 
-/**
- * One message the owner sent from a chat. `chat`: the ordinary chat it came from; none for the profile's Bot Chat,
- * which has no other, and for an ask kept before an ordinary chat could ask. `afterRow`: that chat's newest stored
- * row then, which places the card. `titles`: the chats it referenced. `references`: kept while a bot may still have to
- * be sent it again. Invariant: `targets` is non-empty, one per profile.
- */
 export type Ask = { id: AskId; text: string; at: number; chat?: AskChat; afterRow?: number; titles: string[]; references?: SentReference[]; targets: AskTarget[] };
 
-/** The asks that belong on a chat's transcript: those sent from it, or, for a Bot Chat, from the profile's Bot Chat. */
 export const askedIn = (asks: readonly Ask[], chatId: string, ofBot: boolean): Ask[] => asks.filter((a) => (a.chat ? a.chat.id === chatId : ofBot));
 
 /** Why an ask didn't go: not connected, the background connection, or this computer couldn't keep it. */
@@ -71,11 +55,6 @@ export function askTargets<B extends { profile: string; handle: string }>(text: 
 const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
 const STAMPS = /^\[Asked from: .+ · ([0-9a-z]{10})\]$/gm;
 
-/**
- * The block every ask's message starts its attached context with, before its references, so no summary takes it in. It
- * says where the owner wrote the message: `chat` for an ordinary chat, none for the asker's Bot Chat. A chat's title
- * can hold any text, so it goes through `oneLine` as the name does, and the line it is on still ends " · <id>]".
- */
 export const askStampBlock = (id: AskId, from: { name: string; handle: string }, chat?: { title: string }) => {
   const name = oneLine(from.name);
   const title = chat && oneLine(chat.title);
@@ -197,14 +176,9 @@ export type Asks = {
   subscribe(fn: () => void): () => void;
   /** Oldest first; the same array until something changes. */
   list(): readonly Ask[];
-  /**
-   * Sends `text` from the chat `chatId` to each bot. `title`: that chat's, for an ordinary chat; none for a Bot Chat. The
-   * card is in `list()` before this returns; or why not.
-   */
   send(chatId: string, to: readonly Who[], text: string, references: readonly SentReference[], title?: string): AskRefusal | undefined;
   /** A failed or unknown bot, sent again with the same id. An unknown one is looked for first, and sent only if missing. */
   retry(id: AskId, profile: string): void;
-  /** Edit: the failed bots come off the card; the words, those bots' profiles and the references come back. */
   takeBack(id: AskId): { text: string; profiles: string[]; references: SentReference[] } | undefined;
   /** A bot comes off the card, in any state but `sending`; the card goes with its last bot. */
   dismiss(id: AskId, profile: string): void;

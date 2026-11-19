@@ -4269,7 +4269,6 @@ function ChatView({
   useEffect(() => {
     if (autoSend === undefined || chatId !== null) return;
     onAutoSent();
-    // The draft can hold a pill the composer picked: its mark goes no further than the composer (ADR 0234).
     const text = withoutPick(savedDrafts.get(shownDraft)).trim();
     if (text) void send(text, []);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- send once per auto-send request; `send` and `onAutoSent` are new functions each render and would send again on every render
@@ -4357,21 +4356,20 @@ function ChatView({
   );
   const hermesList = serverCommands.state === "ready" ? serverCommands.list.hermes : undefined;
   const commandList = useMemo(() => commandSet(hermesList), [hermesList]);
-  // A message naming other bots goes to them (ADR 0233, 0234): the cards, and this chat as the chip it carries once it
-  // has something to summarize. A chat that hasn't started has no transcript to hold a card.
   const asked = useSyncExternalStore(hermes.asks.subscribe, hermes.asks.list);
   const askedHere = useMemo(() => askedIn(asked, chat.id, policy.ofBot), [asked, chat.id, policy.ofBot]);
   const hasHistory = chat.items.some((i) => (i.kind === "user" && !i.outgoing) || i.kind === "assistant");
   const askWords = useLocale().chat.ask;
   const selfTitle = policy.ofBot ? bot && askWords.referenceTitle(bot.name) : chat.title.trim();
   const askSelf = useMemo(() => (hasHistory && selfTitle ? { chatId: chat.id, title: selfTitle } : undefined), [hasHistory, selfTitle, chat.id]);
+  const rule = askRule(policy, !!compare);
   const askHost: AskHost | undefined =
     policy.asks !== "none" && started
       ? {
           asks: askedHere,
           bots: otherBots,
           self: askSelf,
-          rule: askRule(policy, !!compare),
+          rule,
           connected: status === "connected",
           send: (to, text, refs) => {
             const why = hermes.asks.send(chat.id, to, text, refs, policy.ofBot ? undefined : chat.title);
@@ -4380,10 +4378,9 @@ function ChatView({
           },
           retry: hermes.asks.retry,
           dismiss: hermes.asks.dismiss,
-          edit: (id) => {
+          edit: rule === "none" ? undefined : (id) => {
             const back = hermes.asks.takeBack(id);
             if (!back) return;
-            // What the owner picked is picked again, as the words come back to a chat where only a picked bot asks.
             const words = policy.asks === "picked" ? withPicks(back.text, otherBots.filter((b) => back.profiles.includes(b.profile))) : back.text;
             keepDraft(shownDraft, words);
             referenceDesk.putBack(shownDraft, back.references);

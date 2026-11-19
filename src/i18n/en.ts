@@ -20,7 +20,6 @@ export const en = {
     workOn: (name: string) => `What should ${name} work on?`,
     botChat: "Bot Chat",
     botChatTip: "Its bot's one continuous chat",
-    /** The composer's "@" menu where a bot can be picked (ADR 0165, 0234): its groups, its name, its keys, and the button that opens it. */
     at: {
       bots: "Bots",
       chats: "Chats",
@@ -79,10 +78,6 @@ export const en = {
         goToAnswer: "Go to the answer",
       },
     },
-    /**
-     * An "@" that asks other bots (ADR 0233, 0234): the Asked card, each bot's line on it, the chip for this chat,
-     * and why a message to another bot can't go.
-     */
     ask: {
       asked: (handles: readonly string[]) => `Asked ${handles.map((h) => `@${h}`).join(", ").replace(/, ([^,]*)$/, " and $1")}`,
       referenceTitle: (name: string) => `Bot Chat with ${name}`,

@@ -12,6 +12,7 @@ The owner wants to build on another chat from the one they are writing in, witho
 - **Edit and Regenerate send the same summaries again**, read back from the stored message, as they keep its `@file:` refs. The branch's pending message keeps them until it goes.
 - **Unsent references are kept in memory only**, per Draft like staged attachments (ADR 0145). A message waits until every summary is ready; a failed one offers Retry. References alone don't make an empty message sendable.
 - **Only the current profile's chats**: not the chat being written in, a Bot Chat or an archived chat.
+- **In a Bot Chat the picker lists the other bots above the chats**, in a Bots group: every bot on the connection but the one whose chat it is, each with its colour, name, `@handle` and description. Picking one puts `@handle` in the words as a pill; a chat picked from Chats is still a chip.
 - **A message with references isn't queued or steered.** The summaries are meant for the turn they were written for, and a steer carries words only. The composer says why and keeps the message, `/steer` typed in full included. Compare sends the references to both chats.
 
 ## Considered options

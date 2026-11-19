@@ -1,49 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { completeMention, keyAction, pickerAt, pickerRows } from "./mentionPicker";
+import { atQuery } from "./chatReferences";
+import { completeMention, matchBots, mentionsIn } from "./mentionPicker";
 
-type Seat = { handle: string; name: string };
-const ADA: Seat = { handle: "ada", name: "Ada" };
-const BRAM: Seat = { handle: "bram", name: "Bram" };
+type Bot = { handle: string; name: string };
+
+const ADA: Bot = { handle: "ada", name: "Ada" };
+const BRAM: Bot = { handle: "bram", name: "Bram" };
 const ANGSTROM = "Zo\u00eb \u00c5ngstr\u00f6m";
-const ZOE: Seat = { handle: "zoe", name: ANGSTROM };
-const BUDDY: Seat = { handle: "research", name: "Research Buddy" };
+const ZOE: Bot = { handle: "zoe", name: ANGSTROM };
+const BUDDY: Bot = { handle: "research", name: "Research Buddy" };
 
-describe("pickerAt", () => {
-  it.each([
-    ["@", 1, { from: 0, query: "" }],
-    ["hi @c", 5, { from: 3, query: "c" }],
-    ["hi @ada there", 7, { from: 3, query: "ada" }],
-    ["hi @ada there", 5, { from: 3, query: "a" }],
-    ["(@a", 3, { from: 1, query: "a" }],
-    ["line\n@b", 7, { from: 5, query: "b" }],
-    ["@\u00e5", 2, { from: 0, query: "\u00e5" }],
-    ["@bram.", 6, { from: 0, query: "bram." }],
-    ["@ada @", 6, { from: 5, query: "" }],
-  ])("opens at the @ before the caret in %j", (text, caret, expected) => {
-    expect(pickerAt(text, caret)).toEqual(expected);
-  });
-
-  it.each([
-    ["no at here", 10],
-    ["x@a", 3],
-    ["1@a", 3],
-    ["_@a", 3],
-    ["\u00e9@a", 3],
-    ["@ada done", 9],
-    ["@a@b", 4],
-    ["@a\nb", 4],
-  ])("does not open in %j with the caret at %i", (text, caret) => {
-    expect(pickerAt(text, caret)).toBeUndefined();
-  });
-
-  it("opens after an emoji, which is not a letter", () => {
-    expect(pickerAt("\u{1f600}@a", 4)).toEqual({ from: 2, query: "a" });
-  });
-});
-
-describe("pickerRows", () => {
+describe("matchBots", () => {
   const roster = [ADA, BRAM, ZOE, BUDDY];
-  const names = (query: string) => pickerRows(query, roster).map((r) => r.seat.name);
+  const names = (query: string) => matchBots(query, roster).map((b) => b.name);
 
   it("lists every bot in roster order for an empty query", () => {
     expect(names("")).toEqual(["Ada", "Bram", ANGSTROM, "Research Buddy"]);
@@ -58,13 +27,15 @@ describe("pickerRows", () => {
     expect(names("ddy")).toEqual([]);
   });
 
-  it("has no row for everyone: all and everyone match nothing", () => {
-    expect(names("al")).toEqual([]);
-    expect(names("eve")).toEqual([]);
+  it("keeps roster order, not match quality: a later word's match does not rank below an earlier bot's", () => {
+    expect(matchBots("b", [{ handle: "x", name: "Ada Bram" }, BRAM]).map((b) => b.handle)).toEqual(["x", "bram"]);
   });
 
-  it("keeps roster order, not match quality: a later word's match does not rank below an earlier seat's", () => {
-    expect(pickerRows("b", [{ handle: "x", name: "Ada Bram" }, BRAM]).map((r) => r.seat.handle)).toEqual(["x", "bram"]);
+  it("puts the bot whose handle is the query first, so @hermes and Tab pick @hermes when the default bot is named Hermes", () => {
+    const roster = [{ handle: "default", name: "Hermes" }, { handle: "hermes", name: "Hermes" }, ADA];
+    expect(matchBots("hermes", roster).map((b) => b.handle)).toEqual(["hermes", "default"]);
+    expect(matchBots("HERMES", roster).map((b) => b.handle)).toEqual(["hermes", "default"]);
+    expect(matchBots("herm", roster).map((b) => b.handle)).toEqual(["default", "hermes"]);
   });
 
   it("never folds accents: a capital A-ring finds Zo\u00eb \u00c5ngstr\u00f6m and not Ada, a plain a finds Ada and not the A-ring", () => {
@@ -73,15 +44,20 @@ describe("pickerRows", () => {
     expect(names("\u00e1")).toEqual([]);
   });
 
+  it("never folds an accent the owner types: @\u00e9 does not find Eve", () => {
+    expect(matchBots("\u00e9", [{ handle: "eve", name: "Eve" }])).toEqual([]);
+    expect(matchBots("e", [{ handle: "eve", name: "Eve" }])).toHaveLength(1);
+  });
+
   it("matches a Greek name in capitals, where lowercasing makes a final sigma", () => {
     const SISYPHUS = { handle: "sisyphus", name: "\u03a3\u03af\u03c3\u03c5\u03c6\u03bf\u03c2" };
-    const rows = (q: string) => pickerRows(q, [SISYPHUS]);
+    const rows = (q: string) => matchBots(q, [SISYPHUS]);
     expect(rows("\u03c3\u03af\u03c3")).toHaveLength(1);
     expect(rows("\u03a3\u038a\u03a3")).toHaveLength(1);
   });
 
   it("finds a name after an apostrophe, which is not part of a word", () => {
-    expect(pickerRows("ne", [{ handle: "x", name: "O'Neil" }]).map((r) => r.kind)).toEqual(["seat"]);
+    expect(matchBots("ne", [{ handle: "x", name: "O'Neil" }])).toHaveLength(1);
   });
 
   it("matches a letter typed as a base and a combining mark the same as the composed letter", () => {
@@ -92,53 +68,75 @@ describe("pickerRows", () => {
   it("matches a name stored as a base and a combining mark", () => {
     const decomposed = "A\u030angstro\u0308m";
     expect(decomposed).not.toBe("\u00c5ngstr\u00f6m");
-    expect(pickerRows("\u00e5", [{ handle: "z", name: decomposed }]).map((r) => r.kind)).toEqual(["seat"]);
+    expect(matchBots("\u00e5", [{ handle: "z", name: decomposed }])).toHaveLength(1);
+  });
+});
+
+describe("what the @ menu reads, matched", () => {
+  const found = (typed: string, bots: Bot[]) => matchBots(atQuery(typed)!.query, bots).map((b) => b.handle);
+
+  it("keeps a combining mark in the query, so a name written with one is still found as it is typed", () => {
+    expect(found("hi @a\u030a", [ADA, ZOE])).toEqual(["zoe"]);
+    expect(found("@\u0935\u093f", [{ handle: "vikram", name: "\u0935\u093f\u0915\u094d\u0930\u092e" }])).toEqual(["vikram"]);
   });
 });
 
 describe("completeMention", () => {
-  const row = { kind: "seat", seat: BRAM } as const;
-
   it("replaces the typed word with the handle and a space, and puts the caret after it", () => {
-    const text = "hi @br there";
-    expect(completeMention(text, 6, pickerAt(text, 6)!, row)).toEqual({ text: "hi @bram  there", caret: 9 });
+    expect(completeMention("hi @br", 3, 6, "bram")).toEqual({ text: "hi @bram ", caret: 9 });
+  });
+
+  it("adds no second space before words that follow, and leaves the caret after the one there", () => {
+    expect(completeMention("hi @br there", 3, 6, "bram")).toEqual({ text: "hi @bram there", caret: 9 });
+  });
+
+  it("adds a space before a new line rather than taking the line break for one", () => {
+    expect(completeMention("@br\nnext", 0, 3, "bram")).toEqual({ text: "@bram \nnext", caret: 6 });
   });
 
   it("keeps what is after the caret, even the rest of a word", () => {
-    const text = "@bXXX";
-    expect(completeMention(text, 2, pickerAt(text, 2)!, row)).toEqual({ text: "@bram XXX", caret: 6 });
-  });
-
-  it("writes the handle as the roster has it, capitals and all", () => {
-    expect(completeMention("@z", 2, pickerAt("@z", 2)!, { kind: "seat", seat: { handle: "Zoe.x" } })).toEqual({ text: "@Zoe.x ", caret: 7 });
+    expect(completeMention("@bXXX", 0, 2, "bram")).toEqual({ text: "@bram XXX", caret: 6 });
   });
 });
 
-describe("keyAction", () => {
-  const act = (key: string, o: { shift?: boolean; composing?: boolean; pickerOpen?: boolean } = {}) => keyAction({ key, shift: false, composing: false, pickerOpen: false, ...o });
+describe("mentionsIn", () => {
+  const roster = [ADA, BRAM];
+  const named = (text: string) => mentionsIn(text, roster).map((m) => [m.bot.handle, text.slice(m.start, m.end)]);
 
-  it("does nothing while an input method is composing, with the picker open or closed", () => {
-    for (const key of ["Enter", "Tab", "Escape", "ArrowDown", "ArrowUp", "a"])
-      for (const pickerOpen of [true, false])
-        for (const shift of [true, false]) expect(act(key, { composing: true, pickerOpen, shift }), `${key} open=${pickerOpen} shift=${shift}`).toBe("none");
+  it("finds each handle of the roster that starts the text or follows a space", () => {
+    expect(named("@bram and\n@ada, look")).toEqual([
+      ["bram", "@bram"],
+      ["ada", "@ada"],
+    ]);
   });
 
-  it("moves, picks and closes with the picker open", () => {
-    expect(act("ArrowDown", { pickerOpen: true })).toBe("next");
-    expect(act("ArrowUp", { pickerOpen: true })).toBe("prev");
-    expect(act("Enter", { pickerOpen: true })).toBe("pick");
-    expect(act("Tab", { pickerOpen: true })).toBe("pick");
-    expect(act("Escape", { pickerOpen: true })).toBe("close");
-    expect(act("a", { pickerOpen: true })).toBe("none");
+  it("names nobody for an @ glued to a word, a longer word or a handle not in the roster", () => {
+    expect(named("me@bram.org @bramble @cleo")).toEqual([]);
   });
 
-  it("keeps picking on Shift+Enter with the picker open, as the composer did", () => {
-    expect(act("Enter", { pickerOpen: true, shift: true })).toBe("pick");
+  it("reads a handle in any case, as Hermes folds it and the menu matches it", () => {
+    expect(named("@BRAM @Bram @aDa")).toEqual([
+      ["bram", "@BRAM"],
+      ["bram", "@Bram"],
+      ["ada", "@aDa"],
+    ]);
   });
 
-  it("sends on Enter, and only on Enter without Shift, with the picker closed", () => {
-    expect(act("Enter")).toBe("send");
-    expect(act("Enter", { shift: true })).toBe("none");
-    for (const key of ["Tab", "Escape", "ArrowDown", "ArrowUp", "a"]) expect(act(key), key).toBe("none");
+  it("ends a handle at a space, the end, or sentence marks before either, so @bram, @bram. and @bram?! name Bram", () => {
+    expect(named("@bram, what @bram.\n@bram?! ask @bram.")).toEqual([
+      ["bram", "@bram"],
+      ["bram", "@bram"],
+      ["bram", "@bram"],
+      ["bram", "@bram"],
+    ]);
+    expect(named("@ada; @ada: @ada!")).toEqual([
+      ["ada", "@ada"],
+      ["ada", "@ada"],
+      ["ada", "@ada"],
+    ]);
+  });
+
+  it("names nobody where the handle runs on into a longer token, as Hermes reads @bram.com as one handle", () => {
+    expect(named("see @bram.com @ada's @ada) @bram.:x @ada\u{1f600} @bram/ @ada\"")).toEqual([]);
   });
 });

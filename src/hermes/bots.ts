@@ -46,6 +46,11 @@ export type Bot = {
   profile: string;
   /** The name it shows (`botName`). */
   name: string;
+  /**
+   * What `@` names it by, as Hermes's `_handle` does (`tools/bot_mode_probe.py` at `ae2a81cc`): the profile's name, and
+   * `hermes` for the profile `default` unless a profile is named `hermes`.
+   */
+  handle: string;
   description: string;
   isDefault: boolean;
   hasAvatar: boolean;
@@ -122,14 +127,17 @@ export function rosterOf(result: unknown): Bot[] {
   if (!named) throw new BotModeUnsupportedError("Hermes answered profiles.list without a list of profiles.");
   if (named.some((r) => !("canonical_session" in r)))
     throw new BotModeUnsupportedError("This Hermes lists its profiles but doesn't report their Bot Chats, so it has no Bot Mode.");
+  const names = named.map((r) => r.name.trim());
   return named.map((r): Bot => {
     const meta = botMeta(r.ui_meta);
     const botChat = botChatOf(r.canonical_session);
     const last = isObj(r.last_session) ? num(r.last_session.last_active || r.last_session.started_at) * 1000 : 0;
     const color = trimmedOrEmpty(meta?.color);
+    const profile = r.name.trim();
     return {
-      profile: r.name.trim(),
+      profile,
       name: botName(r),
+      handle: profile === "default" && !names.includes("hermes") ? "hermes" : profile,
       description: trimmedOrEmpty(r.description).replace(/\s+/g, " "),
       isDefault: r.is_default === true,
       hasAvatar: r.has_avatar === true,

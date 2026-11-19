@@ -7,7 +7,7 @@ import { InlineMarks } from "./inlineMarks";
 
 const file: Attachment = { path: "/s/1.png", name: "shot.png", size: 2048, kind: "image" };
 const text = "see [image 2: shot.png] now";
-const mark = { start: 4, end: 23, n: 2, name: "shot.png", file };
+const mark = { kind: "image", start: 4, end: 23, n: 2, name: "shot.png", file } as const;
 
 const rect = (left: number, top: number, width: number): DOMRect => ({ left, top, width, height: 20, right: left + width, bottom: top + 20, x: left, y: top, toJSON: () => ({}) });
 

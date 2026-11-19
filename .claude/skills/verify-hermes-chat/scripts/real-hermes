@@ -37,7 +37,8 @@ EOF
   setsid python3 -I "$HERE/model-stub.py" $model_host "$model_port" "$RH_DIR/model-requests.jsonl" >"$RH_DIR/stub.log" 2>&1 </dev/null &
   echo $! >"$RH_DIR/stub.pid"
   local stub_started=$SECONDS
-  until (: >"/dev/tcp/$model_host/$model_port") 2>/dev/null; do
+  # Ask for the stub's own model, so another process on the port never passes for it.
+  until curl -fs --max-time 1 "http://$model_host:$model_port/v1/models" 2>/dev/null | grep -q '"stub-model"'; do
     kill -0 "$(cat "$RH_DIR/stub.pid")" 2>/dev/null || { down >&2; die "model stub exited: $(tail -n 3 "$RH_DIR/stub.log"); see $RH_DIR/stub.log"; }
     ((SECONDS - stub_started < 10)) || { down >&2; die "model stub not answering on $model_host:$model_port after 10 s; see $RH_DIR/stub.log"; }
     sleep 0.1

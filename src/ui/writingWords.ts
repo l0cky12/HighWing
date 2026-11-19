@@ -9,19 +9,6 @@ type Words = Catalogue["writing"];
 
 export const modelName = (w: Words, r: { provider: string; model: string }) => `${r.provider ? `${r.provider} · ` : ""}${shortName(r.model) || w.defaultModel}`;
 
-/** Under a suggestion: which model wrote it, and why that one. */
-export function writtenBy(w: Words, profile: string, route: WritingRoute): string {
-  const model = modelName(w, route);
-  switch (route.via) {
-    case "pin":
-      return route.pin === "text" ? w.byPinText(model, profile) : w.byPinInstructions(model, profile);
-    case "app":
-      return w.byApp(model);
-    case "main":
-      return w.byMain(model, profile);
-  }
-}
-
 /** Before a call: which model would write, and why that one. */
 export function willWrite(w: Words, profile: string, route: WritingRoute): string {
   const model = modelName(w, route);

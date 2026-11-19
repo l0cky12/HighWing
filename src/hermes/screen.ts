@@ -181,9 +181,6 @@ export async function viewerHash(viewerId: string): Promise<string> {
     .slice(0, 12);
 }
 
-/** Whether this viewer holds the lease. */
-export const heldBy = (lease: DisplayLease | undefined, hash: string | undefined) => !!lease && !!hash && lease.holder === "human" && lease.viewer_hash === hash;
-
 /** A lease older than the one already known: an answer overtaken by a broadcast. */
 export const isOlder = (known: DisplayLease | undefined, next: DisplayLease) => !!known && next.epoch < known.epoch;
 

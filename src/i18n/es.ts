@@ -723,10 +723,6 @@ export const es: Catalogue = {
   },
   writing: {
     defaultModel: "su modelo por defecto",
-    byPinText: (model, profile) => `Escrito por ${model}, el modelo de Generación de texto de ${profile}, fijado en el servidor`,
-    byPinInstructions: (model, profile) => `Escrito por ${model}, el modelo de Instrucciones de proyecto de ${profile}, fijado en el servidor`,
-    byApp: (model) => `Escrito por ${model}, tu modelo de escritura`,
-    byMain: (model, profile) => `Escrito por ${model}, el propio modelo de ${profile}`,
     willPinText: (model, profile) => `${profile} escribe con ${model}, su modelo de Generación de texto, fijado en el servidor.`,
     willPinInstructions: (model, profile) => `${profile} escribe con ${model}, su modelo de Instrucciones de proyecto, fijado en el servidor.`,
     willApp: (model) => `Lo escribe tu modelo de escritura: ${model}.`,

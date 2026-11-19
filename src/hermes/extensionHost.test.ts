@@ -40,10 +40,17 @@ describe("the host frame", () => {
 });
 
 describe("the prelude", () => {
-  // A stand-in worker global: Worker and SharedWorker as globals, caches as an accessor, as WebKit has them.
+  // A stand-in worker global shaped as WebKit has it: Worker and SharedWorker as globals, caches as an accessor on the
+  // global's prototype (WorkerGlobalScope.prototype). Not on the global itself: Node 26's vm drops what a getter there throws.
   function worker() {
     const ctx = vm.createContext({});
-    vm.runInContext(`globalThis.Worker = function Worker() {}; globalThis.SharedWorker = function SharedWorker() {}; Object.defineProperty(globalThis, "caches", { get() { return "real caches"; }, configurable: true });`, ctx);
+    vm.runInContext(
+      `globalThis.Worker = function Worker() {}; globalThis.SharedWorker = function SharedWorker() {};
+      const scope = Object.create(Object.getPrototypeOf(globalThis));
+      Object.defineProperty(scope, "caches", { get() { return "real caches"; }, configurable: true });
+      Object.setPrototypeOf(globalThis, scope);`,
+      ctx,
+    );
     return ctx;
   }
   const after = (ctx: vm.Context) => vm.runInContext(`[typeof Worker, typeof SharedWorker, (() => { try { return String(caches); } catch (e) { return "closed: " + e; } })()]`, ctx);

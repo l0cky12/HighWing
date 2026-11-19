@@ -27,7 +27,6 @@ const KEPT = new Map([
   ["docs/features.md", "linked from README.md"],
   ["docs/releases.md", "linked from AGENTS.md"],
   ["docs/research/bot-create-speed/README.md", "research findings from #40"],
-  ["docs/design/bot-handoffs.md", "the bot hand-offs design for #21, written for the owner to review and merged by them in #22"],
   ["docs/research/computer-use-payloads.md", "phase 0 findings of #43; the computer-use build spec the owner handed over asks for a findings file in docs/research/"],
   ["docs/research/computer-use-speed/README.md", "research findings"],
   ["docs/research/computer-use-speed/real-hermes/README.md", "research findings"],

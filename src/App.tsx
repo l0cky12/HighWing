@@ -4,7 +4,8 @@ import { ArrowLeft, ArrowRight, Columns2, FolderCog, PanelBottom, PanelLeft, Pan
 import { CONNECT_STOPPED, RenameConflict, TitleModelUnavailable, connect, openSaved, readSaved, toSource, type Delivery, type Hermes, type NoticeCard, type Notify } from "./hermes/transport";
 import { invoke } from "@tauri-apps/api/core";
 import type { CommandHost, NamedBot } from "./ui/SlashCommands";
-import { STEER, type ServerCommandList } from "./hermes/commands";
+import { STEER, commandSet, type ServerCommandList } from "./hermes/commands";
+import { hermesRefusal } from "./hermes/hermesCommands";
 import { offeredCommands, takenName, type ChatContext } from "./hermes/extensions";
 import { useExtensions } from "./ui/extensionsContext";
 import type { SkillCall, SkillCommands } from "./hermes/skillCommands";
@@ -44,7 +45,7 @@ import { readMethods } from "./hermes/signInMethods";
 import { PreferredRoutes, type RouteHealth, routesOf, sshAddressOf } from "./hermes/routes";
 import { signInError, testSignIn, type SignInError, type TestOutcome } from "./hermes/setup";
 import { isOutgoing, isWaiting, type Attachment, type Chat, type ConnectionStatus, type Found, type Hit, type SentReference } from "./hermes/model";
-import { shortName, type ModelCatalog, type ModelPick } from "./hermes/models";
+import { capabilitiesOf, describePick, effortsFor, isEffort, modelFromArg, shortName, type ModelCatalog, type ModelPick } from "./hermes/models";
 import { ChatList, Rail, leavingNote } from "./ui/Sidebar";
 import { lookShown, type BotLookShown } from "./ui/BotFace";
 import { type ChatLink, type ConnectionRefs, checkConnection, connectionKey, connectionLabel, connectionRefs, formatChatLink, locateChat, parseChatLink } from "./hermes/chatLinks";
@@ -4127,11 +4128,24 @@ function ChatView({
   useEffect(() => setApplying(false), [chatId]);
 
   const shownModel = (started && chat.model) || startSettings.model.value;
-  const pickModel = (pick: ModelPick) => {
+  /** The model picker's switch, which `/model` and `/reasoning` use too. Rejects saying why Hermes didn't switch. */
+  const switchModel = async (pick: ModelPick) => {
     setUIPrefs({ modelPicker: { ...pick, profile: prefScope(connection, profile) } });
     if (!started) return setChosen(pick);
-    hermes.setModel(chat.id, pick).catch((e) => stillIn() && onToast(`Couldn't switch this chat's model: ${errorText(e)}`));
+    await hermes.setModel(chat.id, pick);
   };
+  /** The pick `/reasoning <level>` means, or undefined for a bare `/reasoning`, which says the one in use. */
+  const effortFor = (arg: string): { pick: ModelPick } | { problem: string } | undefined => {
+    const level = arg.trim().toLowerCase();
+    if (!level) return undefined;
+    const current = shownModel ?? catalog?.defaultPick;
+    if (!current) return { problem: "Hermes hasn't said which model this chat runs on yet." };
+    const offered = effortsFor(capabilitiesOf(catalog, current));
+    if (!isEffort(level) || !offered.includes(level))
+      return { problem: offered.length ? `${shortName(current.model)} takes ${offered.join(", ")}. Highwing sets only the effort; Hermes's display options are its command line's.` : `${shortName(current.model)} has no reasoning effort to set.` };
+    return { pick: { ...current, effort: level } };
+  };
+  const pickModel = (pick: ModelPick) => void switchModel(pick).catch((e) => stillIn() && onToast(`Couldn't switch this chat's model: ${errorText(e)}`));
 
   const findTarget =
     picked?.found.chatId === chat.id && picked.found.find ? { query: picked.found.find, itemId: hermes.locate(picked.found), at: picked.at } : undefined;
@@ -4321,12 +4335,23 @@ function ChatView({
     () => listedChats.filter((c) => c.id !== chat.id && !c.archived && policyOf(c).listed && c.title.trim()).map((c) => ({ id: c.id, title: c.title, updatedAt: c.updatedAt })),
     [listedChats, chat.id],
   );
+  const hermesList = serverCommands.state === "ready" ? serverCommands.list.hermes : undefined;
+  const commandList = useMemo(() => commandSet(hermesList), [hermesList]);
   const commands: CommandHost = {
+    commands: commandList,
+    models: { catalog, favorites, current: shownModel },
     references: { chats: referable, bots: kind === "bot" ? otherBots : undefined, reference: (c) => referenceDesk.add(shownDraft, { chatId: c.id, title: c.title }) },
     skills: status === "connected" ? skillCommands.skills : undefined,
     refreshSkills: skillCommands.refresh,
     guide: caps.caps.commands.state === "unsupported" ? () => openGuide(guideUrl("commands")) : undefined,
-    why: (def) => {
+    why: (def, arg) => {
+      if (def.unavailable) return def.unavailable;
+      // The picker's own switches, which work before a chat starts too. What they'd switch to is checked before anything
+      // goes to Hermes.
+      if (def.name === "model" || def.name === "reasoning") {
+        const to = arg ? (def.name === "model" ? modelFromArg(catalog, arg, shownModel) : effortFor(arg)) : undefined;
+        return to && "problem" in to ? to.problem : undefined;
+      }
       if (def.name === "help" || (def.name === "new" && !policy.ofBot)) return undefined;
       // In a Bot Chat, /new compacts it, which needs the chat open on Hermes and no reply running.
       if (def.name === "new") {
@@ -4341,7 +4366,17 @@ function ChatView({
       // A Bot Chat's title is its identity, and it is its bot's one chat (ADR 0066).
       if (def.name === "rename" && policy.rename === "none") return "A Bot Chat's name is how Hermes finds it, so it can't be renamed.";
       if (def.name === "delete" && !policy.remove) return "A Bot Chat is its bot's one continuous chat, so Highwing doesn't delete it.";
+      if (def.name === "compress") {
+        if (arg) return "Highwing compacts the whole chat; Hermes's here N and --preview options aren't offered here.";
+        if (policy.session !== "live" || hermes.cannotCompact()) return "This Hermes can't compact a chat from here.";
+        if (!chat.runtimeId) return "This chat is still loading from Hermes.";
+        return chat.running ? "Wait for the reply to finish: Hermes compacts only between replies." : undefined;
+      }
       if (def.scope === "local") return undefined;
+      if (def.scope === "hermes") {
+        if (!chat.runtimeId) return "This chat is still loading from Hermes.";
+        return hermesRefusal(def, arg, !!chat.running);
+      }
       if (serverCommands.state === "loading") return "Checking whether this Hermes has it…";
       if (serverCommands.state === "failed") return `Couldn't check whether this Hermes has it: ${serverCommands.reason}`;
       if (serverCommands.list.replaced.has(def.name))
@@ -4394,6 +4429,22 @@ function ChatView({
           if ((await hermes.askSideQuestion(chat.id, arg)) && here()) done();
           return undefined;
         }
+        if (def.name === "model" || def.name === "reasoning") {
+          const to = def.name === "model" ? (arg ? modelFromArg(catalog, arg, shownModel) : undefined) : effortFor(arg);
+          if (!to) {
+            if (here()) done();
+            return `This chat uses ${describePick(shownModel, catalog)}.`;
+          }
+          if ("problem" in to) throw new Error(to.problem);
+          await switchModel(to.pick);
+          if (here()) done();
+          return `Now on ${describePick(to.pick, catalog)}.`;
+        }
+        if (def.name === "compress") {
+          const res = await hermes.compact(chat.id);
+          if (here()) done();
+          return res.kind === "compacted" ? "Hermes compacted this chat's context." : res.kind === "nothing" ? "There was nothing to compact yet." : res.message;
+        }
         // Set a goal shows the check before anything is saved, so /goal opens it rather than going to Hermes as typed.
         if (def.name === "goal") {
           if (here()) {
@@ -4405,10 +4456,16 @@ function ChatView({
         const res = await hermes.runCommand(chat.id, def, arg);
         if (!here()) return undefined;
         done();
-        if (res.kind === "output") return res.text;
-        // Hermes wants the words sent as the chat's next message instead, as for a /steer after the reply ended. It goes
-        // straight to the chat, so whatever the owner has typed since stays in the composer; a failure is a Failed message.
-        await hermes.send(chat.id, res.message);
+        if (res.kind === "output") return res.text || undefined;
+        // Hermes puts words back for the owner to edit, as its own clients do.
+        if (res.kind === "prefill") {
+          if (!savedDrafts.get(key)) savedDrafts.set(key, res.text);
+          return res.notice;
+        }
+        // Hermes wants the words sent as the chat's next message instead, as for a /steer after the reply ended, or a
+        // skill message it built (`/plan`). It goes straight to the chat, so whatever the owner has typed since stays in
+        // the composer; a failure is a Failed message.
+        await (res.kind === "skill" ? hermes.send(chat.id, res.display, [], res.call) : hermes.send(chat.id, res.message));
         return res.notice;
       } finally {
         commandsRunning.delete(key);

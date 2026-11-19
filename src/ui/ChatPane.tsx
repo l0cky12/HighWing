@@ -10,7 +10,7 @@ import { SOURCE_LABEL, archiveAction, inArchived, isOutgoing, isWaiting } from "
 import { useLocale } from "../i18n/locale";
 import type { SkillCall } from "../hermes/skillCommands";
 import { BotFace, type BotLookShown } from "./BotFace";
-import { STEER, typedCommand } from "../hermes/commands";
+
 import type { AttachmentDesk } from "../hermes/attachmentDesk";
 import type { Reference, ReferenceDesk } from "../hermes/chatReferences";
 import { ReferenceChips } from "./ReferenceChips";
@@ -2345,7 +2345,7 @@ function Composer({
   };
   /** `other`: Ctrl+Enter, which does the other of queue and steer while a reply runs. */
   const send = (other = false) => {
-    if (refs.length && typedCommand(text.trim())?.def === STEER) return setRefused([REFERENCES_CANT_STEER]);
+    if (refs.length && slash.typed?.kind === "command" && slash.typed.def.name === "steer") return setRefused([REFERENCES_CANT_STEER]);
     if (slash.run()) return;
     if (!sendable || steering) return;
     // Each mark numbered by its image's place among those sent, as Hermes stores them after the words.

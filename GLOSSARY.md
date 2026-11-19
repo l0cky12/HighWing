@@ -293,7 +293,7 @@ A question the owner asks about a chat with `/btw <question>`, while a reply run
 _Avoid_: aside, background question, `/background` (Hermes's command for a separate background session), btw message
 
 **Slash command**:
-A command the owner types at the start of the composer, after a "/", picked from the menu that opens there or typed in full. Each is either an action of this app or a command Hermes runs for the chat, and says which. Only the commands in the app's list run; any other text starting with "/" is sent as an ordinary message. Picking from the menu only fills the command in; Enter then runs it. A command that can't run says why and keeps the text. Deleting asks first, as it does in the chat list. The same menu lists the profile's skills after the commands (see Skill) (ADR 0015).
+A command the owner types at the start of the composer, after a "/", picked from the menu that opens there or typed in full or in part (`/mod` is `/model` when nothing else starts so). Each is either an action of this app or one of the commands Hermes lists for the profile, and says which. Any other text starting with "/" is sent as an ordinary message. Picking from the menu only fills the command in; Enter then runs it. After a command's name, the menu suggests its subcommands, or the models for `/model`. A command that can't run says why and keeps the text. Deleting asks first, as it does in the chat list. The same menu lists the profile's skills after the commands (see Skill) (ADR 0015, ADR 0225).
 _Avoid_: quick command (Hermes's word for commands defined in its config), shortcut, macro
 
 **Goal** (standing mission):

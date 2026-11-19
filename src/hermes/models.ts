@@ -212,3 +212,70 @@ export function pickFromInfo(info: unknown): ModelPick | undefined {
   const effort = typeof i.reasoning_effort === "string" ? i.reasoning_effort.trim().toLowerCase() : "";
   return { provider, model, ...(isEffort(effort) && { effort }), ...(typeof i.fast === "boolean" && { fast: i.fast }) };
 }
+
+/** One row of the list. `favorite`: it sits under Favorites. */
+export type PickerRow = { key: string; option: ModelOption; favorite: boolean };
+
+/** A starred model Hermes doesn't list (its provider signed out, say): still shown, but it can't be picked. */
+function missingOption(key: string): ModelOption | undefined {
+  const p = fromKey(key);
+  return p && { ...p, providerName: p.provider, available: false, ...guessCapabilities(p.model) };
+}
+
+/** A model search's words. Every model search matches the same way: the text holds each word, in any order or case. */
+export const searchWords = (query: string) => query.toLowerCase().split(/\s+/).filter(Boolean);
+export const hasWords = (text: string, words: string[]) => {
+  const lower = text.toLowerCase();
+  return words.every((w) => lower.includes(w));
+};
+
+const matches = (o: ModelOption, words: string[]) => hasWords(`${o.model} ${o.provider} ${o.providerName}`, words);
+
+/** The rows the picker lists for `query`: Favorites first, then each provider's other models. */
+export function pickerRows(catalog: ModelCatalog | undefined, favorites: string[], query: string): { title: string; rows: PickerRow[] }[] {
+  const words = searchWords(query);
+  const starred = new Set(favorites);
+  const favRows = favorites
+    .map((key) => ({ key, option: findOption(catalog, fromKey(key)) ?? missingOption(key) }))
+    .filter((r): r is { key: string; option: ModelOption } => !!r.option && matches(r.option, words))
+    .map((r) => ({ ...r, favorite: true }));
+  const sections = favRows.length ? [{ title: "Favorites", rows: favRows }] : [];
+  for (const p of catalog?.providers ?? []) {
+    const rows = p.models.filter((m) => !starred.has(modelKey(m)) && matches(m, words)).map((option) => ({ key: modelKey(option), option, favorite: false }));
+    if (rows.length) sections.push({ title: p.name, rows });
+  }
+  return sections;
+}
+
+/**
+ * The model `/model <arg>` names, with the chat's effort and fast mode carried over as a picker click carries them, or
+ * why it names none. Never guessed, as Hermes's own picker never guesses: `provider:model` (Hermes's form, split at the
+ * first colon) or `provider/model`; a model's id or short name one provider lists; or a search, as the picker's, that
+ * leaves one model. Hermes's flags and `reset` change more than this chat's model, so they are refused.
+ */
+export function modelFromArg(catalog: ModelCatalog | undefined, arg: string, current: ModelPick | undefined): { pick: ModelPick } | { problem: string } {
+  const typed = arg.trim();
+  if (/(^|\s)--/.test(typed) || typed.toLowerCase() === "reset")
+    return { problem: "Highwing's /model switches this chat's model only. Settings → Model sets the profile's model; the pills beside the model set its reasoning and fast mode." };
+  if (!catalog) return { problem: "Hermes hasn't listed its models yet. Try again in a moment." };
+  const options = catalog.providers.flatMap((p) => p.models);
+  const lower = typed.toLowerCase();
+  const sep = lower.search(/[:/]/);
+  const keyed = sep > 0 ? options.filter((o) => o.provider.toLowerCase() === lower.slice(0, sep) && o.model.toLowerCase() === lower.slice(sep + 1)) : [];
+  const named = options.filter((o) => o.model.toLowerCase() === lower || shortName(o.model).toLowerCase() === lower);
+  const words = searchWords(typed);
+  const found = keyed.length ? keyed : named.length ? named : options.filter((o) => hasWords(`${o.model} ${o.provider} ${o.providerName}`, words));
+  const name = (o: ModelOption) => `${o.provider}:${o.model}`;
+  if (!found.length) return { problem: `No model here matches "${typed}". Type /model and a space to see them.` };
+  if (found.length > 1)
+    return { problem: `${found.length} models match "${typed}": ${found.slice(0, 5).map(name).join(", ")}${found.length > 5 ? ", …" : ""}. Type provider:model, or pick one from the list.` };
+  if (!found[0].available) return { problem: `${name(found[0])} isn't available on this Hermes now.` };
+  return { pick: carryOptions(found[0], current, catalog) };
+}
+
+/** What `/model` says a chat runs on: "gpt-5 (OpenRouter) · reasoning High · fast mode". */
+export function describePick(pick: ModelPick | undefined, catalog: ModelCatalog | undefined): string {
+  if (!pick) return "the profile's default model";
+  const provider = catalog?.providers.find((p) => p.slug === pick.provider)?.name ?? pick.provider;
+  return [`${shortName(pick.model)} (${provider})`, ...(pick.effort ? [`reasoning ${EFFORT_LABEL[pick.effort]}`] : []), ...(pick.fast ? ["fast mode"] : [])].join(" · ");
+}

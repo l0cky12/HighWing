@@ -1,5 +1,6 @@
 // A fake Hermes dashboard for tests: it sits where the Rust pipe does and speaks wire-shaped legacy
 // JSON-RPC frames and dashboard REST bodies (shapes from the deployed contracts, see the research doc).
+import golden from "./commandsCatalogGolden.json";
 import { RestError, type LocalFile, type OpenPipe, type PipeEvent, type RestMethod, type Route, type Speech, type ToolsetGuards, type VoiceSetup } from "./pipe";
 import type { SavedKey } from "./setup";
 import type { ApprovalMode } from "./model";
@@ -484,6 +485,13 @@ export class FakeHermes {
   };
   /** The server commands `commands.catalog` lists; undefined for a Hermes without the method. */
   commandCatalog: string[] | undefined = ["steer", "btw", "context", "compress", "help", "goal"];
+  /**
+   * True: `commands.catalog` also lists Hermes's built-in commands, their aliases and subcommands, as the deployed
+   * `bf0203a` lists them (commandsCatalogGolden.json).
+   */
+  builtinCommands = false;
+  /** What `slash.exec` answers for a command other than `/context`, by its name; one not here answers with no output. */
+  slashAnswers: Record<string, Record<string, unknown>> = {};
   /** False: a Hermes with no `prompt.btw`, which answers "method not found". */
   sideQuestions = true;
   /**
@@ -1160,8 +1168,13 @@ export class FakeHermes {
       const user = Object.keys(this.quickCommands).map((n) => [`/${n}`, this.quickCommands[n]]);
       // Skills are listed in `pairs` and `skills`, not in a category (`_catalog_skills`).
       const skills = this.catalogSkills ? this.skills.commandSkills(String(r.params.profile || "default")) : [];
+      const builtin = this.builtinCommands ? golden : { pairs: [], canon: {}, commands: {}, sub: {} };
+      const own = new Set(this.commandCatalog.map((n) => `/${n}`));
       this.respond(r.id, {
-        pairs: [...this.commandCatalog.map((n) => [`/${n}`, n]), ...user, ...skills.map((k) => [`/${k.slug}`, k.description])], canon, commands: {},
+        pairs: [...this.commandCatalog.map((n) => [`/${n}`, n]), ...builtin.pairs.filter((p) => !own.has(p[0])), ...user, ...skills.map((k) => [`/${k.slug}`, k.description])],
+        canon: { ...builtin.canon, ...canon },
+        commands: structuredClone(builtin.commands),
+        sub: structuredClone(builtin.sub),
         categories: [{ name: "Session", pairs: this.commandCatalog.map((n) => [`/${n}`, n]) }, ...(user.length ? [{ name: "User commands", pairs: user }] : [])],
         ...(this.catalogSkills && { skills: Object.fromEntries(skills.map((k) => [`/${k.slug}`, { usage: 0, origin: "local" }])), skill_count: skills.length }),
         warning: "", plugin_discovery_error: "", plugin_commands: {},
@@ -1218,7 +1231,8 @@ export class FakeHermes {
     // `slash.exec` for `/context`, answered from the live session.
     "slash.exec": (r) => {
       if (!this.runtime.has(String(r.params.session_id))) return this.fail(r.id, 4001, "session not found");
-      this.respond(r.id, { output: this.contextOutput });
+      const name = String(r.params.command ?? "").slice(1).split(/\s/)[0];
+      this.respond(r.id, name === "context" ? { output: this.contextOutput } : structuredClone(this.slashAnswers[name] ?? { output: "" }));
     },
     // Legacy `session.interrupt` (tui_gateway/methods_session_interrupt.py). The turn then ends with a
     // `message.complete` whose status is "interrupted"; tests send that themselves.

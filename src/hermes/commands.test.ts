@@ -1,11 +1,20 @@
 // The slash command registry: what counts as a command, how the menu filters, and the Hermes calls behind the server
 // commands, with the request shapes read from Hermes's source at the deployed `bf0203a`.
 import { describe, expect, it } from "vitest";
-import { COMMANDS, argProblem, completion, listServerCommands, matchCommands, menuQuery, runServerCommand, typedCommand } from "./commands";
+import { COMMANDS, argProblem, commandSet, completion, listServerCommands, runServerCommand } from "./commands";
 import { legacyOver } from "./fakeSessions";
 import { RpcError } from "./transport";
 
 const def = (name: string) => COMMANDS.find((c) => c.name === name)!;
+const app = commandSet();
+const typedCommand = (text: string) => {
+  const t = app.typed(text, []);
+  return t?.kind === "command" ? { def: t.def, arg: t.arg } : undefined;
+};
+const menuQuery = (text: string) => {
+  const m = app.menu(text, []);
+  return m?.stage === "name" ? m.query : undefined;
+};
 
 describe("A typed command", () => {
   it("is a registry name right after a leading slash; anything else is an ordinary message", () => {
@@ -40,10 +49,11 @@ describe("The menu", () => {
   });
 
   it("lists names starting with the query first, then names or descriptions containing it", () => {
+    const matchCommands = (q: string) => app.match(q);
     expect(matchCommands("").map((c) => c.name)).toEqual(COMMANDS.map((c) => c.name));
-    expect(matchCommands("de").map((c) => c.name)).toEqual(["delete"]);
-    expect(matchCommands("context").map((c) => c.name)).toEqual(["context"]);
-    expect(matchCommands("chat").map((c) => c.name)).toEqual(["new", "rename", "delete", "btw", "context"]);
+    expect(matchCommands("de").map((c) => c.name)).toEqual(["delete", "model"]);
+    expect(matchCommands("context").map((c) => c.name)).toEqual(["context", "compress"]);
+    expect(matchCommands("chat").map((c) => c.name)).toEqual(["new", "rename", "delete", "btw", "context", "model", "reasoning", "compress"]);
     expect(matchCommands("zzz")).toEqual([]);
   });
 
@@ -111,7 +121,41 @@ describe("Server commands", () => {
     ]);
   });
 
+  it("of Hermes's own go through slash.exec under their own name, as its desktop sends them, and say what Hermes said", async () => {
+    const kanban = { name: "kanban", description: "Board", scope: "hermes" as const, args: "[subcommand]" };
+    const plan = { name: "plan", description: "Plan", scope: "hermes" as const, args: "[task]" };
+    const calls: unknown[] = [];
+    const answer = (res: unknown, dispatched?: unknown) => {
+      const rpc = async (method: string, params: Record<string, unknown>) => {
+        calls.push({ method, params });
+        if (method === "slash.exec" && res instanceof Error) throw res;
+        if (method === "slash.exec" && isAlias(res) && params.command !== "/kanban list") return res;
+        return method === "slash.exec" ? (isAlias(res) ? { output: "listed" } : res) : dispatched;
+      };
+      return rpc;
+    };
+    const isAlias = (r: unknown) => (r as { type?: string })?.type === "alias";
+    const run = (def: typeof kanban, arg: string, res: unknown, dispatched?: unknown) => {
+      const rpc = answer(res, dispatched);
+      return runServerCommand(rpc, legacyOver(rpc), "rt1", def, arg);
+    };
+    expect(await run(kanban, "list", { output: "\u001b[1mNo tasks\u001b[0m", warning: "Board is read-only." })).toEqual({ kind: "output", text: "Board is read-only.\n\nNo tasks" });
+    expect(calls).toEqual([{ method: "slash.exec", params: { command: "/kanban list", session_id: "rt1" } }]);
+    expect(await run(kanban, "", { type: "prefill", message: "Edit me", notice: "Undone." })).toEqual({ kind: "prefill", text: "Edit me", notice: "Undone." });
+    expect(await run(plan, "ship it", { type: "skill", message: "[plan skill]", name: "plan", display: "/plan ship it" })).toEqual({
+      kind: "skill", call: { name: "plan", arg: "ship it" }, display: "/plan ship it",
+    });
+    // A quick command that is an alias of another runs that one.
+    calls.length = 0;
+    expect(await run(kanban, "x", { type: "alias", target: "/kanban list" })).toEqual({ kind: "output", text: "listed" });
+    expect(calls.map((c) => (c as { params: { command: string } }).params.command)).toEqual(["/kanban x", "/kanban list"]);
+    // A slash.exec Hermes refuses is tried once as command.dispatch.
+    calls.length = 0;
+    expect(await run(plan, "a", new RpcError(4018, "use command.dispatch"), { type: "send", message: "go" })).toEqual({ kind: "send", message: "go" });
+    expect(calls.map((c) => (c as { method: string }).method)).toEqual(["slash.exec", "command.dispatch"]);
+  });
+
   it("refuse an answer they don't know how to show", async () => {
-    await expect(runServerCommand(async () => undefined, legacyOver(async () => ({ type: "prefill", message: "x" })), "rt1", def("steer"), "x")).rejects.toThrow(/doesn't handle/);
+    await expect(runServerCommand(async () => undefined, legacyOver(async () => ({ type: "picker", message: "x" })), "rt1", def("steer"), "x")).rejects.toThrow(/doesn't handle/);
   });
 });

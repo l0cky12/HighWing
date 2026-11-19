@@ -62,7 +62,7 @@ describe("The slash command menu", () => {
     const { server, user } = await launch();
     await user.click(composer());
     await user.keyboard("/");
-    expect(options().map((o) => o.querySelector(".cmd-name")!.textContent)).toEqual(["/help", "/new", "/rename", "/delete", "/steer", "/btw", "/context", "/goal"]);
+    expect(options().map((o) => o.querySelector(".cmd-name")!.textContent)).toEqual(["/help", "/new", "/rename", "/delete", "/steer", "/btw", "/context", "/goal", "/model", "/reasoning", "/compress"]);
     // Each says what it does, its argument, and whether the app or Hermes runs it.
     const steer = options()[4];
     expect(steer.textContent).toMatch(/<message>.*Hermes.*Tell the running reply something/);
@@ -72,7 +72,7 @@ describe("The slash command menu", () => {
     await user.keyboard("{ArrowDown}{ArrowDown}");
     expect(selected().textContent).toMatch(/^\/rename/);
     await user.keyboard("{ArrowUp}{ArrowUp}{ArrowUp}");
-    expect(selected().textContent).toMatch(/^\/goal/);
+    expect(selected().textContent).toMatch(/^\/compress/);
 
     await user.keyboard("{Backspace}/ren");
     expect(options().map((o) => o.querySelector(".cmd-name")!.textContent)).toEqual(["/rename"]);
@@ -98,9 +98,10 @@ describe("The slash command menu", () => {
     expect(sent(server)).toEqual([]);
     // Typing again opens it again.
     await user.keyboard("t");
-    expect(options()).toHaveLength(1);
+    // /compress says "context" too, after the name that starts so.
+    expect(options().map((o) => o.querySelector(".cmd-name")!.textContent)).toEqual(["/context", "/compress"]);
     await user.keyboard("{Tab}");
-    expect(composer().value).toBe("/context");
+    expect(composer().value).toBe("/context ");
     expect(document.activeElement).toBe(composer());
   });
 
@@ -168,7 +169,7 @@ describe("Text that starts with /", () => {
     expect(options()[0].querySelector(".cmd-why")!.textContent).toMatch(/Couldn't check whether this Hermes has it: This Hermes doesn't list its commands\. Update Hermes/);
     await user.keyboard("{Enter}{Enter}");
     expect(screen.getByRole("alert").textContent).toMatch(/^\/context can't run: Couldn't check/);
-    expect(composer().value).toBe("/context");
+    expect(composer().value).toBe("/context ");
     expect(server.requests.some((r) => r.method === "slash.exec")).toBe(false);
   });
 
@@ -178,7 +179,7 @@ describe("Text that starts with /", () => {
     await user.click(composer());
     await user.keyboard("/context{Enter}{Enter}");
     expect((await screen.findByRole("alert")).textContent).toBe("/context didn't run: slash worker start failed: boom");
-    expect(composer().value).toBe("/context");
+    expect(composer().value).toBe("/context ");
   });
 });
 
@@ -244,7 +245,7 @@ describe("Commands", () => {
     await user.keyboard("/help{Enter}{Enter}");
     const help = screen.getByRole("region", { name: "Commands" });
     expect(within(help).getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual(["In this app", "On Hermes, for this chat"]);
-    expect(help.textContent).toMatch(/\/rename<title>Rename this chat in every Hermes client/);
+    expect(help.textContent).toMatch(/\/rename<title>also \/titleRename this chat in every Hermes client/);
     expect(help.textContent).toMatch(/\/steer<message>.*No reply is running to steer/);
     expect(composer().value).toBe("");
     expect(document.activeElement).toBe(composer());
@@ -280,7 +281,7 @@ describe("A command's late answer", () => {
     await user.click(await screen.findByRole("option", { name: /default/ }));
     await waitFor(() => expect(hermes.getSnapshot()).toMatchObject({ profile: "default", status: "connected" }));
     await user.click(await screen.findByRole("button", { name: /Nightly backup/ }));
-    await waitFor(() => expect(composer().value).toBe("/context"));
+    await waitFor(() => expect(composer().value).toBe("/context "));
     expect(screen.queryByText(/Context window: late/)).toBeNull();
   });
 });
@@ -318,7 +319,7 @@ describe("Review regressions", () => {
     await user.click(screen.getByRole("button", { name: /Rotate nginx logs/ }));
     act(() => answer());
     await user.click(screen.getByRole("button", { name: /Nightly backup/ }));
-    await waitFor(() => expect(composer().value).toBe("/context"));
+    await waitFor(() => expect(composer().value).toBe("/context "));
     expect(screen.queryByText(/Context window: late/)).toBeNull();
   });
 
@@ -342,7 +343,7 @@ describe("Review regressions", () => {
     const [left, right] = screen.getAllByPlaceholderText<HTMLTextAreaElement>("Message Hermes");
     await user.click(left);
     await user.keyboard("/context{Enter}{Enter}");
-    await waitFor(() => expect(right.value).toBe("/context"));
+    await waitFor(() => expect(right.value).toBe("/context "));
     await user.click(right);
     await user.keyboard("{Enter}{Enter}");
     expect((await screen.findByRole("alert")).textContent).toBe("/context didn't run: A command typed in this chat is still running.");
@@ -507,5 +508,107 @@ describe("The @ menu in a Bot Chat", () => {
     const list = screen.getByRole("listbox", { name: p.chat.at.menu });
     expect(Array.from(list.querySelectorAll(".cmd-group")).map((g) => g.textContent)).toEqual([p.chat.at.bots, p.chat.at.chats]);
     expect(document.querySelector(".cmd-keys")?.textContent).toBe(p.chat.at.keys);
+  });
+});
+
+describe("Hermes's own commands, prefixes and what follows a name (issue #94)", () => {
+  const withHermes = (s: FakeHermes) => void (s.builtinCommands = true);
+  const names = (list: string) => within(screen.getByRole("listbox", { name: list })).getAllByRole("option").map((o) => o.querySelector(".cmd-name")!.textContent);
+  const modelSwitches = (server: FakeHermes) => server.requests.filter((r) => r.method === "config.set" && r.params.key === "model");
+
+  it("/mod and Tab fill in /model and list the models; a model picked is filled in, and only Enter switches to it", async () => {
+    const { server, user } = await launch(withHermes);
+    await user.click(composer());
+    await user.keyboard("/mod");
+    expect(names("Commands")[0]).toBe("/model");
+    await user.keyboard("{Tab}");
+    expect(composer().value).toBe("/model ");
+    expect(names("Models")).toEqual(["claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-4-5", ...names("Models").slice(3)]);
+    // Nothing is chosen until the owner picks, so Enter can still run the bare command.
+    expect(within(screen.getByRole("listbox", { name: "Models" })).queryAllByRole("option", { selected: true })).toEqual([]);
+    await user.keyboard("opus{Enter}");
+    expect(composer().value).toBe("/model anthropic:claude-opus-4-5");
+    expect(modelSwitches(server)).toEqual([]);
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(modelSwitches(server).map((r) => r.params.value)).toEqual([expect.stringMatching(/^claude-opus-4-5 --provider anthropic/)]));
+    expect(await screen.findByText(/Now on claude-opus-4-5 \(Anthropic\)/)).toBeTruthy();
+    await waitFor(() => expect(composer().value).toBe(""));
+    expect(sent(server)).toEqual([]);
+    expect(server.requests.some((r) => r.method === "slash.exec")).toBe(false);
+  });
+
+  it("/model with nothing picked says which model the chat runs on, and a name typed whole switches to it", async () => {
+    const { server, user } = await launch(withHermes);
+    await user.click(composer());
+    await user.keyboard("/model{Enter}");
+    expect(composer().value).toBe("/model ");
+    await user.keyboard("{Enter}");
+    expect(await screen.findByText(/This chat uses claude-sonnet-4-5 \(Anthropic\)/)).toBeTruthy();
+    expect(modelSwitches(server)).toEqual([]);
+
+    await user.keyboard("/mod haiku");
+    await user.keyboard("{Escape}{Enter}");
+    await waitFor(() => expect(modelSwitches(server).map((r) => r.params.value)).toEqual([expect.stringMatching(/^claude-haiku-4-5 --provider anthropic/)]));
+
+    await user.keyboard("/model gpt --global");
+    await user.keyboard("{Escape}{Enter}");
+    expect((await screen.findByRole("alert")).textContent).toMatch(/^\/model can't run: Highwing's \/model switches this chat's model only/);
+    expect(composer().value).toBe("/model gpt --global");
+  });
+
+  it("/kanban suggests its subcommands after a space, and runs through slash.exec under its own name", async () => {
+    const { server, user } = await launch((s) => {
+      s.builtinCommands = true;
+      s.slashAnswers.kanban = { output: "\u001b[1mNo tasks\u001b[0m on the default board." };
+    });
+    await user.click(composer());
+    await user.keyboard("/kanb{Tab}");
+    expect(composer().value).toBe("/kanban ");
+    expect(names("/kanban")).toEqual(expect.arrayContaining(["init", "create", "list", "show"]));
+    await user.keyboard("li");
+    expect(names("/kanban")).toEqual(["list", "link"]);
+    await user.keyboard("s");
+    await user.keyboard("{Enter}");
+    expect(composer().value).toBe("/kanban list");
+    expect(server.requests.some((r) => r.method === "slash.exec")).toBe(false);
+    await user.keyboard("{Enter}");
+    expect(await screen.findByText("No tasks on the default board.")).toBeTruthy();
+    expect(server.requests.filter((r) => r.method === "slash.exec").map((r) => r.params)).toEqual([{ command: "/kanban list", session_id: server.runtimeIdOf("backup") }]);
+    await waitFor(() => expect(composer().value).toBe(""));
+    expect(sent(server)).toEqual([]);
+  });
+
+  it("/b lists /btw, /bt and Tab complete it, and a name several commands start runs nothing and names them", async () => {
+    const { server, user } = await launch(withHermes);
+    await user.click(composer());
+    await user.keyboard("/b");
+    expect(names("Commands")).toContain("/btw");
+    await user.keyboard("t{Tab}");
+    expect(composer().value).toBe("/btw ");
+    await user.clear(composer());
+    await user.keyboard("/b why is it slow{Enter}");
+    expect(screen.getByRole("alert").textContent).toMatch(/^\/b can't run: It could be \/battery, \/bg, \/blueprint, \/bp/);
+    // Said once: the hint gives way to the note.
+    expect(screen.getAllByText(/It could be \/battery/)).toHaveLength(1);
+    expect(composer().value).toBe("/b why is it slow");
+    expect(sent(server)).toEqual([]);
+    expect(server.requests.some((r) => r.method === "slash.exec" || r.method === "prompt.btw")).toBe(false);
+  });
+
+  it("says which command an alias or a prefix runs, and why a command Hermes keeps to its own clients doesn't run", async () => {
+    const { server, user } = await launch(withHermes);
+    await user.click(composer());
+    await user.keyboard("/s check the logs");
+    expect(screen.getByText("Runs /steer.")).toBeTruthy();
+    await user.clear(composer());
+    await user.keyboard("/und");
+    const undo = within(screen.getByRole("listbox", { name: "Commands" })).getAllByRole("option")[0];
+    expect(undo.querySelector(".cmd-why")!.textContent).toMatch(/Use Edit under your message instead/);
+    await user.keyboard("{Enter}{Enter}");
+    expect(screen.getByRole("alert").textContent).toMatch(/^\/undo can't run: Hermes would rewrite the history this chat shows/);
+    await user.clear(composer());
+    await user.keyboard("/paste{Enter}{Enter}");
+    expect(screen.getByRole("alert").textContent).toBe("/paste can't run: Hermes runs it only in its terminal command line.");
+    expect(server.requests.some((r) => r.method === "slash.exec")).toBe(false);
   });
 });

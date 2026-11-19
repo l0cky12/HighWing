@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FakeHermes, row } from "./fakeHermes";
-import { carryOptions, catalogFromServer, effortsFor, fallbackCatalog, guessCapabilities } from "./models";
+import { carryOptions, catalogFromServer, describePick, effortsFor, fallbackCatalog, guessCapabilities, modelFromArg } from "./models";
 import { connect } from "./transport";
 
 async function signedIn(server = new FakeHermes()) {
@@ -210,5 +210,47 @@ describe("Model capabilities", () => {
       provider: "openai",
       model: "gpt-4.1",
     });
+  });
+});
+
+describe("A model typed after /model", () => {
+  const catalog = catalogFromServer("default", {
+    model: "claude-opus-5-5",
+    provider: "anthropic",
+    providers: [
+      { slug: "anthropic", name: "Anthropic", models: ["claude-opus-5-5", "claude-sonnet-5-5"], capabilities: { "claude-opus-5-5": { reasoning: true, fast: true } } },
+      { slug: "openrouter", name: "OpenRouter", models: ["anthropic/claude-sonnet-5-5", "openai/gpt-5"] },
+      { slug: "ollama", name: "Ollama", models: ["llama3:8b"], unavailable_models: ["llama3:8b"] },
+    ],
+  })!;
+  const current = { provider: "anthropic", model: "claude-opus-5-5", effort: "high" as const, fast: true };
+  const pick = (arg: string) => modelFromArg(catalog, arg, current);
+
+  it("is found by provider:model, provider/model, its id or its short name, and carries the effort and fast mode", () => {
+    expect(pick("anthropic:claude-sonnet-5-5")).toEqual({ pick: { provider: "anthropic", model: "claude-sonnet-5-5", effort: "high" } });
+    const gpt5 = { provider: "openrouter", model: "openai/gpt-5", effort: "high", fast: true };
+    expect(pick("openrouter/openai/gpt-5")).toEqual({ pick: gpt5 });
+    expect(pick("gpt-5")).toEqual({ pick: gpt5 });
+    expect(pick("Claude-Opus-5-5")).toEqual({ pick: current });
+    // A search that leaves one model, as the picker's search finds them.
+    expect(pick("opus")).toEqual({ pick: current });
+  });
+
+  it("is never guessed: several or none are refused, naming them", () => {
+    expect(pick("claude-sonnet-5-5")).toEqual({ problem: expect.stringMatching(/anthropic:claude-sonnet-5-5, openrouter:anthropic\/claude-sonnet-5-5/) });
+    expect(pick("claude")).toEqual({ problem: expect.stringMatching(/^3 models match "claude"/) });
+    expect(pick("gemini")).toEqual({ problem: expect.stringMatching(/No model here matches "gemini"/) });
+    expect(pick("ollama:llama3:8b")).toEqual({ problem: expect.stringMatching(/isn't available/) });
+  });
+
+  it("refuses Hermes's flags, which only its own command line has", () => {
+    for (const arg of ["gpt-5 --global", "--provider openrouter gpt-5", "reset"]) expect(pick(arg)).toEqual({ problem: expect.stringMatching(/switches this chat's model only/) });
+    expect(modelFromArg(undefined, "gpt-5", current)).toEqual({ problem: expect.stringMatching(/hasn't listed its models yet/) });
+  });
+
+  it("says which model a chat runs on", () => {
+    expect(describePick(current, catalog)).toBe("claude-opus-5-5 (Anthropic) · reasoning High · fast mode");
+    expect(describePick({ provider: "openrouter", model: "openai/gpt-5" }, catalog)).toBe("gpt-5 (OpenRouter)");
+    expect(describePick(undefined, catalog)).toBe("the profile's default model");
   });
 });

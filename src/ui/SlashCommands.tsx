@@ -5,7 +5,8 @@
 // above them, to name one (mentionPicker.ts).
 import { type KeyboardEvent, type ReactNode, type RefObject, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Link2, X } from "lucide-react";
-import { COMMANDS, argProblem, completion, matchCommands, menuQuery, typedCommand, type CommandDef } from "../hermes/commands";
+import { argProblem, commandSet, completion, type CommandDef, type CommandSet } from "../hermes/commands";
+import { pickerRows, shortName, type ModelCatalog, type ModelPick } from "../hermes/models";
 import { dollarQuery, matchSkills, skillRun, type SkillCommand, type SkillCommands, type SkillRun } from "../hermes/skillCommands";
 import { atQuery, matchChats, type ReferableChat } from "../hermes/chatReferences";
 import { completeMention, matchBots } from "../hermes/mentionPicker";
@@ -23,7 +24,12 @@ import type { OfferedCommand } from "../hermes/extensions";
  * command that fails or answers late leaves the words typed.
  */
 export type CommandHost = {
-  why(def: CommandDef): string | undefined;
+  /** The commands "/" reaches here: the app's, and Hermes's from its catalog once read (hermesCommands.ts). */
+  commands?: CommandSet;
+  /** Why `def` can't run now (with `arg`, when the owner is running it), or undefined when it can. */
+  why(def: CommandDef, arg?: string): string | undefined;
+  /** What `/model` suggests: the chat's models, the starred ones, and the one in use. */
+  models?: { catalog?: ModelCatalog; favorites: readonly string[]; current?: ModelPick };
   /** Opens the compatibility guide at Hermes's commands; set only while Hermes is known to lack them. */
   guide?: () => void;
   run(def: CommandDef, arg: string, still: () => boolean): Promise<string | undefined>;
@@ -61,9 +67,13 @@ const matchExtensions = (q: string, offered: readonly OfferedCommand[]) => [
   ...offered.filter((c) => !c.name.startsWith(q) && (c.name.includes(q) || c.description.toLowerCase().split(/\W+/).some((w) => w.startsWith(q)))),
 ];
 
-/** A row of the menu: one of the app's commands, a skill, an extension's command, a bot to name, or a chat to reference. */
+/**
+ * A row of the menu: a command, what follows a command's name (`arg`: a subcommand or a model, `fill` being the whole
+ * text it puts in), a skill, an extension's command, a bot to name, or a chat to reference.
+ */
 type Row =
   | { kind: "command"; def: CommandDef }
+  | { kind: "arg"; def: CommandDef; fill: string; label: string; detail?: string; inUse?: boolean }
   | { kind: "skill"; skill: SkillCommand }
   | { kind: "extension"; cmd: OfferedCommand }
   | { kind: "bot"; bot: NamedBot }
@@ -74,7 +84,27 @@ type Note = { title?: string; text: string; error?: boolean };
 const SCOPE = {
   local: { label: "App", title: "An action of Highwing" },
   server: { label: "Hermes", title: "Hermes runs it for this chat" },
+  hermes: { label: "Hermes", title: "Hermes runs it for this chat, as its own clients do" },
 };
+
+const APP_COMMANDS = commandSet();
+
+/** What follows `def`'s name in the menu for `query`: its subcommands, or the models for `/model`. */
+function argRows(def: CommandDef, query: string, models: CommandHost["models"]): Row[] {
+  if (def.suggests === "models")
+    return pickerRows(models?.catalog, [...(models?.favorites ?? [])], query)
+      .flatMap((s) => s.rows)
+      .filter((r) => r.option.available)
+      .map((r) => ({
+        kind: "arg",
+        def,
+        fill: `/${def.name} ${r.option.provider}:${r.option.model}`,
+        label: shortName(r.option.model),
+        detail: r.option.providerName,
+        inUse: models?.current?.provider === r.option.provider && models.current.model === r.option.model,
+      }));
+  return (def.subcommands ?? []).filter((w) => w.toLowerCase().startsWith(query)).map((w) => ({ kind: "arg", def, fill: `/${def.name} ${w}`, label: w }));
+}
 
 function Scope({ def }: { def: CommandDef }) {
   return (
@@ -83,6 +113,12 @@ function Scope({ def }: { def: CommandDef }) {
     </span>
   );
 }
+
+/** What a name that more than one command, skill or extension starts says, or a prefix of a destructive command. */
+const unclear = (candidates: string[]) =>
+  candidates.length === 1
+    ? `It could be /${candidates[0]}. Type its full name to run it.`
+    : `It could be ${candidates.slice(0, 8).map((c) => `/${c}`).join(", ")}${candidates.length > 8 ? ` and ${candidates.length - 8} more` : ""}. Type more of the name.`;
 
 /** What a message that runs skills says under the composer before it goes. */
 const runsWith = (run: SkillRun) =>
@@ -117,21 +153,50 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
   const box = taRef.current;
   const before = text.slice(0, box && box.value === text ? box.selectionEnd : Math.min(caret ?? text.length, text.length));
   const skills = host?.skills?.offered ?? [];
-  const query = host && closedFor !== text ? menuQuery(text) : undefined;
+  const set = host?.commands ?? APP_COMMANDS;
+  const offeredExtensions = host?.extensions?.offered ?? [];
+  // Every other name "/" reaches here, which a command's prefix never takes (commands.ts).
+  const others = [...skills.map((s) => s.key), ...offeredExtensions.map((c) => c.name)];
+  const typed = host ? set.typed(text, others) : undefined;
+  const menu = host && closedFor !== text ? set.menu(text, others) : undefined;
+  const query = menu?.stage === "name" ? menu.query : undefined;
+  const argMenu = menu?.stage === "arg" ? menu : undefined;
   const dollar = host && closedFor !== text && query === undefined ? dollarQuery(before) : undefined;
   const at = host?.references && closedFor !== text && query === undefined && !dollar ? atQuery(before) : undefined;
   const bots = host?.references?.bots;
+  /**
+   * The "/" menu for a name: a skill or extension command called exactly that first, as Enter would run it; then the
+   * commands (`CommandSet.match`), less those that never run here unless their name starts with what is typed; then the
+   * skills and extension commands that match.
+   */
+  function nameRows(q: string): Row[] {
+    const isKey = (k: string) => set.all.some((c) => c.name === k || c.aliases?.includes(k));
+    // A command of Hermes's own can take a skill's or an extension's name; the command is what runs then.
+    const offered = skills.filter((s) => !isKey(s.key));
+    const extensions = offeredExtensions.filter((c) => !isKey(c.name));
+    const exactSkill = offered.filter((s) => s.key === q).map((skill): Row => ({ kind: "skill", skill }));
+    const exactExt = extensions.filter((c) => c.name === q).map((cmd): Row => ({ kind: "extension", cmd }));
+    const named = (c: CommandDef) => !!q && [c.name, ...(c.aliases ?? [])].some((k) => k.startsWith(q));
+    return [
+      ...exactSkill,
+      ...exactExt,
+      ...set
+        .match(q)
+        .filter((def) => !def.unavailable || named(def))
+        .map((def): Row => ({ kind: "command", def })),
+      ...matchSkills(q, offered.filter((s) => s.key !== q)).map((skill): Row => ({ kind: "skill", skill })),
+      ...matchExtensions(q, extensions.filter((c) => c.name !== q)).map((cmd): Row => ({ kind: "extension", cmd })),
+    ];
+  }
   // The "/" menu: the app's commands, then the skills whose name no command has. The "$" menu: skills alone, and only
   // while one matches, so a price or a shell variable typed in prose opens nothing. The "@" menu likewise, with the bots
   // in a Bot Chat, then the chats.
   const rows: Row[] =
     query !== undefined
-      ? [
-          ...matchCommands(query).map((def): Row => ({ kind: "command", def })),
-          ...matchSkills(query, skills.filter((s) => !COMMANDS.some((c) => c.name === s.key))).map((skill): Row => ({ kind: "skill", skill })),
-          ...matchExtensions(query, host?.extensions?.offered ?? []).map((cmd): Row => ({ kind: "extension", cmd })),
-        ]
-      : dollar
+      ? nameRows(query)
+      : argMenu
+        ? argRows(argMenu.def, argMenu.query, host?.models)
+        : dollar
         ? matchSkills(dollar.query, skills).map((skill): Row => ({ kind: "skill", skill }))
         : at
           ? [
@@ -141,8 +206,11 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
           : [];
   const open = query !== undefined || rows.length > 0;
   const matches = rows;
-  const sel = Math.max(0, Math.min(index, matches.length - 1));
-  useEffect(() => setIndex(0), [query, dollar?.query, dollar?.start, at?.query, at?.start]);
+  // Nothing is chosen yet on an empty argument, so Enter runs what is typed ("/model" says the model in use) while the
+  // arrows or Tab pick from the list.
+  const sel = index < 0 ? -1 : Math.max(0, Math.min(index, matches.length - 1));
+  const noneChosen = !!argMenu && !argMenu.query;
+  useEffect(() => setIndex(noneChosen ? -1 : 0), [query, argMenu?.def, argMenu?.query, noneChosen, dollar?.query, dollar?.start, at?.query, at?.start]);
   // The skills are read again, if they may have changed, as either menu could open.
   const asking = query !== undefined || dollar !== undefined;
   const refresh = host?.refreshSkills;
@@ -150,7 +218,7 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
     if (asking) refresh?.();
   }, [asking, refresh]);
   // How the text runs skills when sent; a command of the app's runs instead when the text is one.
-  const toRun = host?.skills && !typedCommand(text) && !typedExtension(text, host.extensions?.offered ?? []) ? skillRun(text.trim(), host.skills) : undefined;
+  const toRun = host?.skills && !typed && !typedExtension(text, offeredExtensions) ? skillRun(text.trim(), host.skills) : undefined;
   // The chosen command stays in view as the arrows move through a list taller than the menu.
   useEffect(() => {
     if (open) document.getElementById(`${listId}-${sel}`)?.scrollIntoView?.({ block: "nearest" });
@@ -168,6 +236,7 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
     let next: string;
     let to: number | undefined;
     if (row.kind === "command") next = completion(row.def);
+    else if (row.kind === "arg") next = row.fill;
     else if (row.kind === "extension") next = `/${row.cmd.name} `;
     else if (row.kind === "bot") ({ text: next, caret: to } = completeMention(text, at!.start, before.length, row.bot.handle));
     else if (row.kind === "reference") {
@@ -184,7 +253,9 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
       to = dollar.start + name.length + 1;
     }
     onText(next);
-    setClosedFor(next);
+    // A command picked whose name leads on to a list (its subcommands, or the models) keeps the menu open on it.
+    const leadsOn = row.kind === "command" && set.menu(next, others)?.stage === "arg" && argRows(row.def, "", host?.models).length > 0;
+    setClosedFor(leadsOn ? undefined : next);
     setCaret(to);
     // A skill or bot put in mid-message leaves the caret after it, once React has put the new text in, or now when the
     // text was already that.
@@ -223,7 +294,6 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
   const refuse = (name: string, why: string) => setNote({ text: `/${name} can't run: ${why}`, error: true });
 
   const run = (): boolean => {
-    const typed = host && typedCommand(text);
     const ext = host?.extensions && !typed ? typedExtension(text, host.extensions.offered) : undefined;
     if (ext) {
       if (pending) return true;
@@ -234,6 +304,10 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
     }
     if (!typed) return false;
     if (pending) return true;
+    if (typed.kind === "unclear") {
+      refuse(typed.name, unclear(typed.candidates));
+      return true;
+    }
     const { def, arg } = typed;
     if (def.name === "help") {
       onText("");
@@ -241,7 +315,7 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
       setHelp(true);
       return true;
     }
-    const why = host.why(def) ?? argProblem(def, arg);
+    const why = host!.why(def, arg) ?? argProblem(def, arg);
     if (why) refuse(def.name, why);
     else if (def.destructive) setConfirm({ def, arg });
     else void runDef(def, arg);
@@ -273,12 +347,14 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
     if (!open || !matches.length || e.ctrlKey || e.altKey || e.metaKey) return false;
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-      setIndex((sel + (e.key === "ArrowDown" ? 1 : -1) + matches.length) % matches.length);
+      const from = sel < 0 ? (e.key === "ArrowDown" ? -1 : 0) : sel;
+      setIndex((from + (e.key === "ArrowDown" ? 1 : -1) + matches.length) % matches.length);
       return true;
     }
+    if (e.key === "Enter" && sel < 0) return false;
     if ((e.key === "Enter" || e.key === "Tab") && !e.shiftKey) {
       e.preventDefault();
-      accept(matches[sel]);
+      accept(matches[Math.max(sel, 0)]);
       return true;
     }
     return false;
@@ -287,10 +363,13 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
   const inputProps = {
     "aria-autocomplete": "list" as const,
     "aria-controls": open && matches.length ? listId : undefined,
-    "aria-activedescendant": open && matches.length ? `${listId}-${sel}` : undefined,
+    "aria-activedescendant": open && matches.length && sel >= 0 ? `${listId}-${sel}` : undefined,
     onSelect: (e: { currentTarget: HTMLTextAreaElement }) => setCaret(e.currentTarget.selectionEnd),
     onClick: (e: { currentTarget: HTMLTextAreaElement }) => setCaret(e.currentTarget.selectionEnd),
   };
+  // A command reached by an alias or a prefix says which before it runs; a name that could be several says so.
+  const hint =
+    typed?.kind === "command" && typed.via !== "name" ? `Runs /${typed.def.name}.` : typed?.kind === "unclear" && text.trim() ? unclear(typed.candidates) : undefined;
   const firstSkill = matches.findIndex((r) => r.kind === "skill");
   const firstBot = matches.findIndex((r) => r.kind === "bot");
   const firstChat = bots ? matches.findIndex((r) => r.kind === "reference") : -1;
@@ -331,6 +410,11 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
           </button>
         </div>
       )}
+      {hint && !open && !pending && !note && (
+        <div className="skill-note" role="status">
+          {hint}
+        </div>
+      )}
       {toRun && !open && !pending && (
         <div className={`skill-note ${toRun.problem ? "error" : ""}`} role="status">
           {toRun.problem ?? runsWith(toRun)}
@@ -339,14 +423,14 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
       {open && (
         <div className="cmd-menu">
           {matches.length ? (
-            <div role="listbox" id={listId} aria-label={at ? (bots ? words.menu : "Chats") : dollar ? "Skills" : "Commands"}>
+            <div role="listbox" id={listId} aria-label={at ? (bots ? words.menu : "Chats") : dollar ? "Skills" : argMenu ? (argMenu.def.suggests ? "Models" : `/${argMenu.def.name}`) : "Commands"}>
               {matches.map((row, i) => {
                 const why = row.kind === "command" ? host.why(row.def) : row.kind === "extension" ? host.extensions?.why(row.cmd) : undefined;
                 const prev = matches[i - 1];
                 const newExtension = row.kind === "extension" && (prev?.kind !== "extension" || prev.cmd.id !== row.cmd.id);
                 return (
                   <div
-                    key={row.kind === "command" ? `c-${row.def.name}` : row.kind === "skill" ? `s-${row.skill.key}` : row.kind === "reference" ? `h-${row.chat.id}` : row.kind === "bot" ? `b-${row.bot.handle}` : `e-${row.cmd.name}`}
+                    key={row.kind === "command" ? `c-${row.def.name}` : row.kind === "arg" ? `a-${row.fill}` : row.kind === "skill" ? `s-${row.skill.key}` : row.kind === "reference" ? `h-${row.chat.id}` : row.kind === "bot" ? `b-${row.bot.handle}` : `e-${row.cmd.name}`}
                     role="presentation"
                   >
                     {i === firstSkill && !dollar && (
@@ -374,7 +458,13 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
                       onMouseMove={() => i !== sel && setIndex(i)}
                       onClick={() => accept(row)}
                     >
-                      {row.kind === "command" ? (
+                      {row.kind === "arg" ? (
+                        <>
+                          <span className="cmd-name">{row.label}</span>
+                          {row.detail && <span className="cmd-desc">{row.detail}</span>}
+                          {row.inUse && <span className="cmd-scope">In use</span>}
+                        </>
+                      ) : row.kind === "command" ? (
                         <>
                           <span className="cmd-name">/{row.def.name}</span>
                           {row.def.args && <span className="cmd-args">{row.def.args}</span>}
@@ -434,7 +524,9 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
                 : "↑↓ to choose · Enter or Tab to reference it · Esc to close"
               : dollar
                 ? "↑↓ to choose · Enter or Tab to put it in · Esc to close"
-                : "↑↓ to choose · Enter or Tab to fill in · Esc to close · /help lists them all"}
+                : argMenu && noneChosen
+                  ? `↑↓ or Tab to choose · Enter runs /${argMenu.def.name} as typed · Esc to close`
+                  : "↑↓ to choose · Enter or Tab to fill in · Esc to close · /help lists them all"}
           </div>
         </div>
       )}
@@ -442,7 +534,7 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
   );
 
   const typingAt = open && at ? at.start : undefined;
-  return { run, skill: toRun, onKeyDown, inputProps, view, startReference, typingAt };
+  return { run, typed, skill: toRun, onKeyDown, inputProps, view, startReference, typingAt };
 }
 
 /** Every command, with its argument, what it does, where it runs and why it can't run now. */
@@ -451,13 +543,14 @@ function CommandHelp({ host, onClose }: { host: CommandHost; onClose: () => void
     <>
       <h3>{title}</h3>
       <dl>
-        {COMMANDS.filter((c) => c.scope === scope).map((def) => {
+        {(host.commands ?? APP_COMMANDS).all.filter((c) => (scope === "local" ? c.scope === "local" : c.scope !== "local") && (scope !== "hermes" || c.scope === "hermes") && (scope !== "server" || c.scope === "server")).map((def) => {
           const why = host.why(def);
           return (
             <div key={def.name} className={why ? "unavailable" : undefined}>
               <dt>
                 <code>/{def.name}</code>
                 {def.args && <span className="cmd-args">{def.args}</span>}
+                {!!def.aliases?.length && <span className="cmd-args">also {def.aliases.map((a) => `/${a}`).join(", ")}</span>}
               </dt>
               <dd>
                 {def.description}
@@ -478,8 +571,9 @@ function CommandHelp({ host, onClose }: { host: CommandHost; onClose: () => void
         </button>
       </div>
       <p>
-        Type / at the start of a message to pick one. Any other text that starts with /, or words after a command that takes
-        none, is sent as an ordinary message.
+        Type / at the start of a message to pick one, or the start of its name: /mod runs /model when nothing else starts
+        that way. Any other text that starts with /, or words after a command that takes none, is sent as an ordinary
+        message.
       </p>
       {!!host.skills?.offered.length && (
         <p>
@@ -490,6 +584,7 @@ function CommandHelp({ host, onClose }: { host: CommandHost; onClose: () => void
       )}
       {group("local", "In this app")}
       {group("server", "On Hermes, for this chat")}
+      {host.commands && host.commands.all.some((c) => c.scope === "hermes") && group("hermes", "Hermes's own commands")}
       {!!host.extensions?.offered.length && (
         <>
           <h3>From extensions, on this computer</h3>

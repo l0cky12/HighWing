@@ -439,6 +439,17 @@ describe("The @ menu in a Bot Chat", () => {
     expect(server.requests.filter((r) => r.method === "prompt.submit")).toEqual([]);
   });
 
+  it("puts the caret after the space when the pick leaves the words as they were, so Backspace takes the pill and the space", { timeout: 30_000 }, async () => {
+    const { user } = await inAdasBotChat();
+    await user.click(box());
+    await user.keyboard("@bram {ArrowLeft}");
+    expect(menuLines()).toEqual(["# Bots", `BBram@bram${BOTS.bram}`]);
+    await user.keyboard("{Tab}");
+    expect([box().value, box().selectionStart]).toEqual(["@bram ", 6]);
+    await user.keyboard("{Backspace}");
+    expect(box().value).toBe("");
+  });
+
   it("shows the @ being typed as words while the menu is open on it, and as a pill once the word is done", { timeout: 30_000 }, async () => {
     const { user } = await inAdasBotChat();
     await user.click(box());

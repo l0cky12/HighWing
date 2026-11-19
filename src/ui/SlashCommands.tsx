@@ -186,8 +186,10 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
     onText(next);
     setClosedFor(next);
     setCaret(to);
-    // A skill put in mid-message leaves the caret after it, once React has put the new text in.
-    caretTo.current = to === undefined ? undefined : { text: next, at: to };
+    // A skill or bot put in mid-message leaves the caret after it, once React has put the new text in, or now when the
+    // text was already that.
+    if (to !== undefined && next === text) taRef.current?.setSelectionRange(to, to);
+    else caretTo.current = to === undefined ? undefined : { text: next, at: to };
     focusText();
   };
 

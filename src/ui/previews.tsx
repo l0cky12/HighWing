@@ -3,7 +3,7 @@
 // images: read from Hermes's stored copy on the dashboard's machine as data: URLs (sentImages.ts), never from this
 // computer, and by themselves only when this app sent them.
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { CloudOff, Image as ImageIcon, ImageOff, Paperclip, X } from "lucide-react";
+import { CloudOff, Image as ImageIcon, ImageOff, Paperclip, SquareDashedMousePointer, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { staleText, type AnnotationLabel } from "../hermes/annotations";
 import type { Attachment, SentImage, SentImagePath } from "../hermes/model";
@@ -51,6 +51,15 @@ export class Previews {
     for (const path of staged) if (!this.ready.has(path) && !this.reading.has(path)) void this.load(path);
   }
 
+  /** Shows `bytes` for `path` at once: a marked-up image the webview drew itself, so its chip never goes blank. */
+  put(path: string, bytes: Blob) {
+    const was = this.ready.get(path);
+    if (was) this.release(was);
+    this.reading.delete(path);
+    this.ready.set(path, { url: this.urls.createObjectURL(bytes) });
+    this.onChange();
+  }
+
   dispose() {
     this.disposed = true;
     this.sync([]);
@@ -80,8 +89,21 @@ export class Previews {
  * A staged attachment. An image whose preview is read, or still being read, is a square thumbnail with Remove over its
  * corner (ADR 0220). A file, or an image that couldn't be read or shown, is a small chip with a paperclip.
  * `annotation`: where an annotation's image came from, and whether the Preview's page has moved since (ADR 0094).
+ * `onMarkUp`: an image the webview has drawn offers Mark up in its other corner (ADR 0227).
  */
-export function AttachmentChip({ file, preview, annotation, onRemove }: { file: Attachment; preview?: Preview; annotation?: AnnotationLabel; onRemove: () => void }) {
+export function AttachmentChip({
+  file,
+  preview,
+  annotation,
+  onRemove,
+  onMarkUp,
+}: {
+  file: Attachment;
+  preview?: Preview;
+  annotation?: AnnotationLabel;
+  onRemove: () => void;
+  onMarkUp?: () => void;
+}) {
   // The bytes looked like an image but the webview couldn't draw them.
   const [broken, setBroken] = useState(false);
   const url = preview && "url" in preview && !broken ? preview.url : undefined;
@@ -103,6 +125,11 @@ export function AttachmentChip({ file, preview, annotation, onRemove }: { file: 
           <span className="chip-note chip-card-note" aria-label={from}>
             page changed
           </span>
+        )}
+        {url && onMarkUp && (
+          <button type="button" className="chip-card-markup" title="Mark up: draw a box and add a note" aria-label={`Mark up ${file.name}`} onClick={onMarkUp}>
+            <SquareDashedMousePointer size={12} />
+          </button>
         )}
         {remove}
       </span>

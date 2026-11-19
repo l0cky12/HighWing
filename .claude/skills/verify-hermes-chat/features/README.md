@@ -37,6 +37,7 @@ Each feature file starts with an H1 and one paragraph describing the behaviour t
 
 - [Sign in](sign-in.md): first-run setup for a web address connection, a wrong password, and signing in again after a relaunch.
 - [Send a message](send-message.md): open a chat, send, watch the streamed reply, and confirm both messages on the server.
+- [Mark up an image](mark-up.md): paste a screenshot, draw a box on it, add a note, Cancel, and send the marked image.
 - [New chat](new-chat.md): start a chat from the rail, the list panel or Ctrl+N, and see it created on the server and in the list.
 - [New bot](new-bot.md): rewrite a rough persona with AI in place, edit a bot's persona, choose skills and tools, create, and read each back; the partial and narrow cases.
 - [Ask a bot](ask-a-bot.md): in a Bot Chat, `@` and the `@` button list the other bots above the chats, a pick puts `@handle` in as a pill that one Backspace takes out, a chat pick is still a chip, and an ordinary chat lists chats only.

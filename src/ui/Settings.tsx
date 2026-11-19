@@ -1111,7 +1111,8 @@ export function SettingsScreen({
     seen.observe(root, { childList: true, subtree: true, characterData: true });
     return () => seen.disconnect();
   }, [shownTab, searching, sectioned]);
-  useEffect(() => {
+  // Before the links' passive effects. The highlight reads this publication to tell the page's first heading from a later scroll.
+  useLayoutEffect(() => {
     const main = mainRef.current;
     const root = panelRef.current;
     pinned.current = undefined;
@@ -1459,25 +1460,40 @@ function currentJump(): CurrentJump {
 type SubLink = { id: string; label: string; go: () => void } & ({ current: boolean; jump?: undefined } | { current?: undefined; jump: { here: CurrentJump; first: boolean } });
 const noJump: CurrentJump = currentJump();
 
-// A free-spin crosses several headings before the page stops. Writing the `on` class on each one restyles the page
-// mid-coast, so the highlight waits until the heading has stayed put. The accessible current heading does not wait.
 const HIGHLIGHT_SETTLE_MS = 200;
 
-function useSettledHighlight(defer: boolean, current: boolean): boolean {
+function linkCurrent(link: SubLink, at: string | undefined): boolean {
+  if (!link.jump) return link.current;
+  return at === undefined ? link.jump.first : at === link.id;
+}
+
+function useSettledHighlight(defer: boolean, current: boolean, read: () => boolean): boolean {
   const [painted, setPainted] = useState(current);
+  const armed = useRef(false);
+  const readRef = useRef(read);
+  readRef.current = read;
   useEffect(() => {
-    if (!defer || painted === current) return;
+    if (!defer) return;
+    // The store subscription is passive, so this render can still show the previous page after the spy has published.
+    // Stay unarmed until a render shows the spy's heading. Until then the class follows `current`. A later scroll waits.
+    if (!armed.current) {
+      if (readRef.current() !== current) return;
+      armed.current = true;
+      if (painted !== current) setPainted(current);
+      return;
+    }
+    if (painted === current) return;
     const id = window.setTimeout(() => setPainted(current), HIGHLIGHT_SETTLE_MS);
     return () => window.clearTimeout(id);
   }, [defer, current, painted]);
-  return defer ? painted : current;
+  return defer && armed.current ? painted : current;
 }
 
 function SubLinkButton({ link, className, onClick }: { link: SubLink; className?: string; onClick: () => void }) {
   const here = link.jump?.here ?? noJump;
   const at = useSyncExternalStore(here.subscribe, here.get);
-  const current = link.jump ? (at === undefined ? link.jump.first : at === link.id) : link.current;
-  const painted = useSettledHighlight(!!link.jump, current);
+  const current = linkCurrent(link, at);
+  const painted = useSettledHighlight(!!link.jump, current, () => linkCurrent(link, here.get()));
   return (
     <button className={[className, painted && "on"].filter(Boolean).join(" ")} aria-current={current ? (link.jump ? "location" : "page") : undefined} onClick={onClick}>
       {link.label}

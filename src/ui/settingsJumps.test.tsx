@@ -78,7 +78,7 @@ async function appearance() {
       scrollTop = v;
     }, configurable: true },
     clientHeight: { value: VIEW, configurable: true },
-    scrollHeight: { get: () => links().length * STEP + VIEW / 2, configurable: true },
+    scrollHeight: { get: () => document.querySelectorAll(".settings-main section.set-section > .set-head h2").length * STEP + VIEW / 2, configurable: true },
   });
   const scrollTo = (top: number) => act(() => void ((main.scrollTop = top), main.dispatchEvent(new Event("scroll"))));
   const current = () => links().filter((b) => b.getAttribute("aria-current") === "location").map((b) => b.textContent);
@@ -121,6 +121,37 @@ it("marks the heading under the scroll at once, and moves the highlight once tha
       vi.advanceTimersByTime(200);
     });
     expect(highlighted()).toEqual([names[1]]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("highlights the heading already in view when a jump page opens below the top", async () => {
+  vi.useFakeTimers();
+  try {
+    scrollTop = STEP + 10;
+    const { links, scrollTo, current } = await appearance();
+    const names = links().map((b) => b.textContent);
+    const highlighted = () => links().filter((b) => b.classList.contains("on")).map((b) => b.textContent);
+    expect(current()).toEqual([names[1]]);
+    expect(highlighted()).toEqual([names[1]]);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Keyboard Shortcuts" }));
+    const keys = () => within(screen.getByRole("group", { name: "Keyboard Shortcuts: on this page" })).getAllByRole("button");
+    const keyNames = keys().map((b) => b.textContent);
+    const keyOn = () => keys().filter((b) => b.classList.contains("on")).map((b) => b.textContent);
+    const keyAt = () => keys().filter((b) => b.getAttribute("aria-current") === "location").map((b) => b.textContent);
+    expect(keyNames.length).toBeGreaterThan(2);
+    expect(keyAt()).toEqual([keyNames[1]]);
+    expect(keyOn()).toEqual([keyNames[1]]);
+
+    scrollTo(2 * STEP + 10);
+    expect(keyAt()).toEqual([keyNames[2]]);
+    expect(keyOn()).toEqual([keyNames[1]]);
+    await act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    expect(keyOn()).toEqual([keyNames[2]]);
   } finally {
     vi.useRealTimers();
   }

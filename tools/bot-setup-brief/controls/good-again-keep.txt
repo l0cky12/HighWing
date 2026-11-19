@@ -1,5 +1,5 @@
 I'll turn on the weather skill and keep everything else as it is.
 
 ```highwing-bot-setup
-{"v":1,"persona":null,"description":"Plans European trips, stays, day plans and packing lists.","model":null,"color":null,"callOwner":null,"skills":[{"name":"weather","on":true}],"toolsets":[],"mcp":[],"copy":[]}
+{"v":1,"persona":null,"description":null,"model":null,"color":null,"callOwner":null,"skills":[{"name":"weather","on":true}],"toolsets":[],"mcp":[],"copy":[]}
 ```

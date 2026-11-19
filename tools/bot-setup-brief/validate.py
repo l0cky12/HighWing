@@ -10,7 +10,8 @@ Kinds, each for the conversation run.py builds:
   again1      Set up again's first turn: says how the bot is set up now and asks what to change
   again-card  Set up again's block after "Make it blue and turn on the weather skill."
   again-keep  Set up again's block after "Turn on the weather skill." only, for a bot whose persona is too long for the
-              brief and whose colour is one the brief doesn't list: persona and colour must stay null
+              brief, whose description is longer than a block's and whose colour is one the brief doesn't list:
+              persona, description and colour must stay null
 The owner in run.py's conversation is Liam, who never wants the bot to book or pay and wants a check before any email.
 The inventory and the current setup are read from the brief, so a name the brief didn't list fails. The block's shape is
 checked whole before any name is looked up, so a wrong type or an extra key fails on its own.
@@ -67,7 +68,8 @@ def rules_kept(persona):
 
 
 def shape(b, again):
-    """Every key, type and nested key the block format names. Set up again's block may keep the persona or colour (null)."""
+    """Every key, type and nested key the block format names. Set up again's block may keep the persona, description
+    or colour (null)."""
     if not isinstance(b, dict): return ["block is not an object"]
     fails = [f"keys {sorted(set(b) ^ KEYS)}"] if set(b) != KEYS else []
     string = lambda x: isinstance(x, str)
@@ -77,7 +79,8 @@ def shape(b, again):
     want = {
         "v": (lambda x: type(x) is int and x == 1, "1"),
         "persona": (lambda x: (string(x) and bool(x.strip())) or (again and x is None), "a persona" + (" or null" if again else "")),
-        "description": (lambda x: string(x) and 0 < len(x) <= 80 and "\n" not in x, "one line of 1 to 80 characters"),
+        "description": (lambda x: (string(x) and 0 < len(x) <= 80 and "\n" not in x) or (again and x is None),
+                        "one line of 1 to 80 characters" + (" or null" if again else "")),
         "model": (lambda x: x is None or string(x), "a string or null"),
         "color": (lambda x: string(x) or (again and x is None), "a string" + (" or null" if again else "")),
         "callOwner": (lambda x: x is None or string(x), "a string or null"),
@@ -128,6 +131,7 @@ def check_block(reply, kind, inv, cur):
         if not any(i["name"] == "weather" and i["on"] is True for i in b["skills"]): fails.append("weather skill not turned on")
     if kind == "again-keep":
         if b["color"] is not None: fails.append(f"color {b['color']!r} though the owner asked for no colour")
+        if b["description"] is not None: fails.append(f"description {b['description']!r} though the owner asked for no new one")
         if b["model"] is not None: fails.append(f"model {b['model']!r} though the owner asked for no model")
     return fails
 

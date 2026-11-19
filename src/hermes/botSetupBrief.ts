@@ -24,10 +24,10 @@ export type BotSetupCopy = { from: string; skills: string[]; toolsets: string[];
  * One setup block as the brief asks for it. Names only: nothing in it is a command, a URL or a key. `model` null keeps
  * the current model. `callOwner` is what to call the owner, saved to memory at Set it up, never put in the persona.
  */
-type SetupBlock<Persona, Color> = {
+type SetupBlock<Persona, Description, Color> = {
   v: typeof BOT_SETUP_BLOCK_VERSION;
   persona: Persona;
-  description: string;
+  description: Description;
   model: string | null;
   color: Color;
   callOwner: string | null;
@@ -37,14 +37,15 @@ type SetupBlock<Persona, Color> = {
   copy: BotSetupCopy[];
 };
 
-/** A new bot's block: it has nothing to keep, so it always proposes a persona and a colour. */
-export type BotSetupNewBlock = SetupBlock<string, BotSetupColor>;
+/** A new bot's block: it has nothing to keep, so it always proposes a persona, a description and a colour. */
+export type BotSetupNewBlock = SetupBlock<string, string, BotSetupColor>;
 
 /**
- * Set up again's block. `persona` or `color` null keeps what the bot has now, which may be a colour this list doesn't
- * name, or none. `persona` must be null when the brief left the persona out ({@link botSetupPersonaFits}).
+ * Set up again's block. `persona`, `description` or `color` null keeps what the bot has now, which may be a description
+ * longer than a block's, a colour this list doesn't name, or none. `persona` must be null when the brief left the
+ * persona out ({@link botSetupPersonaFits}).
  */
-export type BotSetupAgainBlock = SetupBlock<string | null, BotSetupColor | null>;
+export type BotSetupAgainBlock = SetupBlock<string | null, string | null, BotSetupColor | null>;
 
 /** Each key of a new bot's block and the type the brief writes for it. Its keys are exactly the block's. */
 export const BOT_SETUP_BLOCK_FORMAT = {
@@ -60,10 +61,11 @@ export const BOT_SETUP_BLOCK_FORMAT = {
   copy: '[{"from":string,"skills":[string],"toolsets":[string],"mcp":[string]}]',
 } as const satisfies Record<keyof BotSetupNewBlock, string>;
 
-/** The same for Set up again, where null keeps the persona or the colour. */
+/** The same for Set up again, where null keeps the persona, the description or the colour. */
 export const BOT_SETUP_AGAIN_BLOCK_FORMAT = {
   ...BOT_SETUP_BLOCK_FORMAT,
   persona: "string|null",
+  description: "string|null",
   color: "string|null",
 } as const satisfies Record<keyof BotSetupAgainBlock, string>;
 
@@ -230,7 +232,9 @@ export function botSetupBrief({ id, name, inventory, current }: BotSetupBriefInp
       : "- persona: always null. Your persona is too long for this message, so CURRENT leaves it out and the app keeps it as it is. If the owner asks to change it, say before the block that they can edit it in your settings.";
   const fields = [
     persona,
-    `- description: one line, at most ${BOT_SETUP_DESCRIPTION_MAX} characters.`,
+    again
+      ? `- description: null to keep the current description, or one new line of at most ${BOT_SETUP_DESCRIPTION_MAX} characters when the owner's changes touch what you help with.`
+      : `- description: one line, at most ${BOT_SETUP_DESCRIPTION_MAX} characters.`,
     "- model: null to keep the current model, or a name from INVENTORY.models.",
     again ? "- color: null to keep the current colour, or one of INVENTORY.colors when the owner asks for a new one." : "- color: one of INVENTORY.colors; never null.",
     again

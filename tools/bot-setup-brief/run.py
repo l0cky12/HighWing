@@ -1,6 +1,7 @@
 """Runs the Bot setup brief against the owner's model and scores every reply with validate.py.
 
     python3 tools/bot-setup-brief/run.py <out dir> [--model gpt-6.1-sol] [--effort high] [--jobs 4] [--controls-only]
+                                         [--briefs again,again-kept]
 
 The briefs come from src/hermes/botSetupBrief.ts through write-briefs.mjs, so this tests the text the app sends. First
 it checks the validator: the good-*.txt replies in controls/ must pass, and every other reply there must fail, as must
@@ -9,10 +10,11 @@ that gets one of them wrong proves nothing, and the run stops there. Then, for t
 without (new), it runs 8 single turns (first message, question 3, card, redraw after a change; two of each) and one
 whole interview where each bot turn is the model's own reply to the conversation so far. Then Hermes's first-contact
 note is appended to the brief, as Hermes does on a profile's first turn, for the first message and for Set up again
-(again1, again-card). Last, Set up again on a bot whose persona is too long for the brief and whose colour isn't listed
-(keep: again1, again-keep), where the block must keep both. The model runs through
-`codex exec`, read-only and in an empty folder; stdin is closed, or codex waits on it. Replies, prompts and logs land
-in <out dir>, and the last lines print the score per group.
+(again1, again-card). Last, Set up again on a bot whose persona is too long for the brief, whose description is longer
+than a block's and whose colour isn't listed (keep: again1, again-keep), where the block must keep all three. The model
+runs through `codex exec`, read-only and in an empty folder; stdin is closed, or codex waits on it. Replies, prompts and
+logs land in <out dir>, and the last lines print the score per group. --briefs runs only the turns sent one of the named
+briefs (new-mcp, new, again, again-kept), for a change to one brief's wording.
 """
 import argparse
 import json
@@ -81,6 +83,8 @@ MUTANTS = [
     ("persona written though the brief left it out", "good-again-keep.txt", persona("You are Travel Buddy. Never book or pay for anything." + EMAIL), False),
     ("colour changed though the owner didn't ask", "good-again-keep.txt", lambda b: b.update(color="teal"), False),
     ("colour null on a new bot", "good-card.txt", lambda b: b.update(color=None), False),
+    ("description rewritten though the owner didn't ask", "good-again-keep.txt", lambda b: b.update(description="Plans European trips."), False),
+    ("description null on a new bot", "good-card.txt", lambda b: b.update(description=None), False),
     ("persona null on a new bot", "good-card.txt", lambda b: b.update(persona=None), False),
 ]
 
@@ -148,6 +152,7 @@ def main():
     ap.add_argument("--effort", default="high")
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument("--controls-only", action="store_true")
+    ap.add_argument("--briefs", type=lambda s: set(s.split(",")), default={"new-mcp", "new", "again", "again-kept"})
     args = ap.parse_args()
     out = Path(args.out).resolve()
     args.empty = out / "empty"
@@ -182,8 +187,8 @@ def main():
         jobs.append(("keep", f"keep-card-{i}", "again-kept", "again-keep", convo(briefs["again-kept"], [(KEPT_FIRST, KEPT_ANSWER)])))
 
     with ThreadPoolExecutor(args.jobs) as pool:
-        futures = [pool.submit(chain, f"{b}", b, briefs, out, args) for b in ("new-mcp", "new")]
-        futures += [pool.submit(single, j, briefs, out, args) for j in jobs]
+        futures = [pool.submit(chain, f"{b}", b, briefs, out, args) for b in ("new-mcp", "new") if b in args.briefs]
+        futures += [pool.submit(single, j, briefs, out, args) for j in jobs if j[2] in args.briefs]
         results = [r for f in futures for r in f.result()]
 
     results.sort(key=lambda r: r[1])
@@ -194,7 +199,7 @@ def main():
             print(line)
     for group in ("new-mcp", "new", "note", "keep"):
         rs = [r for r in results if r[0] == group]
-        print(f"{group}: {sum(not r[3] for r in rs)}/{len(rs)}")
+        if rs: print(f"{group}: {sum(not r[3] for r in rs)}/{len(rs)}")
     sys.exit(0 if all(not r[3] for r in results) else 1)
 
 

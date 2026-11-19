@@ -8,6 +8,7 @@ import {
   BOT_SETUP_BLOCK_KEYS,
   BOT_SETUP_CAPS,
   BOT_SETUP_COLORS,
+  BOT_SETUP_DESCRIPTION_MAX,
   BOT_SETUP_FENCE,
   BOT_SETUP_QUESTIONS,
   botSetupBrief,
@@ -103,7 +104,7 @@ describe("a new bot's brief", () => {
     expect(text).toContain(`then one fenced code block whose info string is ${BOT_SETUP_FENCE}, holding one JSON object:`);
     const sample = formatOf(text);
     expect(Object.keys(sample)).toEqual(BOT_SETUP_BLOCK_KEYS);
-    expect([sample.persona, sample.color]).toEqual(["s", "s"]);
+    expect([sample.persona, sample.description, sample.color]).toEqual(["s", "s", "s"]);
     expect(sample.copy[0]).toEqual({ from: "s", skills: ["s"], toolsets: ["s"], mcp: ["s"] });
     expect(text).toContain("- color: one of INVENTORY.colors; never null.");
     expect(inventoryOf(text).colors).toEqual(BOT_SETUP_COLORS);
@@ -222,7 +223,7 @@ describe("Set up again", () => {
     const text = brief({ current });
     const sample = formatOf(text);
     expect(Object.keys(sample)).toEqual(BOT_SETUP_BLOCK_KEYS);
-    expect([sample.persona, sample.color]).toEqual([null, null]);
+    expect([sample.persona, sample.description, sample.color]).toEqual([null, null, null]);
     expect(Object.keys(BOT_SETUP_AGAIN_BLOCK_FORMAT)).toEqual(Object.keys(BOT_SETUP_BLOCK_FORMAT));
     expect(text).toContain("- color: null to keep the current colour, or one of INVENTORY.colors when the owner asks for a new one.");
     expect(text).not.toContain("never null");
@@ -231,16 +232,31 @@ describe("Set up again", () => {
     expect(currentOf(brief({ current: { ...current, color: null } })).color).toBeNull();
   });
 
-  it("types null persona and colour as keeping them, on Set up again's block only", () => {
-    const base = { v: 1 as const, description: "Plans trips.", model: null, callOwner: null, skills: [], toolsets: [], mcp: [], copy: [] };
-    const kept: BotSetupAgainBlock = { ...base, persona: null, color: null };
+  it("can keep a description longer than a block's, so a change to something else doesn't force a new one", () => {
+    const description = `Plans European trips by train and plane, ${"and more ".repeat(6)}finds stays and packs.`;
+    expect(description.length).toBeGreaterThan(BOT_SETUP_DESCRIPTION_MAX);
+    expect(description.length).toBeLessThanOrEqual(BOT_SETUP_CAPS.description);
+    const text = brief({ current: { ...current, description } });
+    expect(currentOf(text).description).toBe(description);
+    expect(text).toContain(
+      "- description: null to keep the current description, or one new line of at most 80 characters when the owner's changes touch what you help with.",
+    );
+    expect(text).not.toContain("- description: one line, at most 80 characters.");
+  });
+
+  it("types null persona, description and colour as keeping them, on Set up again's block only", () => {
+    const base = { v: 1 as const, model: null, callOwner: null, skills: [], toolsets: [], mcp: [], copy: [] };
+    const set = { persona: "You are Travel Buddy.", description: "Plans trips.", color: "blue" as const };
+    const kept: BotSetupAgainBlock = { ...base, persona: null, description: null, color: null };
     // @ts-expect-error A new bot's block always names a colour.
-    const noColor: BotSetupNewBlock = { ...base, persona: "You are Travel Buddy.", color: null };
+    const noColor: BotSetupNewBlock = { ...base, ...set, color: null };
     // @ts-expect-error A new bot's block always has a persona.
-    const noPersona: BotSetupNewBlock = { ...base, persona: null, color: "blue" };
+    const noPersona: BotSetupNewBlock = { ...base, ...set, persona: null };
+    // @ts-expect-error A new bot's block always has a description.
+    const noDescription: BotSetupNewBlock = { ...base, ...set, description: null };
     // @ts-expect-error Set up again names a listed colour or keeps the current one.
-    const hex: BotSetupAgainBlock = { ...base, persona: null, color: "#14b8a6" };
-    expect([kept, noColor, noPersona, hex].map((b) => b.color)).toEqual([null, null, "blue", "#14b8a6"]);
+    const hex: BotSetupAgainBlock = { ...base, ...set, color: "#14b8a6" };
+    expect([kept, noColor, noPersona, noDescription, hex].map((b) => b.color)).toEqual([null, null, "blue", "blue", "#14b8a6"]);
   });
 
   it("tells the bot what it has now, as data before the inventory", () => {

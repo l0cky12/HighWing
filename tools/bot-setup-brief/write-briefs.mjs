@@ -2,11 +2,12 @@
 // for "Travel Buddy" on a server like the owner's. Node strips the module's types, so this runs with no build step:
 //     node tools/bot-setup-brief/write-briefs.mjs <out dir>
 // new-mcp.txt offers MCP servers (from PR 9 on), new.txt offers none (what New bot sends until then), again.txt is Set
-// up again on the bot the interview made. again-kept.txt is Set up again on a bot whose persona is too long for the brief
-// and whose colour is one the brief doesn't list, so the block must keep both.
+// up again on the bot the interview made. again-kept.txt is Set up again on a bot whose persona is too long for the brief,
+// whose description is longer than a block's and whose colour is one the brief doesn't list, so the block must keep all
+// three.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { BOT_SETUP_CAPS, botSetupBrief } from "../../src/hermes/botSetupBrief.ts";
+import { BOT_SETUP_CAPS, BOT_SETUP_DESCRIPTION_MAX, botSetupBrief } from "../../src/hermes/botSetupBrief.ts";
 
 const bots = [
   { name: "Research Assistant", description: "Finds and summarises papers.", skills: ["deep-research", "arxiv", "pdf-tools"], toolsetsOn: ["web", "browser", "file"], mcp: ["brave-search"] },
@@ -37,6 +38,9 @@ write("new-mcp.txt", { inventory: { ...inventory, mcpCatalog } });
 write("new.txt", { inventory });
 write("again.txt", { inventory, current });
 const rules = Array.from({ length: 400 }, (_, i) => `Rule ${i + 1}: prefer trains to flights under ${i + 3} hours.`).join(" ");
-const kept = { ...current, persona: `${current.persona} ${rules}`, color: "#14b8a6" };
+const description = "Plans European trips by train and plane, finds hotels and stays, and writes day plans and packing lists.";
+const kept = { ...current, persona: `${current.persona} ${rules}`, description, color: "#14b8a6" };
 if (kept.persona.length <= BOT_SETUP_CAPS.persona) throw new Error("again-kept's persona must be over the cap");
+if (description.length <= BOT_SETUP_DESCRIPTION_MAX || description.length > BOT_SETUP_CAPS.description)
+  throw new Error("again-kept's description must be longer than a block's and short enough for CURRENT to show whole");
 write("again-kept.txt", { inventory, current: kept });

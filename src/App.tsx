@@ -63,7 +63,7 @@ import { handoffs as handoffsOf, nextHandoffChange, outstandingIds, type Handoff
 import { ChatPane, TeammatesContext, type Comparing, type FollowUpHost, type JumpTarget, type Teammates } from "./ui/ChatPane";
 import type { AskHost } from "./ui/AskCard";
 import { askedIn } from "./hermes/asks";
-import { withPicks } from "./hermes/mentionPicker";
+import { withPicks, withoutPick } from "./hermes/mentionPicker";
 import type { ChatPin } from "./ui/ChatMenu";
 import { BranchDialog, BranchedFrom } from "./ui/Branch";
 import { MembershipDialog, MembershipStatus, needsOwner as membershipNeedsOwner } from "./ui/MembershipSync";
@@ -4269,7 +4269,8 @@ function ChatView({
   useEffect(() => {
     if (autoSend === undefined || chatId !== null) return;
     onAutoSent();
-    const text = savedDrafts.get(shownDraft).trim();
+    // The draft can hold a pill the composer picked: its mark goes no further than the composer (ADR 0234).
+    const text = withoutPick(savedDrafts.get(shownDraft)).trim();
     if (text) void send(text, []);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- send once per auto-send request; `send` and `onAutoSent` are new functions each render and would send again on every render
   }, [autoSend]);

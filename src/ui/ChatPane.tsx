@@ -2425,11 +2425,12 @@ function Composer({
   const self = ask?.self;
   const rule = ask?.rule ?? "none";
   const naming = !!self && !!bots && askTargets(text, bots, rule).length > 0;
+  const comparing = !!compare;
   useEffect(() => {
     if (!self || !references) return;
     if (naming) references.desk.offer(draftKey, self);
-    else references.desk.withdraw(draftKey);
-  }, [naming, self, references, draftKey]);
+    else references.desk.withdraw(draftKey, !comparing);
+  }, [naming, comparing, self, references, draftKey]);
   const pills = useMemo<ComposerMark[]>(() => {
     const named = mentionsFor(text, bots ?? [], rule).filter((m) => m.start !== slash.typingAt && !marks.some((k) => m.start < k.end && m.end > k.start));
     return named.length ? [...marks, ...named.map((m) => ({ ...m, kind: "bot" as const }))].sort((a, b) => a.start - b.start) : marks;

@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { ArrowUp, GripVertical, ListOrdered, Paperclip, Pause, Pencil, Play, Trash2 } from "lucide-react";
 import { type Attachment, type Chat, type ChatQueue, type ConnectionStatus, type Queued, type Rush, type SendNowRoute, isOutgoing, isWaiting, sendNowRoute } from "../hermes/model";
+import { withoutPick } from "../hermes/mentionPicker";
 import { composing, slotAt } from "./bits";
 import { useSpellCheck } from "./SpellCheckSettings";
 
@@ -221,7 +222,8 @@ function QueueRow({
   };
   const save = () => {
     if (editing === undefined) return;
-    if (!api.edit(item.id, editing.trim())) setGone(true);
+    // A pill pasted from the composer keeps its pick mark, which goes no further than the composer (ADR 0234).
+    if (!api.edit(item.id, withoutPick(editing).trim())) setGone(true);
     close();
   };
 

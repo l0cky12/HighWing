@@ -490,5 +490,35 @@ describe("An ordinary chat in Compare, in the app", { timeout: 30_000 }, () => {
     expect(new Set(submits(server).map((r) => r.params.session_id)).size).toBe(2);
     expect(card()).toBeNull();
   });
+  it("keeps this chat's chip removed after Compare ends, so the ask goes without the summary the owner took out", async () => {
+    const { server, hermes, user } = await inOrdinaryChat();
+    await user.click(box());
+    await user.keyboard("@qu{Tab}what do you think?");
+    await waitFor(() => expect(backupChip("summary ready")).toBeTruthy());
+    await user.click(screen.getByRole("button", { name: "Remove the reference to Nightly backup" }));
+    await compare(user, hermes);
+    await user.click(screen.getAllByRole("button", { name: "Stop comparing" })[0]);
+    await settle(hermes);
+    await act(async () => void (await new Promise((r) => setTimeout(r, 50))));
+    expect(backupChip("summary ready")).toBeNull();
+    await user.click(box());
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(submits(server)).toHaveLength(1));
+    expect(submits(server)[0].params.profile).toBe("quill");
+    expect(String(submits(server)[0].params.text)).not.toContain("[Referenced chat:");
+  });
+
+  it("offers no Edit on a failed ask while comparing, since the composer's words would go to both chats", async () => {
+    const { server, hermes, user } = await inOrdinaryChat((s) => void (s.rejectPrompt = { code: 4010, message: "quill's Bot Chat is closed" }));
+    await user.click(box());
+    await user.keyboard("@qu{Tab}what do you think?");
+    await waitFor(() => expect(backupChip("summary ready")).toBeTruthy());
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(line("quill")?.dataset.state).toBe("failed"));
+    expect(within(card()!).queryByRole("button", { name: "Edit" })).toBeTruthy();
+    server.rejectPrompt = undefined;
+    await compare(user, hermes);
+    expect(within(card()!).queryByRole("button", { name: "Edit" })).toBeNull();
+  });
 });
 

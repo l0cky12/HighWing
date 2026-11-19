@@ -101,7 +101,8 @@ function TargetLine({ ask, t, host }: { ask: Ask; t: AskTarget; host: AskHost })
             <button className="btn" onClick={() => host.dismiss(ask.id, t.profile)}>
               {l.dismiss}
             </button>
-            {t.state === "failed" && (
+            {/* In Compare nothing the composer sends asks, so Edit there would turn the failed ask into a message to both chats. */}
+            {t.state === "failed" && host.rule !== "none" && (
               <button className="btn" onClick={() => host.edit(ask.id)}>
                 {l.edit}
               </button>

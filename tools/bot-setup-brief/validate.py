@@ -41,22 +41,31 @@ CONSENT = r"\b(?:check|ask|confirm|approv|permission)\w*"
 STOP = r"(?:check|ask|confirm|approv|permission|but|then|yet|however|without|unless)"
 
 
+def clauses(sentence):
+    """A sentence's clauses: "Never pay, but you may pay when asked" forbids in one and permits in the other."""
+    return re.split(r",|;|:|\s(?=(?:but|however|yet|though|although)\b)", sentence, flags=re.I)
+
+
 def forbids(sentences, verb):
-    """The persona forbids `verb` outright: a sentence negates it, and none permits it or adds an exception."""
+    """The persona forbids `verb` outright: a sentence negates it, none adds an exception, and no clause permits it."""
+    negation = rf"{NEG}\s+(?:(?!{STOP})\S+\s+){{0,4}}?{verb}"
     hits = [s for s in sentences if re.search(rf"\b{verb}", s, re.I)]
-    negated = [s for s in hits if re.search(rf"{NEG}\s+(?:(?!{STOP})\S+\s+){{0,4}}?{verb}", s, re.I)]
+    negated = [s for s in hits if re.search(negation, s, re.I)]
     excepted = [s for s in negated if re.search(r"\b(?:without|unless|until|except)\b", s, re.I)]
-    permits = [s for s in hits if s not in negated and (re.match(rf"\W*{verb}", s, re.I)
-               or re.search(rf"\b(?:may|can|could|should|free to|allowed to|go ahead and)\s+(?:\S+\s+){{0,2}}?{verb}", s, re.I))]
+    permits = [c for s in hits for c in clauses(s) if not re.search(negation, c, re.I) and (re.match(rf"\W*{verb}", c.strip(), re.I)
+               or re.search(rf"\b(?:may|can|could|should|free to|allowed to|go ahead and)\s+(?:\S+\s+){{0,2}}?{verb}", c, re.I))]
     return bool(negated) and not excepted and not permits
 
 
 def checks_before_email(sentences):
-    """A sentence asks for the owner's say before an email, and none waives it ("never ask before emailing")."""
+    """A sentence asks for the owner's say before an email is sent, and none waives it ("never ask before emailing") or
+    asks only after ("ask for approval after emailing")."""
     hits = [s for s in sentences if re.search(r"\be-?mail", s, re.I)]
     waived = [s for s in hits if re.search(rf"\b(?:never|not|don't|do not|no need to|needn't)\s+(?:(?!e-?mail|without)\S+\s+){{0,3}}?{CONSENT}", s, re.I)
-              or (re.search(rf"\bwithout\s+(?:\S+\s+){{0,3}}?{CONSENT}", s, re.I) and not re.search(NEG, s, re.I))]
-    return any(s not in waived and re.search(CONSENT, s, re.I) for s in hits) and not waived
+              or (re.search(rf"\bwithout\s+(?:\S+\s+){{0,3}}?{CONSENT}", s, re.I) and not re.search(NEG, s, re.I))
+              or re.search(r"\bafter\b", s, re.I)]
+    before = r"\b(?:before|first|prior)\b|\bwithout\b"
+    return any(s not in waived and re.search(CONSENT, s, re.I) and re.search(before, s, re.I) for s in hits) and not waived
 
 
 def rules_kept(persona):

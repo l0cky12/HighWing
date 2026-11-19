@@ -105,6 +105,23 @@ describe("creating a Bot Chat", () => {
     expect(methods()).toEqual(["session.list", "session.create", "session.title", "session.list"]);
   });
 
+  it("seeds a new chat with hidden rows, and drops a seeded one that lost the title", async () => {
+    const made = rpcOf({ "session.list": listed(), "session.create": { session_id: "rt-1", stored_session_id: "mine" }, "session.title": { title: BOT_CHAT_TITLE } });
+    const dropped: string[] = [];
+    const discard = (profile: string, session: { storedId: string }) => void dropped.push(`${profile} ${session.storedId}`);
+    expect(await new BotChats(made.rpc, () => legacyOver(made.rpc), "gui", discard).open("ops", "Ops", false, ["Brief"])).toEqual({ registryId: "mine", openId: "mine", created: true });
+    expect(made.calls.find((c) => c.method === "session.create")?.params.messages).toEqual([{ role: "user", content: "Brief", display_kind: "hidden" }]);
+    expect(dropped).toEqual([]);
+
+    const lost = rpcOf({
+      "session.list": [listed(), listed({ id: "theirs", resolved_id: "theirs", title: BOT_CHAT_TITLE })],
+      "session.create": { session_id: "rt-1", stored_session_id: "mine" },
+      "session.title": rpcError(4022, "Title 'Bot Chat' is already in use by session theirs"),
+    });
+    expect(await new BotChats(lost.rpc, () => legacyOver(lost.rpc), "gui", discard).open("ops", "Ops", false, ["Brief"])).toMatchObject({ openId: "theirs", created: false });
+    expect(dropped).toEqual(["ops mine"]);
+  });
+
   it("says so when Hermes didn't name the new chat for another reason, and doesn't claim it", async () => {
     const { rpc } = rpcOf({
       "session.list": listed(),

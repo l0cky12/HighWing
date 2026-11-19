@@ -53,7 +53,20 @@ import { readBack, sendImport, type PlannedChat } from "./importTranscripts";
 import { memoryApi, type MemoryApi } from "./memory";
 import { MemoryProvidersApi } from "./memoryProviders";
 import { SkillsApi } from "./skills";
-import { CapabilityStore, CapabilityUnsupportedError, PROBE_NAME, RouteMissingError, checkpointsSettingOf, failureOf, isNoRoute, sharesChats, specOf, type CapabilityId, type ServerFacts } from "./capabilities";
+import {
+  CapabilityStore,
+  CapabilityUnsupportedError,
+  PROBE_NAME,
+  RouteMissingError,
+  checkpointsSettingOf,
+  failureOf,
+  isNoRoute,
+  predatesBotSetup,
+  sharesChats,
+  specOf,
+  type CapabilityId,
+  type ServerFacts,
+} from "./capabilities";
 import { parseCheckpointList, type RelPath } from "./fileChanges";
 import type { Restored, RollbackIO } from "./fileUndo";
 import { ConnectionLostError, FILE_MARK, echoesInflight, LIMITS, LegacyProtocol, PromptUnconfirmedError, ProtocolMismatchError, RpcError, negotiate, type Admitted, type AnswerOutcome, type BranchAnswer, type GoingOut, type Inbound, type PlainMethod, type Port, type RpcFrame, type ServerRequest, type SessionProtocol } from "./sessionProtocol";
@@ -135,6 +148,8 @@ import {
 import { cannotResend, laterOf, replayBlocked, resendText, replayTarget, splitRefs, turnAt, variantRoot, withRefs, withoutMarkers, type ReplayKind, type ReplayPreview } from "./replay";
 import { errorText, formatBytes, isObj, nonBlankText, nonEmptyText, optionalText } from "./values";
 import { displayMetadata, returnedItem } from "./returned";
+import { botSetupMarkerId } from "./botSetupBrief";
+import { BotSetupStarts, botSetupBegin, lostAnswer, runStart, withSetupLine, type BotSetupRefusal, type BotSetupStart, type StartAsk, type StartIo } from "./botSetupStart";
 
 /**
  * The `source` this app stamps on chats it starts. Legacy `session.create` stores any string as-is, but the gateway
@@ -785,7 +800,11 @@ export class Hermes {
   };
   private protocol: SessionProtocol = new LegacyProtocol(this.port);
   /** Finds and creates Bot Chats, by title every time (bots.ts). */
-  private botChats = new BotChats((method, params) => this.request(method, params), () => this.protocol, APP_SOURCE);
+  private botChats = new BotChats((method, params) => this.request(method, params), () => this.protocol, APP_SOURCE, (profile, made) => {
+    this.track(this.protocol.leave(made.runtimeId).catch(() => {}));
+    this.track(this.fencedDelete(made.storedId, profile).catch(() => {}));
+  });
+  private botSetups = new BotSetupStarts();
   /** The Bot Chats the latest roster named, by profile: registry rows and lineage tips, which search leaves out. */
   private botChatIds = new Map<string, Set<string>>();
   /** See `setVisitHome`. */
@@ -2511,11 +2530,97 @@ export class Hermes {
       throw e;
     }
     const { openId, registryId } = found;
+    this.listBotChat(profile, bot, registryId, openId);
+    this.settleEarlyBotChats(openId);
+    return openId;
+  }
+
+  /** Puts a Bot Chat the title lookup found beside the list, marked as one. Throws when the profile changed meanwhile. */
+  private listBotChat(profile: string, bot: Bot, registryId: string, openId: string) {
     this.botChatIds.set(profile, new Set([...(this.botChatIds.get(profile) ?? []), registryId, openId]));
     if (this.profile !== profile) throw new Error(`Switched to the ${this.profile} profile before ${bot.name}'s Bot Chat opened.`);
     this.placeBotChat(openId, bot);
-    this.settleEarlyBotChats(openId);
-    return openId;
+  }
+
+  /**
+   * Why this Hermes gets no Bot setup (ADR 0231), or undefined where a new bot is interviewed: it says it is older
+   * than 0.23.2, it has no Bot Mode, or a brief seeded on this connection was read back unhidden.
+   */
+  botSetupOff(): BotSetupRefusal | undefined {
+    if (predatesBotSetup(this.capabilities.getSnapshot().facts)) return "tooOld";
+    if (this.capabilities.get("botMode").state === "unsupported") return "noBotMode";
+    return this.capabilities.get("botSetup").state === "unsupported" ? "notHidden" : undefined;
+  }
+
+  /**
+   * Starts Bot setup's interview in the shown profile's Bot Chat for `bot` (ADR 0231), or picks it up where the Bot
+   * Chat's stored rows say it stands: the chat is made with the brief seeded as a hidden row, then a hidden begin turn
+   * starts the bot's first reply. Nothing about a start is kept, so one under way is safe to start again: on every
+   * open, after a lost answer and after a relaunch (`botSetupStart.ts`). `brief`: the brief for a setup id, asked for
+   * only when the Bot Chat is made. `ask` `again`: the owner's Try again, which sends the begin turn once more when no
+   * reply came. Resolves `refused`, with nothing sent, where `botSetupOff` says why. Nothing is written to the profile.
+   */
+  async startBotSetup(bot: Bot, brief: (id: string) => string | Promise<string>, ask: StartAsk = "start"): Promise<BotSetupStart> {
+    const profile = this.profile;
+    const gen = this.generation;
+    if (bot.profile !== profile) throw new Error(`Switch to ${bot.profile} first.`);
+    const off = this.botSetupOff();
+    if (off) return { kind: "refused", reason: off };
+    const isLine = (i: Item, id: string) => i.kind === "returned" && i.setup?.id === id;
+    const io: StartIo = {
+      read: async () => {
+        const found = await this.botChats.find(profile, bot.name, !!bot.botChat);
+        if (!found) return null;
+        const chatId = found.resolvedId;
+        this.listBotChat(profile, bot, found.id, chatId);
+        await this.resume(chatId);
+        const chat = this.snapshot.chats.find((c) => c.id === chatId);
+        const runningBeforeRows = !!chat?.running;
+        const last = chat?.items.at(-1);
+        const rows = await this.storedRows(chatId, profile);
+        return {
+          chatId,
+          running: runningBeforeRows,
+          ...(last?.kind === "error" && last.id !== LOAD_ERROR_ID && { error: last.text }),
+          rows: rows.map((r) => ({ rowId: r.id, role: r.role ?? "", text: storedText(r.content), hidden: r.display_kind === "hidden" })),
+        };
+      },
+      create: async (id) => {
+        const text = await brief(id);
+        if (botSetupMarkerId(text) !== id) throw new Error("The brief doesn't start with this setup's marker, so the Bot Chat wasn't made.");
+        await this.botChats.open(profile, bot.name, !!bot.botChat, [text]);
+      },
+      begin: async (chatId, id) => {
+        if (this.profile !== profile) throw new Error(`Switched to the ${this.profile} profile before ${bot.name}'s setup started.`);
+        const runtimeId = await this.resume(chatId);
+        const was = this.snapshot.chats.find((c) => c.id === chatId);
+        const asBeforeBegin = (c: Chat): Chat => ({ ...c, running: !!was?.running && !!c.running, items: was?.items.some((i) => isLine(i, id)) ? c.items : c.items.filter((i) => !isLine(i, id)) });
+        this.patchChat(chatId, (c) => ({ ...c, running: true, updatedAt: Date.now(), items: withSetupLine(c.items, { id }, nextId(c.items, "w")) }));
+        try {
+          this.noteRows(profile, chatId, [(await this.protocol.submitHidden(runtimeId, profile, botSetupBegin(id))).userRowId]);
+        } catch (e) {
+          const turnedDown = !lostAnswer(e);
+          if (turnedDown && this.profile === profile) this.patchChat(chatId, asBeforeBegin);
+          throw e;
+        }
+      },
+      show: (chatId, line, rowId) => {
+        if (this.profile === profile) this.patchChat(chatId, (c) => ({ ...c, items: withSetupLine(c.items, line, nextId(c.items, "w"), rowId) }));
+      },
+      readBack: (hidden) =>
+        this.capabilities.report(
+          gen,
+          "botSetup",
+          hidden ? "supported" : "unsupported",
+          hidden ? "Hermes stored a seeded brief hidden." : "Hermes stored a seeded brief where the owner sees it, as their own message, so Bot setup is off for this Hermes.",
+        ),
+    };
+    try {
+      return await this.botSetups.start(profile, () => runStart(io, ask));
+    } catch (e) {
+      if (e instanceof BotModeUnsupportedError) return { kind: "refused", reason: "noBotMode" };
+      throw e;
+    }
   }
 
   /**

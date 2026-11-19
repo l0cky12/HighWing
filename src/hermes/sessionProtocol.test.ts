@@ -146,10 +146,12 @@ describe("the seam a session's frames leave by", () => {
       runtimeId: "rt",
       storedId: "s",
     });
-    await legacy.open({ kind: "bot", profile: "p", source: "gui", title: "Bot Chat" });
+    await legacy.open({ kind: "bot", profile: "p", source: "gui", title: "Bot Chat", seeded: [] });
+    await legacy.open({ kind: "bot", profile: "p", source: "gui", title: "Bot Chat", seeded: ["Brief"] });
     expect(await legacy.resume("s", "p")).toMatchObject({ runtimeId: "rt", running: true, inflight: "So far", asking: [{ id: "srq-1" }] });
     await legacy.leave("rt");
     expect(await legacy.submit("rt", { profile: "p", text: "hi", attachments: [], hold: true, context: [] }, () => {})).toEqual({ held: true, userRowId: 7 });
+    expect(await legacy.submitHidden("rt", "p", "begin")).toEqual({ held: true, userRowId: 7 });
     expect(await legacy.stop("rt")).toBe(true);
     await legacy.command("rt", "steer", "a\nb");
     await legacy.configure("rt", "p", "reasoning", "low", { scope: "session" });
@@ -168,9 +170,11 @@ describe("the seam a session's frames leave by", () => {
     expect(sent).toEqual([
       'session.create {"profile":"p","source":"gui","cwd":"/srv","cwd_explicit":true,"messages":[{"role":"user","content":"Be brief","display_kind":"hidden"}],"model":"fake","provider":"custom","reasoning_effort":"low","fast":false}',
       'session.create {"profile":"p","title":"Bot Chat","hidden":true,"follow_profile_config":true,"source":"gui"}',
+      'session.create {"profile":"p","title":"Bot Chat","hidden":true,"follow_profile_config":true,"source":"gui","messages":[{"role":"user","content":"Brief","display_kind":"hidden"}]}',
       'session.resume {"session_id":"s","profile":"p","inline_images":false}',
       'session.close {"session_id":"rt"}',
       'prompt.submit {"session_id":"rt","profile":"p","text":"hi","queued":true}',
+      'prompt.submit {"session_id":"rt","profile":"p","text":"begin","display_kind":"hidden"}',
       'session.interrupt {"session_id":"rt"}',
       'command.dispatch {"name":"steer","arg":"a\\nb","session_id":"rt"}',
       'config.set {"session_id":"rt","profile":"p","key":"reasoning","value":"low","scope":"session"}',

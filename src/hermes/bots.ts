@@ -1,6 +1,6 @@
 import { typedPreview } from "./branch";
 import { errorText, isObj } from "./values";
-import type { PlainMethod, SessionProtocol } from "./sessionProtocol";
+import type { Attached, PlainMethod, SessionProtocol } from "./sessionProtocol";
 import type { Same } from "./fieldMerge";
 import type { ProfileFailure } from "./profiles";
 // Hermes's Bot Mode (ADR 0066, research doc "Bot Mode"). Each bot is a Hermes profile with a persistent identity, and
@@ -303,8 +303,9 @@ export type BotChatOpen = { registryId: string; openId: string; created: boolean
 export type BotRpc = (method: PlainMethod, params: Record<string, unknown>) => Promise<unknown>;
 
 /**
- * Finds and creates Bot Chats over JSON-RPC. `source`: the `source` this app stamps on sessions it starts. No session
- * id is ever kept here: each open looks the chat up by title again.
+ * Finds and creates Bot Chats over JSON-RPC. `source`: the `source` this app stamps on sessions it starts. `discard`:
+ * drops a seeded session that lost the title to another client's, with the rows Hermes stored for it. No session id
+ * is ever kept here: each open looks the chat up by title again.
  */
 export class BotChats {
   /** Creations under way, by profile, so a second click while one runs joins it rather than starting another. */
@@ -314,6 +315,7 @@ export class BotChats {
     private readonly rpc: BotRpc,
     private readonly sessions: () => Pick<SessionProtocol, "open" | "edit">,
     private readonly source: string,
+    private readonly discard: (profile: string, made: Attached) => void = () => {},
   ) {}
 
   /**
@@ -345,22 +347,23 @@ export class BotChats {
    * Opens the profile's Bot Chat: the one the title lookup finds, or, only when there is none, a new one. `expected`:
    * the roster's last report named one (`find`). The new chat is hidden from chat lists, follows the profile's current
    * model, and is titled at once, which stores it; when another client took the title meanwhile, its chat is opened
-   * instead. No message is sent: the owner speaks first.
+   * instead. No message is sent: the owner speaks first. `seeded`: hidden rows a new chat is stored with, Bot setup's
+   * brief (ADR 0231); a chat found, or one another client made meanwhile, gets none of them.
    */
-  open(profile: string, name: string, expected: boolean): Promise<BotChatOpen> {
+  open(profile: string, name: string, expected: boolean, seeded: readonly string[] = []): Promise<BotChatOpen> {
     const flight = this.flights.get(profile);
     if (flight) return flight;
-    const run = this.resolve(profile, name, expected).finally(() => {
+    const run = this.resolve(profile, name, expected, seeded).finally(() => {
       if (this.flights.get(profile) === run) this.flights.delete(profile);
     });
     this.flights.set(profile, run);
     return run;
   }
 
-  private async resolve(profile: string, name: string, expected: boolean): Promise<BotChatOpen> {
+  private async resolve(profile: string, name: string, expected: boolean, seeded: readonly string[]): Promise<BotChatOpen> {
     const found = await this.find(profile, name, expected);
     if (found) return { registryId: found.id, openId: found.resolvedId, created: false };
-    const made = await this.sessions().open({ kind: "bot", profile, source: this.source, title: BOT_CHAT_TITLE });
+    const made = await this.sessions().open({ kind: "bot", profile, source: this.source, title: BOT_CHAT_TITLE, seeded });
     const runtime = trimmedOrEmpty(made.runtimeId);
     const stored = trimmedOrEmpty(made.storedId);
     if (!runtime || !stored) throw new Error(`Hermes didn't say which session it started for ${name}'s Bot Chat.`);
@@ -371,7 +374,8 @@ export class BotChats {
     } catch (e) {
       if (codeOf(e) !== TITLE_IN_USE && !/already in use/i.test(errorText(e))) throw new Error(`Hermes started ${name}'s Bot Chat but didn't name it: ${errorText(e)}`);
       // Another client made it between the lookup and now. Open theirs; the session started here holds nothing, and
-      // Hermes prunes it.
+      // Hermes prunes it. A seeded one is stored at once (`_seed_row`, `tui_gateway/methods_session.py` at `ae2a81cc`).
+      if (seeded.length) this.discard(profile, made);
       const winner = await this.find(profile, name, true);
       return { registryId: winner!.id, openId: winner!.resolvedId, created: false };
     }

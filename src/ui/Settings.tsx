@@ -1091,9 +1091,6 @@ export function SettingsScreen({
   const sections = searching ? undefined : sectionsOf(shownTab);
   const section = sections?.items.find((i) => i.id === sections.selected);
 
-  // A page without sections of its own lists its headings under it in the tree, to jump to; the one at the top of the
-  // view is current (scroll-spy). A jump link clicked stays current until any scroll after the jump's own has settled
-  // (a wheel, a key, a scrollbar drag), and at the end of the scroll the last section is current.
   const mainRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [jumps, setJumps] = useState<string[]>([]);
@@ -1118,14 +1115,9 @@ export function SettingsScreen({
     const root = panelRef.current;
     pinned.current = undefined;
     if (!main || !root || jumps.length < 2) return here.set(undefined);
-    const spy = () => {
-      const pin = pinned.current;
-      if (pin && Date.now() < pin.settling) {
-        // The jump's own scroll: it settles once 150 ms pass without one.
-        pin.settling = Date.now() + 150;
-        return here.set(pin.name);
-      }
-      pinned.current = undefined;
+    let resting: ReturnType<typeof setTimeout> | undefined;
+    const place = () => {
+      if (pinned.current) return;
       const secs = jumpSections(root);
       if (!secs.length) return;
       const top = main.getBoundingClientRect().top + 24;
@@ -1134,14 +1126,28 @@ export function SettingsScreen({
       if (main.scrollTop > 0 && main.scrollTop + main.clientHeight >= main.scrollHeight - 2) cur = secs[secs.length - 1];
       here.set(headingOf(cur));
     };
-    spy();
+    const spy = () => {
+      const pin = pinned.current;
+      if (pin && Date.now() < pin.settling) {
+        pin.settling = Date.now() + SCROLL_REST_MS;
+        return here.set(pin.name);
+      }
+      pinned.current = undefined;
+      // Restyling a link while WebKit coasts drops frames (#127).
+      clearTimeout(resting);
+      resting = setTimeout(place, SCROLL_REST_MS);
+    };
+    place();
     main.addEventListener("scroll", spy, { passive: true });
-    return () => main.removeEventListener("scroll", spy);
+    return () => {
+      main.removeEventListener("scroll", spy);
+      clearTimeout(resting);
+    };
   }, [jumps, here]);
   const jump = (name: string) => {
     const s = panelRef.current && jumpSections(panelRef.current).find((x) => headingOf(x) === name);
     if (!s) return;
-    pinned.current = { name, settling: Date.now() + 150 };
+    pinned.current = { name, settling: Date.now() + SCROLL_REST_MS };
     here.set(name);
     s.scrollIntoView?.({ block: "start" });
   };
@@ -1437,6 +1443,8 @@ export function SettingsScreen({
     </SettingsSearching.Provider>
   );
 }
+
+const SCROLL_REST_MS = 150;
 
 /** Which jump link is current. Only the links subscribe, so a scroll renders them again and not the page. */
 type CurrentJump = { get: () => string | undefined; set: (name: string | undefined) => void; subscribe: (changed: () => void) => () => void };

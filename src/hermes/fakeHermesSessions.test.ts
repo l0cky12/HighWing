@@ -44,19 +44,19 @@ describe("a hidden session", () => {
 
   it("is born hidden under its title once session.title stores it, and that title is then taken", async () => {
     const { server, call } = await connected();
-    const made = (await call("session.create", { title: "Bot Thread: VLAN plan", hidden: true })).result!;
+    const made = (await call("session.create", { title: "VLAN plan", hidden: true })).result!;
     expect(server.sessions.some((s) => s.id === made.stored_session_id)).toBe(false);
-    expect((await call("session.title", { session_id: made.session_id, title: "Bot Thread: VLAN plan" })).result).toEqual({ title: "Bot Thread: VLAN plan", pending: false });
-    expect(server.sessions.find((s) => s.id === made.stored_session_id)).toMatchObject({ title: "Bot Thread: VLAN plan", hidden: true, message_count: 0 });
-    const second = (await call("session.create", { title: "Bot Thread: VLAN plan", hidden: true })).result!;
-    expect((await call("session.title", { session_id: second.session_id, title: "Bot Thread: VLAN plan" })).error).toMatchObject({ code: 4022, message: expect.stringContaining("already in use") });
+    expect((await call("session.title", { session_id: made.session_id, title: "VLAN plan" })).result).toEqual({ title: "VLAN plan", pending: false });
+    expect(server.sessions.find((s) => s.id === made.stored_session_id)).toMatchObject({ title: "VLAN plan", hidden: true, message_count: 0 });
+    const second = (await call("session.create", { title: "VLAN plan", hidden: true })).result!;
+    expect((await call("session.title", { session_id: second.session_id, title: "VLAN plan" })).error).toMatchObject({ code: 4022, message: expect.stringContaining("already in use") });
   });
 
   it("keeps the title it was created with when its first message stores it", async () => {
     const { server, call } = await connected();
-    const made = (await call("session.create", { title: "Bot Thread: VLAN plan", hidden: true })).result!;
+    const made = (await call("session.create", { title: "VLAN plan", hidden: true })).result!;
     await call("prompt.submit", { session_id: made.session_id, text: "Start with the lab" });
-    expect(server.sessions.find((s) => s.id === made.stored_session_id)).toMatchObject({ title: "Bot Thread: VLAN plan", hidden: true });
+    expect(server.sessions.find((s) => s.id === made.stored_session_id)).toMatchObject({ title: "VLAN plan", hidden: true });
   });
 });
 
@@ -67,18 +67,18 @@ describe("session.branch", () => {
   it("names the branch as asked, as a child of its parent, and answers a repeated key with the same branch", async () => {
     const { server, call } = await connected();
     const parent = await resumed(call, "bot");
-    const params = { session_id: parent, count: 1, name: "Bot Thread: VLAN plan", idempotency_key: "k1" };
+    const params = { session_id: parent, count: 1, name: "VLAN plan", idempotency_key: "k1" };
     const first = (await call("session.branch", params)).result!;
-    expect(first).toMatchObject({ title: "Bot Thread: VLAN plan", parent: "bot", message_count: 1 });
-    expect(server.sessions.find((s) => s.id === first.stored_session_id)).toMatchObject({ parent_session_id: "bot", title: "Bot Thread: VLAN plan" });
+    expect(first).toMatchObject({ title: "VLAN plan", parent: "bot", message_count: 1 });
+    expect(server.sessions.find((s) => s.id === first.stored_session_id)).toMatchObject({ parent_session_id: "bot", title: "VLAN plan" });
     expect((await call("session.branch", params)).result).toMatchObject({ stored_session_id: first.stored_session_id, session_id: first.session_id });
-    expect(server.sessions.filter((s) => s.title === "Bot Thread: VLAN plan")).toHaveLength(1);
+    expect(server.sessions.filter((s) => s.title === "VLAN plan")).toHaveLength(1);
   });
 
   it("refuses a name another session of the profile holds, and stores nothing", async () => {
-    const { server, call } = await connected((s) => s.seedThread("default", "VLAN plan"));
+    const { server, call } = await connected((s) => s.sessions.push(row("vlan", 2 / 24, { title: "VLAN plan", hidden: true })));
     const before = server.sessions.length;
-    const answer = await call("session.branch", { session_id: await resumed(call, "bot"), name: "Bot Thread: VLAN plan" });
+    const answer = await call("session.branch", { session_id: await resumed(call, "bot"), name: "VLAN plan" });
     expect(answer.error).toMatchObject({ code: 5008, message: expect.stringContaining("already in use") });
     expect(server.sessions).toHaveLength(before);
   });
@@ -89,30 +89,29 @@ describe("session.branch", () => {
       s.transcripts["scribe-bot"] = [{ role: "user", text: "Draft the notes" }];
       s.profileModel.scribe = { model: "gpt-5", provider: "openai", reasoning_effort: "high", fast: false };
     });
-    const branch = (await call("session.branch", { session_id: await resumed(call, "scribe-bot", "scribe"), name: "Bot Thread: Notes" })).result!;
+    const branch = (await call("session.branch", { session_id: await resumed(call, "scribe-bot", "scribe"), name: "Notes" })).result!;
     expect(branch.info).toMatchObject({ model: "gpt-5", provider: "openai" });
     expect(server.otherProfiles.scribe.some((s) => s.id === branch.stored_session_id)).toBe(true);
-    expect((await call("session.title", { session_id: branch.session_id, title: "Bot Thread: Notes 2" })).result).toMatchObject({ title: "Bot Thread: Notes 2" });
-    expect(server.otherProfiles.scribe.find((s) => s.id === branch.stored_session_id)!.title).toBe("Bot Thread: Notes 2");
+    expect((await call("session.title", { session_id: branch.session_id, title: "Notes 2" })).result).toMatchObject({ title: "Notes 2" });
+    expect(server.otherProfiles.scribe.find((s) => s.id === branch.stored_session_id)!.title).toBe("Notes 2");
   });
 });
 
 describe("session.list", () => {
   it("lists hidden rows only when asked, the latest activity first, and no more than the limit", async () => {
     const { listed } = await connected((s) => {
-      s.seedThread("default", "Backups", { hours: 30 });
-      s.seedThread("default", "VLAN plan", { hours: 2 });
+      s.sessions.push(row("backups", 30 / 24, { title: "Backups", hidden: true }), row("vlan", 2 / 24, { title: "VLAN plan", hidden: true }));
     });
     expect(await listed()).toEqual(["side"]);
-    expect(await listed({ include_hidden: true })).toEqual(["thread-default-3", "side", "thread-default-2", "bot"]);
-    expect(await listed({ include_hidden: true, limit: 2 })).toEqual(["thread-default-3", "side"]);
+    expect(await listed({ include_hidden: true })).toEqual(["vlan", "side", "backups", "bot"]);
+    expect(await listed({ include_hidden: true, limit: 2 })).toEqual(["vlan", "side"]);
   });
 
   it("answers an exact title with its row and the lineage's tip, and nothing for an archived one", async () => {
-    const { server, call } = await connected((s) => s.seedThread("default", "VLAN plan"));
-    const lookup = async () => (await call("session.list", { title: "Bot Thread: VLAN plan", include_hidden: true })).result!.sessions;
-    expect(await lookup()).toMatchObject([{ id: "thread-default-2", resolved_id: "thread-default-2", title: "Bot Thread: VLAN plan" }]);
-    server.sessions.find((s) => s.id === "thread-default-2")!.archived = true;
+    const { server, call } = await connected((s) => s.sessions.push(row("vlan", 2 / 24, { title: "VLAN plan", hidden: true })));
+    const lookup = async () => (await call("session.list", { title: "VLAN plan", include_hidden: true })).result!.sessions;
+    expect(await lookup()).toMatchObject([{ id: "vlan", resolved_id: "vlan", title: "VLAN plan" }]);
+    server.sessions.find((s) => s.id === "vlan")!.archived = true;
     expect(await lookup()).toEqual([]);
   });
 });
@@ -157,14 +156,5 @@ describe("session.compress set to rotate", () => {
     await call("session.compress", { session_id: runtime });
     expect(server.sessions.map((s) => s.id)).toEqual(["side", "bot"]);
     expect(server.sessions.find((s) => s.id === "bot")!.listedAs).toBeUndefined();
-  });
-});
-
-describe("seedThread", () => {
-  it("stores a hidden session titled for its topic, in the bot's profile, with its messages", async () => {
-    const { server } = await connected();
-    const id = server.seedThread("ops", "Backups", { messages: [{ role: "user", text: "Check last night's run" }], hours: 3 });
-    expect(server.otherProfiles.ops).toMatchObject([{ id, title: "Bot Thread: Backups", hidden: true, message_count: 1, preview: "Check last night's run" }]);
-    expect(server.transcripts[id]).toHaveLength(1);
   });
 });

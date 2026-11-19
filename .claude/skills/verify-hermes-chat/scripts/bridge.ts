@@ -101,8 +101,8 @@
 // asks before cutting them off.
 // HV_TURNS=<n> adds the bench's two long chats to `default`'s Inbox, `long1` and `long2`, n turns each (bench/fixture.ts
 // makeChat(n, 1) and (n, 2)), so the app can be timed on the chats `bench/run.mjs` renders (bench/app-split).
-// HV_COMPRESS=rotate makes `session.compress` (Compact now, `/new` in a Bot Chat or a thread) move the chat to a new
-// session, as Hermes does when it compacts by rotation, so a bot's threads can be shown to survive it (ADR 0211).
+// HV_COMPRESS=rotate makes `session.compress` (Compact now, `/new` in a Bot Chat) move the chat to a new session, as
+// Hermes does when it compacts by rotation.
 // Read-only check of what the server holds (the side-effect proof): `GET /__state` returns sessions, transcripts, and
 // the app's answers to what the stand-in asked it, and each profile's SOUL.md, skills turned off and toolsets on, with
 // the profile creates and one-off calls it received, and each profile's gateway restarts (`gatewayRestarts`).

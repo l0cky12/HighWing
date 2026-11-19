@@ -310,6 +310,8 @@ export function toBranches(v: unknown): BranchStore {
     const count = num(r?.count);
     const startedAt = num(r?.startedAt);
     if (!p || !optionalText(r.key) || !optionalText(r.parentId) || !optionalText(r.fingerprint) || count === undefined || startedAt === undefined || !Array.isArray(r.before)) return [];
+    // An older version kept its bots' thread attempts here too (#89). They aren't branches, so they aren't looked for.
+    if (r.thread !== undefined) return [];
     const model = pickOf(r.model);
     const v = variant(r.variant);
     return [

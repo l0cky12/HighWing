@@ -10,7 +10,6 @@
 import { isWaiting, type Chat, type Item, type SentImage, type SentReference } from "./model";
 import { sentImage } from "./sentImages";
 import type { ModelPick } from "./models";
-import type { ThreadTitle } from "./threads";
 
 /** A stored row of dashboard REST `GET /api/sessions/{id}/messages`, as far as branching reads it. */
 export type StoredBranchRow = { id: number; role?: string; content?: unknown; display_kind?: unknown };
@@ -68,7 +67,6 @@ export type BranchAttempt = {
   model?: ModelPick;
   /** Set for an Edit or Regenerate: the branch is made through the owner's message, which it then replaces. */
   variant?: BranchVariant;
-  thread?: ThreadTitle;
 };
 
 /** What this computer keeps about branches for one connection and profile. */

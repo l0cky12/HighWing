@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { BRANCH_KEY_TTL_MS, fileRefs, locate, previewOf, spineOf } from "./branch";
+import { toBranches } from "./chatCache";
 import { FakeHermes, row } from "./fakeHermes";
 import { memoryCache } from "./memoryCache";
 import type { Item } from "./model";
@@ -513,5 +514,12 @@ describe("Branch from here: a dropped connection", () => {
     await hermes.idle();
     expect(await hermes.delete(chatId)).toBe(true);
     expect(hermes.getSnapshot().branches.links).toEqual({});
+  });
+});
+
+describe("Branch from here: what this computer kept", () => {
+  it("drops an attempt an older version kept for one of a bot's threads (#89), and keeps a branch's", () => {
+    const attempt = { key: "k", parentId: "bot", parentTitle: "Bot Chat", point: { role: "user", excerpt: "Plan" }, count: 1, fingerprint: "f", before: [], startedAt: 1 };
+    expect(toBranches({ links: {}, attempts: [attempt, { ...attempt, key: "t", thread: "Thread: Plan" }] }).attempts.map((a) => a.key)).toEqual(["k"]);
   });
 });

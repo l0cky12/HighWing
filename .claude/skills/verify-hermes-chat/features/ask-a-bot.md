@@ -49,4 +49,3 @@ Preconditions:
 - Under `HV_BOTS=1` only Ada has an ordinary chat ("Release notes draft"), so only Ada's Bot Chat shows both groups. Bram's and Cleo's show Bots alone.
 - The pill is drawn over the words, so `wd.mjs value` still reads `@bram `. Read the pill with `wd.mjs wait '.inline-mark[data-mention=bram]'`.
 - While the menu is open on a word, the word shows as typed, not as a pill. Type a space or pick the row to see the pill.
-- A thread under a bot is not a Bot Chat, so its `@` menu has no Bots group.

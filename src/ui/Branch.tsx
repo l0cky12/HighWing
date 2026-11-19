@@ -1,14 +1,12 @@
 // Branch from here (ADR 0027): the button under a message, the preview that says what the branch will hold before
 // Hermes makes it, and the note at the top of a branch that links back to where it came from.
-import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
-import { CircleAlert, FileText, GitBranch, Image as ImageIcon, Split, Wrench } from "lucide-react";
+import { useEffect, useId, useRef, useState, type RefObject } from "react";
+import { CircleAlert, FileText, GitBranch, Image as ImageIcon, Wrench } from "lucide-react";
 import type { BranchLink, BranchPreview } from "../hermes/branch";
-import { TOPIC_MAX, topicFrom } from "../hermes/threads";
 import { BranchUnconfirmed } from "../hermes/transport";
 import { Spinner } from "./bits";
 import { useModal } from "./modal";
 import { errorText, plural } from "../hermes/values";
-import { useLocale, type Catalogue } from "../i18n/locale";
 
 /** Under a message: opens the preview of a branch from it. `blocked`: why no branch can be made now, shown on hover. */
 export function BranchButton({ onBranch, blocked }: { onBranch: () => void; blocked?: string }) {
@@ -30,25 +28,6 @@ export function BranchButton({ onBranch, blocked }: { onBranch: () => void; bloc
   );
 }
 
-export function ThreadButton({ onThread, blocked }: { onThread: () => void; blocked?: string }) {
-  const w = useLocale().threads.from;
-  return (
-    <button
-      className="msg-action"
-      title={blocked ?? w.actionTip}
-      aria-label={w.action}
-      aria-disabled={!!blocked}
-      onClick={(e) => {
-        e.currentTarget.focus();
-        onThread();
-      }}
-    >
-      <Split size={13} aria-hidden />
-      <span>{w.action}</span>
-    </button>
-  );
-}
-
 /** What the dialog needs from the transport: read the preview, and make the branch it describes. */
 export type BranchApi = {
   preview: () => Promise<BranchPreview>;
@@ -66,54 +45,6 @@ type State =
 const SHOWN_MESSAGES = 40;
 const whose = (role: "user" | "assistant") => (role === "user" ? "your message" : "Hermes's reply");
 
-type DialogWords = {
-  icon: ReactNode;
-  heading: string;
-  again: string;
-  intro: (preview: BranchPreview) => ReactNode;
-  name: { label: string; placeholder: (preview: BranchPreview) => string; max: number; required: boolean; offered: (preview: BranchPreview) => string };
-  file: Record<"there" | "missing" | "unknown", string>;
-  anyway: (missing: number) => string;
-  warning: string;
-  making: string;
-  create: string;
-};
-
-const BRANCH_WORDS: DialogWords = {
-  icon: <GitBranch size={14} aria-hidden />,
-  heading: "Branch from here",
-  again: "Branching from the same message again won't make a second one.",
-  intro: (preview) => (
-    <>
-      A new chat starts with the history of <b>{preview.parentTitle}</b> up to {whose(preview.point.role)} <q className="branch-quote">{preview.point.excerpt}</q>. This chat stays as it is;
-      what you send next goes to the branch.
-    </>
-  ),
-  name: { label: "Title", placeholder: (preview) => `Leave empty for Hermes's name, like "${preview.parentTitle} #2"`, max: 200, required: false, offered: () => "" },
-  file: {
-    there: "On the server: the branch can refer to it.",
-    missing: "No longer on the server: the branch can't read it.",
-    unknown: "Couldn't check whether it's still on the server.",
-  },
-  anyway: (missing) => `Branch anyway: the copied messages still name ${missing === 1 ? "this file" : "these files"}, and Hermes won't find ${missing === 1 ? "it" : "them"}.`,
-  warning: "Branching copies messages only. It doesn't undo files Hermes changed on the server or anything else it did, and the branch's tools work on the same server.",
-  making: "Making the branch…",
-  create: "Create branch",
-};
-
-const threadWords = (w: Catalogue["threads"]["from"]): DialogWords => ({
-  icon: <Split size={14} aria-hidden />,
-  heading: w.action,
-  again: w.again,
-  intro: (preview) => w.intro(preview.point.role, preview.point.excerpt),
-  name: { label: w.topic, placeholder: () => w.topicHint, max: TOPIC_MAX, required: true, offered: (preview) => topicFrom(preview.point.excerpt) },
-  file: { there: w.fileThere, missing: w.fileMissing, unknown: w.fileUnknown },
-  anyway: w.anyway,
-  warning: w.warning,
-  making: w.making,
-  create: w.create,
-});
-
 /**
  * The preview of a branch from one message, and the button that makes it. It reads what the branch would hold first:
  * the messages copied, what isn't copied (tool results), the files and images the messages refer to, and the model.
@@ -121,13 +52,11 @@ const threadWords = (w: Catalogue["threads"]["from"]): DialogWords => ({
  * and what couldn't be set on it; `onClose` closes without making one. Late answers after it closed change nothing.
  */
 export function BranchDialog({
-  as = "branch",
   api,
   returnTo,
   done,
   onClose,
 }: {
-  as?: "branch" | "thread";
   api: BranchApi;
   returnTo?: RefObject<HTMLElement | null>;
   done: (chatId: string, warnings: string[]) => void;
@@ -143,19 +72,11 @@ export function BranchDialog({
   const nameId = useId();
   const apiRef = useRef(api);
   apiRef.current = api;
-  const thread = useLocale().threads.from;
-  const w = as === "thread" ? threadWords(thread) : BRANCH_WORDS;
-  const offered = useRef(w.name.offered);
-  offered.current = w.name.offered;
 
   useEffect(() => {
     open.current = true;
     apiRef.current.preview().then(
-      (preview) => {
-        if (!open.current) return;
-        setTitle(offered.current(preview));
-        setState({ phase: "ready", preview });
-      },
+      (preview) => open.current && setState({ phase: "ready", preview }),
       (e) => open.current && setState({ phase: "refused", why: errorText(e) }),
     );
     return () => void (open.current = false);
@@ -177,7 +98,7 @@ export function BranchDialog({
   const close = () => !busy && onClose();
   const preview = state.phase === "ready" || state.phase === "making" ? state.preview : undefined;
   const missing = preview?.files.filter((f) => f.state === "missing") ?? [];
-  const canMake = !!preview && !busy && (!missing.length || missingOk) && (!w.name.required || !!title.trim());
+  const canMake = !!preview && !busy && (!missing.length || missingOk);
 
   return (
     <div className="leave-overlay" onMouseDown={(e) => e.target === e.currentTarget && close()}>
@@ -197,7 +118,7 @@ export function BranchDialog({
         }}
       >
         <h2 id={titleId} className="leave-title branch-title">
-          {w.icon} {w.heading}
+          <GitBranch size={14} aria-hidden /> Branch from here
         </h2>
         {state.phase === "loading" && (
           <p className="branch-loading" role="status">
@@ -211,22 +132,25 @@ export function BranchDialog({
         )}
         {state.phase === "unconfirmed" && (
           <p role="alert" className="branch-unsure">
-            <CircleAlert size={13} aria-hidden /> {state.why} {w.again}
+            <CircleAlert size={13} aria-hidden /> {state.why} Branching from the same message again won't make a second one.
           </p>
         )}
         {preview && (
           <>
-            <p>{w.intro(preview)}</p>
+            <p>
+              A new chat starts with the history of <b>{preview.parentTitle}</b> up to {whose(preview.point.role)}{" "}
+              <q className="branch-quote">{preview.point.excerpt}</q>. This chat stays as it is; what you send next goes to the branch.
+            </p>
             <label className="field-label" htmlFor={nameId}>
-              {w.name.label}
+              Title
             </label>
             <input
               id={nameId}
               className="branch-name"
               autoFocus
               value={title}
-              maxLength={w.name.max}
-              placeholder={w.name.placeholder(preview)}
+              maxLength={200}
+              placeholder={`Leave empty for Hermes's name, like "${preview.parentTitle} #2"`}
               disabled={busy}
               onChange={(e) => setTitle(e.target.value)}
               onKeyDown={(e) => {
@@ -274,7 +198,13 @@ export function BranchDialog({
                   {preview.files.map((f) => (
                     <li key={f.path} className={f.state}>
                       <span className="mono">{f.path}</span>{" "}
-                      <span className="branch-file-state">{w.file[f.state]}</span>
+                      <span className="branch-file-state">
+                        {f.state === "there"
+                          ? "On the server: the branch can refer to it."
+                          : f.state === "missing"
+                            ? "No longer on the server: the branch can't read it."
+                            : "Couldn't check whether it's still on the server."}
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -286,7 +216,8 @@ export function BranchDialog({
               )}
               {missing.length > 0 && (
                 <label className="branch-ack">
-                  <input type="checkbox" checked={missingOk} disabled={busy} onChange={(e) => setMissingOk(e.target.checked)} /> {w.anyway(missing.length)}
+                  <input type="checkbox" checked={missingOk} disabled={busy} onChange={(e) => setMissingOk(e.target.checked)} /> Branch anyway: the copied messages still name{" "}
+                  {missing.length === 1 ? "this file" : "these files"}, and Hermes won't find {missing.length === 1 ? "it" : "them"}.
                 </label>
               )}
             </section>
@@ -301,7 +232,8 @@ export function BranchDialog({
               <dd>The same folder on the server as this chat</dd>
             </dl>
             <p className="branch-warning">
-              <CircleAlert size={13} aria-hidden /> {w.warning}
+              <CircleAlert size={13} aria-hidden /> Branching copies messages only. It doesn't undo files Hermes changed on the server or anything else it did,
+              and the branch's tools work on the same server.
             </p>
             {state.phase === "ready" && state.error && (
               <p role="alert" className="branch-error">
@@ -318,10 +250,10 @@ export function BranchDialog({
             <button className="btn primary" disabled={!canMake} onClick={() => make(preview)}>
               {busy ? (
                 <>
-                  <Spinner /> {w.making}
+                  <Spinner /> Making the branch…
                 </>
               ) : (
-                w.create
+                "Create branch"
               )}
             </button>
           )}

@@ -148,6 +148,10 @@ _Avoid_: bot-to-bot relay, agent messaging (in the interface), DM
 A message one bot sent another through Bot messaging, as each Bot Chat shows its side. The sender's chat shows a **Messaged @handle** card with the message, and later a Returned result headed with Hermes's sentence for the answer, such as "@quill answered.", over the reply. The recipient's chat shows a Returned result headed **Message from name (@handle)**. None of it shows as typed by the owner: Hermes's tool name and display kind decide what a row is, never its words (ADR 0207).
 _Avoid_: DM, relay message, teammate message (the code's word for the recipient's row)
 
+**Ask**:
+A message the owner sends from a Bot Chat to another bot by naming it with `@`, picked from the Bots group of the composer's `@` menu. It goes to the named bot's own Bot Chat as the owner's message, with the chat it was sent from attached as a Referenced chat unless the owner removed that chip, and the bot whose chat it was typed in takes no turn. The chat it was sent from shows an **Asked @handle** card with the message and the named bot's reply under that bot's face and name. The card also says when the message waits for the connection or for a busy bot, wasn't sent, or may have been. A message that names two bots is two Asks. It is the owner's own message, so it needs no Bot messaging (ADR 0225).
+_Avoid_: mention (the word for the pill), relay, cross-post, room message
+
 **Changed elsewhere**:
 What a field in Edit bot or Edit profile says when Hermes's value moved since the dialog showed it: another client saved it meanwhile. Nothing is written over it. The field keeps the owner's text and shows Hermes's value with Use Hermes's, and a second Save replaces it, since the owner has then seen it (ADR 0189).
 _Avoid_: conflict (in the interface), out of date, stale

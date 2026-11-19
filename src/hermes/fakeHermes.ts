@@ -18,6 +18,7 @@ import { ScheduleError, isoIn, parseSchedule, upcomingRuns } from "./schedule";
 import { skillInvocationText } from "./skillCommands";
 import { CANONICAL_READY } from "./canonicalVerbs";
 import { FakeAuthority, type CanonicalOptions } from "./fakeCanonical";
+import { typedText } from "./branch";
 
 type Request = { jsonrpc: "2.0"; id: number; method: string; params: Record<string, unknown> };
 /** The client's answer to a server→client request (`tui_gateway/server_requests.py`). */
@@ -1025,10 +1026,16 @@ export class FakeHermes {
       this.attachedImages.delete(runtimeId);
       if (stored) this.storeMessage(stored, { role: "user", text: imageDisplayText(String(r.params.text), images), row_id: this.userRowId });
       if (drop === "stored") return this.drop();
+      // `_handle_busy_submit` with `queued`: stored at once, held behind the running turn, and run first in, first out.
+      if (r.params.queued === true && this.turns.has(runtimeId)) {
+        this.heldPrompts.set(runtimeId, [...(this.heldPrompts.get(runtimeId) ?? []), String(r.params.text ?? "")]);
+        return this.respond(r.id, { status: "queued" });
+      }
       this.turns.add(runtimeId);
       if (stored) this.inflight.set(runtimeId, { stored, user: String(r.params.text ?? ""), assistant: "" });
       this.stopped.delete(runtimeId);
-      const prompt = String(r.params.text ?? "");
+      // The scripted turns go by the owner's words, never by what is attached after them.
+      const prompt = typedText(String(r.params.text ?? ""));
       const fileTurn = !!stored && /edit two files/i.test(prompt);
       // The file turn's message has its stored row reported, as Hermes reports every message's, so its reply gets a time.
       const userRow = this.userRowId ?? (fileTurn ? this.transcripts[stored!].at(-1)?.row_id : undefined);
@@ -2672,6 +2679,10 @@ export class FakeHermes {
   private readonly inflight = new Map<string, { stored: string; user: string; assistant: string }>();
   /** The runtime sessions the owner stopped, until their next prompt: the poller starts no wake turn in them (`_notif_claim_turn`). */
   readonly stopped = new Set<string>();
+  /** The prompts Hermes holds behind each runtime session's running turn (`prompt.submit {queued}`), oldest first. */
+  private readonly heldPrompts = new Map<string, string[]>();
+  /** Sends the turn of a held prompt once the turn before it ends, as the stand-in streams it (bridge.ts). Unset, the test sends it. */
+  heldTurn?: (runtimeId: string, prompt: string) => void;
 
   event(sessionId: string, type: string, payload: Record<string, unknown> = {}) {
     if (this.authority) return this.authority.event(sessionId, type, payload);
@@ -2687,6 +2698,11 @@ export class FakeHermes {
       this.inflight.delete(sessionId);
     }
     this.frame({ jsonrpc: "2.0", method: "event", params: { type, session_id: sessionId, payload } });
+    const held = type === "message.complete" || type === "error" ? this.heldPrompts.get(sessionId)?.shift() : undefined;
+    if (held !== undefined) {
+      this.turns.add(sessionId);
+      this.heldTurn?.(sessionId, held);
+    }
     // The goal is judged once the turn is done, and its update follows `message.complete` (`prompt_turn.py`).
     const stored = this.runtime.get(sessionId);
     if (type === "message.complete" && payload.status === "complete" && stored) {

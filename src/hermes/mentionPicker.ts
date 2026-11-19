@@ -28,3 +28,6 @@ export function mentionsIn<B extends { readonly handle: string }>(text: string, 
     return bot ? [{ start: m.index, end: m.index + m[0].length, bot }] : [];
   });
 }
+
+/** The bots a message names, each once, in the order it first names them: who an Ask goes to (ADR 0225). */
+export const namedBots = <B extends { readonly handle: string }>(text: string, bots: readonly B[]): B[] => [...new Set(mentionsIn(text, bots).map((m) => m.bot))];

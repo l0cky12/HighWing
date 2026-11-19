@@ -36,6 +36,10 @@
 //   `session.active_list` reports one: the chat is stored in that profile, listed as working or waiting, and `end`
 //   takes it off the list and leaves it Unread there (a test's control). With `profile=default` it runs one in an
 //   existing chat of the shown profile that this app hasn't resumed, such as a wake turn after a relaunch.
+//   `POST /__offline?on=1` closes the app's socket and answers every `/api/` request 503 and refuses new sockets, as a
+//   server that went away does, until `POST /__offline?on=0` (a test's control). The app reconnects by itself.
+//   `POST /__reject?message=<why>` makes Hermes turn down every `prompt.submit` with that message, until
+//   `POST /__reject` with no message (a test's control).
 //   `POST /__signin[?session=<id>]&status=approved|denied|expired|error` settles a subscription sign-in (the pending
 //   one when no session is named) as the provider would once the owner acts in the browser (a test's control).
 //   `POST /__kanban?id=<task id>&status=<running|done|blocked|review|archived>` moves a task as a worker would (a test's
@@ -112,6 +116,7 @@ import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createServer } from "node:http";
 import type { Socket } from "node:net";
+import { typedText } from "../../../../src/hermes/branch";
 import { CU } from "../../../../src/hermes/fakeComputerUse";
 import { DOCTOR_NO_DISPLAY, FakeHermes, row } from "../../../../src/hermes/fakeHermes";
 import { HONCHO, RETAINDB } from "../../../../src/hermes/fakeMemoryProviders";
@@ -224,6 +229,11 @@ if (process.env.HV_BOTS === "1") {
     server.otherProfiles[profile] = [row(`${profile}-bot`, 1, { title: "Bot Chat", hidden: true })];
     server.profileMeta[profile] = { description, ui_meta: { "hermes-bots": { title: profile[0].toUpperCase() + profile.slice(1), color } } };
   }
+  // Ada's Bot Chat has a history, so an Ask from it has a chat to reference (ADR 0225).
+  server.transcripts["ada-bot"] = [
+    { role: "user", text: "Plan the 0.3 release.", row_id: 1 },
+    { role: "assistant", text: "Ship it on Friday, once the changelog is done.", row_id: 2 },
+  ];
   server.otherProfiles.ada.push(row("ada-notes", 2, { title: "Release notes draft" }));
   server.transcripts["ada-notes"] = [
     { role: "user", text: "Draft the release notes for 0.3.", row_id: 1 },
@@ -384,6 +394,7 @@ server.kanban.wakeDelayMs = 2_000;
 server.kanban.wakeWith = (sid, _stored, text, user_row_id) => replyTo(sid, "", text, { user_row_id });
 // A goal's next turn starts once the last one is judged, as Hermes's does (fakeGoals.ts, ADR 0187).
 server.goalTurn = (sid, prompt) => setTimeout(() => replyTo(sid, prompt), 2_000);
+server.heldTurn = (sid, prompt) => setTimeout(() => replyTo(sid, typedText(prompt)), 300);
 
 // The subagents a "delegate" prompt started, as `subagent.start` / `subagent.complete` payloads carry them
 // (`tools/delegate_tool.py` at the deployed `f0d94882`). Each is also in Hermes's registry, for `subagent.list`.
@@ -490,6 +501,8 @@ function backgroundSubagent(id: string) {
 let pipe: Pipe | undefined;
 let send: ((text: string) => void) | undefined;
 let closeSocket: (() => void) | undefined;
+/** While set, the stand-in is away: no socket opens and no `/api/` request is answered (`/__offline`). */
+let offline = false;
 const open = async (profile: string) => {
   pipe = await server.openPipe((e) => (e.kind === "frame" ? send?.(e.text) : undefined), profile);
 };
@@ -549,6 +562,17 @@ const http = createServer(async (req, res) => {
     res.end(typeof v === "string" ? v : JSON.stringify(v));
   };
   if (url.pathname === "/__state") return json(200, dump());
+  if (url.pathname === "/__offline" && req.method === "POST") {
+    offline = url.searchParams.get("on") === "1";
+    if (offline) closeSocket?.();
+    return json(200, { ok: true, offline });
+  }
+  if (url.pathname === "/__reject" && req.method === "POST") {
+    const message = url.searchParams.get("message");
+    server.rejectPrompt = message ? { code: 5001, message } : undefined;
+    return json(200, { ok: true, rejecting: !!message });
+  }
+  if (offline) return json(503, { detail: "The stand-in is offline." });
   if (url.pathname === "/__oneshot" && req.method === "POST") {
     if (url.searchParams.has("release")) {
       releaseOneshot?.();
@@ -680,19 +704,24 @@ http.on("upgrade", async (req, sock: Socket) => {
   // Node drops its own `error` handler from an upgraded socket, so without this an app that closes the WebSocket
   // mid-write (EPIPE, ECONNRESET) takes the stand-in down (#432). The socket is destroyed; the app reconnects.
   sock.on("error", (e: NodeJS.ErrnoException) => console.log(new Date().toISOString(), "WS closed by the app:", e.code ?? e.message));
+  if (offline) return void sock.destroy();
   sock.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
   send = (t) => void (alive(sock) && sock.write(frame(t)));
   closeSocket = () => sock.destroy();
   readFrames(sock, (t) => {
     try {
-      const msg = JSON.parse(t) as { method?: string; params?: { session_id?: string; text?: string; subagent_id?: string; choice?: string; request_id?: string } };
+      const msg = JSON.parse(t) as { method?: string; params?: { session_id?: string; text?: string; queued?: boolean; subagent_id?: string; choice?: string; request_id?: string } };
       const answer = msg.method === "approval.respond" ? JSON.stringify({ choice: msg.params?.choice, request_id: msg.params?.request_id }) : "";
       if (msg.method && msg.method !== "gateway.ping") console.log(new Date().toISOString(), "WS", msg.method, msg.params?.session_id ?? "", answer);
       if (msg.method === "prompt.submit" && msg.params?.session_id) {
         const { session_id, text } = msg.params;
-        const prompt = String(text ?? "");
+        // Its reply goes by the owner's words, never by what is attached after them.
+        const prompt = typedText(String(text ?? ""));
+        // One Hermes holds behind a running reply gets its turn when that reply ends (`heldTurn`).
+        const held = msg.params.queued === true && server.turns.has(session_id);
         setTimeout(() => {
           save();
+          if (held) return;
           if (/^computer use/i.test(prompt)) computerUse(session_id, prompt);
           else if (/delegate/i.test(prompt)) delegate(session_id, /queue/i.test(prompt));
           else if (/approval/i.test(prompt)) askApproval(session_id);

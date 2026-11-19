@@ -26,6 +26,7 @@ describe("Hermes transport", () => {
       archivedListed: false,
       others: { byName: {} },
       queues: {},
+      asks: {},
       branches: { links: {}, attempts: [] },
       botPictures: {},
       threads: {},

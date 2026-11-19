@@ -32,10 +32,11 @@ import { PersonaApi } from "./persona";
 import { ProfileCloneApi } from "./profileClone";
 import { ProfilesApi, profileFailure, toProfileRows, type ProfileFailure } from "./profiles";
 import { FILTER_SEARCH_LIMIT } from "./chatFilter";
-import { APPROVAL_CHOICES, endedNote, isBroadGrant, isOutgoing, isQuestion, isStoredPrompt, isWaiting, offeredChoices, sameFields, sendNowRoute, turnFrom, turnStart, type ApprovalChoice, type ApprovalItem, type AttachCheck, type ClarifyQuestion, type QuestionAnswer, type QuestionItem, type QuestionKind, type Attachment, type Chat, type ChatQueue, type ConnectionStatus, type ContextUse, type Found, type Hit, type Item, type ListedChat, type LiveSession, type LiveSessions, type OtherProfiles, type Outgoing, type OutgoingItem, type Queued, type SavedSend, type SeenFailure, type SentImage, type SentImagePath, type SentReference, type SessionLive, type SideQuestion, type Source, QUEUE_LIMIT } from "./model";
+import { APPROVAL_CHOICES, endedNote, isBroadGrant, isOutgoing, isQuestion, isStoredPrompt, isWaiting, offeredChoices, sameFields, sendNowRoute, turnFrom, turnStart, type ApprovalChoice, type ApprovalItem, type Ask, type AttachCheck, type ClarifyQuestion, type QuestionAnswer, type QuestionItem, type QuestionKind, type Attachment, type Chat, type ChatQueue, type ConnectionStatus, type ContextUse, type Found, type Hit, type Item, type ListedChat, type LiveSession, type LiveSessions, type OtherProfiles, type Outgoing, type OutgoingItem, type Queued, type SavedSend, type SeenFailure, type SentImage, type SentImagePath, type SentReference, type SessionLive, type SideQuestion, type Source, QUEUE_LIMIT } from "./model";
 import { catalogFromServer, fallbackCatalog, isEffort, modelKey, pickFromInfo, type ModelCatalog, type ModelPick } from "./models";
 import { approvalsOf, isApprovalMode, writesFor, type ApprovalPick } from "./approvals";
 import { CheckTimesStore, noOthers, OtherProfilesCheck } from "./otherProfiles";
+import { AskDesk } from "./asks";
 import { failureMark } from "./inbox";
 // Projects are Hermes's own, read and written with legacy `projects.*` (projects.ts, research doc "Projects").
 import { projectsApi, type ProjectsApi } from "./projects";
@@ -572,6 +573,8 @@ export type Snapshot = {
   live?: LiveSessions;
   /** The shown profile's queues of messages waiting to go after a reply, by chat id (ADR 0018). */
   queues: Record<string, ChatQueue>;
+  /** The Asks sent from the shown profile's Bot Chat since it was last shown, by the chat they were sent from (ADR 0225). */
+  asks: Readonly<Record<string, readonly Ask[]>>;
   /** The models the shown profile can switch to (`loadModels`); none until read. */
   models?: ModelCatalog;
   /**
@@ -1073,6 +1076,7 @@ export class Hermes {
       unsecure: false,
       others: noOthers,
       queues: loadQueues(cache, profile),
+      asks: {},
       branches: cache.loadBranches(profile),
       botPictures: {},
       threads: {},
@@ -1409,6 +1413,7 @@ export class Hermes {
     this.uploads = new Set();
     this.heartbeat = setInterval(() => this.beat(), PING_EVERY_MS);
     this.update({ status: "connected", closedReason: undefined, route: pipe.route, unsecure: isUnsecure(pipe.route) });
+    this.asks.connected();
     this.kanbanWatch.start();
     // Without this, Hermes never sends this connection an Approval (research doc §6). Its answer lists the requests
     // Hermes may send, which is how diagnostics knows Approvals are there.
@@ -1630,6 +1635,27 @@ export class Hermes {
   /** Each chat's goal as Hermes last showed it (goals.ts, ADR 0187), for the goal bar. Kept in memory only. */
   readonly goals = new GoalBoard();
 
+  /** The Asks the owner sends from the shown profile's Bot Chat to other bots (asks.ts, ADR 0225). */
+  readonly asks = new AskDesk({
+    refusal: () => (this.role === "background" ? new BackgroundRefused().message : undefined),
+    connected: () => this.snapshot.status === "connected",
+    items: (chatId) => this.snapshot.chats.find((c) => c.id === chatId)?.items,
+    shown: () => this.snapshot.asks,
+    show: (asks, nextFrame) => this.update({ asks }, nextFrame),
+    botChat: (bot) => this.findBotChat(bot),
+    resume: async (chatId, profile) => {
+      const res = await this.protocol.resume(chatId, profile);
+      const rows = transcriptMessages(res.messages).flatMap((m) => (m.row_id === undefined ? [] : [m.row_id]));
+      return { runtimeId: res.runtimeId, ...(rows.length && { newestRow: Math.max(...rows) }) };
+    },
+    submit: async (runtimeId, profile, { text, context }, goingOut) => {
+      const res = await this.protocol.submit(runtimeId, { profile, text, attachments: [], hold: true, context }, goingOut);
+      return { held: res.held, ...(res.userRowId !== undefined && { rowId: res.userRowId }) };
+    },
+    keep: (profile, chatId, row) => this.cache.saveOutbox(profile, chatId, [...(this.cache.loadOutbox(profile)[chatId] ?? []), row]) !== false,
+    change: (profile, chatId, itemId, to) => this.setOutgoing(profile, chatId, itemId, to),
+  });
+
   /** The chat's live session id, or a rejection saying it isn't open on Hermes. */
   private liveSession(chatId: string): string {
     const runtimeId = this.snapshot.chats.find((c) => c.id === chatId)?.runtimeId;
@@ -1842,6 +1868,7 @@ export class Hermes {
     this.resumeOnReconnect.clear();
     this.revealed.clear();
     this.kanbanWatch.reset();
+    this.asks.forget();
     this.update({
       profile: name,
       chats: withOutbox(this.cache.load(name), loadOutbox(this.cache, name)),
@@ -1851,6 +1878,7 @@ export class Hermes {
       models: undefined,
       switching: { from },
       queues: loadQueues(this.cache, name),
+      asks: {},
       branches: this.cache.loadBranches(name),
       branchNews: undefined,
     });
@@ -2441,8 +2469,7 @@ export class Hermes {
   async openBotChat(bot: Bot): Promise<string> {
     const profile = this.profile;
     if (bot.profile !== profile) throw new Error(`Switch to ${bot.profile} first.`);
-    const { openId, registryId } = await this.botChats.open(profile, bot.name, !!bot.botChat);
-    this.botChatIds.set(profile, new Set([...(this.botChatIds.get(profile) ?? []), registryId, openId]));
+    const openId = await this.findBotChat(bot);
     if (this.profile !== profile) throw new Error(`Switched to the ${this.profile} profile before ${bot.name}'s Bot Chat opened.`);
     const listed = this.snapshot.chats.find((c) => c.id === openId);
     if (listed) {
@@ -2450,8 +2477,17 @@ export class Hermes {
     } else {
       this.revealed.add(openId);
       const updatedAt = bot.botChat?.lastActive || Date.now();
-      this.update({ chats: [...this.snapshot.chats, { id: openId, title: BOT_CHAT_TITLE, source: "app", settled: true, bot: true, updatedAt, items: [] }] });
+      // With the messages this computer keeps for it that Hermes hasn't confirmed, an Ask from another Bot Chat among them.
+      const items = loadOutbox(this.cache, profile)[openId] ?? [];
+      this.update({ chats: [...this.snapshot.chats, { id: openId, title: BOT_CHAT_TITLE, source: "app", settled: true, bot: true, updatedAt, items }] });
     }
+    return openId;
+  }
+
+  /** The id to open the bot's Bot Chat by, in whichever profile it is: the one Hermes finds by title, else a new one. */
+  private async findBotChat(bot: Pick<Bot, "profile" | "name" | "botChat">): Promise<string> {
+    const { openId, registryId } = await this.botChats.open(bot.profile, bot.name, !!bot.botChat);
+    this.botChatIds.set(bot.profile, new Set([...(this.botChatIds.get(bot.profile) ?? []), registryId, openId]));
     return openId;
   }
 
@@ -4765,6 +4801,8 @@ export class Hermes {
         this.recorder.hear(this.profile, shown.id, { kind: "status", at: Date.now(), status: payload.kind, text: payload.text });
       return;
     }
+    // A bot's Bot Chat resumed for an Ask is in another profile, so it is no chat of this list.
+    if (session_id && this.asks.owns(session_id)) return this.asks.hear(session_id, { type, payload });
     const chat = session_id ? this.snapshot.chats.find((c) => c.runtimeId === session_id) : undefined;
     if (!chat) return;
     // A chat's goal changed, here or in another Hermes client, or after a turn (goals.ts, ADR 0187).
@@ -5110,6 +5148,8 @@ export class Hermes {
       return;
     }
     const sid = textOf(req.params.session_id) ?? "";
+    // Left for the bot's own Bot Chat to show: Hermes lists it again when that chat is resumed.
+    if (this.asks.owns(sid)) return this.asks.asked(sid);
     const chat = this.snapshot.chats.find((c) => c.runtimeId === sid);
     const asked: Asked = { req, at: Date.now() };
     if (chat) this.showQuestions(chat.id, [asked]);
@@ -5221,6 +5261,7 @@ export class Hermes {
     for (const p of this.pending.values()) p.reject(new ConnectionLostError(`Connection closed: ${reason}`));
     this.pending.clear();
     this.earlyRequests.clear();
+    this.asks.disconnected();
     // Runtime sessions end with the connection.
     this.usageFrom.clear();
     this.turnBegan.clear();

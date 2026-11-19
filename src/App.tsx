@@ -30,6 +30,7 @@ import { needsAttention, type Updater } from "./hermes/updates";
 import { desktopNotify } from "./hermes/tauriNotify";
 import { AttachmentDesk, type AttachmentDeskApi } from "./hermes/attachmentDesk";
 import { ReferenceDesk } from "./hermes/chatReferences";
+import { namedBots } from "./hermes/mentionPicker";
 import { deadline } from "./hermes/remoteFiles";
 import { desktopSummon, type SummonApi, type Summoned } from "./hermes/summon";
 import { SelectionWatch, quoted, untilFocused } from "./hermes/selection";
@@ -2310,7 +2311,10 @@ export function Main({
   );
   // The bots an "@" in a Bot Chat names: every one on this connection but the shown profile's, whose chat it is.
   const otherBots = useMemo<NamedBot[]>(
-    () => (hasBotMode ? (bots?.roster ?? []).filter((b) => b.profile !== profile).map((b) => ({ ...lookShown(b, botPictures), handle: b.handle, description: b.description })) : []),
+    () =>
+      hasBotMode
+        ? (bots?.roster ?? []).filter((b) => b.profile !== profile).map((b) => ({ ...lookShown(b, botPictures), profile: b.profile, handle: b.handle, description: b.description, botChat: b.botChat }))
+        : [],
     [hasBotMode, bots?.roster, profile, botPictures],
   );
   const beforeBotChat = useRef<string | null>(null);
@@ -3030,6 +3034,10 @@ export function Main({
           profile={profile}
           bot={shownLook}
           otherBots={otherBots}
+          onOpenBot={(named) => {
+            const b = roster.find((r) => r.profile === named);
+            if (b) visitBot(b);
+          }}
           status={status}
           paneKey={p.key}
           chatId={p.chatId}
@@ -3973,6 +3981,7 @@ function ChatView({
   profile,
   bot,
   otherBots,
+  onOpenBot,
   status,
   paneKey,
   chatId,
@@ -4027,6 +4036,8 @@ function ChatView({
   profile: string;
   bot?: BotLookShown;
   otherBots: readonly NamedBot[];
+  /** Opens another bot's Bot Chat, as its row in Bots mode does. */
+  onOpenBot: (profile: string) => void;
   status: ConnectionStatus;
   paneKey: string;
   chatId: string | null;
@@ -4187,6 +4198,18 @@ function ChatView({
       }
       return false;
     }
+    // A message that names a bot is an Ask (ADR 0225): it goes to that bot's Bot Chat, and this chat's bot takes no turn.
+    const asked = kind === "bot" && !skill && !attachments.length ? namedBots(text, otherBots) : [];
+    if (asked.length) {
+      const refused = hermes.asks.ask(to.id, bot?.name ?? profile, asked, text, references);
+      if (refused === undefined) return true;
+      if (!mirrored) {
+        savedDrafts.putBack(draftOf(to.id), typed);
+        referenceDesk.putBack(draftOf(to.id), references);
+      }
+      if (stillIn()) onDraftError(`Your message wasn't sent: ${refused}`);
+      return false;
+    }
     const { delivery, itemId } = await hermes.sendTracked(to.id, text, attachments, skill, references);
     // No item: the chat left the list before the message went in, so it is in no outbox. Its words go back to its Draft
     // while a pane still shows it, and the chat is asked for: back in the list if Hermes still has it, else the Draft
@@ -4255,6 +4278,22 @@ function ChatView({
       }
     : undefined;
   const retry = (itemId: string) => void hermes.retry(chat.id, itemId);
+  const asks = useSyncExternalStore(hermes.subscribe, () => hermes.getSnapshot().asks[chat.id]);
+  // A draft that names a bot is an Ask, and this chat goes with it as a Referenced chat, so the bot sees the thread
+  // (ADR 0225). Added once while the draft names a bot, so the owner's removal stands, and gone when it names none.
+  const asking = kind === "bot" && namedBots(composerText, otherBots).length > 0;
+  const hasHistory = chat.items.some((i) => i.kind === "assistant" || (i.kind === "user" && !i.outgoing));
+  const threadTitle = words.chat.ask.thread(bot?.name ?? profile);
+  const threadIn = useRef<string>(undefined);
+  useEffect(() => {
+    if (!asking) {
+      if (threadIn.current === shownDraft) referenceDesk.remove(shownDraft, chat.id);
+      threadIn.current = undefined;
+    } else if (hasHistory && threadIn.current !== shownDraft) {
+      threadIn.current = shownDraft;
+      referenceDesk.add(shownDraft, { chatId: chat.id, title: threadTitle });
+    }
+  }, [asking, hasHistory, shownDraft, chat.id, threadTitle, referenceDesk]);
   const edit = (itemId: string) => {
     const row = chat.items.find((i) => i.id === itemId);
     if (row?.kind !== "user") return;
@@ -4563,6 +4602,8 @@ function ChatView({
       commands={commands}
       references={{ desk: referenceDesk, onTextModelSettings: onTextGenerationSettings }}
       onDismissSideQuestion={(id) => hermes.dismissSideQuestion(chat.id, id)}
+      asks={asks}
+      onAsk={{ retry: (id) => hermes.asks.retry(id), dismiss: (id) => hermes.asks.dismiss(id), open: onOpenBot }}
       followUp={followUp}
       compare={compare}
       onCheckpoints={sessionHere && caps.caps.checkpoints.state !== "unsupported" ? () => hermes.checkCheckpoints(chat.id) : undefined}

@@ -1,11 +1,11 @@
 // Transcript, thinking, tool-call groups, Approval cards, find bar and composer, ported from the prototype.
 // Dictation and Read aloud come from Voice.tsx.
-import { createContext, Fragment, memo, type HTMLAttributes, type ReactNode, type RefObject, useCallback, startTransition, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
+import { createContext, Fragment, memo, type ReactNode, type RefObject, useCallback, startTransition, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { Archive, ArchiveRestore, ArrowUp, AtSign, Bot, Brain, CalendarClock, PackageCheck, Reply, Send, SquareTerminal, ChevronDown, ChevronRight, ChevronUp, CircleAlert, CloudOff, Columns2, CornerDownRight, FileDown, FileInput, Globe, HardDrive, Link2, ListPlus, Ellipsis, Paperclip, RotateCcw, Search, Server, Share2, Square, Trash2, Wrench, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { decodeString } from "micromark-util-decode-string";
-import type { ApprovalChoice, AttachCheck, Attachment, Chat, ChatQueue, ConnectionStatus, Item, OutgoingItem, QuestionAnswer, SentReference, SideQuestion, Source } from "../hermes/model";
+import type { ApprovalChoice, Ask, AttachCheck, Attachment, Chat, ChatQueue, ConnectionStatus, Item, OutgoingItem, QuestionAnswer, SentReference, SideQuestion, Source } from "../hermes/model";
 import { SOURCE_LABEL, archiveAction, inArchived, isOutgoing, isWaiting } from "../hermes/model";
 import { useLocale } from "../i18n/locale";
 import type { SkillCall } from "../hermes/skillCommands";
@@ -27,6 +27,9 @@ import { ExportChatDialog, type ExportMode } from "./ExportChat";
 import { QueuePanel, type QueueApi } from "./Queue";
 import { SubagentsPanel, type SubagentsApi } from "./Subagents";
 import { SideQuestionPair } from "./SideQuestions";
+import { AskCard, AskContext, type AskActions } from "./AskCard";
+import { TurnCard } from "./TurnCard";
+import { placeAsks } from "../hermes/asks";
 import { Markdown } from "./Markdown";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { chunkBlocks } from "./transcriptChunks";
@@ -40,7 +43,7 @@ import { AttachmentChip, InlineSentImage, Previews, SentImages, readPreview } fr
 import { InlineMarks, type ComposerMark } from "./inlineMarks";
 import { sentWith } from "../hermes/sentImages";
 import { carried, highestMark, marksIn, markText, placeImages, sentText, withMarks, withoutMarks } from "../hermes/inlineImages";
-import { mentionsIn } from "../hermes/mentionPicker";
+import { mentionsIn, namedBots } from "../hermes/mentionPicker";
 import { Speaker } from "./speaker";
 import { DictationNoteView, DictationStrip, ListenButton, MicButton, type VoiceApi, listenBlocked, micBlocked, useDictation, useVoiceSetup } from "./Voice";
 import { withTranscript } from "../hermes/voice";
@@ -66,7 +69,7 @@ import { useSpellCheck } from "./SpellCheckSettings";
 import { turnsOf, type ReplayKind, type Variant } from "../hermes/replay";
 import { getUIPrefs, showsDetail, subscribe as subscribeUIPrefs, type FollowUp, type MessageDetails } from "../hermes/uiPrefs";
 import { sttRoute } from "../hermes/sttRoute";
-import { errorText } from "../hermes/values";
+import { errorText, sentence } from "../hermes/values";
 
 /**
  * What a message sent while the chat's reply runs does (ADR 0057). `mode`: what Enter does, the Follow-up behavior
@@ -99,17 +102,24 @@ const isItem = (b: Block): b is Exclude<Item, ToolItem> => b.kind !== "tools" &&
 /** A block with a Question still waiting in it: a Question's card, or a computer-use run with an Approval under a step. */
 const waitsIn = (b: Block) => (isItem(b) && isWaiting(b)) || (b.kind === "cu-run" && b.state === "asking");
 type SideBlock = { kind: "side"; id: string; question: SideQuestion };
+type AskBlock = { kind: "ask"; id: string; ask: Ask };
+/** What the transcript shows that is no item of the chat: a side question (ADR 0086) or an Ask (ADR 0225). */
+type Aside = SideBlock | AskBlock;
+const isAside = (b: Block | Aside): b is Aside => b.kind === "side" || b.kind === "ask";
 /** Whether the item `id` shows in this block: as the block itself, in a group of tool calls, or in a computer-use run. */
-const holds = (b: Block | SideBlock, id: string | undefined) =>
+const holds = (b: Block | Aside, id: string | undefined) =>
   b.id === id || (b.kind === "tools" && b.tools.some((t) => t.id === id)) || (b.kind === "cu-run" && b.items.some((i) => i.id === id));
 
 // Consecutive tool calls collapse into one group so a long run doesn't dominate the transcript, and a computer-use run
 // is one card (ADR 0216). Each side question goes after the item it was asked after (ADR 0086), so one asked during a
-// run of tool calls splits it; one asked during a computer-use run goes after its card.
-function toBlocks(items: Item[], side: SideQuestion[] = []): (Block | SideBlock)[] {
-  const out: (Block | SideBlock)[] = [];
+// run of tool calls splits it; one asked during a computer-use run goes after its card. An Ask's card goes the same way
+// (ADR 0225).
+function toBlocks(items: Item[], side: SideQuestion[] = [], asks: readonly Ask[] = []): (Block | Aside)[] {
+  const out: (Block | Aside)[] = [];
+  const asked = placeAsks(asks, items);
   const sideAfter = (id?: string) => {
     for (const q of side) if (q.after === id) out.push({ kind: "side", id: q.id, question: q });
+    for (const ask of asked.get(id) ?? []) out.push({ kind: "ask", id: ask.id, ask });
   };
   sideAfter(undefined);
   for (const it of foldRuns(items)) {
@@ -151,9 +161,9 @@ const sameBlock = (a: Block, b: Block) =>
   (a.kind === "tools" && b.kind === "tools" && a.tools.length === b.tools.length && a.tools.every((t, i) => t === b.tools[i])) ||
   (a.kind === "sent" && b.kind === "sent" && a.tool === b.tool) ||
   (a.kind === "cu-run" && b.kind === "cu-run" && a.state === b.state && a.items.length === b.items.length && a.items.every((x, i) => x === b.items[i]));
-// A side question's block is rebuilt too, so it counts as unchanged when it holds the same question.
-const sameChunkBlock = (a: Block | SideBlock, b: Block | SideBlock) =>
-  a.kind === "side" ? b.kind === "side" && a.question === b.question : b.kind !== "side" && sameBlock(a, b);
+// A side question's block and an Ask's are rebuilt too, so each counts as unchanged when it holds the same one.
+const sameChunkBlock = (a: Block | Aside, b: Block | Aside) =>
+  a.kind === "side" ? b.kind === "side" && a.question === b.question : a.kind === "ask" ? b.kind === "ask" && a.ask === b.ask : !isAside(b) && sameBlock(a, b);
 
 /**
  * Each turn's owner's message (`ofUser`), the replies Regenerate is offered on, where each turn's versions show, and the
@@ -477,6 +487,8 @@ export function ChatPane({
   commands,
   references,
   onDismissSideQuestion,
+  asks,
+  onAsk,
   followUp,
   compare,
   branch,
@@ -557,6 +569,9 @@ export function ChatPane({
   references?: ComposerReferences;
   /** Takes away the card of one of the chat's side questions (ADR 0070). */
   onDismissSideQuestion?: (id: string) => void;
+  /** The Asks sent from this chat, and what their cards' buttons do (ADR 0225). */
+  asks?: readonly Ask[];
+  onAsk?: Pick<AskActions, "retry" | "dismiss" | "open">;
   /** What sending does while the reply runs: queue or steer (ADR 0057). Without it, it queues. */
   followUp?: FollowUpHost;
   compare?: Comparing;
@@ -651,6 +666,23 @@ export function ChatPane({
   const dismissSideRef = useRef(onDismissSideQuestion);
   dismissSideRef.current = onDismissSideQuestion;
   const dismissSide = useCallback((id: string) => dismissSideRef.current?.(id), []);
+  // A card's buttons and its bot's face reach it past the memoized chunks, and change only when the bots do.
+  const askRef = useRef(onAsk);
+  askRef.current = onAsk;
+  const hasAskActions = !!onAsk;
+  const askBots = commands?.references?.bots;
+  const askActions = useMemo<AskActions | undefined>(
+    () =>
+      hasAskActions
+        ? {
+            look: (profile) => askBots?.find((b) => b.profile === profile),
+            retry: (id) => askRef.current?.retry(id),
+            dismiss: (id) => askRef.current?.dismiss(id),
+            open: (profile) => askRef.current?.open(profile),
+          }
+        : undefined,
+    [hasAskActions, askBots],
+  );
   // Each turn's owner's message, and its last reply with text: where Regenerate and the versions of the turn go.
   // Kept as the same object while its content is unchanged, so a streamed delta doesn't re-render every chunk.
   const turns = useStable(useMemo((): Turns => {
@@ -709,7 +741,7 @@ export function ChatPane({
   const itemsRef = useRef(chat.items);
   itemsRef.current = chat.items;
   /** Renders the chunk of the first block `has` picks, when it is far from the view, so a lookup in the DOM finds it. */
-  const revealRef = useRef<(has: (b: Block | SideBlock) => boolean) => void>(() => {});
+  const revealRef = useRef<(has: (b: Block | Aside) => boolean) => void>(() => {});
   // For the status bar's context inspector: a stored time to the message there, marked as a jump to a tool call is.
   const showInChat = useCallback<ShowInChat>((at) => {
     const first = itemsRef.current.find((i) =>
@@ -840,13 +872,13 @@ export function ChatPane({
     }
   });
 
-  // A new side question shows at the bottom, so asking one goes there as sending a message does.
-  const sideSeen = useRef(new Set(chat.sideQuestions?.map((q) => q.id)));
+  // A new side question or Ask shows at the bottom, so sending one goes there as sending a message does.
+  const asidesSeen = useRef(new Set([...(chat.sideQuestions ?? []), ...(asks ?? [])].map((a) => a.id)));
   useLayoutEffect(() => {
-    const qs = chat.sideQuestions ?? [];
-    if (qs.some((q) => !sideSeen.current.has(q.id))) stickToBottom.current = true;
-    sideSeen.current = new Set(qs.map((q) => q.id));
-  }, [chat.sideQuestions]);
+    const ids = [...(chat.sideQuestions ?? []), ...(asks ?? [])].map((a) => a.id);
+    if (ids.some((id) => !asidesSeen.current.has(id))) stickToBottom.current = true;
+    asidesSeen.current = new Set(ids);
+  }, [chat.sideQuestions, asks]);
 
   // Keys scroll the view smoothly too, and a reply's render can cancel that before it moves, as it does the wheel's.
   // WebKit scrolls from the focused element, or with nothing focused, from where the owner last clicked.
@@ -905,12 +937,12 @@ export function ChatPane({
   };
 
   // Rebuilt only when the chat changes, so a reply streaming in the other pane costs this one little.
-  const blocks = useMemo(() => toBlocks(chat.items, chat.sideQuestions), [chat.items, chat.sideQuestions]);
+  const blocks = useMemo(() => toBlocks(chat.items, chat.sideQuestions, asks), [chat.items, chat.sideQuestions, asks]);
   const chunks = useMemo(() => chunkBlocks(blocks), [blocks]);
   // The message or tool call being gone to is found in the chat, not the DOM: its chunk may be far from the view.
   const jumpChunk = useMemo(() => {
     if (!jumping) return undefined;
-    let has: (b: Block | SideBlock) => boolean;
+    let has: (b: Block | Aside) => boolean;
     if (jumping.callId !== undefined) {
       const callId = jumping.callId;
       has = (b) =>
@@ -938,15 +970,15 @@ export function ChatPane({
   const shown = useTranscriptWindow({ scroller: scrollRef, chunks, all: !!q, stuck: stickToBottom, target: jumpChunk ?? revealChunk });
   revealRef.current = (has) => shown.reveal(chunks.findIndex((c) => c.some(has)));
   // Cards ignore clicks for a moment after the transcript changes, since it may have moved them under the pointer.
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- a timestamp of the transcript's last change: `chat.items` and `chat.sideQuestions` are the trigger, not inputs
-  const movedAt = useMemo(() => performance.now(), [chat.items, chat.sideQuestions]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- a timestamp of the transcript's last change: `chat.items`, `chat.sideQuestions` and `asks` are the trigger, not inputs
+  const movedAt = useMemo(() => performance.now(), [chat.items, chat.sideQuestions, asks]);
   const last = chat.items[chat.items.length - 1];
   const waiting = chat.items.find(isWaiting);
   const policy = CHAT_POLICY[kind];
   const { jobId } = chat;
-  // The streaming block is the chat's last item, so it is in the last chunk that holds more than side questions.
+  // The streaming block is the chat's last item, so it is in the last chunk that holds more than side questions and Asks.
   let liveChunk = chunks.length - 1;
-  while (liveChunk > 0 && chunks[liveChunk].every((b) => b.kind === "side")) liveChunk--;
+  while (liveChunk > 0 && chunks[liveChunk].every(isAside)) liveChunk--;
   const live = chat.running && chunks[liveChunk]?.some((b) => b === last) ? last.id : undefined;
   // Enter queues while a reply runs, while Hermes isn't connected, and while messages are queued already, so a new one
   // never jumps the queue. The composer's hint says which Enter does.
@@ -1082,6 +1114,7 @@ export function ChatPane({
         }}
       >
         <JumpContext.Provider value={jumpTo}>
+        <AskContext.Provider value={askActions}>
         <PathsIn folder={chat.folder} session={chat.id}>
         <RunStopProvider value={runStop}>
         <div className="transcript-inner">
@@ -1148,7 +1181,7 @@ export function ChatPane({
               q={q}
               finds={finds}
               offline={status !== "connected" || !!chat.loading}
-              movedAt={waiting && c.some((b) => b.kind !== "side" && waitsIn(b)) ? movedAt : 0}
+              movedAt={waiting && c.some((b) => !isAside(b) && waitsIn(b)) ? movedAt : 0}
               onAnswer={answer}
               onQuestion={question}
               listen={listen}
@@ -1181,6 +1214,7 @@ export function ChatPane({
         </div>
         </RunStopProvider>
         </PathsIn>
+        </AskContext.Provider>
         </JumpContext.Provider>
       </div>
 
@@ -1510,7 +1544,7 @@ const TranscriptChunk = memo(
     fileChips,
     checkpointsOff,
   }: {
-    blocks: (Block | SideBlock)[];
+    blocks: (Block | Aside)[];
     live?: string;
     q: string;
     finds?: RegExp;
@@ -1543,6 +1577,8 @@ const TranscriptChunk = memo(
             <ErrorBoundary key={b.id} fallback={(error) => <UndrawnMessage id={b.id} error={error} />}>
               {b.kind === "side" ? (
                 <SideQuestionPair question={b.question} onDismiss={onDismissSideQuestion} />
+              ) : b.kind === "ask" ? (
+                <AskCard ask={b.ask} />
               ) : (
                 <BlockView
                   block={b}
@@ -1619,9 +1655,6 @@ function UndrawnMessage({ id, error }: { id: string; error: Error }) {
  * once Hermes is connected settles it. Edit takes its words back into the composer, and is left out for a message with
  * files, which the composer can't take back.
  */
-/** A reason as a sentence: Hermes's own come as lowercase fragments, like "session busy". */
-const sentence = (text = "") => (text ? `${text[0].toUpperCase()}${text.slice(1)}${/[.!?)]$/.test(text) ? "" : "."}` : "");
-
 function SendFailed({ item, canRetry, act }: { item: OutgoingItem; canRetry: boolean; act: (action: OutgoingAction) => void }) {
   const unknown = item.outgoing.state === "unknown";
   return (
@@ -1666,29 +1699,6 @@ function Thought({ item, live, query }: { item: ThinkingItem; live: boolean; que
         <ChevronRight size={13} className={`chev ${open ? "open" : ""}`} />
       </button>
       {open && <div className="thought-body">{highlight(item.text, query)}</div>}
-    </div>
-  );
-}
-
-function TurnCard({
-  kind = "",
-  icon,
-  heading,
-  tips,
-  foot,
-  children,
-  ...rest
-}: { kind?: string; icon: ReactNode; heading: ReactNode; tips: { hide: string; show: string }; foot?: ReactNode; children: ReactNode } & HTMLAttributes<HTMLDivElement>) {
-  const [open, setOpen] = useState(true);
-  return (
-    <div className={`msg returned ${kind}`.trimEnd()} {...rest}>
-      <button className="returned-head" aria-expanded={open} title={open ? tips.hide : tips.show} onClick={() => setOpen((o) => !o)}>
-        {icon}
-        <span className="returned-title">{heading}</span>
-        <ChevronRight size={13} className={`chev ${open ? "open" : ""}`} aria-hidden />
-      </button>
-      {open && children}
-      {foot}
     </div>
   );
 }
@@ -2290,7 +2300,11 @@ function Composer({
   const slash = useSlashCommands(commands, text, onText, taRef);
   // The "@" word the menu is open on stays words until it is picked, so typing "@bram" in full doesn't flash a pill.
   const bots = commands?.references?.bots;
+  const askWords = useLocale().chat.ask;
   const atButton = bots ? atWords.button : "Reference a chat";
+  // A message that names a bot is an Ask (ADR 0225): it goes to that bot, so this chat's reply and queue don't hold it,
+  // and offline it waits in its card.
+  const asking = !!bots && !slash.skill && namedBots(text, bots).length > 0;
   const pills = useMemo<ComposerMark[]>(() => {
     const named = mentionsIn(text, bots ?? []).filter((m) => m.start !== slash.typingAt && !marks.some((k) => m.start < k.end && m.end > k.start));
     return named.length ? [...marks, ...named.map((m) => ({ ...m, kind: "bot" as const }))].sort((a, b) => a.start - b.start) : marks;
@@ -2353,6 +2367,12 @@ function Composer({
       else if (skill) onSend(words, files, skill);
       else onSend(words, files);
     };
+    if (asking) {
+      // Its files would have to be kept safe on this computer until the bot's Bot Chat is found, which nothing does yet.
+      if (attachments.length) return setRefused([askWords.noFiles]);
+      go([]);
+      return setRefused([]);
+    }
     const skill = slash.skill;
     if (skill) {
       // Hermes builds a skill's message for the chat's session when it goes, so it can't wait in the queue or steer a
@@ -2388,11 +2408,12 @@ function Composer({
     setRefused(fellBack ? [fellBack] : []);
   };
   // What Enter, and the button beside the text, do now; Ctrl+Enter does the other while a reply runs.
-  const enterDoes = enterSteers ? "steer" : queueing ? "queue" : "send";
+  const enterSteersNow = enterSteers && !asking;
+  const enterDoes = enterSteersNow ? "steer" : queueing && !asking ? "queue" : "send";
   // With the Ctrl+Enter hint there is no room for Shift+Enter's, which never changes.
   const sendKey = chordLabel(keys.send[0]);
   const otherKey = chordLabel(keys.sendOther[0]);
-  const keysHint = `${sendKey} to ${enterDoes} · ${enterSteers ? `${otherKey} to queue` : ctrlSteers ? `${otherKey} to steer` : `${chordLabel(keys.newLine[0])} for a new line`}`;
+  const keysHint = `${sendKey} to ${enterDoes} · ${enterSteersNow ? `${otherKey} to queue` : ctrlSteers && !asking ? `${otherKey} to steer` : `${chordLabel(keys.newLine[0])} for a new line`}`;
 
   return (
     <div
@@ -2570,7 +2591,7 @@ function Composer({
               {keysHint}
             </span>
           )}
-          {enterSteers ? (
+          {asking ? null : enterSteers ? (
             <button
               className="send queue-btn"
               title={`Steer: add to the running reply without stopping it (${sendKey})`}
@@ -2598,6 +2619,11 @@ function Composer({
                 <ArrowUp size={16} />
               </button>
             )
+          )}
+          {asking && (running || (queueing && !!onQueue)) && (
+            <button className="send" title="Send" disabled={!sendable} onClick={() => send()}>
+              <ArrowUp size={16} />
+            </button>
           )}
         </div>
         {dictation.active && <DictationStrip dictation={dictation} />}

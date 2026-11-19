@@ -52,3 +52,6 @@ export const clockTime = (ms: number, tag?: string) => new Date(ms).toLocaleTime
 
 /** A time of day with seconds, as the desktop's locale writes it ("3:45:07 PM", "15:45:07"). */
 export const clockTimeWithSeconds = (ms: number) => new Date(ms).toLocaleTimeString(undefined, { timeStyle: "medium" });
+
+/** A reason as a sentence: Hermes's own come as lowercase fragments, like "session busy". */
+export const sentence = (text = "") => (text ? `${text[0].toUpperCase()}${text.slice(1)}${/[.!?)]$/.test(text) ? "" : "."}` : "");

@@ -46,6 +46,33 @@ export const en = {
       hide: "Hide the message",
       show: "Show the message",
     },
+    /**
+     * An Ask's card in the Bot Chat it was sent from (ADR 0225): its heading, what became of the message, and its buttons.
+     * `thread`: what the asking chat is called as a Referenced chat, in the composer's chip and in the bot's own chat.
+     */
+    ask: {
+      asked: (handle: string) => `Asked @${handle}`,
+      thread: (bot: string) => `Bot Chat with ${bot}`,
+      referenced: (title: string) => `Referenced: ${title}`,
+      waiting: (name: string) => `You're offline. This goes to ${name} when the connection is back.`,
+      sending: (name: string) => `Sending to ${name}…`,
+      held: (name: string) => `${name} is busy with another reply. Hermes gives it your message when that reply ends.`,
+      replying: (name: string) => `${name} is replying…`,
+      needsYou: (name: string) => `${name} is waiting for your answer, which only its own Bot Chat can take.`,
+      stopped: (name: string) => `${name}'s reply stopped before it finished.`,
+      unheard: (name: string) => `Highwing stopped hearing ${name}'s reply here. The reply continues in ${name}'s Bot Chat.`,
+      failed: (name: string) => `Not sent to ${name}.`,
+      unknown: (name: string) => `${name} may already have this message.`,
+      unknownCheck: (name: string) => `Open ${name}'s Bot Chat to check before you send it again.`,
+      open: (name: string) => `Open ${name}'s Bot Chat`,
+      retry: "Retry",
+      retryTip: "Send it again",
+      retryTwiceTip: "Send it again: the bot may answer it twice",
+      dismiss: "Dismiss",
+      noFiles: "Files can't go with a message that names a bot. Send them in that bot's own Bot Chat.",
+      hide: "Hide the message and the reply",
+      show: "Show the message and the reply",
+    },
     /** A computer-use run's card, its Watch live chip, and the note when Hermes couldn't use the screen (ADR 0216). */
     computerUse: {
       title: "Computer use",

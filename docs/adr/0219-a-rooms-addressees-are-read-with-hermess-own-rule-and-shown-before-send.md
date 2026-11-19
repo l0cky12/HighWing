@@ -1,5 +1,7 @@
 # A room's addressees are read with Hermes's own rule and shown before the owner sends
 
+> **Superseded by [ADR 0225](0225-an-at-in-a-bot-chat-asks-the-named-bot-and-the-answer-shows-where-it-was-asked.md)** (#75). Group rooms are removed, and with them the goes-to line, `@all` and the mention notes. The picker's matching stays, in `src/hermes/mentionPicker.ts`, for the `@` picker of a Bot Chat. The other files named below are gone.
+
 > **Accepted.** The reader is `src/hermes/roomMentions.ts`. The screens are `src/ui/GroupRoomPane.tsx` and `src/ui/GroupRooms.tsx`. The stand-in server keeps its own port in `src/hermes/fakeGroups.ts`. The vectors are cut by `scripts/room-mention-vectors.py` into `src/hermes/roomMentionVectors.json`. Tested in `src/hermes/roomMentions.test.ts`, `src/hermes/roomMentions.property.test.ts`, `src/hermes/roomMentions.vectors.test.ts`, `src/hermes/fakeGroups.test.ts`, `src/ui/groupRooms.test.tsx`, `src/ui/groupRoomsTranslated.test.tsx` and `e2e/features/group-rooms.e2e.tsx`. It builds on ADR 0210 and changes none of its decisions.
 
 The owner wanted `@bram` in a Group room to send the turn to Bram and nobody else, and to see before pressing Enter who Hermes would hand the message to.

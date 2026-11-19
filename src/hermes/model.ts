@@ -387,6 +387,39 @@ export type SideQuestion = { id: string; question: string; after?: string; taskI
 );
 
 /**
+ * A message the owner sent from a Bot Chat to another bot by naming it with "@" (GLOSSARY "Ask", ADR 0225). It goes to
+ * that bot's own Bot Chat; the chat it was sent from shows it as a card with the bot's reply, and that chat's bot takes
+ * no turn. Never among a chat's items, as a side question isn't (ADR 0086). `after`: the id of the asking chat's last
+ * item when it was sent, and `afterIndex` how many items the chat had then, for when that item's id has gone.
+ * `reply`: what the bot has said so far.
+ */
+export type Ask = {
+  id: string;
+  to: AskedBot;
+  text: string;
+  references?: string[];
+  after?: string;
+  afterIndex: number;
+  reply: string;
+} & AskState;
+
+/** The bot an Ask went to, as its card names it. Kept from when it was sent, so a later rename doesn't rename the card. */
+export type AskedBot = { profile: string; handle: string; name: string };
+
+/**
+ * What became of an Ask. `waiting`: the app isn't connected, so it goes when the connection is back. `sending`: on its
+ * way. `failed` and `unknown`: as for any message (`Outgoing`), and it is in the bot's outbox. `held`: Hermes has it and
+ * runs it when the reply the bot is busy with ends. `replying`: the bot's reply is streaming; `needsYou`: the bot asked
+ * the owner something in that reply, which only its own Bot Chat can answer. `stopped`: the reply ended early, with why
+ * when Hermes said. `unheard`: Hermes has the message, but this connection stopped hearing the reply.
+ */
+export type AskState =
+  | { state: "waiting" | "sending" | "held" | "answered" | "unheard" }
+  | { state: "failed" | "unknown"; reason: string }
+  | { state: "replying"; needsYou?: boolean }
+  | { state: "stopped"; reason?: string };
+
+/**
  * A chat's live session as Hermes reports it (`session.info`, `session.usage`, research doc "Status bar"); its model is
  * `Chat.model`.
  * `context`: how full the context window is, only once Hermes has measured it. `approvals`: its approval mode as Hermes

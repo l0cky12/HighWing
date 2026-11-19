@@ -40,7 +40,7 @@ Each feature file starts with an H1 and one paragraph describing the behaviour t
 - [Mark up an image](mark-up.md): paste a screenshot, draw a box on it, add a note, Cancel, and send the marked image.
 - [New chat](new-chat.md): start a chat from the rail, the list panel or Ctrl+N, and see it created on the server and in the list.
 - [New bot](new-bot.md): rewrite a rough persona with AI in place, edit a bot's persona, choose skills and tools, create, and read each back; the partial and narrow cases.
-- [Ask a bot](ask-a-bot.md): in a Bot Chat, `@` and the `@` button list the other bots above the chats, a pick puts `@handle` in as a pill that one Backspace takes out, a chat pick is still a chip, and an ordinary chat lists chats only.
+- [Ask a bot](ask-a-bot.md): in a Bot Chat, `@` and the `@` button list the other bots above the chats, a pick puts `@handle` in as a pill that one Backspace takes out, a chat pick is still a chip, and an ordinary chat lists chats only. A message naming bots goes to their Bot Chats, with an Asked card that survives a restart.
 - [MCP servers](mcp-servers.md): Settings → MCP servers: list, test, add, edit with write-only secrets, remove, switch, OAuth sign-in, catalog, another profile, Restart gateway after an edit.
 - [Gateways](gateways.md): Settings → Gateways: Telegram and Discord state, token replace and remove with read-back, the switch, a turned-down token, a missing library, a change on the server meanwhile, Check status, Restart gateway.
 - [Search chats](search.md): Ctrl+K or the rail opens search, a body-text match opens its chat, and a miss shows No matches.

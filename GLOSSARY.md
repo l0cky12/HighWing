@@ -252,6 +252,10 @@ _Avoid_: placeholder, inline attachment, reference (a Referenced chat is somethi
 Another of the owner's chats in the same profile, picked with "@" in the composer so a message can build on it. Hermes summarizes it with the profile's Text generation model, and the summary goes with that one message as attached context the model reads and the bubble doesn't show. Edit and Regenerate send it again. The message shows which chats it referenced. A reference is kept only while the app runs until its message is sent; a message waits for every summary, and can't be queued or steered (ADR 0165).
 _Avoid_: chat reference or `ChatRef` (a chat named by connection, profile and id), mention, link, attachment
 
+**Ask**:
+A message the owner sends from a Bot Chat that names other bots with "@". It goes to each named bot's own Bot Chat as the owner's message, with the asking chat as a Referenced chat, and the asking bot takes no turn. The asking chat shows an **Asked** card with the words and each bot's reply, kept on this computer, so it is there after a restart. It isn't Bot messaging: no bot sends it, and it works with that switch on or off (ADR 0232).
+_Avoid_: mention (an @handle is how an Ask names a bot), relay, DM, room
+
 **Annotation**:
 A pointer at part of a web page in the Preview, staged in the composer: an image of the page with the picked element or region marked, plus a block of words with the page's address, the time, the box and the owner's note. An element also adds its details. A region has none, and says why. The owner presses Annotate in the Preview, picks on a **still** of the page, which covers the live page while they annotate (the page stays loaded behind it), and reviews everything on a card before Add to message. Nothing is sent until the owner sends the message. On Windows every annotation is a region (ADR 0094, ADR 0153).
 _Avoid_: comment (the official desktop app's word), inspector

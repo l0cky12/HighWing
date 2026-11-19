@@ -101,7 +101,8 @@ it("draws a box on a pasted screenshot, puts the note in the words, and sends th
   await expect.poll(() => composerText().value, { message: "the note goes in the words, naming the box and the image" }).toBe(
     `Here is the page.\nBox 1 on ${pastedName}: This header sits too low\n`,
   );
-  expect(appDocument().activeElement, "the words take the keyboard again").toBe(composerText());
+  // The composer takes the keyboard back on the next frame after the dialog closes, which can come after the words.
+  await expect.poll(() => appDocument().activeElement, { message: "the words take the keyboard again" }).toBe(composerText());
   expect(stagedNames(), "the marked copy takes the original's place").toEqual([pastedName]);
   expect(server.files[pasted], "the pasted original is deleted, as the app made it").toBeUndefined();
   await shot("added");

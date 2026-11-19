@@ -108,6 +108,9 @@ const NONE: readonly Reference[] = [];
 export class ReferenceDesk {
   private byKey = new Map<string, readonly Reference[]>();
   private listeners = new Set<() => void>();
+  /** The chat `offer` added to each message, and the messages whose owner removed it, so it isn't offered again. */
+  private offered = new Map<string, string>();
+  private declined = new Set<string>();
 
   constructor(
     private summarize: (chatId: string) => Promise<string>,
@@ -137,14 +140,45 @@ export class ReferenceDesk {
   }
 
   remove(key: string, id: string) {
+    if (this.offered.get(key) === id) {
+      this.offered.delete(key);
+      this.declined.add(key);
+    }
     this.set(key, this.in(key).filter((r) => r.id !== id));
   }
 
-  /** The ready references of a message being sent; the message's list is emptied. */
+  /**
+   * Adds a chat the message brings by itself, without a pick: the asking chat once the message names a bot (ADR
+   * 0225). Added once; after the owner removes it, it isn't offered again until the message names no bot.
+   */
+  offer(key: string, chat: { chatId: string; title: string }) {
+    if (this.declined.has(key) || this.offered.get(key) === chat.chatId) return;
+    this.offered.set(key, chat.chatId);
+    this.add(key, chat);
+  }
+
+  /** The message names no bot any more: the chat `offer` added goes, and may be offered again. */
+  withdraw(key: string) {
+    this.declined.delete(key);
+    const id = this.offered.get(key);
+    if (id === undefined) return;
+    this.offered.delete(key);
+    this.set(key, this.in(key).filter((r) => r.id !== id));
+  }
+
+  /**
+   * The ready references of a message being sent; the message's list is emptied. What `offer` knows stays, for a send
+   * refused with its references put back; `withdraw` clears it once the sent message's words are gone.
+   */
   take(key: string): SentReference[] {
     const ready = this.in(key).flatMap((r) => (r.state === "ready" ? [{ ...(r.chatId !== undefined && { chatId: r.chatId }), title: r.title, summary: r.summary }] : []));
     this.set(key, []);
     return ready;
+  }
+
+  /** A message put back without the chat `offer` would add: the owner removed it before it went. */
+  decline(key: string) {
+    this.declined.add(key);
   }
 
   /** References of a message that didn't go, back on its Draft after any added meanwhile. */

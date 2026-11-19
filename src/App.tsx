@@ -61,6 +61,7 @@ import { searchEverywhere, type EverywhereFilter, type EverywhereOutcome, type E
 import { LiveConnections, attention as attentionOf, withoutServer, type ChatRef, type LiveSummary } from "./hermes/liveConnections";
 import { handoffs as handoffsOf, nextHandoffChange, outstandingIds, type Handoff, type StopWaiting } from "./hermes/dispatched";
 import { ChatPane, TeammatesContext, type Comparing, type FollowUpHost, type JumpTarget, type Teammates } from "./ui/ChatPane";
+import type { AskHost } from "./ui/AskCard";
 import type { ChatPin } from "./ui/ChatMenu";
 import { BranchDialog, BranchedFrom } from "./ui/Branch";
 import { MembershipDialog, MembershipStatus, needsOwner as membershipNeedsOwner } from "./ui/MembershipSync";
@@ -2322,7 +2323,7 @@ export function Main({
   );
   // The bots an "@" in a Bot Chat names: every one on this connection but the shown profile's, whose chat it is.
   const otherBots = useMemo<NamedBot[]>(
-    () => (hasBotMode ? (bots?.roster ?? []).filter((b) => b.profile !== profile).map((b) => ({ ...lookShown(b, botPictures), handle: b.handle, description: b.description })) : []),
+    () => (hasBotMode ? (bots?.roster ?? []).filter((b) => b.profile !== profile).map((b) => ({ ...lookShown(b, botPictures), profile: b.profile, handle: b.handle, description: b.description })) : []),
     [hasBotMode, bots?.roster, profile, botPictures],
   );
   const beforeBotChat = useRef<string | null>(null);
@@ -3068,6 +3069,10 @@ export function Main({
           desk={desk}
           referenceDesk={referenceDesk}
           onTextGenerationSettings={openTextGeneration}
+          onOpenBot={(name) => {
+            const b = roster.find((r) => r.profile === name);
+            if (b) openBot(b, "open");
+          }}
           syncOutbox={deskWiring.syncOutbox}
           voice={voice}
           catalog={catalog}
@@ -4039,6 +4044,7 @@ function ChatView({
   voice,
   referenceDesk,
   onTextGenerationSettings,
+  onOpenBot,
 }: {
   hermes: Hermes;
   connection: SavedConnection;
@@ -4114,6 +4120,8 @@ function ChatView({
   /** The chats each unsent message references, by Draft key. */
   referenceDesk: ReferenceDesk;
   onTextGenerationSettings: () => void;
+  /** Opens a bot's Bot Chat, by its profile: an Asked card's Open. */
+  onOpenBot?: (profile: string) => void;
 }) {
   // What the owner has typed and not sent, kept for each chat on this connection and profile. Two panes on one chat
   // share its draft.
@@ -4346,6 +4354,37 @@ function ChatView({
   );
   const hermesList = serverCommands.state === "ready" ? serverCommands.list.hermes : undefined;
   const commandList = useMemo(() => commandSet(hermesList), [hermesList]);
+  // A message naming other bots goes to them (ADR 0232): the cards, and this chat as the chip it carries once it has
+  // something to summarize.
+  const asked = useSyncExternalStore(hermes.asks.subscribe, hermes.asks.list);
+  const hasHistory = chat.items.some((i) => (i.kind === "user" && !i.outgoing) || i.kind === "assistant");
+  const askWords = useLocale().chat.ask;
+  const selfTitle = bot && askWords.referenceTitle(bot.name);
+  const askSelf = useMemo(() => (hasHistory && selfTitle ? { chatId: chat.id, title: selfTitle } : undefined), [hasHistory, selfTitle, chat.id]);
+  const askHost: AskHost | undefined =
+    kind === "bot"
+      ? {
+          asks: asked,
+          bots: otherBots,
+          self: askSelf,
+          connected: status === "connected",
+          send: (to, text, refs) => {
+            const why = hermes.asks.send(chat.id, to, text, refs);
+            if (!why) savedDrafts.take(shownDraft);
+            return why;
+          },
+          retry: hermes.asks.retry,
+          dismiss: hermes.asks.dismiss,
+          edit: (id) => {
+            const back = hermes.asks.takeBack(id);
+            if (!back) return;
+            keepDraft(shownDraft, back.text);
+            referenceDesk.putBack(shownDraft, back.references);
+            if (askSelf && !back.references.some((r) => r.chatId === askSelf.chatId)) referenceDesk.decline(shownDraft);
+          },
+          open: (name) => onOpenBot?.(name),
+        }
+      : undefined;
   const commands: CommandHost = {
     commands: commandList,
     models: { catalog, favorites, current: shownModel },
@@ -4633,6 +4672,7 @@ function ChatView({
       voiceSend={sessionHere ? (text) => hermes.sendTracked(chat.id, text) : undefined}
       commands={commands}
       references={{ desk: referenceDesk, onTextModelSettings: onTextGenerationSettings }}
+      ask={askHost}
       onDismissSideQuestion={(id) => hermes.dismissSideQuestion(chat.id, id)}
       followUp={followUp}
       compare={compare}

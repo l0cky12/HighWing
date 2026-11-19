@@ -98,7 +98,6 @@ A screen whose feature the server doesn't have shows a note in its place instead
 - **Inbox.** The tray menu's Open Inbox opens a list of, for every profile on the server, chats with a reply running, an Approval waiting, a failure or a Failed message, and completed replies not read yet. The tray is told how many need you. Filter by Running, Needs approval, Failed or Completed. Each entry names its profile, chat and server and says when, and background connections' entries are listed too; opening it makes its server the one in use and switches profile if needed and opens the chat at the Approval card or message. Nothing is approved, retried or resent from the inbox. Dismissing an entry hides it from the inbox only. See [The inbox](#the-inbox).
 - **Desktop notifications.** While the window isn't focused, the app posts a notification when a reply finishes or an Approval is waiting. This needs a freedesktop notification service, such as mako, dunst, swaync, GNOME, or KDE.
 - **Slash commands.** Type `/` at the start of a message for a menu of commands, each marked App or Hermes: `/help`, `/new`, `/rename <title>`, `/delete` (asks first), `/steer <message>` for a running reply, and `/context`. Any other text starting with `/` is sent as a message. See [Slash commands](#slash-commands).
-- **Templates.** The composer's Templates button opens a library of messages you reuse, with blanks such as `{host}` filled in each time. Pick one by search and arrow keys, fill in its blanks while the whole message shows as it will be, and **Insert** puts it in the composer. Insert never sends. See [Templates](#templates).
 - **Drafts and reopening.** Drafts are kept for each chat, profile, and connection, and they survive restarts. Each launch starts on a new chat; turn on **Reopen last chat on launch** in Settings → General → Launch, tray & updates to open the chat you left instead.
 - **Saved connections.** Keep several Hermes servers and switch between them from the rail's server button or Settings → General → Connections. Each has its own password, extra headers, drafts, queues and profile. Several can be live at once: the others carry on in the background and show their Approvals in the Inbox. See [Saved connections](#saved-connections) and [Several live connections](#several-live-connections).
 
@@ -357,8 +356,8 @@ For each category choose **Merge** (add what's missing and keep this computer's 
 `packaging/aur/PKGBUILD` builds the `hermes-chat-git` package. It isn't published on the AUR, so build it from this repository. The PKGBUILD clones `main` from GitHub, not your local checkout.
 
 ```sh
-git clone https://github.com/l0cky12/hermes-chat.git
-cd hermes-chat
+git clone https://github.com/l0cky12/HighWing.git
+cd HighWing
 packaging/aur/build.sh -si
 ```
 
@@ -421,7 +420,7 @@ It is built on Ubuntu 24.04, so it needs a system at least that new, on x86_64. 
 
 ## Install on Windows
 
-Download `hermes-chat_<version>_x64-setup.exe` from the latest [release](https://github.com/l0cky12/hermes-chat/releases) and run it. It installs for your Windows user only, with no admin rights, and registers [chat links](#chat-links). The installer isn't code-signed, so Windows SmartScreen warns on first run: choose **More info**, then **Run anyway**. The `.sha256` file beside it holds its checksum (`Get-FileHash` in PowerShell).
+Download `hermes-chat_<version>_x64-setup.exe` from the latest [release](https://github.com/l0cky12/HighWing/releases) and run it. It installs for your Windows user only, with no admin rights, and registers [chat links](#chat-links). The installer isn't code-signed, so Windows SmartScreen warns on first run: choose **More info**, then **Run anyway**. The `.sha256` file beside it holds its checksum (`Get-FileHash` in PowerShell).
 
 Signing in through SSH uses Windows OpenSSH, so `ssh` must work in PowerShell. Passwords and extra request headers are kept in Windows Credential Manager. To update, run a newer installer over the old one. The Windows build is compiled and unit-tested on GitHub's Windows runner (ADR 0069). Pushing a `v<version>` tag builds the installer and attaches it to that release (ADR 0080).
 
@@ -555,25 +554,7 @@ Each Hermes profile has its own chats. The chat list header is the profile switc
 
 ### Templates
 
-A template has a name, an optional description, the message, and optionally one project it is offered in. The Templates button in the composer opens the library: type to search names, descriptions and messages, use ↑ ↓ Home End to pick, and Enter (or **Use**) to fill one in. **New**, **Edit**, **Duplicate** and **Delete** (which asks first) manage them, and names must differ, ignoring case.
-
-Blanks in the message:
-
-| Write | Means |
-| --- | --- |
-| `{name}` | A value you must fill in. Insert waits for it. |
-| `{name?}` | Optional. Left blank, it becomes nothing. |
-| `{name=default}` | Optional, with a one-line default (no `}` in it). |
-| `{name...}` | Takes several lines. Combines with the others: `{name...?}`, `{name...=default}`. |
-| `\{` | A literal `{`. Write `\{name}` to keep the text `{name}`. |
-
-A name starts with a letter or `_` and goes on with letters, digits, `_` or `-`, in any alphabet. A blank used twice is filled in once. Any other brace is ordinary text, and so is a blank touching another brace, so JSON, `{{ jinja }}`, `{{host}}`, `${{ ci }}` and `{a,b}` need nothing; `${HOME}` or a Python f-string's `{x}` would be read as a blank, so write `$\{HOME}`. Values go in exactly as typed and are never read for blanks themselves. Nothing in a template is run or evaluated.
-
-Filling one in shows a field for each blank and a preview of exactly the text that goes in the composer, with filled values and missing ones marked. **Insert** (or Ctrl+Enter) puts it in an empty composer. If the composer has a draft, you choose **Replace draft** or **Add after draft** (after a blank line); Back, Cancel and Escape leave the draft as it was. Nothing is ever sent until you send it, and a template never attaches files.
-
-**Offered in** limits a template to one project of the connection and profile it was made in: it is offered in that project's chats and while the list shows the project. **Show … for other projects** lists the rest. Deleting a project, in this app or elsewhere once this app finds it gone, keeps its templates and offers them everywhere.
-
-**Export…** saves every template to a JSON file you pick (`{"format": "hermes-chat-templates", "version": 1, "templates": [{name, description, body}]}`), without projects, ids or anything about the connection. **Import…** adds the templates in such a file as new ones. A name already taken gets ` (2)`, an entry that isn't a valid template is skipped and counted, and a file that isn't an export, or comes from a newer version, changes nothing. Templates are local to this computer and work with any Hermes, since only the text you send reaches it. See [ADR 0028](adr/0028-templates-are-local-data-with-plain-placeholders.md).
+The composer's Templates library is gone, so the app no longer shows, fills in, edits, exports or imports templates. Templates an earlier version saved stay in the display preferences. A backup still carries them, and deleting a project drops that project from its templates ([ADR 0028](adr/0028-templates-are-local-data-with-plain-placeholders.md) records how the library worked).
 
 ## What is stored where
 
@@ -605,8 +586,7 @@ Hermes stores the chats and their history, imported chats included, titles, Arch
 | Installed extensions: each one's id, version, permissions granted, whether it is disabled and why, when it last failed, and the version last started. No chat text. | Webview local storage (`hermes-chat.extensions`) | Uninstalling the extension. Clear local cache keeps it. |
 | Close to tray | `$XDG_CONFIG_HOME/net.l0cky12.hermes-chat/window.json` (usually `~/.config/...`) | Not removed by the app |
 | Display preferences, model pick, starred models, and reopen-last-chat (the pick and the chat to reopen are per connection and profile) | Webview local storage | Not removed by Clear local cache. Removing a connection removes its pick and chat to reopen. |
-| **Templates**, at most 300, each message up to 20,000 characters | Webview local storage, in the display preferences (`hermes-ui-prefs`), for every connection and profile; a project-scoped one names its connection, profile and project | Deleting them. Clear local cache keeps them. |
-| Exported templates | The file you chose in the Save dialog | You |
+| **Templates** saved by an earlier version, at most 300, each message up to 20,000 characters | Webview local storage, in the display preferences (`hermes-ui-prefs`), for every connection and profile; a project-scoped one names its connection, profile and project | Not removed by the app. Clear local cache keeps them. |
 | The Snapshot host: endpoint, region, bucket, prefix, access key id and secret key, in one entry. Only Rust reads the secret; the webview sees the rest. One for this computer, for every connection and profile. | System keyring, account `snapshot-host` | **Remove** in Settings → Snapshots |
 | Each snapshot: the page, and its title, created and expiry times and SHA-256 as object metadata. Nothing about a snapshot is kept on this computer. | Your bucket, `<prefix><id>.html` | **Revoke**, the list deleting it after it expires, or you |
 | Drafts, Failed messages and Queued messages saved for an update's restart | `$XDG_DATA_HOME/net.l0cky12.hermes-chat/restart-drafts.json`, readable only by you | Putting them back at the next launch. A copy that couldn't be put back is renamed `restart-drafts-<time>.json` and stays until you move or delete it; Settings says where. |
@@ -680,7 +660,6 @@ Everything kept per connection in local storage, and in `project-defaults.json`,
 - Edit and Regenerate never rewrite a chat's stored messages: each version is a new branch, so the chat list gets a chat per version. Which turn a version is of is kept on this computer only, and other Hermes clients show versions as plain branches. A message sent with an image can't be edited or regenerated. Hermes keeps no model per reply, so the original's model is the one its chat runs on now. Checked live against the deployed checkout with a synthetic chat in a throwaway home, and against the tests' fake Hermes; the canonical protocol and other Hermes versions weren't tested.
 - The context inspector's categories are Hermes's estimates, and Hermes doesn't measure tool output on its own. Its compaction history reads a chat's first 10,000 stored rows, and knows a compaction only by the summary row Hermes stored, so compacted messages with no summary row after them show without a summary or a time. Show where it happened lands on the first message stored after the compaction, which can be below messages Hermes kept from before it. Its compaction reading was checked against the live `bf0203a` server's stored chats, and the rest against Hermes's source at `bf0203a` and the automated tests' fake Hermes. Other versions weren't tested.
 - Slash commands are a short list. The app doesn't offer Hermes's other commands, skills, or quick commands, and sends any other `/` text as a message. Command answers aren't kept in the chat's history or Saved copy.
-- Templates stay on this computer: they don't sync, and only Export and Import move them. Two windows editing templates at the same moment can lose one window's change. If local storage is full, the library says the change lasts only until the app closes.
 - Backups cover this computer's data only, not the server's. They restore into this computer's one connection, so a backup from another server maps into a profile of the one signed in to. Restoring all categories isn't one transaction: each category is written whole or not at all, and one failing leaves the others restored, which the recovery backup can undo. Failed messages, attachments and persona edits aren't backed up. Project membership that Hermes keeps isn't restored: a restore that would change it fails that category. A backup must be the uncompressed zip Highwing writes; one re-zipped with compression is refused.
 - Logs can read only what Hermes's `/api/logs` gives: the last 500 lines of a file, with no position. More than 500 lines between two reads (250 lines a second), or a rotation between reads, means lines are missed; the list says so but can't get them back. Lines are matched by their text, so a run of identical lines can hide a repeat. Only the log on screen is read, and only while connected. Redaction covers known shapes and can miss a secret written another way. Logs was checked live against Hermes at `f0d9488` (whose `/api/logs` is the same as `bf0203a`'s) on a throwaway home, through a browser harness that stands in for the Rust relay (`tools/shots/logs-live.mjs`), not the Tauri window. Other versions weren't tested.
 - The tray needs a desktop that shows tray icons; GNOME needs the AppIndicator extension. Clicking the icon opens its menu rather than toggling the window, since libayatana-appindicator reports no clicks. With no session bus, launching it again starts a second copy instead of bringing the first one back.

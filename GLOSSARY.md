@@ -301,7 +301,7 @@ An outcome the owner gives a chat for Hermes to keep working toward, turn after 
 _Avoid_: task (a Work card), loop and heartbeat (Hermes's other standing work, on a clock), gate (Hermes's word for a check)
 
 **Template**:
-A message the owner reuses, kept in a library on this computer: a name, an optional description, the message with blanks to fill in (`{host}`, `{port=22}`, `{notes...?}`), and optionally the one project it is offered in. Filling one in shows the whole message as it will be; Insert puts it in the composer and never sends. With a draft already there, the owner chooses to replace it or add after it, and Cancel leaves it alone. Templates are data: nothing in one runs (ADR 0028).
+A message the owner reused, kept on this computer: a name, an optional description, the message with blanks to fill in, and optionally the one project it was offered in (ADR 0028). The composer's Templates library is gone. Templates an earlier version saved stay in the display preferences and in backups, and nothing in the app shows or edits them.
 _Avoid_: snippet, macro, prompt (for the template itself), quick command (Hermes's own)
 
 **Dictation**:

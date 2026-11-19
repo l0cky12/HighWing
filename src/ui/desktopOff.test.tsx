@@ -151,6 +151,14 @@ describe("a Bot Chat whose bot has desktop control off", () => {
     expect(button(w.turnOn)).toBeTruthy();
   });
 
+  it("goes while disconnected, since Turn on couldn't send anything", async () => {
+    const { server, hermes } = await openBotChat();
+    await waitFor(() => expect(words()).toContain(w.text));
+    act(() => server.drop());
+    await act(async () => void (await hermes.idle()));
+    await waitFor(() => expect(note()).toBeNull());
+  });
+
   it("shows no note when the toolsets can't be read", async () => {
     await openBotChat((s) => (s.toolsetRoutes = "none"));
     await act(async () => void (await new Promise((r) => setTimeout(r, 50))));

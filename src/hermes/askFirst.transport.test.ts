@@ -62,6 +62,17 @@ describe("a message in a Bot Chat", () => {
   });
 });
 
+describe("a Bot Chat message sent from another client", () => {
+  it("shows only the words typed in the chat open here", async () => {
+    const { server, hermes, botChat } = await signedIn();
+    const bot = await botChat();
+    // Hermes runs the other client's turn here with no message from this app: the row it stored carries the rule.
+    server.wake(bot, { text: `Tidy the desktop${ATTACHED}${ASK_FIRST_RULE}`, display_kind: "" }, "Tidied.");
+    const users = () => hermes.getSnapshot().chats.find((c) => c.id === bot)!.items.filter((i) => i.kind === "user").map((i) => i.text);
+    await expect.poll(users).toEqual(["Tidy the desktop"]);
+  });
+});
+
 describe("a message in an ordinary chat", () => {
   it("carries no rule, in either setting", async () => {
     const { hermes, submits } = await signedIn();

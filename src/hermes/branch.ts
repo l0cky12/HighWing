@@ -104,7 +104,7 @@ const norm = (t: string) => t.replace(/\s+/g, " ").trim();
  */
 function sameMessage(row: { role: string; text: string }, item: { kind: string; text: string }): boolean {
   if (row.role !== item.kind) return false;
-  const a = norm(peelImages(row.text).rest);
+  const a = norm(typedText(peelImages(row.text).rest));
   const b = norm(item.text);
   return a === b || (item.kind === "user" && !!b && a.endsWith(b));
 }

@@ -4943,7 +4943,7 @@ export class Hermes {
       const id = nextId(c.items, "w");
       const back = returnedItem(text, row.display_kind, row.display_metadata);
       const { rest, images } = peelImages(text);
-      const began: Item = back ? { kind: "returned", id, ...back, rowId, ...(at && { at }) } : { kind: "user", id, text: rest, ...(images.length && { images }), rowId, ...(at && { at }) };
+      const began: Item = back ? { kind: "returned", id, ...back, rowId, ...(at && { at }) } : { kind: "user", id, text: typedText(rest), ...(images.length && { images }), rowId, ...(at && { at }) };
       return { ...c, items: [...c.items.slice(0, start), began, ...c.items.slice(start)] };
     });
     this.saveTranscript(chatId);

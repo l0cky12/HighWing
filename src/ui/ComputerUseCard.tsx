@@ -3,7 +3,7 @@
 // last step was refused because a person holds the screen. The run is `foldRuns`'s (computerUse.ts); who holds the
 // screen is the connection's ScreenControl's, through `ScreenDesk`.
 import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { Ban, Check, ChevronRight, CircleAlert, Hand, Minus, MonitorOff, MonitorPlay, Square, X } from "lucide-react";
+import { Ban, Check, ChevronRight, CircleAlert, Hand, Minus, Monitor, MonitorOff, MonitorPlay, Square, X } from "lucide-react";
 import { screenUse, type CuRun, type CuStep, type RunLine } from "../hermes/computerUse";
 import { afterRead, afterTurnOn, noticeOf, type DesktopNotice, type TurnOnFailed } from "../hermes/computerUseReadiness";
 import { isWaiting, type ApprovalChoice, type Chat, type Item } from "../hermes/model";
@@ -337,6 +337,12 @@ export function DesktopOffNotice() {
     return () => void (live.current = false);
   }, []);
 
+  // A new connection or profile drops what the last one said, and any answer still on its way from it.
+  useEffect(() => {
+    seq.current++;
+    setNotice({ kind: "hidden" });
+  }, [api, profile]);
+
   const read = useCallback(async () => {
     if (!api || !profile) return;
     const mine = ++seq.current;
@@ -383,10 +389,10 @@ export function DesktopOffNotice() {
     else await save(row, []);
   };
 
-  if (dismissed || notice.kind === "hidden") return null;
+  if (!api || dismissed || notice.kind === "hidden") return null;
   return (
     <div className="cu-banner" role="status">
-      <MonitorOff size={14} aria-hidden />
+      {notice.kind === "on" ? <Monitor size={14} aria-hidden /> : <MonitorOff size={14} aria-hidden />}
       {notice.kind === "off" && (
         <>
           <span className="cu-banner-text">{w.text}</span>

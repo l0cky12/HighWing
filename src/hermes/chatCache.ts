@@ -40,6 +40,8 @@ export const REPLY_TIMES_PREFIX = "hermes-chat.reply-times.";
 /** The images this app sent, per connection and profile (sentImages.ts `SentHere`). */
 export const SENT_HERE_PREFIX = "hermes-chat.sent-images.";
 export const ASKS_PREFIX = "hermes-chat.asks.";
+/** What the owner accepted on a Bot Chat's setup card, until the ready turn's row reads back (ADR 0231), by chat. */
+export const SETUP_RECORD_PREFIX = "hermes-chat.bot-setup-accepted.";
 /** Where drafts.ts kept a chat's sent messages Hermes didn't take, or may not have, before the outbox: moved into it. */
 export const HELD_PREFIX = "hermes-chat.undelivered.";
 
@@ -358,6 +360,7 @@ export function localChatCache(connection: ScopeSource): ChatCache {
   const replyTimesKey = (profile: string) => REPLY_TIMES_PREFIX + scope(profile);
   const sentHereKey = (profile: string) => SENT_HERE_PREFIX + scope(profile);
   const asksKey = (profile: string) => ASKS_PREFIX + scope(profile);
+  const setupRecordKey = (profile: string, chatId: string) => SETUP_RECORD_PREFIX + scope(profile, chatId);
   const loadSentHere = (profile: string) => {
     try {
       return sentHereOf(JSON.parse(localStorage.getItem(sentHereKey(profile)) ?? "null"));
@@ -563,6 +566,16 @@ export function localChatCache(connection: ScopeSource): ChatCache {
     },
     saveAsks(profile, asks) {
       return persist(() => localStorage, asksKey(profile), asks.length ? JSON.stringify(asks) : null);
+    },
+    loadSetupRecord(profile, chatId) {
+      try {
+        return JSON.parse(localStorage.getItem(setupRecordKey(profile, chatId)) ?? "null");
+      } catch {
+        return null;
+      }
+    },
+    saveSetupRecord(profile, chatId, record) {
+      return persist(() => localStorage, setupRecordKey(profile, chatId), record ? JSON.stringify(record) : null);
     },
     loadSentHere,
     saveSentHere(profile, chat, images) {

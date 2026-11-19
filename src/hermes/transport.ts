@@ -47,7 +47,7 @@ import { followsSession, nextRoster, parseKanbanCreate, sameTask, type Dispatche
 import { KanbanApi, KanbanWatch } from "./kanban";
 import { ModelSettingsApi } from "./modelSettings";
 import { WritingDesk, type WritingPick } from "./writingModel";
-import { ToolsetsApi } from "./toolsets";
+import { ToolsetsApi, type Caution } from "./toolsets";
 import { VoiceSettingsApi } from "./voiceSettings";
 import { readBack, sendImport, type PlannedChat } from "./importTranscripts";
 import { memoryApi, type MemoryApi } from "./memory";
@@ -150,6 +150,9 @@ import { errorText, formatBytes, isObj, nonBlankText, nonEmptyText, optionalText
 import { displayMetadata, returnedItem } from "./returned";
 import { botSetupMarkerId } from "./botSetupBrief";
 import { BotSetupStarts, botSetupBegin, lostAnswer, runStart, withSetupLine, type BotSetupRefusal, type BotSetupStart, type StartAsk, type StartIo } from "./botSetupStart";
+import { acceptedRecord, fencedBlocks, parseSetup, readAcceptedRecord, type AcceptedRecord, type ListedItem, type ParseResult, type Plan } from "./botSetupCard";
+import { BOT_SETUP_FENCE } from "./botSetupBrief";
+import { applyItem, readSetupNow, readyTurn, runSetup, tickedItems, type BotSetupRestart, type CardState, type SetupApis, type SetupNow } from "./botSetupApply";
 
 /**
  * The `source` this app stamps on chats it starts. Legacy `session.create` stores any string as-is, but the gateway
@@ -289,6 +292,10 @@ export type ChatCache = {
   loadAsks(profile: string): unknown;
   /** Keeps them; none deletes them. False: storage refused it, so they last until the app closes. */
   saveAsks(profile: string, asks: readonly Ask[]): boolean;
+  /** What the owner accepted on the chat's setup card, kept until the ready turn's row reads back (ADR 0231). */
+  loadSetupRecord(profile: string, chatId: string): unknown;
+  /** Keeps it; null deletes it. False: storage refused it. */
+  saveSetupRecord(profile: string, chatId: string, record: AcceptedRecord | null): boolean;
 };
 /**
  * What clicking a notification about a waiting card does: `open` shows the card in its chat. `deny`, for an Approval
@@ -331,6 +338,8 @@ const noCache: ChatCache = {
   saveSentHere: () => {},
   loadAsks: () => null,
   saveAsks: () => true,
+  loadSetupRecord: () => null,
+  saveSetupRecord: () => true,
 };
 
 /** A row of dashboard REST `GET /api/sessions`; times are Unix seconds. */
@@ -880,6 +889,8 @@ export class Hermes {
   private usageFrom = new Map<string, UsageCounters | "unknown">();
   /** When each chat's running turn started (`message.start`), Unix ms: how long its reply took is timed from it. */
   private turnBegan = new Map<string, number>();
+  /** When Hermes last said it rebuilt each Bot Chat's agent ("Capabilities updated"), Unix ms, for Bot setup's Restart row. */
+  private rebuiltAt = new Map<string, number>();
   /** What the app heard of each chat's turns, in memory, for the Run view (ADR 0178). */
   private recorder = new FlightRecorder();
   /** Chats whose running turn no message sent from here began: Hermes started it, or another Hermes client did. */
@@ -2624,6 +2635,117 @@ export class Hermes {
       if (e instanceof BotModeUnsupportedError) return { kind: "refused", reason: "noBotMode" };
       throw e;
     }
+  }
+
+  /** What Set it up reads and writes the shown profile's bot through (botSetupApply.ts). */
+  private setupApis(profile: string): SetupApis {
+    return {
+      skills: this.skills,
+      toolsets: this.toolsets,
+      persona: this.persona,
+      profiles: this.manageProfiles,
+      memory: this.memory,
+      bots: () => this.bots(),
+      models: async () => (this.snapshot.models?.profile === profile ? this.snapshot.models : this.readModels(profile).catch(() => undefined)),
+      editBot: (name, edits) => this.editBot(name, edits),
+    };
+  }
+
+  /**
+   * What a Bot Chat's setup card is drawn from (ADR 0231), read now: its stored rows, hidden ones included, and, when
+   * they hold a card, the bot as Hermes has it. `accepted` is the record this computer keeps of the owner's last Set it
+   * up, until the ready turn's row holds the same; after that, the rows' own.
+   */
+  async readBotSetup(chatId: string): Promise<BotSetupRead> {
+    const profile = this.profile;
+    const rows = await this.storedRows(chatId, profile);
+    const parse = parseSetup(rows);
+    const blockAt = (index: number, nth: number) => fencedBlocks(storedText(rows[index]?.content), BOT_SETUP_FENCE)[nth];
+    const blocks = rows.flatMap((r) => (r.role === "assistant" ? fencedBlocks(storedText(r.content), BOT_SETUP_FENCE) : []));
+    if (parse.kind === "none") return { chatId, profile, parse, blocks, accepted: null };
+    if (parse.kind === "unreadable") return { chatId, profile, parse, blocks, accepted: null, unreadable: parse.source };
+    const ours = parse.card.setupId;
+    const kept = readAcceptedRecord(JSON.stringify(this.cache.loadSetupRecord(profile, chatId)));
+    let accepted = parse.accepted;
+    if (kept && kept.card.startsWith(`${ours}:`)) {
+      if (accepted && JSON.stringify(accepted) === JSON.stringify(kept)) this.cache.saveSetupRecord(profile, chatId, null);
+      else accepted = kept;
+    }
+    const setup = await readSetupNow(this.setupApis(profile), profile, parse.card);
+    return {
+      chatId,
+      profile,
+      parse,
+      blocks,
+      accepted,
+      readyOwed: accepted !== parse.accepted,
+      live: blockAt(parse.card.at.index, parse.card.at.nth),
+      ...(parse.newerUnreadable && { unreadable: parse.newerUnreadable.source }),
+      setup,
+    };
+  }
+
+  /**
+   * Set it up on a Bot Chat's card (ADR 0231): records what the owner accepted on this computer first, writes each
+   * ticked item one at a time and reads it back, then sends the hidden ready turn that carries the record and ends the
+   * interview. Once a call gets no answer, nothing more is sent: the items after it aren't tried, and the ready turn
+   * waits for the next Set it up. `hear` learns each item's state as it changes. `readyAt`: when the ready turn went.
+   */
+  async applyBotSetup(read: BotSetupCardRead, plan: Plan, hear: (key: string, state: CardState | { kind: "working" }) => void): Promise<BotSetupRun> {
+    const { chatId, profile, setup } = read;
+    if (this.profile !== profile) throw new Error(`Switch to ${profile} first.`);
+    const items = tickedItems(plan);
+    const record = acceptedRecord(plan, read.accepted);
+    this.cache.saveSetupRecord(profile, chatId, record);
+    const apis = this.setupApis(profile);
+    const run = await runSetup(items, (item) => applyItem(apis, profile, setup, item), hear);
+    if (run.unanswered !== undefined) return run;
+    if (this.profile !== profile) return { ...run, readyFailed: `Switched to the ${this.profile} profile before the bot heard it was set up.` };
+    const readyAt = Date.now();
+    try {
+      const runtimeId = await this.resume(chatId);
+      const was = this.snapshot.chats.find((c) => c.id === chatId)?.running;
+      this.patchChat(chatId, (c) => ({ ...c, running: true, updatedAt: readyAt }));
+      try {
+        this.noteRows(profile, chatId, [(await this.protocol.submitHidden(runtimeId, profile, readyTurn(read.parse.card.setupId, items, run.states, record))).userRowId]);
+      } catch (e) {
+        if (!lostAnswer(e) && this.profile === profile) this.patchChat(chatId, (c) => ({ ...c, running: !!was && !!c.running }));
+        throw e;
+      }
+    } catch (e) {
+      return { ...run, readyFailed: errorText(e) };
+    }
+    return { ...run, readyAt };
+  }
+
+  /** Writes one item of a Bot Chat's card again and reads it back. `accepted`: the cautions the owner confirmed with Apply anyway. */
+  async retryBotSetupItem(read: BotSetupCardRead, item: ListedItem, accepted: Caution[] = []): Promise<CardState> {
+    if (this.profile !== read.profile) throw new Error(`Switch to ${read.profile} first.`);
+    return (await applyItem(this.setupApis(read.profile), read.profile, read.setup, item, accepted)).state;
+  }
+
+  /**
+   * Whether the Bot Chat's bot restarted with what Set it up applied, after its ready turn at `since` (ADR 0231):
+   * `rebuilt` once Hermes said "Capabilities updated", `read` with the tools the chat's own `tools.show` lists and the
+   * profile's toolsets, or `unchecked` where `tools.show` can't speak for this profile (ADR 0041).
+   */
+  async botSetupRestart(chatId: string, since: number): Promise<BotSetupRestart> {
+    if ((this.rebuiltAt.get(chatId) ?? 0) >= since) return { kind: "rebuilt" };
+    const profile = this.profile;
+    const tools = await this.toolsets.chatTools(profile, await this.resume(chatId));
+    if (tools.kind === "unsupported") return { kind: "unchecked" };
+    if (tools.kind === "closed") return { kind: "read", tools: new Set(), toolsets: [] };
+    return { kind: "read", tools: tools.tools, toolsets: (await this.toolsets.list(profile)).toolsets };
+  }
+
+  /**
+   * Picks up the setup a Bot Chat holds when it opens (ADR 0231, "Starting the interview"), as `startBotSetup` does,
+   * for the shown profile's bot. It never makes a Bot Chat: the one shown is there.
+   */
+  async resumeBotSetup(ask: StartAsk = "start"): Promise<BotSetupStart> {
+    const bot = (await this.bots()).find((b) => b.profile === this.profile);
+    if (!bot) throw new Error(`Hermes lists no bot for the ${this.profile} profile.`);
+    return this.startBotSetup(bot, () => Promise.reject(new Error("A Bot Chat that holds a setup isn't made again.")), ask);
   }
 
   /**
@@ -4851,6 +4973,11 @@ export class Hermes {
     }
     // A side question's answer is no part of the chat or of a turn running in it.
     if (type === "btw.complete") return this.sideAnswered(chat, textOf(payload.task_id) ?? "", payload.text);
+    // Hermes's notice that it rebuilt a Bot Chat's agent for a changed profile (`_sync_bot_capabilities`).
+    if (type === "notice") {
+      if (/^Capabilities updated\b/.test(textOf(payload.message) ?? "")) this.rebuiltAt.set(chat.id, Date.now());
+      return;
+    }
     // Sent when the chat's model, reasoning, fast mode or YOLO changes, here or in another Hermes client.
     if (type === "session.info") {
       const model = pickFromInfo(payload);
@@ -7001,3 +7128,26 @@ function applyEvent(c: Chat, type: string, p: Record<string, unknown>, from?: st
       return c;
   }
 }
+
+/**
+ * A Bot Chat's setup card as read (`Hermes.readBotSetup`). `blocks`: every setup block the bot wrote there, `live` the
+ * live card's and `unreadable` the newest one that doesn't parse, for the transcript to tell which block is which.
+ * `readyOwed`: the record is only on this computer, since no ready turn's row holds it yet.
+ */
+export type BotSetupRead =
+  | { chatId: string; profile: string; parse: Exclude<ParseResult, { kind: "card" }>; blocks: string[]; accepted: null; unreadable?: string }
+  | BotSetupCardRead;
+export type BotSetupCardRead = {
+  chatId: string;
+  profile: string;
+  parse: Extract<ParseResult, { kind: "card" }>;
+  blocks: string[];
+  accepted: AcceptedRecord | null;
+  readyOwed: boolean;
+  live?: string;
+  unreadable?: string;
+  setup: SetupNow;
+};
+
+/** How Set it up ended: each ticked item's state, and the ready turn's: sent at `readyAt`, failed, or not sent after a call got no answer. */
+export type BotSetupRun = { states: Record<string, CardState>; unanswered?: string; readyAt?: number; readyFailed?: string };

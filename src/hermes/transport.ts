@@ -316,6 +316,8 @@ type SessionRow = {
   last_active?: number | null;
   pinned?: boolean;
   archived?: boolean;
+  /** Out of every Hermes list but the `archived=only` view, which lists hidden archived rows too. */
+  hidden?: boolean;
   /** Activity postdates the session's shared read watermark (`SessionDB.session_unread`). */
   unread?: boolean;
   /** The model the session last ran on, as Hermes stored it; list and search rows both carry it. */
@@ -5547,11 +5549,12 @@ export class Hermes {
       });
       const res = (await this.rest("GET", `api/sessions?${query}`)) as SessionPage;
       // A Bot Chat is opened from its bot's row only, never from the list (ADR 0066). Hermes lists them hidden, except
-      // in the archived view, and one born visible elsewhere is still named "Bot Chat".
+      // in the archived view, and one born visible elsewhere is still named "Bot Chat". Any other hidden session the
+      // archived view lists stays out, as Hermes keeps it out of every other list (ADR 0225).
       for (const r of res.sessions) {
         if (r.source === ROOM_SEAT_SOURCE) continue;
         if (this.isBotChatRow(profile, r)) botChats.add(r.id);
-        else rows.push(r);
+        else if (!r.hidden) rows.push(r);
       }
       const passedCutoff = res.sessions.some((r) => !r.pinned && lastActive(r) < cutoff);
       if (passedCutoff || res.sessions.length === 0 || offset + PAGE_SIZE >= res.total) return { rows, more: false, botChats };

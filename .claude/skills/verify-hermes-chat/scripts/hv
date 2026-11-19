@@ -188,7 +188,8 @@ cmd_up() {
   # bind(0) never hands out a bound port, and a program that sets SO_REUSEADDR (tauri-driver, WebKitWebDriver, node)
   # can still bind and listen on it (#88).
   local want_ports; read -ra want_ports <<<"${HV_TEST_PORTS:-0 0 0}"
-  coproc python3 -c 'import os, signal, socket, sys, time
+  local holder_out
+  exec {holder_out}< <(exec python3 -c 'import os, signal, socket, sys, time
 signal.signal(signal.SIGINT, signal.SIG_IGN)
 socks = []
 for p in sys.argv[2:]:
@@ -201,10 +202,11 @@ for p in sys.argv[2:]:
     socks.append(s)
 print(*(s.getsockname()[1] for s in socks), flush=True)
 while os.getppid() == int(sys.argv[1]):
-    time.sleep(0.1)' "$$" "${want_ports[@]}" 2>"$run/ports.err"
-  PORT_HOLDER_PID=$COPROC_PID
-  read -r -t 10 -u "${COPROC[0]}" driver_port native_port bridge_port ||
+    time.sleep(0.1)' "$$" "${want_ports[@]}" 2>"$run/ports.err")
+  PORT_HOLDER_PID=$!
+  read -r -t 10 -u "$holder_out" driver_port native_port bridge_port ||
     die "couldn't hold this run's ports: $(tail -1 "$run/ports.err" | grep . || echo "the holder printed none in 10 s")"
+  exec {holder_out}<&-
   save_state
 
   # X server. Another run can take a free-looking display between our check and Xvfb's lock, so the display is ours

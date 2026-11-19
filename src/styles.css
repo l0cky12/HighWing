@@ -509,6 +509,9 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
 .returned-head .chev { color: var(--muted); }
 .returned-title { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
 .returned-why { margin: 6px 0 0; color: var(--text-2); font-size: calc(13rem / 14); overflow-wrap: anywhere; }
+/* A sent message's lines (ADR 0227): what Hermes said about it, one fact a line. */
+.delivery { list-style: none; margin: 8px 0 0; padding: 6px 0 0; border-top: 1px solid var(--line); display: grid; gap: 3px; color: var(--text-2); font-size: calc(13rem / 14); overflow-wrap: anywhere; }
+.delivery [data-status="failed"], .delivery [data-status="ambiguous"], .delivery [data-line="unconfirmed"], .delivery [data-line="noWayBack"] { color: var(--bad); }
 .returned-body { margin-top: 6px; max-height: 420px; overflow: auto; }
 .returned-body.msg.assistant { clip-path: none; }
 .returned-log {

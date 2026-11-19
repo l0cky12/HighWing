@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
-import { agentSend } from "./agentMessages";
+import { agentSend, deliveryLines } from "./agentMessages";
 import { BOT_CHAT_TITLE } from "./bots";
 import { localChatCache } from "./chatCache";
 import { chatJson, chatMarkdown } from "./exportChat";
@@ -106,9 +106,26 @@ describe("One bot messages another", () => {
       expect(list.at(-1)).toMatchObject({ kind: "assistant", text: REPLIES.sender });
     };
     shown(items());
-    const call = items().find((i) => i.kind === "tool");
-    expect(call?.kind === "tool" && agentSend(call)).toEqual({ to: "@beta", text: ASK, ack: { kind: "queued", deliveryId: "delivery-1", to: "@beta" } });
-    shown(await (await botChat(await signedIn(server, "lena@reload"), "default"))());
+    const ack = { kind: "queued", to: "@beta", recipients: [{ to: "@beta", deliveryId: "delivery-1", claimed: false, targetState: "idle" }], reply: "notification" };
+    const sent = (list: Item[]) => list.find((i): i is Extract<Item, { kind: "tool" }> => i.kind === "tool")!;
+    expect(agentSend(sent(items()))).toEqual({ to: "@beta", text: ASK, ack });
+    const lines = (list: Item[]) => deliveryLines(agentSend(sent(list))!, list.slice(list.indexOf(sent(list)) + 1)).map((l) => l.kind);
+    expect(lines(items())).toEqual(["queued", "ended"]);
+
+    // History leaves the ack out; it is read back from the call's stored row, once a connection.
+    const reopened = await signedIn(server, "lena@reload");
+    const again = await botChat(reopened, "default");
+    await until(reopened, () => sent(again()).result !== undefined);
+    shown(again());
+    expect(agentSend(sent(again()))).toEqual({ to: "@beta", text: ASK, ack });
+    expect(lines(again())).toEqual(["queued", "ended"]);
+    const reads = () => server.restRequests.filter((r) => r.path === "/api/sessions/alpha-bot/messages").length;
+    expect(reads()).toBeGreaterThan(0);
+    const before = reads();
+    await reopened.open("side");
+    await reopened.open("alpha-bot");
+    await until(reopened, () => sent(again()).result !== undefined);
+    expect(reads()).toBe(before);
     expect(server.requests.filter((r) => r.method === "prompt.submit")).toEqual([]);
   });
 
@@ -151,6 +168,46 @@ describe("One bot messages another", () => {
     expect(chatMarkdown(chat, new Date("2026-11-17T10:00:00Z"))).toContain(`**Returned:** Message from hermes (@hermes)\n\n${ASK}`);
     const [imported] = (await planImport("jsonl", "beta.json", exported)).chats[0].session.messages as Record<string, unknown>[];
     expect(returnedItem(String(imported.content), imported.display_kind, undefined)).toEqual({ body: ASK, process: false, agent: FROM.agent });
+  });
+
+  it("looks for an ack it didn't find again on the next connection, and never again for one it found", async () => {
+    const server = headless();
+    server.profileMeta.default = { ui_meta: { "hermes-bots": {} } };
+    await server.messageAgent("default", "beta", ASK, REPLIES);
+    const row = server.transcripts["alpha-bot"].find((m) => m.role === "tool")!;
+    const stored = row.row_id;
+    row.row_id = undefined;
+    const hermes = await signedIn(server);
+    const items = await botChat(hermes, "default");
+    const call = () => items().find((i): i is Extract<Item, { kind: "tool" }> => i.kind === "tool")!;
+    await until(hermes, () => returned(items()).length === 1);
+    expect(call().result).toBeUndefined();
+    const reads = () => server.restRequests.filter((r) => r.path === "/api/sessions/alpha-bot/messages").length;
+
+    row.row_id = stored;
+    const before = reads();
+    server.drop();
+    for (let n = 0; n < 300 && hermes.getSnapshot().status !== "connected"; n++) await new Promise((r) => setTimeout(r, 10));
+    await hermes.open("alpha-bot");
+    await until(hermes, () => call().result !== undefined);
+    expect(reads()).toBeGreaterThan(before);
+    expect(agentSend(call())?.ack).toMatchObject({ kind: "queued", recipients: [{ deliveryId: "delivery-1" }] });
+  });
+
+  it("keeps the sent call's id and ack in the Saved copy, so a card drawn offline still finds its answer", async () => {
+    const server = headless();
+    const hermes = await signedIn(server);
+    await hermes.setAgentMessaging(true);
+    const items = await botChat(hermes, "default");
+    await server.messageAgent("default", "beta", ASK, REPLIES);
+    await until(hermes, () => returned(items()).length === 1 && items().at(-1)?.kind === "assistant");
+
+    const tool = (list: Item[]) => list.find((i): i is Extract<Item, { kind: "tool" }> => i.kind === "tool")!;
+    const saved = localChatCache(nas).loadTranscript("default", "alpha-bot")?.items ?? [];
+    const call = tool(saved);
+    expect(call.callId).toBeTruthy();
+    expect(call.callId).toBe(tool(items()).callId);
+    expect(deliveryLines(agentSend(call)!, saved.slice(saved.indexOf(call) + 1)).map((l) => l.kind)).toEqual(["queued", "ended"]);
   });
 
   it("keeps a delivery's answer through a JSON export and import", async () => {

@@ -19,7 +19,7 @@ import { ComputerUseCard, HumanHasControlBanner, RunStopProvider } from "./Compu
 import { foldRuns, screenUse, type CuRun } from "../hermes/computerUse";
 import { QuestionCard } from "./QuestionCard";
 import { Menu, PinItem, type ChatPin } from "./ChatMenu";
-import { agentSend, type AgentSend } from "../hermes/agentMessages";
+import { agentSend, deliveryLines, type AgentSend, type DeliveryLine } from "../hermes/agentMessages";
 import { CHAT_POLICY, chatKind, policyOf } from "../hermes/chatKind";
 import { DeleteChatDialog } from "./DeleteChat";
 import { ExportChatDialog, type ExportMode } from "./ExportChat";
@@ -30,7 +30,7 @@ import { Markdown } from "./Markdown";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { chunkBlocks } from "./transcriptChunks";
 import { useTranscriptWindow } from "./transcriptWindow";
-import { SourceIcon, Spinner, StoredTime, composing, escapeRe, highlight } from "./bits";
+import { SourceIcon, Spinner, StoredTime, Ticking, composing, escapeRe, highlight } from "./bits";
 import { caretAfter, editStep, inputKind, type EditStep } from "./editKeys";
 import { ariaKeys, chordLabel, chordParts, pick as pickCommand, pickApp, typeNewLine, useBindings, type Chord } from "./keybindings";
 import type { EditKind } from "../hermes/editHistory";
@@ -95,7 +95,8 @@ const toldWhy = new Set<string>();
 
 type ToolItem = Extract<Item, { kind: "tool" }>;
 type ThinkingItem = Extract<Item, { kind: "thinking" }>;
-type SentBlock = { kind: "sent"; id: string; tool: ToolItem; send: AgentSend };
+/** A message this bot sent a teammate (ADR 0207), and its card's lines from what came after it (ADR 0227). */
+type SentBlock = { kind: "sent"; id: string; tool: ToolItem; send: AgentSend; lines: DeliveryLine[] };
 type Block = { kind: "tools"; id: string; tools: ToolItem[] } | SentBlock | CuRun | Exclude<Item, ToolItem>;
 const isItem = (b: Block): b is Exclude<Item, ToolItem> => b.kind !== "tools" && b.kind !== "sent" && b.kind !== "cu-run";
 /** A block with a Question still waiting in it: a Question's card, or a computer-use run with an Approval under a step. */
@@ -123,7 +124,7 @@ function toBlocks(items: Item[], side: SideQuestion[] = []): (Block | SideBlock)
     }
     if (it.kind === "tool") {
       const send = agentSend(it);
-      if (send) out.push({ kind: "sent", id: it.id, tool: it, send });
+      if (send) out.push({ kind: "sent", id: it.id, tool: it, send, lines: deliveryLines(send, items.slice(items.indexOf(it) + 1), it.at) });
       else if (last?.kind === "tools") last.tools.push(it);
       else out.push({ kind: "tools", id: `g-${it.id}`, tools: [it] });
     } else out.push(it);
@@ -147,11 +148,12 @@ function mayMatch(block: Block, finds: RegExp) {
 }
 
 // A group is rebuilt on every render, so it counts as unchanged when it holds the same tool calls. A run's state also
-// reads the reply after it, so a run with the same calls changes when that reply is stopped.
+// reads the reply after it, so a run with the same calls changes when that reply is stopped. A sent message's lines
+// read the items after it (ADR 0227), so the same call changes when its lines do; they are small plain data.
 const sameBlock = (a: Block, b: Block) =>
   a === b ||
   (a.kind === "tools" && b.kind === "tools" && a.tools.length === b.tools.length && a.tools.every((t, i) => t === b.tools[i])) ||
-  (a.kind === "sent" && b.kind === "sent" && a.tool === b.tool) ||
+  (a.kind === "sent" && b.kind === "sent" && a.tool === b.tool && JSON.stringify(a.lines) === JSON.stringify(b.lines)) ||
   (a.kind === "cu-run" && b.kind === "cu-run" && a.state === b.state && a.items.length === b.items.length && a.items.every((x, i) => x === b.items[i]));
 // A side question's block is rebuilt too, so it counts as unchanged when it holds the same question.
 const sameChunkBlock = (a: Block | SideBlock, b: Block | SideBlock) =>
@@ -213,12 +215,16 @@ const movesUp = (el: HTMLElement, node: Element | null) => {
  * branch's link back does. `at` tells one request from the next.
  */
 export type JumpTarget =
-  | { callId: string; rowId?: undefined; turn?: undefined; at: number }
-  | { rowId: number; callId?: undefined; turn?: undefined; at: number }
+  | { callId: string; rowId?: undefined; turn?: undefined; itemId?: undefined; at: number }
+  | { rowId: number; callId?: undefined; turn?: undefined; itemId?: undefined; at: number }
   /** The owner's message that starts turn `turn` (from 0), and its reply: where a version of that turn is opened. */
-  | { turn: number; callId?: undefined; rowId?: undefined; at: number };
+  | { turn: number; callId?: undefined; rowId?: undefined; itemId?: undefined; at: number }
+  /** An item of this chat by its id, as a sent message's card goes to its answer (ADR 0227). */
+  | { itemId: string; callId?: undefined; rowId?: undefined; turn?: undefined; at: number };
 /** The tool call being gone to, for the tool rows and groups that hold it to open themselves. */
 const JumpContext = createContext<JumpTarget | undefined>(undefined);
+/** Goes to an item of this chat by its id, rendering its part of the transcript first when it is far from the view. */
+const GoToItemContext = createContext<(itemId: string) => void>(() => {});
 
 const STATUS_NOTE: Record<ConnectionStatus, string | undefined> = {
   connected: undefined,
@@ -808,6 +814,10 @@ export function ChatPane({
   // Going to a tool call: once its row is on screen, scroll it to the middle, mark it and move focus to it. A history
   // that loaded without it says so; one still loading, or a Saved copy while offline without it, waits.
   const [jumping, setJumping] = useState<JumpTarget>();
+  const goToItem = useCallback((itemId: string) => {
+    stickToBottom.current = false;
+    setJumping({ itemId, at: Date.now() });
+  }, []);
   useEffect(() => {
     if (!jumpTo) return;
     stickToBottom.current = false;
@@ -818,7 +828,9 @@ export function ChatPane({
   useLayoutEffect(() => {
     if (!jumping) return;
     let el: HTMLElement | null | undefined;
-    if (jumping.rowId !== undefined) {
+    if (jumping.itemId !== undefined) {
+      el = scrollRef.current?.querySelector<HTMLElement>(`[data-item="${CSS.escape(jumping.itemId)}"]`);
+    } else if (jumping.rowId !== undefined) {
       const rowId = jumping.rowId;
       const item = chat.items.find((i) => (i.kind === "user" || i.kind === "returned" || i.kind === "assistant") && i.rowId === rowId);
       el = item && scrollRef.current?.querySelector<HTMLElement>(`[data-item="${CSS.escape(item.id)}"]`);
@@ -919,6 +931,9 @@ export function ChatPane({
         (b.kind === "tools" && b.tools.some((t) => t.callId === callId)) ||
         (b.kind === "sent" && b.tool.callId === callId) ||
         (b.kind === "cu-run" && b.items.some((i) => i.kind === "tool" && i.callId === callId));
+    } else if (jumping.itemId !== undefined) {
+      const id = jumping.itemId;
+      has = (b) => b.id === id;
     } else {
       const { rowId, turn } = jumping;
       const id =
@@ -1069,6 +1084,7 @@ export function ChatPane({
           stickToBottom.current = !up && el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
       >
+        <GoToItemContext.Provider value={goToItem}>
         <JumpContext.Provider value={jumpTo}>
         <PathsIn folder={chat.folder} session={chat.id}>
         <RunStopProvider value={runStop}>
@@ -1169,6 +1185,7 @@ export function ChatPane({
         </RunStopProvider>
         </PathsIn>
         </JumpContext.Provider>
+        </GoToItemContext.Provider>
       </div>
 
       <SubagentsPanel
@@ -1685,6 +1702,7 @@ function ReturnedCard({ item, query, date }: { item: Extract<Item, { kind: "retu
       tips={agent?.kind === "from" ? l.agent : l.returned}
       data-item={item.id}
       data-at={item.at}
+      tabIndex={agent?.kind === "answer" ? -1 : undefined}
       foot={date && <StoredTime at={item.at} />}
     >
       {item.process ? (
@@ -1700,7 +1718,7 @@ function ReturnedCard({ item, query, date }: { item: Extract<Item, { kind: "retu
 
 function SentCard({ block, query }: { block: SentBlock; query: string }) {
   const l = useLocale().chat.agent;
-  const { tool, send } = block;
+  const { tool, send, lines } = block;
   const refused = send.ack?.kind === "refused" ? send.ack.why : undefined;
   const why = refused ?? (send.ack?.kind === "queued" ? send.ack.failed : undefined);
   const running = tool.status === "running";
@@ -1722,8 +1740,64 @@ function SentCard({ block, query }: { block: SentBlock; query: string }) {
       <div className="returned-body msg assistant" translate="no">
         <Markdown text={send.text} query={query} />
       </div>
+      {lines.length > 0 && (
+        <ul className="delivery">
+          {lines.map((line, i) => (
+            <DeliveryLineRow key={i} line={line} />
+          ))}
+        </ul>
+      )}
     </TurnCard>
   );
+}
+
+/** One line under a sent message: Hermes's own words (a reason) are data, the rest is the catalogue's. */
+function DeliveryLineRow({ line }: { line: DeliveryLine }) {
+  const locale = useLocale();
+  const goTo = useContext(GoToItemContext);
+  const d = locale.chat.agent.delivery;
+  switch (line.kind) {
+    case "queued":
+      return (
+        <li data-line={line.kind}>
+          {line.claimed ? d.claimed(line.to) : d.queued(line.to)}
+          {line.targetState && <> {d.was[line.targetState](line.to)}</>}
+        </li>
+      );
+    case "notifyOnly":
+      return <li data-line={line.kind}>{d.notifyOnly(line.to)}</li>;
+    case "poll":
+      return <li data-line={line.kind}>{d.poll}</li>;
+    case "noWayBack":
+      return <li data-line={line.kind}>{d.noWayBack(line.why)}</li>;
+    case "unconfirmed":
+      return <li data-line={line.kind}>{d.unconfirmed(line.why, line.to)}</li>;
+    case "withdrawAsked":
+      return <li data-line={line.kind}>{line.refused ? d.withdrawRefused(line.refused) : d.withdrawAsked}</li>;
+    case "silent": {
+      const since = line.since;
+      return (
+        <li data-line={line.kind}>
+          {d.silent(line.to)}
+          {since !== undefined && (
+            <>
+              {" "}
+              <Ticking>{() => (locale.fmt.age(since) === locale.time.now ? d.sentNow : d.sentAgo(locale.fmt.age(since)))}</Ticking>
+            </>
+          )}
+        </li>
+      );
+    }
+    case "ended":
+      return (
+        <li data-line={line.kind} data-status={line.status}>
+          {line.several && line.status !== "settled" ? d.endedSeveral : d.ended[line.status]}{" "}
+          <button type="button" className="link" onClick={() => goTo(line.itemId)}>
+            {d.goToAnswer}
+          </button>
+        </li>
+      );
+  }
 }
 
 function ToolRow({ t }: { t: ToolItem }) {

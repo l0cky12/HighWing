@@ -204,6 +204,18 @@ describe("a relaunch", () => {
     expect(stored(server)).toEqual(ONE_OF_EACH);
   });
 
+  it("picks up a Bot Chat already shown at the click while its lookup ran, and settles it", async () => {
+    const server = hermes0232();
+    const before = await startedBefore(server);
+    await before.quit();
+    const { hermes, me, start } = await launch(server);
+    expect(hermes.showBotChat(await me())).toBe(before.chatId);
+    expect(chatOf(hermes, before.chatId).loading).toBe(true);
+    expect(await start()).toEqual({ kind: "noReply", chatId: before.chatId, id: before.id });
+    expect(chatOf(hermes, before.chatId).loading).toBeFalsy();
+    expect(rpc(server, "session.resume").map((r) => r.params.session_id)).toContain(before.chatId);
+  });
+
   it("says no reply came when none did, keeps the bot, and sends the begin turn again only when the owner asks", async () => {
     const server = hermes0232();
     const before = await startedBefore(server);

@@ -2531,15 +2531,18 @@ export class Hermes {
     }
     const { openId, registryId } = found;
     this.listBotChat(profile, bot, registryId, openId);
-    this.settleEarlyBotChats(openId);
     return openId;
   }
 
-  /** Puts a Bot Chat the title lookup found beside the list, marked as one. Throws when the profile changed meanwhile. */
+  /**
+   * Puts a Bot Chat the title lookup found beside the list, marked as one, and ends the wait on any shown at the click
+   * (`showBotChat`), which would otherwise hold its resume. Throws when the profile changed meanwhile.
+   */
   private listBotChat(profile: string, bot: Bot, registryId: string, openId: string) {
     this.botChatIds.set(profile, new Set([...(this.botChatIds.get(profile) ?? []), registryId, openId]));
     if (this.profile !== profile) throw new Error(`Switched to the ${this.profile} profile before ${bot.name}'s Bot Chat opened.`);
     this.placeBotChat(openId, bot);
+    this.settleEarlyBotChats(openId);
   }
 
   /**

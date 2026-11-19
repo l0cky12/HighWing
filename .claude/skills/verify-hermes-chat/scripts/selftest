@@ -160,6 +160,27 @@ else
 fi
 rm -rf "$HV_HOME/evidence"
 
+# SIGKILL while the stand-in bundles, then `hv down`: the bundler goes too, though no recorded group holds it.
+mkdir -p "$T/slownpx"
+printf '#!/bin/sh\necho $$ >%s\nexec sleep 300\n' "$T/npx.pid" >"$T/slownpx/npx"
+chmod +x "$T/slownpx/npx"
+PATH=$T/slownpx:$PATH "$HERE/hv" up >"$T/npx.log" 2>&1 &
+LAUNCHERS=($!)
+for _ in $(seq 150); do [ -s "$T/npx.pid" ] && break; sleep 0.1; done
+kill -KILL "${LAUNCHERS[0]}"
+wait "${LAUNCHERS[0]}" 2>/dev/null || true
+LAUNCHERS=()
+bundler=$(cat "$T/npx.pid" 2>/dev/null || true)
+r=$(ls -d "$HV_HOME"/runs/*/ 2>/dev/null | head -1 || true)
+[ -z "$r" ] || HV_RUN=${r%/} hv down >/dev/null 2>&1 || true
+if [ -n "$bundler" ] && [ -n "$r" ] && ! kill -0 "$bundler" 2>/dev/null; then
+  pass "hv down after a kill mid-bundle stopped the bundler"
+else
+  fail "kill mid-bundle: bundler ${bundler:-never started} $(kill -0 "${bundler:-0}" 2>/dev/null && echo "still running"), run ${r:-missing}"
+  [ -z "$bundler" ] || kill "$bundler" 2>/dev/null || true
+fi
+rm -rf "$HV_HOME/evidence"
+
 # TERM right after hv up creates the run dir, before it has written state.env (#100).
 mkdir -p "$T/slowinstall"
 printf '#!/bin/sh\necho $$ >%s\nsleep 2\nexec %s "$@"\n' "$T/install.started" "$(command -v install)" >"$T/slowinstall/install"

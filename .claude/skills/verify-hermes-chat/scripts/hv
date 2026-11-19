@@ -269,7 +269,7 @@ XML
   save_state
 
   if [ -z "$dashboard" ]; then
-    (cd "$REPO" && npx rolldown "$HERE/bridge.ts" --platform node -o "$run/bridge.mjs" >/dev/null 2>&1) || die "bundling the stand-in failed: cd $REPO && npx rolldown $HERE/bridge.ts --platform node -o $run/bridge.mjs"
+    (cd "$REPO" && HV_RUN_ID=$name npx rolldown "$HERE/bridge.ts" --platform node -o "$run/bridge.mjs" >/dev/null 2>&1) || die "bundling the stand-in failed: cd $REPO && npx rolldown $HERE/bridge.ts --platform node -o $run/bridge.mjs"
     HV_RUN_ID=$name setsid node "$run/bridge.mjs" "$bridge_port" "$ev/server-state.json" >"$ev/bridge.log" 2>&1 &
     bridge_pid=$!
     save_state

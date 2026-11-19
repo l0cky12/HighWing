@@ -1,6 +1,6 @@
 # A Writing model writes personas and instructions for every bot the server hasn't pinned
 
-> **One line changed by [ADR 0227](0227-new-bot-asks-only-for-a-name-the-bot-interviews-the-owner-in-its-bot-chat-and-one-card-sets-it-up.md)** (#85). Write with AI is no longer on New bot, which has no Persona field. The Writing model still writes Edit bot's persona and project instructions.
+> **One line changed by [ADR 0231](0231-new-bot-asks-only-for-a-name-the-bot-interviews-the-owner-in-its-bot-chat-and-one-card-sets-it-up.md)** (#85). Write with AI is no longer on New bot, which has no Persona field. The Writing model still writes Edit bot's persona and project instructions.
 
 > **Accepted.** It supersedes ADR 0177's "Unset, it follows Text generation" and the "Which model" decisions of ADR 0197 and ADR 0206, and nothing else in them. The code is `src/hermes/writingModel.ts`, with `ModelSettingsApi.writingFacts` and `mirrorWriting` in `src/hermes/modelSettings.ts`, `Hermes.writingDesk` in `src/hermes/transport.ts`, and `src/ui/WritingModelSettings.tsx`. Tested in `src/hermes/writingModel.test.ts`, `src/ui/writingModelSettings.test.tsx`, `src/ui/botCreation.test.tsx`, `src/ui/bots.test.tsx` and `src/ui/instructionsAI.test.tsx`.
 

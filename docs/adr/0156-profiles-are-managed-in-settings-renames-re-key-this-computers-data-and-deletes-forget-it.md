@@ -1,6 +1,6 @@
 # Profiles are managed in Settings; renames re-key this computer's data and deletes forget it
 
-> **One line changed by [ADR 0227](0227-new-bot-asks-only-for-a-name-the-bot-interviews-the-owner-in-its-bot-chat-and-one-card-sets-it-up.md)** (#85). "New profile is blank" no longer holds: New profile asks only for a name, derives the id from it, uses the model of the profile in use, and starts Bot setup. Its model pickers are gone. Skip → Copy a bot opens Clone with the name filled in.
+> **One line changed by [ADR 0231](0231-new-bot-asks-only-for-a-name-the-bot-interviews-the-owner-in-its-bot-chat-and-one-card-sets-it-up.md)** (#85). "New profile is blank" no longer holds: New profile asks only for a name, derives the id from it, uses the model of the profile in use, and starts Bot setup. Its model pickers are gone. Skip → Copy a bot opens Clone with the name filled in.
 
 Issue #447: the app could switch profiles (the chat list's header, ADR 0001) and clone one (ADR 0074), but making a blank profile, renaming one, changing its description or model without switching to it, and deleting one needed the Hermes CLI or Hermes's own dashboard. The deployed Hermes (`f0d94882`, `hermes_cli/web_routers/profiles.py`) has a route for each, so no Hermes change is needed. ADR 0074 had rejected "a Profiles tab in Settings" because nothing in Settings made or removed a profile; now something does.
 

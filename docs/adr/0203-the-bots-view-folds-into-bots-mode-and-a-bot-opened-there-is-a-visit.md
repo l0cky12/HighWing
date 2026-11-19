@@ -1,6 +1,6 @@
 # The Bots view folds into Bots mode, and a bot opened there is a visit
 
-> **One line changed by [ADR 0227](0227-new-bot-asks-only-for-a-name-the-bot-interviews-the-owner-in-its-bot-chat-and-one-card-sets-it-up.md)** (#85). New bot opens a name dialog, not the New profile form. Once the bot is made, its Bot Chat opens as a visit and Bot setup starts there.
+> **One line changed by [ADR 0231](0231-new-bot-asks-only-for-a-name-the-bot-interviews-the-owner-in-its-bot-chat-and-one-card-sets-it-up.md)** (#85). New bot opens a name dialog, not the New profile form. Once the bot is made, its Bot Chat opens as a visit and Bot setup starts there.
 
 > **Amended by [ADR 0206](0206-a-persona-is-edited-only-in-the-profile-form-and-write-with-ai-rewrites-it-in-place.md).** A bot's menu also has Edit persona…, after Settings, which opens Edit bot with focus in Persona.
 >

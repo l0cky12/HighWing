@@ -94,9 +94,6 @@ const typeIn = (text) =>
   `(() => { const ta = document.querySelector("textarea[data-composer]"); ta.focus();
      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(ta, ${JSON.stringify(text)});
      ta.setSelectionRange(ta.value.length, ta.value.length); ta.dispatchEvent(new Event("input", { bubbles: true })); })()`;
-const pickPersona = (profile) =>
-  `(() => { const s = document.querySelector("select.persona-profile");
-     Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(s, ${JSON.stringify(profile)}); s.dispatchEvent(new Event("change", { bubbles: true })); })()`;
 // A computer_use capture as Hermes sends it with tool.complete (ADR 0060): its screenshot inline, as a 1440x900 PNG's
 // worth of base64 (the bytes are random; only the size is real), then the tool call opened.
 const capture = `(async () => {
@@ -195,17 +192,6 @@ const scenes = {
   "sidebar-sections-light": { query: "?mode=light", steps: [sections, click(".section-toggle", "Snoozed"), click(".section-toggle", "Settled")] },
   "snooze-menu": { query: "", steps: [sections, menuOn("caddy")] },
   "snooze-custom": { query: "", steps: [sections, menuOn("caddy"), click(".menu-item", "Custom…"), click(".snooze-dialog .segmented button", "Duration")] },
-  // A headless page never has focus and isn't hovered, so the actions a hover shows are shown on one top row (Settle) and
-  // one Settled row (Unsettle): the same icon-only button.
-  unsettle: {
-    query: "",
-    steps: [
-      sections,
-      click(".section-toggle", "Settled"),
-      `(() => { const s = document.head.appendChild(document.createElement("style"));
-         s.textContent = '.row:has([data-chat="backup"]) .row-action, .row:has([data-chat="zfs"]) .row-action { display: grid } .row:has([data-chat="backup"]) .row-meta, .row:has([data-chat="zfs"]) .row-meta { display: none }'; })()`,
-    ],
-  },
   "new-chat": { query: "", steps: [] },
   chat: { query: "", steps: [click("button", "Nightly backup")] },
   // A code block and inline code in the default code font, at 1280 × 800.
@@ -224,21 +210,6 @@ const scenes = {
   "general-light": { query: "?mode=light", ...hd, steps: [openSettings, click(".subnav-item", "Storage")] },
   "general-min": { query: "", width: 760, height: 500, steps: [openSettings] },
   "general-min-launch": { query: "", width: 760, height: 500, steps: [openSettings, click(".subnav-item", "Launch")] },
-  // Settings → Persona (ADR 0117): the profile picker, another profile's SOUL.md picked, and the question before
-  // picking another while an edit is unsaved.
-  persona: { query: "?profiles=1", steps: [key(",", { ctrlKey: true }), click("[role=tab]", "Persona")] },
-  "persona-work": { query: "?profiles=1", steps: [key(",", { ctrlKey: true }), click("[role=tab]", "Persona"), pickPersona("work")] },
-  "persona-ask": {
-    query: "?profiles=1",
-    steps: [
-      key(",", { ctrlKey: true }),
-      click("[role=tab]", "Persona"),
-      `(() => { const t = document.querySelector("textarea.persona-text");
-         Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(t, t.value + "\\nAlways answer in British English.\\n");
-         t.dispatchEvent(new Event("input", { bubbles: true })); })()`,
-      pickPersona("research"),
-    ],
-  },
   work: { query: "", ...hd, steps: [click("button[aria-label='Work']")] },
   "work-task": { query: "", steps: [click("button[aria-label='Work']"), click(".work-card", "Compare three NAS backup tools")] },
   "work-new": { query: "", steps: [click("button[aria-label='Work']"), click(".btn", "New task")] },
@@ -307,7 +278,7 @@ const scenes = {
   "subagent-details-failed-small": { query: "", width: 1100, height: 760, steps: [click("button", "NAS disk usage"), subagents, openSubagents, click(".subagent-row", "Docker volumes"), endSubagents, unfocus] },
 };
 // Every Settings tab at 1920 × 1080 (#568): `settings-tab-<id>`, for a redesign's before and after.
-for (const [id, label] of Object.entries({ general: "General", appearance: "Appearance", keyboard: "Keyboard Shortcuts", snapshots: "Snapshots", model: "Model", providers: "Providers", voice: "Voice", toolsets: "Toolsets", mcp: "MCP servers", gateways: "Gateways", profiles: "Profiles", persona: "Persona", memory: "Memory", skills: "Skills", extensions: "Extensions", diagnostics: "Diagnostics" }))
+for (const [id, label] of Object.entries({ general: "General", appearance: "Appearance", keyboard: "Keyboard Shortcuts", snapshots: "Snapshots", model: "Model", providers: "Providers", voice: "Voice", toolsets: "Toolsets", mcp: "MCP servers", gateways: "Gateways", profiles: "Profiles", memory: "Memory", skills: "Skills", extensions: "Extensions", diagnostics: "Diagnostics" }))
   scenes[`settings-tab-${id}`] = { query: "?profiles=1", ...hd, steps: [openSettings, click("[role=tab]", label)] };
 // The sections a page shows one at a time, picked under it in the sidebar's tree (ADR 0160), and its narrow forms.
 const tab = (label) => click("[role=tab]", label);

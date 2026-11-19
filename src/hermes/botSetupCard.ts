@@ -15,9 +15,10 @@ import {
   BOT_SETUP_DESCRIPTION_MAX,
   BOT_SETUP_FENCE,
   botSetupMarkerId,
-  type BotSetupBlock,
+  type BotSetupAgainBlock,
   type BotSetupColor,
   type BotSetupCopy,
+  type BotSetupNewBlock,
   type BotSetupOtherBot,
   type BotSetupToggle,
 } from "./botSetupBrief";
@@ -46,8 +47,16 @@ export type ParseResult =
   | { kind: "card"; card: Card; newerUnreadable?: Unreadable; accepted: AcceptedRecord | null }
   | ({ kind: "unreadable"; setupId: string } & Unreadable);
 
+/**
+ * Which block a brief asks for. `again`: Set up again's, where null keeps a value. `againPersonaLeftOut`: the same, but
+ * the brief left the persona out as too long, so the block's persona must be null.
+ */
+export type BriefKind = "new" | "again" | "againPersonaLeftOut";
+
+export type CardBlock = { again: false; block: BotSetupNewBlock } | { again: true; block: BotSetupAgainBlock };
+
 /** One setup block, checked. `id`: the brief marker's id and a hash of the block, so an identical redraw is the same card. */
-export type Card = { id: string; setupId: string; at: BlockAt; block: BotSetupBlock };
+export type Card = { id: string; setupId: string; at: BlockAt } & CardBlock;
 
 /** The value each kind of item has in Hermes, before and after. A skill copied from another bot is `absent` before. */
 export type ItemValues = {
@@ -196,8 +205,15 @@ const toggles = (v: unknown, what: string): BotSetupToggle[] =>
 
 const names = (v: unknown, what: string): string[] => unique(list(v, what).map((n, i) => text(n, `${what}[${i}]`)), (n) => n, what);
 
-/** The block a fenced body holds, read strictly: the exact keys, each of its type, colour from the list. Never throws. */
-export function readBlock(source: string): { ok: true; block: BotSetupBlock } | { ok: false; reason: string } {
+const orNull = <T>(v: unknown, read: (v: unknown) => T): T | null => (v === null ? null : read(v));
+
+const keepsNothing = (b: BotSetupAgainBlock): b is BotSetupNewBlock => b.persona !== null && b.description !== null && b.color !== null;
+
+/**
+ * The block a fenced body holds, read strictly as the kind `brief` asked for: the exact keys, each of its type, colour
+ * from the list. Never throws.
+ */
+export function readBlock(source: string, brief: BriefKind): { ok: true; checked: CardBlock } | { ok: false; reason: string } {
   try {
     let raw: unknown;
     try {
@@ -208,10 +224,16 @@ export function readBlock(source: string): { ok: true; block: BotSetupBlock } | 
     if (!isObj(raw)) throw new Bad("not a JSON object");
     keysExactly(raw, BOT_SETUP_BLOCK_KEYS, "block");
     if (raw.v !== BOT_SETUP_BLOCK_VERSION) throw new Bad(`v: not ${BOT_SETUP_BLOCK_VERSION}`);
-    const description = text(raw.description, "description");
-    if (description.length > BOT_SETUP_DESCRIPTION_MAX) throw new Bad(`description: over ${BOT_SETUP_DESCRIPTION_MAX} characters`);
-    const color = BOT_SETUP_COLORS.find((c) => c === raw.color);
-    if (!color) throw new Bad("color: not one of the colours");
+    const description = orNull(raw.description, (v) => {
+      const d = text(v, "description");
+      if (d.length > BOT_SETUP_DESCRIPTION_MAX) throw new Bad(`description: over ${BOT_SETUP_DESCRIPTION_MAX} characters`);
+      return d;
+    });
+    const color = orNull(raw.color, (v) => {
+      const c = BOT_SETUP_COLORS.find((c) => c === v);
+      if (!c) throw new Bad("color: not one of the colours");
+      return c;
+    });
     const copy = list(raw.copy, "copy").map((c, i): BotSetupCopy => {
       if (!isObj(c)) throw new Bad(`copy[${i}]: not an object`);
       keysExactly(c, ["from", "skills", "toolsets", "mcp"], `copy[${i}]`);
@@ -227,19 +249,24 @@ export function readBlock(source: string): { ok: true; block: BotSetupBlock } | 
       "mcp",
     );
     // Built in the format's key order, so the same block always hashes to the same card id.
-    const block: BotSetupBlock = {
+    const block: BotSetupAgainBlock = {
       v: BOT_SETUP_BLOCK_VERSION,
-      persona: text(raw.persona, "persona"),
+      persona: orNull(raw.persona, (v) => text(v, "persona")),
       description,
-      model: raw.model === null ? null : text(raw.model, "model"),
+      model: orNull(raw.model, (v) => text(v, "model")),
       color,
-      callOwner: raw.callOwner === null ? null : text(raw.callOwner, "callOwner"),
+      callOwner: orNull(raw.callOwner, (v) => text(v, "callOwner")),
       skills: toggles(raw.skills, "skills"),
       toolsets: toggles(raw.toolsets, "toolsets"),
       mcp,
       copy,
     };
-    return { ok: true, block };
+    if (brief === "new") {
+      if (!keepsNothing(block)) throw new Bad("a new bot's block keeps nothing: persona, description and color can't be null");
+      return { ok: true, checked: { again: false, block } };
+    }
+    if (brief === "againPersonaLeftOut" && block.persona !== null) throw new Bad("persona: not null, though the brief left it out");
+    return { ok: true, checked: { again: true, block } };
   } catch (e) {
     return { ok: false, reason: e instanceof Bad ? e.message : "unreadable" };
   }
@@ -257,9 +284,23 @@ function fingerprint(s: string): string {
   return `${(a >>> 0).toString(16).padStart(8, "0")}${(b >>> 0).toString(16).padStart(8, "0")}`;
 }
 
-const cardIdOf = (setupId: string, block: BotSetupBlock) => `${setupId}:${fingerprint(JSON.stringify(block))}`;
+const cardIdOf = (setupId: string, block: BotSetupAgainBlock) => `${setupId}:${fingerprint(JSON.stringify(block))}`;
 
 const rowText = (row: SetupRow) => textOf(row.content);
+
+const CURRENT_HEADER = "CURRENT (";
+
+function briefKind(brief: string): BriefKind {
+  const lines = brief.split(/\r?\n/);
+  const at = lines.findIndex((l) => l.startsWith(CURRENT_HEADER));
+  if (at < 0) return "new";
+  try {
+    const current: unknown = JSON.parse(lines[at + 1] ?? "");
+    return isObj(current) && typeof current.persona === "string" ? "again" : "againPersonaLeftOut";
+  } catch {
+    return "againPersonaLeftOut";
+  }
+}
 
 /**
  * The live card of the newest setup in a Bot Chat's rows, oldest first. A block before the newest brief marker belongs
@@ -274,6 +315,7 @@ export function parseSetup(rows: readonly SetupRow[]): ParseResult {
     if (id !== null) [marker, setupId] = [i, id];
   }
   if (setupId === null) return { kind: "none", setupId: null };
+  const kind = briefKind(rowText(rows[marker]));
   let card: Card | null = null;
   let newer: Unreadable | null = null;
   for (let index = marker + 1; index < rows.length; index++) {
@@ -282,8 +324,8 @@ export function parseSetup(rows: readonly SetupRow[]): ParseResult {
     const blocks = fencedBlocks(rowText(row), BOT_SETUP_FENCE);
     for (let nth = 0; nth < blocks.length; nth++) {
       const at: BlockAt = { index, nth, ...(typeof row.id === "number" && { rowId: row.id }) };
-      const read = readBlock(blocks[nth]);
-      if (read.ok) [card, newer] = [{ id: cardIdOf(setupId, read.block), setupId, at, block: read.block }, null];
+      const read = readBlock(blocks[nth], kind);
+      if (read.ok) [card, newer] = [{ id: cardIdOf(setupId, read.checked.block), setupId, at, ...read.checked }, null];
       else newer = { at, source: blocks[nth], reason: read.reason };
     }
   }
@@ -335,12 +377,12 @@ function planBlock(card: Card, now: HermesNow): PlanItem[] {
   const add = (item: PlanItem) => {
     if (!items.some((i) => i.key === item.key)) items.push(item);
   };
-  add(listed("persona", "persona", now.persona, b.persona));
-  add(listed("description", "description", now.description, b.description));
+  add(listed("persona", "persona", now.persona, b.persona ?? now.persona));
+  add(listed("description", "description", now.description, b.description ?? now.description));
   // A block that keeps the model still gets its row, which shows the model as already in use and counts for nothing.
   const model = b.model === null ? now.model : now.models.find((m) => m === b.model);
   add(model === undefined ? notFound("model", b.model ?? "") : listed("model", "model", now.model, model, model === null ? {} : { name: model }));
-  add(listed("color", "color", now.color, BOT_SETUP_COLOR_HEX[b.color]));
+  add(listed("color", "color", now.color, b.color === null ? now.color : BOT_SETUP_COLOR_HEX[b.color]));
   if (b.callOwner !== null) add(listed("remember", "remember", remembers(now, b.callOwner), b.callOwner));
 
   const skillNow = (name: string): ItemValues["skill"] => {

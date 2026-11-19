@@ -6,7 +6,6 @@ export const HANDLE_CHAR = "[\\p{L}\\p{M}\\p{N}_-]";
 const caseOnly = (s: string): string => s.normalize("NFC").toLowerCase().replaceAll("ς", "σ");
 const words = (s: string): string[] => caseOnly(s).split(/[^\p{L}\p{M}\p{N}]+/u);
 
-/** The bots whose handle or a word of whose name starts with the query, the one whose handle it is first, then in roster order. */
 export function matchBots<B extends Named>(query: string, bots: readonly B[]): B[] {
   const q = caseOnly(query);
   const exact = (b: B) => caseOnly(b.handle) === q;

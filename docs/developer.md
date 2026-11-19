@@ -56,7 +56,8 @@ The app needs a Hermes Agent server with its dashboard running. [`compatibility.
 | `npm test` | Runs every Vitest test once, in jsdom, against `FakeHermes`. CI uses this. |
 | `npm run test:local` | Runs the same tests with two workers, so a full run doesn't time out on a loaded machine. |
 | `npm run e2e` | Runs each feature end to end in headless Chromium against `FakeHermes`. Writes screenshots and `e2e/out/summary.json`. See [`e2e.md`](e2e.md). |
-| `npm run check` | Runs the checks that most often fail a PR: `scripts/check-adrs.mjs`, `cargo fmt --check`, `npm run build`, `npm run test:local`, and `cargo clippy --all-targets -- -D warnings`. |
+| `npm run frames-diff -- <base-ref>` | Runs the test suite at `<base-ref>` and on this checkout, and fails when a test sends Hermes different frames or calls ([ADR 0208](adr/0208-session-frames-leave-through-one-sessionprotocol-and-a-rerun-frames-diff-proves-the-legacy-ones-unchanged.md)). |
+| `npm run check` | Runs the checks that most often fail a PR: `scripts/check-adrs.mjs`, `scripts/check-markdown.mjs`, `cargo fmt --check`, `npm run build`, `npm run test:local`, and `cargo clippy --all-targets -- -D warnings`. |
 | `npm run bump -- <level>` | Raises the version to the next `patch`, `minor`, or `major` in every version file. See [`releases.md`](releases.md). |
 | `npm run tauri -- build --no-bundle` | Builds the release binary `src-tauri/target/release/hermes-chat`. |
 
@@ -80,6 +81,7 @@ Run these in `src-tauri/`. `tauri::generate_context!` needs `dist/` to exist at 
 | Command | What it does |
 | --- | --- |
 | `node scripts/check-adrs.mjs` | Fails when two ADRs share a number, and prints the highest number in use. |
+| `node scripts/check-markdown.mjs` | Fails when the repo tracks a Markdown file that isn't an ADR, a skill file, or listed in its `KEPT` table. |
 | `node scripts/screenshot-refs.mjs` | Lists every file under `docs/screenshots/` that nothing references. `--delete` removes them. |
 | `node bench/run.mjs` | Times long chats (50, 200, and 800 turns) in headless Chromium. `node bench/run.mjs code` times streaming code blocks. Needs `$CHROME` or Playwright's cached headless shell. |
 | `xvfb-run -a python3 bench/webkit.py 'bench.streamCode(10,false)'` | Runs `window.bench` calls in WebKitGTK 4.1 and prints each result as JSON. Build the page first with `npx vite build --config bench/vite.config.ts`. Needs `python-gobject`. |
@@ -150,6 +152,9 @@ src-tauri/
 	src/*.rs         one file per native feature: keyring, tray, staged attachments, updates, and others
 	tests/           Rust integration tests
 e2e/               the end-to-end suite (features/<name>.e2e.tsx)
+.claude/skills/verify-hermes-chat/
+                   drives the real desktop app headless; features/ holds one recipe per feature
+.githooks/         the pre-commit hook
 bench/             performance benchmarks
 tools/             golden-file generators and live-test helpers, mostly Python
 scripts/           repo checks and release scripts
@@ -163,13 +168,21 @@ docs/adr/          architecture decision records
 
 | Job | Runs |
 | --- | --- |
-| `frontend` | `check-adrs.mjs`, `npm ci`, `npm test` (twice), `npm audit --audit-level=high`, `npm run build`, and the release script tests |
+| `test (1/3)`, `test (2/3)`, `test (3/3)` | `npm test -- --shard=<n>/3`: the Vitest suite in three parts ([ADR 0222](adr/0222-ci-caches-are-saved-from-main-and-the-tests-run-in-three-parts.md)) |
+| `frontend` | Fails unless every `test` part passed, then `check-adrs.mjs`, `check-markdown.mjs`, `npm audit --omit=dev --audit-level=high`, `npm run build`, the release script tests, and `version.mjs check` |
 | `e2e` | `npm run e2e`, and uploads `e2e/out` |
 | `rust` | `cargo test --lib --tests`, the display tests under `xvfb-run`, `cargo clippy`, and `cargo fmt --check` |
 | `python` | `ruff check .` |
 | `audit` | `cargo audit` |
 
-`installers.yml` builds the Windows `.exe` and the `.deb` when a `v<version>` tag is pushed, and attaches both to that tag's GitHub release. [`releases.md`](releases.md) covers versions, tags, and signing.
+Other workflows run only when their paths change, or by hand:
+
+| Workflow | Runs |
+| --- | --- |
+| `verify-harness.yml` | The `verify-hermes-chat` skill's `selftest`, when the skill, `src/` or `bench/` changes |
+| `windows-smoke.yml` | A real sign-in and send in the Windows build, when the app or its build changes. It informs and blocks nothing. |
+| `release-dry-run.yml` | Builds, signs and checks the self-updating AppImage, and never publishes it |
+| `installers.yml` | Builds the Windows `.exe`, the `.deb` and a plain `.AppImage`. On a `v<version>` tag it attaches all three, each with a `.sha256`, to that tag's GitHub release. [`releases.md`](releases.md) covers versions, tags, and signing. |
 
 ## Pull requests
 

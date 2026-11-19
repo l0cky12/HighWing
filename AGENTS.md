@@ -1,12 +1,18 @@
-# hermes-chat
+# Highwing
 
-Personal Tauri 2 + React + TypeScript desktop chat client for a remote Hermes Agent, built for Arch Linux.
+Personal Tauri 2 + React + TypeScript desktop chat client for a remote Hermes Agent, for Linux and Windows. The npm package, the binary and the data folders keep the old name `hermes-chat` ([ADR 0176](docs/adr/0176-the-app-is-called-highwing-and-its-icon-is-an-eagles-head.md)).
+
+## Where to look
+
+- `docs/developer.md`: setup, every command, the repository layout, CI, and the design choices that shape most of the code. Read it first.
+- `docs/features.md`: what each feature does, and what is stored where.
+- `GLOSSARY.md` and `docs/adr/`: the domain terms, and why each feature works the way it does.
 
 ## Agent skills
 
 ### Issue tracker
 
-Issues and specs live in GitHub Issues on `l0cky12/hermes-chat`, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues and specs live in GitHub Issues on `l0cky12/HighWing`, managed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
@@ -15,8 +21,6 @@ Default five-role vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `
 ### Domain docs
 
 Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
-
-
 
 ### PR conventions
 
@@ -27,9 +31,15 @@ Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents
 
 ### Verify before PR
 
-Run `npm run check` after every code change, before committing. It runs the CI checks that most often fail a PR: unique ADR numbers (`scripts/check-adrs.mjs`, which also prints the highest number in use), `cargo fmt --check`, `npm run build`, the test suite, and `cargo clippy --all-targets -- -D warnings`. A failing check is a blocked task, not a note in the PR body.
+Run `npm run check` after every code change, before committing. It runs the CI checks that most often fail a PR: unique ADR numbers (`scripts/check-adrs.mjs`, which also prints the highest number in use), Markdown files the owner asked for (`scripts/check-markdown.mjs`), `cargo fmt --check`, `npm run build`, the test suite, and `cargo clippy --all-targets -- -D warnings`. A failing check is a blocked task, not a note in the PR body.
 
 The suite runs here as `npm run test:local`, which is `vitest run` with two workers, so a full run doesn't time out on a loaded machine. CI keeps `npm test`. If a file still times out, rerun it alone with `npx vitest run <file> --maxWorkers=1`.
+
+`npm run check` doesn't prove a feature works. Pick the check that matches the change:
+
+- A flow in the webview: `npm run e2e -- --feature <name>` drives the app in headless Chromium against `FakeHermes` (`docs/e2e.md`).
+- Behavior in the real desktop app, or PR screenshots: the `verify-hermes-chat` skill (`.claude/skills/verify-hermes-chat/`), with one recipe per feature in its `features/` folder.
+- What the app sends Hermes: `npm run frames-diff -- origin/main` fails when a test sends different frames or calls.
 
 Turn on the pre-commit hook once per clone (all worktrees share it): `git config core.hooksPath .githooks`. It refuses a commit that stages Rust when `cargo fmt --check` fails.
 

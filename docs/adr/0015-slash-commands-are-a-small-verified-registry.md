@@ -1,6 +1,6 @@
 # Slash commands are a small registry of verified commands, and other "/" text is a message
 
-> **Amended** by [ADR 0225](0225-hermes-commands-run-as-its-desktop-runs-them-and-a-typed-name-resolves-as-its-command-line-does.md) (issue #94): every command Hermes's `commands.catalog` lists is offered and runs as Hermes's own desktop runs it, `/model`, `/reasoning` and `/compress` use the app's own switches, and a name can be typed in part, resolved as Hermes's command line resolves it.
+> **Amended** by [ADR 0226](0226-hermes-commands-run-as-its-desktop-runs-them-and-a-typed-name-resolves-as-its-command-line-does.md) (issue #94): every command Hermes's `commands.catalog` lists is offered and runs as Hermes's own desktop runs it, `/model`, `/reasoning` and `/compress` use the app's own switches, and a name can be typed in part, resolved as Hermes's command line resolves it.
 
 Typing "/" at the start of the composer opens a menu of slash commands, followed by the profile's skills (see "Skills from the composer" below). The app runs only the commands in its own registry (`src/hermes/commands.ts`): app actions it already has, and Hermes commands whose behaviour was read in Hermes's source at the deployed `bf0203a` and run against that code. Any other text that starts with "/" is sent as an ordinary message, exactly as typed. Nothing typed is passed through to Hermes's command line.
 

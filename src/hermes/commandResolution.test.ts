@@ -1,4 +1,4 @@
-// How a typed "/" name finds its command (issue #94, ADR 0225): exact names and aliases first, then a prefix, the way
+// How a typed "/" name finds its command (issue #94, ADR 0226): exact names and aliases first, then a prefix, the way
 // Hermes's own command line expands one at the deployed `bf0203a` (`cli.py _expand_slash_prefix`), across the app's
 // commands, Hermes's catalog (commandsCatalogGolden.json, made by tools/commands-catalog-golden.py) and the skill and
 // extension names "/" also reaches.

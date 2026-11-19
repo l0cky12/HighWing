@@ -76,7 +76,7 @@ describe("checkPackage", () => {
   it("is up to date when main is the installed commit", async () => {
     const get = fetchOnce(json({ status: "identical", ahead_by: 0, behind_by: 0, commits: [] }));
     expect(await checkPackage(pacman("r312.ef433a2-1"), get, NOW)).toEqual({ state: "upToDate", version: "r312.ef433a2-1", note: undefined, checkedAt: NOW });
-    expect(get).toHaveBeenCalledWith("https://api.github.com/repos/l0cky12/hermes-chat/compare/ef433a2...main", expect.anything());
+    expect(get).toHaveBeenCalledWith("https://api.github.com/repos/l0cky12/HighWing/compare/ef433a2...main", expect.anything());
   });
 
   it("is up to date, with a note, when the build is ahead of main", async () => {
@@ -88,7 +88,7 @@ describe("checkPackage", () => {
     const commits = [commit("1111111aaa", "Fix"), commit("2222222bbb", "Merge pull request #38 from l0cky12/status-bar\n\nStatus bar", 2)];
     const s = await checkPackage(
       pacman("r312.ef433a2-1"),
-      fetchOnce(json({ status: "ahead", ahead_by: 2, behind_by: 0, commits, html_url: "https://github.com/l0cky12/hermes-chat/compare/ef433a2...main" })),
+      fetchOnce(json({ status: "ahead", ahead_by: 2, behind_by: 0, commits, html_url: "https://github.com/l0cky12/HighWing/compare/ef433a2...main" })),
       NOW,
     );
     expect(s).toEqual({
@@ -100,7 +100,7 @@ describe("checkPackage", () => {
         notes: [{ text: "#38 Status bar" }],
         more: 0,
         via: "pacman",
-        allUrl: "https://github.com/l0cky12/hermes-chat/compare/ef433a2...main",
+        allUrl: "https://github.com/l0cky12/HighWing/compare/ef433a2...main",
         warning: undefined,
         command: "git pull && packaging/aur/build.sh -si",
       },

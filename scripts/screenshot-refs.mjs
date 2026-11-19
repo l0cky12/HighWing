@@ -30,7 +30,7 @@ const PROTECTED = `${SHOTS}improvement-report/`;
 const IMAGE = /\.(png|jpe?g|gif|webp|svg)$/i;
 const BINARY = /\.(png|jpe?g|gif|webp|ico|icns|bmp|woff2?|ttf|otf|zip|gz|tar|wasm|pdf|mp3|mp4|webm|ogg|wav)$/i;
 const REPO_LINK =
-  /(?:github\.com\/l0cky12\/(?:highwing|hermes-chat)\/(?:blob|raw|tree)\/|raw\.githubusercontent\.com\/l0cky12\/(?:highwing|hermes-chat)\/)(\S+?)\/(docs\/screenshots\/[^\s)"'<>\]?#]*)/gi;
+  /(?:github\.com\/l0cky12\/highwing\/(?:blob|raw|tree)\/|raw\.githubusercontent\.com\/l0cky12\/highwing\/)(\S+?)\/(docs\/screenshots\/[^\s)"'<>\]?#]*)/gi;
 
 const git = (...a) => execFileSync("git", a, { cwd: root, encoding: "utf8", maxBuffer: 1 << 28 });
 const tracked = git("ls-files", "-z").split("\0").filter(Boolean);

@@ -9,7 +9,7 @@
 import { restartHold, sending, unsaved } from "./unsaved";
 import { clockTime, errorText } from "./values";
 
-export const REPO = "l0cky12/hermes-chat";
+export const REPO = "l0cky12/HighWing";
 
 export type Install =
   | { kind: "pacman"; package: string; running: string; installed: string | null }

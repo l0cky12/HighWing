@@ -653,7 +653,7 @@ const SPECS = new Map(CAPABILITIES.map((c) => [c.id, c]));
 export const specOf = (id: CapabilityId): CapabilitySpec => SPECS.get(id)!;
 
 /** Where the compatibility guide is published, so the link works from any build of the app. */
-export const GUIDE_URL = "https://github.com/l0cky12/hermes-chat/blob/main/docs/compatibility.md";
+export const GUIDE_URL = "https://github.com/l0cky12/HighWing/blob/main/docs/compatibility.md";
 export const guideUrl = (id?: CapabilityId) => (id ? `${GUIDE_URL}#${specOf(id).anchor}` : GUIDE_URL);
 
 /** The protocol generation Hermes speaks on /api/ws: `legacy`, the one this app supports, or `canonical`. */

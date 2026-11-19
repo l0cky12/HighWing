@@ -135,7 +135,7 @@ describe("Connection diagnostics", () => {
     expect(within(r).getByText(/Needs: The dashboard's managed-files routes/)).toBeTruthy();
     await userEvent.setup().click(within(r).getByRole("button", { name: "Compatibility guide: Server files" }));
     expect(openGuide).toHaveBeenCalledWith(guideUrl("serverFiles"));
-    expect(guideUrl("serverFiles")).toBe("https://github.com/l0cky12/hermes-chat/blob/main/docs/compatibility.md#server-files");
+    expect(guideUrl("serverFiles")).toBe("https://github.com/l0cky12/HighWing/blob/main/docs/compatibility.md#server-files");
   });
 
   it("says so when Hermes answered no check at all", async () => {

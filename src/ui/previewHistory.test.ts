@@ -3,7 +3,7 @@ import type { PreviewTarget, WebTarget } from "../hermes/preview";
 import { canGoBack, canGoForward, HISTORY_KEPT, stepHistory, type HistoryStep, type PreviewHistory } from "./previewHistory";
 
 const page = (path: string, on?: "server" | "local"): WebTarget => ({ kind: "web", url: `http://localhost:5173${path}`, ...(on && { on }) });
-const github: WebTarget = { kind: "web", url: "https://github.com/l0cky12/hermes-chat" };
+const github: WebTarget = { kind: "web", url: "https://github.com/l0cky12/HighWing" };
 const file: PreviewTarget = { kind: "server", path: "/srv/app/README.md" };
 
 const run = (...steps: HistoryStep[]) => steps.reduce<PreviewHistory>(stepHistory, null);

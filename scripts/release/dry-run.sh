@@ -51,7 +51,7 @@ version=$(node -p 'require("./src-tauri/tauri.conf.json").version')
 printf 'A dry run from commit %s. Not a release.\n' "$(git rev-parse HEAD)" > "$work/notes.txt"
 rm -rf release
 node scripts/release/manifest.mjs "${CARGO_TARGET_DIR:-src-tauri/target}/release/bundle/appimage" release \
-  "https://github.com/l0cky12/hermes-chat/releases/download/v$version" "$work/notes.txt"
+  "https://github.com/l0cky12/HighWing/releases/download/v$version" "$work/notes.txt"
 printf '%s' "${HERMES_CHAT_SIGNED_BY:-$pubkey}" > release/updater.key.pub
 
 scripts/release/verify.sh release "${HERMES_CHAT_SIGNED_BY:-$pubkey}"

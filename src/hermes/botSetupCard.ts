@@ -5,9 +5,10 @@
 // bot it names is matched against what Hermes lists, and the plan carries Hermes's own spelling of it. A name Hermes
 // doesn't list is a row that can't be ticked. A key the format doesn't have makes the whole block unreadable, so a
 // command, URL or key can't ride in beside a name.
-// Once the owner presses Set it up, the card is planned against what they accepted instead of the block. The block
-// still says what the bot first proposed, and planning against it after a reload would offer to write that over the
-// owner's in-place edit, or over a change made elsewhere since.
+// What the owner did to an item is a Choice: its tick and value, and the bot's value they chose over. The card the app
+// draws is the bot's proposal, then what was accepted at Set it up, then the owner's pending choices. A newer block
+// keeps each choice unless the bot changed that same item (ADR 0231, `plan` in fieldMerge.ts), so neither a redraw nor
+// a reload offers to write the bot's value over the owner's.
 import {
   BOT_SETUP_BLOCK_KEYS,
   BOT_SETUP_BLOCK_VERSION,
@@ -23,6 +24,7 @@ import {
   type BotSetupOtherBot,
   type BotSetupToggle,
 } from "./botSetupBrief";
+import { plan as mergeEdit } from "./fieldMerge";
 import type { SkillRow } from "./skills";
 import { textOf } from "./storedTranscript";
 import type { Toolset } from "./toolsets";
@@ -40,7 +42,7 @@ export type Unreadable = { at: BlockAt; source: string; reason: string };
 /**
  * The live card of a Bot Chat's newest setup. `none`: no brief marker, or no block after the newest one.
  * `card`: the newest block that parses; `newerUnreadable` is a block after it that doesn't, which the card UI shows as
- * unreadable with its "draw it again" button. `accepted`: the newest record for this card that a row after it carries.
+ * unreadable with its "draw it again" button. `accepted`: the newest record of this setup that a row carries.
  * `unreadable`: no block after the marker parses; this is the newest.
  */
 export type ParseResult =
@@ -74,9 +76,6 @@ export type ItemValues = {
 };
 export type ItemKind = keyof ItemValues;
 
-/** The kinds whose value the owner can change in place on the card. */
-export type EditableKind = "persona" | "description" | "model" | "color" | "remember";
-
 /**
  * Whether Set it up has anything to do for an item. `change`: Hermes differs from `after`; ticked by default.
  * `elsewhere`: the owner accepted `after`, and Hermes has since been changed to `before` from somewhere else; unticked,
@@ -84,13 +83,14 @@ export type EditableKind = "persona" | "description" | "model" | "color" | "reme
  */
 export type ItemStatus = { status: "change"; ticked: boolean } | { status: "elsewhere"; ticked: boolean } | { status: "same" };
 
+type Proposal<K extends ItemKind> = { kind: K; key: string; name?: string; from?: string; before: ItemValues[K]; proposed: ItemValues[K] };
+
 /**
- * One row Hermes lists, with its value now and on the card. `key`: unique in the plan (`persona`, `skill:<name>`).
- * `name`: Hermes's own spelling. `from`: the bot it is copied from, as Hermes lists that bot.
+ * One row Hermes lists. `key`: unique in the plan (`persona`, `skill:<name>`). `name`: Hermes's own spelling. `from`:
+ * the bot it is copied from, as Hermes lists that bot. `before`: Hermes's value now. `proposed`: the block's value.
+ * `after`: the value on the card, which the owner may have chosen instead.
  */
-export type ListedItem = {
-  [K in ItemKind]: { kind: K; key: string; name?: string; from?: string; before: ItemValues[K]; after: ItemValues[K] } & ItemStatus;
-}[ItemKind];
+export type ListedItem = { [K in ItemKind]: Proposal<K> & { after: ItemValues[K] } & ItemStatus }[ItemKind];
 
 /** A name the block gave that Hermes doesn't list. Shown with the block's own spelling; never ticked, never sent. */
 export type NotFoundItem = { kind: "model" | "skill" | "toolset" | "mcp"; key: string; name: string; from?: string; status: "notFound" };
@@ -117,14 +117,19 @@ export type HermesNow = {
   bots: readonly Pick<BotSetupOtherBot, "name" | "skills" | "toolsetsOn" | "mcp">[];
 };
 
-/** One item as the owner left it at Set it up: ticked or not, Hermes's value then (`from`), and the value they accepted. */
-export type AcceptedItem = { [K in ItemKind]: { kind: K; key: string; ticked: boolean; from: ItemValues[K]; to: ItemValues[K] } }[ItemKind];
+type ChoiceOf<K extends ItemKind> = { kind: K; key: string; proposed: ItemValues[K]; ticked: boolean; to: ItemValues[K] };
 
-/** What the owner accepted at Set it up, for card `card`. It rides in the hidden ready-turn row (ACCEPTED_FENCE). */
+/** The owner's tick and value for an item (`to`), and the block's value they chose it over (`proposed`). */
+export type Choice = { [K in ItemKind]: ChoiceOf<K> }[ItemKind];
+
+/** A choice as Set it up left it, with Hermes's value then (`from`). */
+export type AcceptedItem = { [K in ItemKind]: ChoiceOf<K> & { from: ItemValues[K] } }[ItemKind];
+
+/**
+ * What the owner accepted in a setup, last made on card `card`. It rides in the hidden ready-turn row (ACCEPTED_FENCE).
+ * Each record holds every item accepted so far, so the newest record is the whole of it.
+ */
 export type AcceptedRecord = { v: 1; card: string; items: AcceptedItem[] };
-
-/** What the owner did to the card before Set it up: the keys still ticked, and the values changed in place. */
-export type OwnerChoices = { ticked: ReadonlySet<string>; edits: { [K in EditableKind]?: ItemValues[K] } };
 
 /** The fenced block that carries an accepted record in the ready-turn row. */
 export const ACCEPTED_FENCE = "highwing-bot-setup-accepted";
@@ -286,6 +291,7 @@ function fingerprint(s: string): string {
 }
 
 const cardIdOf = (setupId: string, block: BotSetupAgainBlock) => `${setupId}:${fingerprint(JSON.stringify(block))}`;
+const setupOf = (cardId: string) => cardId.slice(0, cardId.lastIndexOf(":"));
 
 const rowText = (row: SetupRow) => textOf(row.content);
 
@@ -330,11 +336,11 @@ export function parseSetup(rows: readonly SetupRow[]): ParseResult {
   }
   if (!card) return newer ? { kind: "unreadable", setupId, ...newer } : { kind: "none", setupId };
   let accepted: AcceptedRecord | null = null;
-  for (let index = card.at.index; index < rows.length; index++) {
+  for (let index = marker + 1; index < rows.length; index++) {
     if (rows[index]?.role !== "user") continue;
     for (const source of fencedBlocks(rowText(rows[index]), ACCEPTED_FENCE)) {
       const record = readAcceptedRecord(source);
-      if (record?.card === card.id) accepted = record;
+      if (record && setupOf(record.card) === setupId) accepted = record;
     }
   }
   return { kind: "card", card, accepted, ...(newer && { newerUnreadable: newer }) };
@@ -356,10 +362,8 @@ const remembers = (now: HermesNow, name: string | null): string | null => {
   return want && now.memory.some((m) => m.toLowerCase().includes(want)) ? name : null;
 };
 
-function listed<K extends ItemKind>(kind: K, key: string, before: ItemValues[K], after: ItemValues[K], extra: { name?: string; from?: string } = {}): ListedItem {
-  const status: ItemStatus = same(kind, before, after) ? { status: "same" } : { status: "change", ticked: true };
-  return { kind, key, ...extra, before, after, ...status } as ListedItem;
-}
+const listed = <K extends ItemKind>(kind: K, key: string, before: ItemValues[K], proposed: ItemValues[K], extra: { name?: string; from?: string } = {}) =>
+  ({ kind, key, ...extra, before, proposed }) as Proposal<ItemKind>;
 
 const notFound = (kind: NotFoundItem["kind"], name: string, from?: string): NotFoundItem => ({
   kind,
@@ -370,10 +374,10 @@ const notFound = (kind: NotFoundItem["kind"], name: string, from?: string): NotF
 });
 
 /** The block against Hermes now: one item per row the card shows. */
-function planBlock(card: Card, now: HermesNow): PlanItem[] {
+function planBlock(card: Card, now: HermesNow): (Proposal<ItemKind> | NotFoundItem)[] {
   const b = card.block;
-  const items: PlanItem[] = [];
-  const add = (item: PlanItem) => {
+  const items: (Proposal<ItemKind> | NotFoundItem)[] = [];
+  const add = (item: Proposal<ItemKind> | NotFoundItem) => {
     if (!items.some((i) => i.key === item.key)) items.push(item);
   };
   add(listed("persona", "persona", now.persona, b.persona ?? now.persona));
@@ -382,7 +386,8 @@ function planBlock(card: Card, now: HermesNow): PlanItem[] {
   const model = b.model === null ? now.model : now.models.find((m) => m === b.model);
   add(model === undefined ? notFound("model", b.model ?? "") : listed("model", "model", now.model, model, model === null ? {} : { name: model }));
   add(listed("color", "color", now.color, b.color === null ? now.color : BOT_SETUP_COLOR_HEX[b.color]));
-  if (b.callOwner !== null) add(listed("remember", "remember", remembers(now, b.callOwner), b.callOwner));
+  // Whether Hermes has the Remember row depends on the name the card ends up with, so planCard reads it.
+  if (b.callOwner !== null) add(listed("remember", "remember", null, b.callOwner));
 
   const skillNow = (name: string): ItemValues["skill"] => {
     const row = now.skills.find((s) => s.name === name);
@@ -416,31 +421,36 @@ function planBlock(card: Card, now: HermesNow): PlanItem[] {
   return items;
 }
 
+/** Whether a choice made on the bot's `c.proposed` holds on a block that proposes `proposed`: unless the bot changed that item. */
+function holds(c: Choice, proposed: unknown): boolean {
+  const merged = mergeEdit<{ item: unknown }>({ item: { from: c.proposed, to: c.to } }, { item: proposed }, { item: (a, b) => same(c.kind, a, b) });
+  return merged.settled.item?.kind !== "changedElsewhere";
+}
+
 /**
- * The card's plan: the block against Hermes now, or, once the owner pressed Set it up on this card, what they accepted
- * against Hermes now. For an accepted item, Hermes holding the accepted value means nothing to do; Hermes still holding
- * the value it had then offers it again; anything else was changed elsewhere since, and is shown unticked. An item left
- * unticked stays unticked.
+ * The card's plan: the block against Hermes now, with each choice the owner made laid over it, `accepted` at Set it up
+ * and then `pending` on the card since. A choice made on a block that proposed something else for its item is dropped.
+ * For an accepted item, Hermes holding the accepted value means nothing to do; Hermes still holding the value it had
+ * then offers it again; anything else was changed elsewhere since, and is shown unticked. An item left unticked stays
+ * unticked.
  */
-export function planCard(card: Card, now: HermesNow, accepted: AcceptedRecord | null = null): Plan {
-  const items = planBlock(card, now);
-  if (accepted?.card !== card.id) return { cardId: card.id, items };
-  const byKey = new Map(accepted.items.map((a) => [a.key, a]));
-  return {
-    cardId: card.id,
-    items: items.map((item): PlanItem => {
-      const a = byKey.get(item.key);
-      if (item.status === "notFound" || a?.kind !== item.kind) return item;
-      // The Remember row is read against the name accepted, which an in-place edit may have changed.
-      const theirs = item.kind === "remember" ? remembers(now, a.to as string | null) : item.before;
-      const status: ItemStatus = same(item.kind, theirs, a.to)
-        ? { status: "same" }
-        : !a.ticked || same(item.kind, theirs, a.from)
-          ? { status: "change", ticked: a.ticked }
-          : { status: "elsewhere", ticked: false };
-      return { kind: item.kind, key: item.key, ...(item.name !== undefined && { name: item.name }), ...(item.from !== undefined && { from: item.from }), before: theirs, after: a.to, ...status } as ListedItem;
-    }),
-  };
+export function planCard(card: Card, now: HermesNow, accepted: AcceptedRecord | null = null, pending: readonly Choice[] = []): Plan {
+  const kept = accepted && setupOf(accepted.card) === card.setupId ? accepted.items : [];
+  const items = planBlock(card, now).map((p): PlanItem => {
+    if ("status" in p) return p;
+    const choiceOn = <C extends Choice>(choices: readonly C[]) => choices.find((c) => c.key === p.key && c.kind === p.kind && holds(c, p.proposed));
+    const a = choiceOn(kept);
+    const chosen = choiceOn(pending);
+    const after = chosen ? chosen.to : a ? a.to : p.proposed;
+    const before = p.kind === "remember" ? remembers(now, after as string | null) : p.before;
+    const status: ItemStatus = same(p.kind, before, after)
+      ? { status: "same" }
+      : a?.ticked && !same(p.kind, before, a.from) && same(p.kind, after, a.to)
+        ? { status: "elsewhere", ticked: chosen?.ticked ?? false }
+        : { status: "change", ticked: (chosen ?? a)?.ticked ?? true };
+    return { ...p, before, after, ...status } as ListedItem;
+  });
+  return { cardId: card.id, items };
 }
 
 /** An item Set it up can write, ticked or not. */
@@ -449,18 +459,26 @@ export const tickable = (item: PlanItem): item is ListedItem & { status: "change
 /** The card's "N changes": items ticked now. Rows already in Hermes, and names Hermes doesn't list, don't count. */
 export const tickedCount = (plan: Plan) => plan.items.filter((i) => tickable(i) && i.ticked).length;
 
-const EDITABLE: readonly ItemKind[] = ["persona", "description", "model", "color", "remember"] satisfies EditableKind[];
+/** The owner's choice on an item of the plan: its tick, or a value in place of the one shown. The rest stays as shown. */
+export const choose = <I extends ListedItem>(item: I, change: { ticked?: boolean; to?: I["after"] }): Choice =>
+  ({ kind: item.kind, key: item.key, proposed: item.proposed, ticked: change.ticked ?? (tickable(item) ? item.ticked : true), to: change.to === undefined ? item.after : change.to }) as Choice;
 
-/** The record of Set it up on `plan`: every item it could write, ticked or not, with Hermes's value then and the value accepted. */
-export function acceptedRecord(plan: Plan, owner: OwnerChoices): AcceptedRecord {
-  return {
-    v: 1,
-    card: plan.cardId,
-    items: plan.items.filter(tickable).map((item) => {
-      const edited = EDITABLE.includes(item.kind) ? owner.edits[item.kind as EditableKind] : undefined;
-      return { kind: item.kind, key: item.key, ticked: owner.ticked.has(item.key), from: item.before, to: edited === undefined ? item.after : edited } as AcceptedItem;
-    }),
-  };
+/**
+ * The record of Set it up on `plan`, laid over `previous`, the setup's record so far: every item Set it up could write,
+ * ticked or not, and every item the owner set to other than the block's value. An item Hermes already has keeps its
+ * earlier record while that still holds, so a retry doesn't forget what an earlier Set it up applied.
+ */
+export function acceptedRecord(plan: Plan, previous: AcceptedRecord | null = null): AcceptedRecord {
+  const earlier = previous && setupOf(previous.card) === setupOf(plan.cardId) ? previous.items : [];
+  const items = new Map(earlier.map((a) => [a.key, a]));
+  for (const item of plan.items) {
+    if (item.status === "notFound") continue;
+    const a = items.get(item.key);
+    if (tickable(item) || !same(item.kind, item.after, item.proposed))
+      items.set(item.key, { kind: item.kind, key: item.key, proposed: item.proposed, ticked: tickable(item) ? item.ticked : true, from: item.before, to: item.after } as AcceptedItem);
+    else if (a && !holds(a, item.proposed)) items.delete(item.key);
+  }
+  return { v: 1, card: plan.cardId, items: [...items.values()] };
 }
 
 // ---- The record's text ------------------------------------------------------------------------------------------
@@ -495,8 +513,8 @@ export function readAcceptedRecord(source: string): AcceptedRecord | null {
     if (!isObj(i) || !isKind(i.kind) || typeof i.key !== "string" || typeof i.ticked !== "boolean") return null;
     if (i.key !== i.kind && !i.key.startsWith(`${i.kind}:`)) return null;
     const ok = VALUE_OK[i.kind];
-    if (!ok(i.from) || !ok(i.to)) return null;
-    items.push({ kind: i.kind, key: i.key, ticked: i.ticked, from: i.from, to: i.to } as AcceptedItem);
+    if (!ok(i.proposed) || !ok(i.from) || !ok(i.to)) return null;
+    items.push({ kind: i.kind, key: i.key, proposed: i.proposed, ticked: i.ticked, from: i.from, to: i.to } as AcceptedItem);
   }
   return { v: 1, card: raw.card, items };
 }

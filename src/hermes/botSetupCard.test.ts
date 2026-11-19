@@ -7,6 +7,7 @@ import {
   BOT_SETUP_COLOR_HEX,
   acceptedRecord,
   acceptedRecordBlock,
+  choose,
   fencedBlocks,
   parseSetup,
   planCard,
@@ -14,6 +15,7 @@ import {
   readBlock,
   tickable,
   tickedCount,
+  type AcceptedRecord,
   type Card,
   type HermesNow,
   type ListedItem,
@@ -86,10 +88,14 @@ const listedItem = (plan: Plan, key: string): ListedItem => {
   if (i.status === "notFound") throw new Error(`${key} is not found`);
   return i;
 };
-const allTicked = (plan: Plan) => new Set(plan.items.filter((i) => tickable(i) && i.ticked).map((i) => i.key));
+/** The card's plan once the owner made `changes` on the card as shown, each keyed by its item. */
+const onCard = (card: Card, h: HermesNow, changes: Record<string, { ticked?: boolean; to?: string | null }>, accepted: AcceptedRecord | null = null): Plan => {
+  const shown = planCard(card, h, accepted);
+  return planCard(card, h, accepted, Object.entries(changes).map(([key, change]) => choose(listedItem(shown, key), change)));
+};
 
 /** Hermes after Set it up wrote every ticked item of `plan` with the accepted values. */
-function applied(before: HermesNow, plan: Plan, record = acceptedRecord(plan, { ticked: allTicked(plan), edits: {} })): HermesNow {
+function applied(before: HermesNow, plan: Plan, record = acceptedRecord(plan)): HermesNow {
   const memory = [...before.memory];
   const servers = [...(before.mcp?.servers ?? [])];
   const h: HermesNow = { ...before, memory, mcp: before.mcp && { ...before.mcp, servers } };
@@ -287,7 +293,7 @@ describe("the plan", () => {
   // Owner call 6: on a new bot the model row is greyed "Already in use" and not counted, unless the bot proposes another.
   it("shows the model already in use as a row that isn't counted, unless the block proposes another model", () => {
     const keep = planCard(card(), now());
-    expect(listedItem(keep, "model")).toEqual({ kind: "model", key: "model", name: "claude-sonnet-4.5", before: "claude-sonnet-4.5", after: "claude-sonnet-4.5", status: "same" });
+    expect(listedItem(keep, "model")).toEqual({ kind: "model", key: "model", name: "claude-sonnet-4.5", proposed: "claude-sonnet-4.5", before: "claude-sonnet-4.5", after: "claude-sonnet-4.5", status: "same" });
     expect(tickable(item(keep, "model"))).toBe(false);
     expect(tickedCount(keep)).toBe(10);
     const sameNamed = planCard(card(block({ model: "claude-sonnet-4.5" })), now());
@@ -325,8 +331,8 @@ describe("the plan", () => {
     ]);
     for (const i of missing) expect(tickable(i)).toBe(false);
     expect(plan.items.some((i) => i.key === "model")).toBe(false);
-    // Set it up records only items Hermes lists, even with every key in the plan "ticked".
-    const record = acceptedRecord(plan, { ticked: new Set(plan.items.map((i) => i.key)), edits: {} });
+    // Set it up records only items Hermes lists.
+    const record = acceptedRecord(plan);
     expect(record.items.map((i) => i.key)).toEqual(["persona", "description", "color", "remember"]);
   });
 
@@ -351,7 +357,7 @@ describe("the plan", () => {
       copy: [{ from: "Research Assistant", skills: evil, toolsets: evil, mcp: evil }],
     });
     const plan = planCard(card(asNames), now());
-    const record = acceptedRecord(plan, { ticked: new Set(plan.items.map((i) => i.key)), edits: {} });
+    const record = acceptedRecord(plan);
     const sent = JSON.stringify(record);
     for (const value of evil) {
       expect(sent).not.toContain(value);
@@ -400,7 +406,7 @@ describe("Set up again", () => {
     expect(listedItem(plan, "persona")).toMatchObject({ before: has.persona, after: has.persona, status: "same" });
     expect(listedItem(plan, "description")).toMatchObject({ before: "Plans trips.", after: "Plans trips.", status: "same" });
     expect(listedItem(plan, "color")).toMatchObject({ before: "#3B82F6", after: "#3B82F6", status: "same" });
-    const record = acceptedRecord(plan, { ticked: new Set(plan.items.map((i) => i.key)), edits: {} });
+    const record = acceptedRecord(plan);
     expect(record.items.filter((i) => ["persona", "description", "color"].includes(i.kind))).toEqual([]);
   });
 
@@ -456,21 +462,19 @@ describe("what the owner accepted", () => {
 
   it("records each tick and in-place edit under the card's id, and reads it back from its block", () => {
     const { card } = cardOf(rowsWith(block()));
-    const plan = planCard(card, now());
-    const ticked = allTicked(plan);
-    ticked.delete("toolset:browser");
-    const record = acceptedRecord(plan, { ticked, edits: { persona: "You are B.", color: "#3b82f6" } });
+    const plan = onCard(card, now(), { persona: { to: "You are B." }, color: { to: "#3b82f6" }, "toolset:browser": { ticked: false } });
+    const record = acceptedRecord(plan);
     expect(record.card).toBe(card.id);
-    expect(record.items.find((i) => i.key === "persona")).toEqual({ kind: "persona", key: "persona", ticked: true, from: "", to: "You are B." });
-    expect(record.items.find((i) => i.key === "color")).toMatchObject({ from: null, to: "#3b82f6" });
-    expect(record.items.find((i) => i.key === "toolset:browser")).toEqual({ kind: "toolset", key: "toolset:browser", ticked: false, from: "off", to: "on" });
+    expect(record.items.find((i) => i.key === "persona")).toEqual({ kind: "persona", key: "persona", proposed: block().persona, ticked: true, from: "", to: "You are B." });
+    expect(record.items.find((i) => i.key === "color")).toMatchObject({ proposed: BOT_SETUP_COLOR_HEX.teal, from: null, to: "#3b82f6" });
+    expect(record.items.find((i) => i.key === "toolset:browser")).toEqual({ kind: "toolset", key: "toolset:browser", proposed: "on", ticked: false, from: "off", to: "on" });
     expect(record.items.some((i) => i.key === "model")).toBe(false);
     const text = acceptedRecordBlock(record);
     expect(fencedBlocks(text, ACCEPTED_FENCE).map(readAcceptedRecord)).toEqual([record]);
   });
 
   it("refuses a record that is half right", () => {
-    const good = { v: 1, card: "s1:x", items: [{ kind: "persona", key: "persona", ticked: true, from: "", to: "B" }] };
+    const good = { v: 1, card: "s1:x", items: [{ kind: "persona", key: "persona", proposed: "A", ticked: true, from: "", to: "B" }] };
     expect(readAcceptedRecord(JSON.stringify(good))).toEqual(good);
     const bad = [
       { ...good, v: 2 },
@@ -478,8 +482,9 @@ describe("what the owner accepted", () => {
       { ...good, items: [{ ...good.items[0], kind: "shell" }] },
       { ...good, items: [{ ...good.items[0], key: "skill:x" }] },
       { ...good, items: [{ ...good.items[0], ticked: "yes" }] },
-      { ...good, items: [{ kind: "skill", key: "skill:x", ticked: true, from: "absent", to: "npx evil" }] },
-      { ...good, items: [{ kind: "color", key: "color", ticked: true, from: null, to: "url(https://evil.example)" }] },
+      { ...good, items: [{ kind: "skill", key: "skill:x", proposed: "on", ticked: true, from: "absent", to: "npx evil" }] },
+      { ...good, items: [{ kind: "skill", key: "skill:x", proposed: "npx evil", ticked: true, from: "absent", to: "on" }] },
+      { ...good, items: [{ kind: "color", key: "color", proposed: null, ticked: true, from: null, to: "url(https://evil.example)" }] },
     ];
     for (const r of bad) expect(readAcceptedRecord(JSON.stringify(r)), JSON.stringify(r)).toBeNull();
   });
@@ -489,8 +494,8 @@ describe("what the owner accepted", () => {
     const rows = rowsWith(block());
     const { card } = cardOf(rows);
     const before = now();
-    const plan = planCard(card, before);
-    const record = acceptedRecord(plan, { ticked: allTicked(plan), edits: { persona: "You are B, edited in place.", description: "Edited too." } });
+    const plan = onCard(card, before, { persona: { to: "You are B, edited in place." }, description: { to: "Edited too." } });
+    const record = acceptedRecord(plan);
     const after = applied(before, plan, record);
 
     // Without the record, the block would offer to write A over B.
@@ -510,8 +515,8 @@ describe("what the owner accepted", () => {
   it("shows a change made elsewhere after Set it up as that, unticked, instead of writing over it", () => {
     const { card } = cardOf(rowsWith(block()));
     const before = now();
-    const plan = planCard(card, before);
-    const record = acceptedRecord(plan, { ticked: allTicked(plan), edits: { persona: "You are B." } });
+    const plan = onCard(card, before, { persona: { to: "You are B." } });
+    const record = acceptedRecord(plan);
     const later = { ...applied(before, plan, record), persona: "You are C, from Edit bot.", color: "#ec4899" };
     const again = planCard(card, later, record);
     expect(listedItem(again, "persona")).toMatchObject({ status: "elsewhere", ticked: false, before: "You are C, from Edit bot.", after: "You are B." });
@@ -522,10 +527,8 @@ describe("what the owner accepted", () => {
   it("offers again, ticked, an item whose write didn't land, and keeps an unticked item unticked", () => {
     const { card } = cardOf(rowsWith(block()));
     const before = now();
-    const plan = planCard(card, before);
-    const ticked = allTicked(plan);
-    ticked.delete("skill:find-nearby");
-    const record = acceptedRecord(plan, { ticked, edits: {} });
+    const plan = onCard(card, before, { "skill:find-nearby": { ticked: false } });
+    const record = acceptedRecord(plan);
     const partly = applied(before, plan, { ...record, items: record.items.filter((i) => i.key !== "toolset:web") });
     const again = planCard(card, partly, record);
     expect(listedItem(again, "toolset:web")).toMatchObject({ status: "change", ticked: true, before: "off", after: "on" });
@@ -535,21 +538,75 @@ describe("what the owner accepted", () => {
 
   it("reads the Remember row against the name the owner accepted", () => {
     const { card } = cardOf(rowsWith(block()));
-    const plan = planCard(card, now());
-    const record = acceptedRecord(plan, { ticked: allTicked(plan), edits: { remember: "Lee" } });
+    const record = acceptedRecord(onCard(card, now(), { remember: { to: "Lee" } }));
     expect(listedItem(planCard(card, now({ memory: ["Call the owner Lee."] }), record), "remember")).toMatchObject({ status: "same", before: "Lee", after: "Lee" });
     expect(listedItem(planCard(card, now(), record), "remember")).toMatchObject({ status: "change", ticked: true, before: null, after: "Lee" });
   });
 
-  it("uses only a record for this card: a newer card is planned against its own block", () => {
+  // The owner accepts persona B over the proposed A; a newer block changes only the colour.
+  it("keeps an accepted edit on a newer block that leaves that item alone", () => {
     const rows = rowsWith(block());
     const first = cardOf(rows).card;
-    const plan = planCard(first, now());
-    const record = acceptedRecord(plan, { ticked: allTicked(plan), edits: { persona: "You are B." } });
+    const before = now();
+    const plan = onCard(first, before, { persona: { to: "You are B." } });
+    const record = acceptedRecord(plan);
+    const after = applied(before, plan, record);
     const redrawn = cardOf([...rows, readyRow(3, record), said(4, "user", "Make it blue."), reply(5, JSON.stringify(block({ color: "blue" })))]);
     expect(redrawn.card.id).not.toBe(first.id);
-    expect(redrawn.accepted).toBeNull();
-    const other: Card = redrawn.card;
-    expect(planCard(other, now(), record)).toEqual(planCard(other, now()));
+    expect(redrawn.accepted).toEqual(record);
+    const next = planCard(redrawn.card, after, redrawn.accepted);
+    expect(listedItem(next, "persona")).toMatchObject({ status: "same", after: "You are B." });
+    expect(listedItem(next, "color")).toMatchObject({ status: "change", ticked: true, after: BOT_SETUP_COLOR_HEX.blue });
+    expect(tickedCount(next)).toBe(1);
+    // The bot changing the persona itself is a new offer.
+    const rewritten = cardOf([...rows, readyRow(3, record), reply(5, JSON.stringify(block({ persona: "You are C." })))]);
+    expect(listedItem(planCard(rewritten.card, after, rewritten.accepted), "persona")).toMatchObject({ status: "change", ticked: true, before: "You are B.", after: "You are C." });
+  });
+
+  it("keeps a pending edit and untick on a newer block that leaves those items alone", () => {
+    const first = cardOf(rowsWith(block())).card;
+    const shown = planCard(first, now());
+    const pending = [choose(listedItem(shown, "persona"), { to: "You are B." }), choose(listedItem(shown, "toolset:browser"), { ticked: false })];
+    const redrawn = cardOf([...rowsWith(block()), reply(3, JSON.stringify(block({ color: "blue" })))]).card;
+    const next = planCard(redrawn, now(), null, pending);
+    expect(listedItem(next, "persona")).toMatchObject({ status: "change", ticked: true, after: "You are B." });
+    expect(listedItem(next, "toolset:browser")).toMatchObject({ status: "change", ticked: false });
+    const rewritten = cardOf([...rowsWith(block()), reply(3, JSON.stringify(block({ persona: "You are C.", toolsets: [] })))]).card;
+    expect(listedItem(planCard(rewritten, now(), null, pending), "persona")).toMatchObject({ status: "change", ticked: true, after: "You are C." });
+  });
+
+  // Persona B is applied, a toolset fails, and Try again sets up only the toolset.
+  it("keeps what an earlier Set it up applied in the record a retry leaves", () => {
+    const { card } = cardOf(rowsWith(block()));
+    const before = now();
+    const plan = onCard(card, before, { persona: { to: "You are B." } });
+    const first = acceptedRecord(plan);
+    const partly = applied(before, plan, { ...first, items: first.items.filter((i) => i.key !== "toolset:web") });
+    const retry = planCard(card, partly, first);
+    expect(tickedCount(retry)).toBe(1);
+    const second = acceptedRecord(retry, first);
+    const done = applied(partly, retry, second);
+    const reloaded = cardOf([...rowsWith(block()), readyRow(3, first), readyRow(4, second)]);
+    expect(reloaded.accepted).toEqual(second);
+    const again = planCard(reloaded.card, done, reloaded.accepted);
+    expect(listedItem(again, "persona")).toMatchObject({ status: "same", after: "You are B." });
+    expect(again.items.filter((i) => i.status !== "same")).toEqual([]);
+  });
+
+  it("finds the record of an identical redraw's card, though the record comes before the redraw", () => {
+    const rows = rowsWith(block());
+    const first = cardOf(rows).card;
+    const record = acceptedRecord(onCard(first, now(), { persona: { to: "You are B." } }));
+    const redrawn = cardOf([...rows, readyRow(3, record), said(4, "user", "Draw it again."), reply(5, JSON.stringify(block()))]);
+    expect(redrawn.card.id).toBe(first.id);
+    expect(redrawn.card.at.rowId).toBe(5);
+    expect(redrawn.accepted).toEqual(record);
+  });
+
+  it("uses no record from another setup", () => {
+    const record = acceptedRecord(onCard(cardOf(rowsWith(block())).card, now(), { persona: { to: "You are B." } }));
+    const other = cardOf([brief("s2"), reply(2, JSON.stringify(block())), readyRow(3, record)]);
+    expect(other.accepted).toBeNull();
+    expect(planCard(other.card, now(), record)).toEqual(planCard(other.card, now()));
   });
 });

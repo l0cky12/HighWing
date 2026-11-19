@@ -108,7 +108,7 @@ describe("One bot messages another", () => {
     shown(items());
     const ack = { kind: "queued", to: "@beta", recipients: [{ to: "@beta", deliveryId: "delivery-1", claimed: false, targetState: "idle" }], reply: "notification" };
     const sent = (list: Item[]) => list.find((i): i is Extract<Item, { kind: "tool" }> => i.kind === "tool")!;
-    expect(agentSend(sent(items()))).toEqual({ to: "@beta", text: ASK, ack });
+    expect(agentSend(sent(items()))).toEqual({ to: "@beta", handles: ["beta"], text: ASK, ack });
     const lines = (list: Item[]) => deliveryLines(agentSend(sent(list))!, list.slice(list.indexOf(sent(list)) + 1)).map((l) => l.kind);
     expect(lines(items())).toEqual(["queued", "ended"]);
 
@@ -117,7 +117,7 @@ describe("One bot messages another", () => {
     const again = await botChat(reopened, "default");
     await until(reopened, () => sent(again()).result !== undefined);
     shown(again());
-    expect(agentSend(sent(again()))).toEqual({ to: "@beta", text: ASK, ack });
+    expect(agentSend(sent(again()))).toEqual({ to: "@beta", handles: ["beta"], text: ASK, ack });
     expect(lines(again())).toEqual(["queued", "ended"]);
     const reads = () => server.restRequests.filter((r) => r.path === "/api/sessions/alpha-bot/messages").length;
     expect(reads()).toBeGreaterThan(0);

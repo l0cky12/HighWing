@@ -87,15 +87,20 @@ describe("A message_agent call", () => {
   const args = { target: "beta", message: "PING-C-1794974808162 what is 2+2?" };
 
   it("is a message to the teammate it names", () => {
-    expect(agentSend({ name: "message_agent", status: "done", args })).toEqual({ to: "@beta", text: args.message });
+    expect(agentSend({ name: "message_agent", status: "done", args })).toEqual({ to: "@beta", handles: ["beta"], text: args.message });
     expect(agentSend({ name: "message_agent", status: "done", args: { target: "beta, @gamma", message: "Status?" } })?.to).toBe("@beta, @gamma");
   });
 
+  it("lists each target as the call named it, a peer's form whole", () => {
+    expect(agentSend({ name: "message_agent", status: "done", args: { target: "@quill", message: "Hi" } })?.handles).toEqual(["quill"]);
+    expect(agentSend({ name: "message_agent", status: "done", args: { target: "quill, lab/scout", message: "Hi" } })?.handles).toEqual(["quill", "lab/scout"]);
+  });
+
   it("carries Hermes's answer once the call has one", () => {
-    expect(agentSend({ name: "message_agent", status: "done", args, result: ACK })).toEqual({ to: "@beta", text: args.message, ack: SENT });
+    expect(agentSend({ name: "message_agent", status: "done", args, result: ACK })).toEqual({ to: "@beta", handles: ["beta"], text: args.message, ack: SENT });
     const refused = JSON.stringify({ error: "This install is not Bot-Mode-managed.", reason: "not_managed" });
     expect(agentSend({ name: "message_agent", status: "done", args, result: refused })?.ack).toEqual({ kind: "refused", why: "This install is not Bot-Mode-managed." });
-    expect(agentSend({ name: "message_agent", status: "done", args, result: "not json" })).toEqual({ to: "@beta", text: args.message });
+    expect(agentSend({ name: "message_agent", status: "done", args, result: "not json" })).toEqual({ to: "@beta", handles: ["beta"], text: args.message });
   });
 
   it("names, for a message to several, who got it and who didn't", () => {
@@ -103,6 +108,7 @@ describe("A message_agent call", () => {
     const partial = JSON.stringify({ status: "queued", fan_out: [{ to: "@beta", status: "queued", delivery_id: "d-1" }, { to: "@ghost", error: "NOT sent: no such teammate" }] });
     expect(agentSend({ name: "message_agent", status: "done", args: two, result: partial })).toEqual({
       to: "@beta",
+      handles: ["beta", "ghost"],
       text: "Status?",
       ack: { kind: "queued", to: "@beta", recipients: [{ to: "@beta", deliveryId: "d-1", claimed: false }], reply: "notification", failed: "@ghost: NOT sent: no such teammate" },
     });

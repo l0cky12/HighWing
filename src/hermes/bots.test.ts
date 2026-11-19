@@ -4,7 +4,7 @@
 // botsTransport.test.ts.
 import { describe, expect, it } from "vitest";
 import { legacyOver } from "./fakeSessions";
-import { BOT_CHAT_TITLE, BotChats, BotModeUnsupportedError, botActivity, botName, botsWaiting, isBotChat, isBotChatTitle, namedByProfile, newInBotChatNote, rosterOf, agentMessaging, messagingStep, rosterRows, type Bot, type BotActivity, type BotRpc } from "./bots";
+import { BOT_CHAT_TITLE, BotChats, BotModeUnsupportedError, botActivity, botName, botsWaiting, isBotChat, isBotChatTitle, namedByProfile, newInBotChatNote, rosterOf, teammateOf, agentMessaging, messagingStep, rosterRows, type Bot, type BotActivity, type BotRpc } from "./bots";
 
 type Call = { method: string; params: Record<string, unknown> };
 
@@ -398,5 +398,21 @@ describe("a preview without the context Highwing and Hermes attach", () => {
     expect(preview("Draft the notes")).toBe("Draft the notes");
     expect(preview("a --- b")).toBe("a --- b");
     expect(preview("Draft the release notes for the next version and send them to every one of...")).toBe("Draft the release notes for the next version and send them to every one of...");
+  });
+});
+
+describe("the teammate an @handle names", () => {
+  const bot = (profile: string, handle: string) => ({ profile, handle }) as Parameters<typeof teammateOf>[0][number];
+  const roster = [bot("default", "hermes"), bot("quill", "quill"), bot("desk", "desk")];
+
+  it("finds a bot on this connection by its handle, the default profile by hermes", () => {
+    expect(teammateOf(roster, "quill", "desk")?.profile).toBe("quill");
+    expect(teammateOf(roster, "hermes", "desk")?.profile).toBe("default");
+  });
+
+  it("finds no peer or relay target, no unknown handle, and not the profile shown", () => {
+    expect(teammateOf(roster, "lab/quill", "desk")).toBeUndefined();
+    expect(teammateOf(roster, "scout", "desk")).toBeUndefined();
+    expect(teammateOf(roster, "desk", "desk")).toBeUndefined();
   });
 });

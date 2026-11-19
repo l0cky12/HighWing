@@ -45,8 +45,11 @@ export type SendAck =
   | { kind: "unconfirmed"; deliveryId: string; why: string }
   | { kind: "refused"; why: string };
 
-/** One `message_agent` call in the sender's chat. `to`: Hermes's own label once it has answered, else `@` and each target. */
-export type AgentSend = { to: string; text: string; ack?: SendAck };
+/**
+ * One `message_agent` call in the sender's chat. `to`: Hermes's own label once it has answered, else `@` and each
+ * target. `handles`: each target as the call named it, without the `@`, which the card's Open chips look up.
+ */
+export type AgentSend = { to: string; handles: readonly string[]; text: string; ack?: SendAck };
 
 const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 const targetState = (v: unknown): TargetState | undefined => TARGET_STATES.find((s) => s === v);
@@ -118,7 +121,7 @@ export function agentSend(tool: { name: string; status: string; args?: Record<st
   const message = text(tool.args?.message);
   if (!targets.length || !message) return undefined;
   const ack = ackOf(tool.result);
-  return { to: ack?.kind === "queued" ? ack.to : targets.map((t) => `@${t}`).join(", "), text: message, ...(ack && { ack }) };
+  return { to: ack?.kind === "queued" ? ack.to : targets.map((t) => `@${t}`).join(", "), handles: targets, text: message, ...(ack && { ack }) };
 }
 
 /**

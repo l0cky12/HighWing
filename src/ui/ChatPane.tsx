@@ -226,6 +226,10 @@ const JumpContext = createContext<JumpTarget | undefined>(undefined);
 /** Goes to an item of this chat by its id, rendering its part of the transcript first when it is far from the view. */
 const GoToItemContext = createContext<(itemId: string) => void>(() => {});
 
+/** What a Messaged card's Open chip does for `handle`: nothing when it isn't a bot on this connection. App provides it; Replay and export don't. */
+export type Teammates = { open: (handle: string) => (() => void) | undefined };
+export const TeammatesContext = createContext<Teammates | undefined>(undefined);
+
 const STATUS_NOTE: Record<ConnectionStatus, string | undefined> = {
   connected: undefined,
   connecting: "Connecting to Hermes…",
@@ -1722,6 +1726,11 @@ function SentCard({ block, query }: { block: SentBlock; query: string }) {
   const refused = send.ack?.kind === "refused" ? send.ack.why : undefined;
   const why = refused ?? (send.ack?.kind === "queued" ? send.ack.failed : undefined);
   const running = tool.status === "running";
+  const teammates = useContext(TeammatesContext);
+  const links = send.handles.flatMap((h) => {
+    const open = teammates?.open(h);
+    return open ? [{ h, open }] : [];
+  });
   return (
     <TurnCard
       kind="sent"
@@ -1731,6 +1740,17 @@ function SentCard({ block, query }: { block: SentBlock; query: string }) {
       data-item={tool.id}
       data-call={tool.callId}
       tabIndex={tool.callId ? -1 : undefined}
+      foot={
+        links.length > 0 && (
+          <div className="sent-open">
+            {links.map(({ h, open }) => (
+              <button key={h} className="preview-chip" title={l.openTip(`@${h}`)} onClick={open}>
+                <Bot size={12} aria-hidden /> {l.open(`@${h}`)}
+              </button>
+            ))}
+          </div>
+        )
+      }
     >
       {why && (
         <p className="returned-why" translate="no">

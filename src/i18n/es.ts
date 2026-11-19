@@ -35,6 +35,8 @@ export const es: Catalogue = {
       sending: (to) => `Enviando un mensaje a ${to}…`,
       sent: (to) => `Mensaje enviado a ${to}`,
       notSent: (to) => `No se envió a ${to}`,
+      open: (handle) => `Abrir ${handle}`,
+      openTip: (handle) => `Abrir el Bot Chat de ${handle}`,
       from: (name, handle) => `Mensaje de ${name} (@${handle})`,
       fromHermes: "De Hermes",
       noAnswer: "No llegó ninguna respuesta",

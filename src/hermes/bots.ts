@@ -427,3 +427,6 @@ export function newInBotChatNote(res: { kind: string; message?: string }): strin
   if (res.kind === "nothing") return `${lead} There was nothing to compact yet.`;
   return `${lead} ${res.message ?? ""}`.trim();
 }
+
+/** Pure. The bot on this connection that `@handle` names, other than the shown profile's own; none for a peer or relay target. */
+export const teammateOf = (roster: readonly Bot[], handle: string, shown: string): Bot | undefined => roster.find((b) => b.handle === handle && b.profile !== shown);

@@ -40,6 +40,8 @@ export const en = {
       sending: (to: string) => `Messaging ${to}…`,
       sent: (to: string) => `Messaged ${to}`,
       notSent: (to: string) => `Not sent to ${to}`,
+      open: (handle: string) => `Open ${handle}`,
+      openTip: (handle: string) => `Open ${handle}'s Bot Chat`,
       from: (name: string, handle: string) => `Message from ${name} (@${handle})`,
       fromHermes: "From Hermes",
       noAnswer: "No answer came back",

@@ -9,7 +9,7 @@ import { argProblem, commandSet, completion, type CommandDef, type CommandSet } 
 import { pickerRows, shortName, type ModelCatalog, type ModelPick } from "../hermes/models";
 import { dollarQuery, matchSkills, skillRun, type SkillCommand, type SkillCommands, type SkillRun } from "../hermes/skillCommands";
 import { atQuery, matchChats, type ReferableChat } from "../hermes/chatReferences";
-import { completeMention, matchBots } from "../hermes/mentionPicker";
+import { completeMention, matchBots, withoutPick } from "../hermes/mentionPicker";
 import type { Bot } from "../hermes/bots";
 import { BotFace, type BotLookShown } from "./BotFace";
 import { useLocale } from "../i18n/locale";
@@ -157,7 +157,9 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
   const offeredExtensions = host?.extensions?.offered ?? [];
   // Every other name "/" reaches here, which a command's prefix never takes (commands.ts).
   const others = [...skills.map((s) => s.key), ...offeredExtensions.map((c) => c.name)];
-  const typed = host ? set.typed(text, others) : undefined;
+  // What a command, a skill or an extension is run with leaves the composer too, so the pick marks (ADR 0234) are gone.
+  const plain = withoutPick(text);
+  const typed = host ? set.typed(plain, others) : undefined;
   const menu = host && closedFor !== text ? set.menu(text, others) : undefined;
   const query = menu?.stage === "name" ? menu.query : undefined;
   const argMenu = menu?.stage === "arg" ? menu : undefined;
@@ -218,7 +220,7 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
     if (asking) refresh?.();
   }, [asking, refresh]);
   // How the text runs skills when sent; a command of the app's runs instead when the text is one.
-  const toRun = host?.skills && !typed && !typedExtension(text, offeredExtensions) ? skillRun(text.trim(), host.skills) : undefined;
+  const toRun = host?.skills && !typed && !typedExtension(plain, offeredExtensions) ? skillRun(plain.trim(), host.skills) : undefined;
   // The chosen command stays in view as the arrows move through a list taller than the menu.
   useEffect(() => {
     if (open) document.getElementById(`${listId}-${sel}`)?.scrollIntoView?.({ block: "nearest" });
@@ -294,7 +296,7 @@ export function useSlashCommands(host: CommandHost | undefined, text: string, on
   const refuse = (name: string, why: string) => setNote({ text: `/${name} can't run: ${why}`, error: true });
 
   const run = (): boolean => {
-    const ext = host?.extensions && !typed ? typedExtension(text, host.extensions.offered) : undefined;
+    const ext = host?.extensions && !typed ? typedExtension(plain, host.extensions.offered) : undefined;
     if (ext) {
       if (pending) return true;
       const why = host!.extensions!.why(ext.cmd);

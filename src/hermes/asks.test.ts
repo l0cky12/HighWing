@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { askStamp, askStampBlock, askTargets, askTurnIn, placeAsks, revive, toStoredAsk, type Ask, type AskId } from "./asks";
 import { storedReferences, referenceBlock } from "./chatReferences";
 import { typedText } from "./branch";
+import { PICK_MARK } from "./mentionPicker";
 import { withContext } from "./projectContext";
 import type { Item } from "./model";
 
@@ -14,12 +15,18 @@ const bots = [
 
 describe("askTargets", () => {
   it("names each bot once, in the order first named, as the pills do", () => {
-    expect(askTargets("@gamma and @beta, then @GAMMA again", bots).map((b) => b.profile)).toEqual(["gamma", "beta"]);
-    expect(askTargets("ask @hermes", bots).map((b) => b.profile)).toEqual(["default"]);
+    expect(askTargets("@gamma and @beta, then @GAMMA again", bots, "named").map((b) => b.profile)).toEqual(["gamma", "beta"]);
+    expect(askTargets("ask @hermes", bots, "named").map((b) => b.profile)).toEqual(["default"]);
   });
 
   it("names nobody in an address, a longer word, or a message without pills", () => {
-    expect(askTargets("me@beta.org @betamax @nobody hello", bots)).toEqual([]);
+    expect(askTargets("me@beta.org @betamax @nobody hello", bots, "named")).toEqual([]);
+  });
+
+  it("names only the bots picked from the menu under the picked rule, and nobody under the none rule", () => {
+    const text = `@gamma and @${PICK_MARK}beta, then @${PICK_MARK}GAMMA again`;
+    expect(askTargets(text, bots, "picked").map((b) => b.profile)).toEqual(["beta", "gamma"]);
+    expect(askTargets(text, bots, "none")).toEqual([]);
   });
 });
 

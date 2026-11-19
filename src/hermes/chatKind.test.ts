@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CHAT_POLICY, chatKind } from "./chatKind";
+import { CHAT_POLICY, askRule, chatKind } from "./chatKind";
 
 describe("chatKind", () => {
   it.each([
@@ -27,6 +27,7 @@ describe("CHAT_POLICY", () => {
       rename: "none",
       ofBot: true,
       link: false,
+      asks: "named",
     });
   });
 
@@ -35,5 +36,19 @@ describe("CHAT_POLICY", () => {
     expect(kinds.filter((k) => CHAT_POLICY[k].ofBot)).toEqual(["bot"]);
     expect(kinds.filter((k) => CHAT_POLICY[k].link === CHAT_POLICY[k].ofBot)).toEqual([]);
     expect(kinds.filter((k) => CHAT_POLICY[k].organize)).toEqual(["ordinary", "imported"]);
+  });
+});
+
+describe("which @handle words ask a bot", () => {
+  it("lets a Bot Chat's typed or picked handle ask, an ordinary chat's picked one only, and no other chat's", () => {
+    const rules = Object.fromEntries(Object.entries(CHAT_POLICY).map(([kind, p]) => [kind, p.asks]));
+    expect(rules).toEqual({ ordinary: "picked", imported: "none", bot: "named", jobRun: "none" });
+  });
+
+  it("takes an ordinary chat's asks away in Compare and leaves every other chat's as it is", () => {
+    expect(askRule(CHAT_POLICY.ordinary, true)).toBe("none");
+    expect(askRule(CHAT_POLICY.ordinary, false)).toBe("picked");
+    expect(askRule(CHAT_POLICY.bot, true)).toBe("named");
+    expect(askRule(CHAT_POLICY.imported, true)).toBe("none");
   });
 });

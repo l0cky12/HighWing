@@ -3,6 +3,7 @@
 import { createContext, useContext } from "react";
 import { AtSign, CircleAlert, Link2, RotateCcw } from "lucide-react";
 import type { Ask, AskId, AskRefusal, AskTarget } from "../hermes/asks";
+import type { AskRule } from "../hermes/mentionPicker";
 import type { SentReference } from "../hermes/model";
 import { useLocale } from "../i18n/locale";
 import { BotFace } from "./BotFace";
@@ -18,6 +19,8 @@ export type AskHost = {
   bots: readonly NamedBot[];
   /** This chat as the chip a message that names a bot carries; none while it has nothing to summarize. */
   self?: { chatId: string; title: string };
+  /** Which "@handle" words in the composer ask a bot here now (`askRule`). */
+  rule: AskRule;
   connected: boolean;
   send(to: readonly NamedBot[], text: string, references: SentReference[]): AskRefusal | undefined;
   retry(id: AskId, profile: string): void;

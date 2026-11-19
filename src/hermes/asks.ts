@@ -10,7 +10,7 @@
 // in the snapshot. Every ask goes with `queued: true`, so a bot that is replying gets it next and is never interrupted.
 import { rowText, typedText, type StoredBranchRow } from "./branch";
 import { referenceBlock } from "./chatReferences";
-import { mentionsIn } from "./mentionPicker";
+import { mentionsFor, type AskRule } from "./mentionPicker";
 import type { Chat, Item, SentReference } from "./model";
 import { neutralize } from "./projectContext";
 import { PromptUnconfirmedError, echoesInflight } from "./sessionProtocol";
@@ -56,8 +56,8 @@ const PAGE = 100;
 const PAGES = 5;
 
 /** The bots a message names, each once, in the order first named: exactly the bots its pills show. */
-export function askTargets<B extends { profile: string; handle: string }>(text: string, bots: readonly B[]): B[] {
-  return [...new Map(mentionsIn(text, bots).map((m) => [m.bot.profile, m.bot] as const)).values()];
+export function askTargets<B extends { profile: string; handle: string }>(text: string, bots: readonly B[], rule: AskRule): B[] {
+  return [...new Map(mentionsFor(text, bots, rule).map((m) => [m.bot.profile, m.bot] as const)).values()];
 }
 
 const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();

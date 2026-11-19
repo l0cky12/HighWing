@@ -44,7 +44,7 @@ import { createPortal } from "react-dom";
 import { InlineMarks, type ComposerMark } from "./inlineMarks";
 import { sentWith } from "../hermes/sentImages";
 import { carried, highestMark, marksIn, markText, placeImages, sentText, withMarks, withoutMarks } from "../hermes/inlineImages";
-import { mentionsIn } from "../hermes/mentionPicker";
+import { mentionsFor, withoutPick } from "../hermes/mentionPicker";
 import { askTargets, placeAsks, type Ask } from "../hermes/asks";
 import { Speaker } from "./speaker";
 import { DictationNoteView, DictationStrip, ListenButton, MicButton, type VoiceApi, listenBlocked, micBlocked, useDictation, useVoiceSetup } from "./Voice";
@@ -2423,16 +2423,17 @@ function Composer({
   const atButton = bots ? atWords.button : "Reference a chat";
   // The first bot named brings this chat along as a Referenced chat, which the owner can remove (ADR 0233).
   const self = ask?.self;
-  const naming = !!self && !!bots && askTargets(text, bots).length > 0;
+  const rule = ask?.rule ?? "none";
+  const naming = !!self && !!bots && askTargets(text, bots, rule).length > 0;
   useEffect(() => {
     if (!self || !references) return;
     if (naming) references.desk.offer(draftKey, self);
     else references.desk.withdraw(draftKey);
   }, [naming, self, references, draftKey]);
   const pills = useMemo<ComposerMark[]>(() => {
-    const named = mentionsIn(text, bots ?? []).filter((m) => m.start !== slash.typingAt && !marks.some((k) => m.start < k.end && m.end > k.start));
+    const named = mentionsFor(text, bots ?? [], rule).filter((m) => m.start !== slash.typingAt && !marks.some((k) => m.start < k.end && m.end > k.start));
     return named.length ? [...marks, ...named.map((m) => ({ ...m, kind: "bot" as const }))].sort((a, b) => a.start - b.start) : marks;
-  }, [text, bots, marks, slash.typingAt]);
+  }, [text, bots, rule, marks, slash.typingAt]);
   const step = (which: EditStep) => {
     const before = textRef.current;
     const after = onStep(which);
@@ -2477,11 +2478,13 @@ function Composer({
     if (slash.run()) return;
     if (!sendable || steering) return;
     // Each mark numbered by its image's place among those sent, as Hermes stores them after the words.
-    const words = sentText(text.trim(), attachments, numbers).trim();
-    if (!words && !attachments.length) return;
+    const written = sentText(text.trim(), attachments, numbers).trim();
+    if (!written && !attachments.length) return;
+    // The one place the words leave the composer, so the pick marks (ADR 0234) go here, after the pills are read.
+    const words = withoutPick(written);
     // A message that names bots goes to them, and this chat takes no turn, so whether its reply runs or its queue holds
     // anything doesn't matter (ADR 0233). It goes once, from this pane, even while comparing.
-    const asked = ask && bots ? askTargets(words, bots) : [];
+    const asked = ask && bots ? askTargets(written, bots, rule) : [];
     if (ask && asked.length) {
       if (attachments.length) return setRefused([askWords.noFiles]);
       if (slash.skill) return setRefused([askWords.noSkill]);

@@ -6,6 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { askStamp } from "../hermes/asks";
 import { BOT_CHAT_TITLE } from "../hermes/bots";
+import { PICK_MARK } from "../hermes/mentionPicker";
 import { FakeHermes, row } from "../hermes/fakeHermes";
 import { memoryCache } from "../hermes/memoryCache";
 import { connect, type Hermes } from "../hermes/transport";
@@ -104,6 +105,20 @@ describe("An @ in a Bot Chat, in the app", { timeout: 30_000 }, () => {
     // The card goes after the last message the chat had when it was asked.
     const night = within(document.querySelector<HTMLElement>(".transcript-inner")!).getByText("At night.").closest(".msg")!;
     expect(night.compareDocumentPosition(card()!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("sends the words of a bot picked from the menu without the pick mark, in the message and on the card", async () => {
+    const { server, user } = await inHermesBotChat();
+    await user.click(box());
+    await user.keyboard("@qu{Tab}what do you think?");
+    expect(box().value).toBe(`@${PICK_MARK}quill what do you think?`);
+    await waitFor(() => expect(chip("summary ready")).toBeTruthy());
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(submits(server)).toHaveLength(1));
+    expect(submits(server)[0].params.profile).toBe("quill");
+    expect(String(submits(server)[0].params.text)).toContain("@quill what do you think?");
+    expect(String(submits(server)[0].params.text)).not.toContain(PICK_MARK);
+    await waitFor(() => expect(card()?.querySelector(".ask-words")?.textContent).toBe("@quill what do you think?"));
   });
 
   it("sends without this chat once the owner removes its chip, and doesn't bring it back while the message names a bot", async () => {

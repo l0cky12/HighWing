@@ -53,7 +53,7 @@ import { desktopLinks, type LinkInbox } from "./hermes/tauriLinks";
 import { ChatLinkNotice, type LinkNoticeView } from "./ui/ChatLinkNotice";
 import { Inbox } from "./ui/Inbox";
 import { BotList, useBotActions, type BotEditWiring } from "./ui/Bots";
-import { CHAT_POLICY, chatKind, policyOf } from "./hermes/chatKind";
+import { CHAT_POLICY, askRule, chatKind, policyOf } from "./hermes/chatKind";
 import { jobRunTitle } from "./hermes/cronJobs";
 import { botActivity, botsWaiting, newInBotChatNote, teammateOf, type Bot } from "./hermes/bots";
 import { blocksRestore, inboxAcks, inboxEntries, inboxScope, needsOwner, type InboxAcks, type InboxEntry } from "./hermes/inbox";
@@ -4367,6 +4367,7 @@ function ChatView({
           asks: asked,
           bots: otherBots,
           self: askSelf,
+          rule: askRule(policy, !!compare),
           connected: status === "connected",
           send: (to, text, refs) => {
             const why = hermes.asks.send(chat.id, to, text, refs);

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { atQuery } from "./chatReferences";
 import { completeMention, matchBots, mentionsIn } from "./mentionPicker";
 
 type Bot = { handle: string; name: string };
@@ -64,6 +65,15 @@ describe("matchBots", () => {
   });
 });
 
+describe("what the @ menu reads, matched", () => {
+  const found = (typed: string, bots: Bot[]) => matchBots(atQuery(typed)!.query, bots).map((b) => b.handle);
+
+  it("keeps a combining mark in the query, so a name written with one is still found as it is typed", () => {
+    expect(found("hi @a\u030a", [ADA, ZOE])).toEqual(["zoe"]);
+    expect(found("@\u0935\u093f", [{ handle: "vikram", name: "\u0935\u093f\u0915\u094d\u0930\u092e" }])).toEqual(["vikram"]);
+  });
+});
+
 describe("completeMention", () => {
   it("replaces the typed word with the handle and a space, and puts the caret after it", () => {
     expect(completeMention("hi @br", 3, 6, "bram")).toEqual({ text: "hi @bram ", caret: 9 });
@@ -71,6 +81,10 @@ describe("completeMention", () => {
 
   it("adds no second space before words that follow, and leaves the caret after the one there", () => {
     expect(completeMention("hi @br there", 3, 6, "bram")).toEqual({ text: "hi @bram there", caret: 9 });
+  });
+
+  it("adds a space before a new line rather than taking the line break for one", () => {
+    expect(completeMention("@br\nnext", 0, 3, "bram")).toEqual({ text: "@bram \nnext", caret: 6 });
   });
 
   it("keeps what is after the caret, even the rest of a word", () => {

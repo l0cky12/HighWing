@@ -1643,6 +1643,10 @@ mark.hl { background: rgba(245, 184, 74, 0.22); color: var(--warn); border-radiu
 .settings-sub:hover { background: var(--hover); color: var(--text); }
 .settings-sub.on { color: var(--text-strong); background: var(--hover-2); box-shadow: inset 2px 0 0 var(--accent); }
 .settings-main { flex: 1; min-width: 0; overflow-y: auto; }
+/* WebKitGTK's own overlay scrollbars fade out after a page opens, and each fade step renders a frame, so a flick in the
+   first seconds stutters (#127). A styled scrollbar doesn't fade. */
+.settings-side-scroll::-webkit-scrollbar, .settings-main::-webkit-scrollbar { width: 8px; }
+.settings-side-scroll::-webkit-scrollbar-thumb, .settings-main::-webkit-scrollbar-thumb { background: var(--line-3); border-radius: 4px; }
 .settings-frame .settings-inner { max-width: 1024px; margin: 0 0 0 64px; padding: 30px 32px 120px 0; }
 
 /* The page header: eyebrow, title with the profile slot on its line, the description, chips with the page's actions at

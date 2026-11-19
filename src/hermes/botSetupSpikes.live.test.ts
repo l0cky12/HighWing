@@ -1,6 +1,7 @@
 // Bot setup's spikes (#85) replayed against a REAL Hermes dashboard: skipped unless HERMES_LIVE_DASHBOARD is set, and
-// refused unless every profile on that server lives under /tmp, so it can only run against a throwaway HERMES_HOME. It
-// makes profiles named `bs-…`, and deletes them. Each spike keeps its control, so a run shows the check can fail.
+// refused unless every profile on that server resolves, symlinks followed, inside HERMES_LIVE_SANDBOX, a throwaway root
+// in /tmp apart from ~/.hermes (liveSandbox.ts). It makes profiles named `bs-…` and deletes them, failing the run when
+// one is left. Each spike keeps its control, so a run shows the check can fail.
 //
 // It reads what Hermes showed the model from the request log of the verify skill's model stub, which also scripts the
 // tool calls (`direct:`, `calltool:`). The skill's sandbox has both; bind nothing at 127.0.0.1. The MCP spike needs
@@ -9,19 +10,21 @@
 //
 //   RH_VENV=~/.cache/hermes-v0232/venv RH_PYTHONPATH=/tmp/bs-pydeps \
 //   .claude/skills/verify-hermes-chat/scripts/real-hermes up /tmp/bs-live
-//   HERMES_LIVE_DASHBOARD=$(cat /tmp/bs-live/url) HERMES_LIVE_USER=verify HERMES_LIVE_PASSWORD=verify-pass \
-//   HERMES_LIVE_MODEL_LOG=/tmp/bs-live/model-requests.jsonl npx vitest run src/hermes/botSetupSpikes.live.test.ts
+//   HERMES_LIVE_DASHBOARD=$(cat /tmp/bs-live/url) HERMES_LIVE_SANDBOX=/tmp/bs-live HERMES_LIVE_USER=verify \
+//   HERMES_LIVE_PASSWORD=verify-pass HERMES_LIVE_MODEL_LOG=/tmp/bs-live/model-requests.jsonl npx vitest run src/hermes/botSetupSpikes.live.test.ts
 //
 // HERMES_LIVE_SKIP_SEED=1 makes the seeded Bot Chat open as the control does, unseeded: its check must then fail.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { RestError, type RestMethod } from "./pipe";
+import { removeAttempted, sandboxRefusal } from "./liveSandbox";
 import { ProfilesApi } from "./profiles";
 import { APP_SOURCE, RpcError } from "./transport";
 
 // This app's tsconfig has no Node types; vitest runs the file in Node.
 declare const process: { env: Record<string, string | undefined> };
-const readText = async (path: string): Promise<string> =>
-  ((await import(/* @vite-ignore */ "node:fs" as string)) as { readFileSync(p: string, e: string): string }).readFileSync(path, "utf8");
+type Fs = { readFileSync(p: string, e: string): string; realpathSync(p: string): string };
+const fs = async () => (await import(/* @vite-ignore */ "node:fs" as string)) as Fs;
+const readText = async (path: string): Promise<string> => (await fs()).readFileSync(path, "utf8");
 
 const BASE = process.env.HERMES_LIVE_DASHBOARD;
 const MODEL_LOG = process.env.HERMES_LIVE_MODEL_LOG ?? "";
@@ -118,28 +121,32 @@ describe.skipIf(!BASE)("Bot setup's spikes against a throwaway Hermes", () => {
   let ws: Awaited<ReturnType<typeof hermes.socket>>;
   // Set only once the server is known to be a throwaway; cleanup does nothing without it.
   let safe = false;
-  const made: string[] = [];
+  /** Every name this run sent a create for, tracked before it was sent: a lost answer may still have made it. */
+  const attempted: string[] = [];
 
   beforeAll(async () => {
     const { profiles: rows } = (await hermes.rest("GET", "api/profiles")) as { profiles: { name: string; path: string }[] };
-    const real = rows.filter((p) => !p.path.startsWith("/tmp/"));
-    if (!rows.length || real.length) throw new Error(`Refusing to run: ${real.map((p) => p.path).join(", ") || "no profiles"} isn't a throwaway home under /tmp.`);
+    const { realpathSync } = await fs();
+    const refused = sandboxRefusal(process.env.HERMES_LIVE_SANDBOX, process.env.HOME, rows.map((p) => p.path), realpathSync);
+    if (refused) throw new Error(`Refusing to run: ${refused}`);
     if (!MODEL_LOG) throw new Error("Set HERMES_LIVE_MODEL_LOG to the model stub's request log.");
     safe = true;
     ws = await hermes.socket();
   }, 60_000);
 
-  // vitest runs afterAll even when beforeAll threw, so it checks `safe` first. Only the profiles this run made.
+  // vitest runs afterAll even when beforeAll threw, so it checks `safe` first. Only the profiles this run tried to make;
+  // one left fails the run.
   afterAll(async () => {
     ws?.close();
-    if (!safe) return;
-    for (const name of made) await profiles.remove(name).catch((e: unknown) => console.log(`Couldn't delete ${name}: ${String(e)}`));
+    if (safe) await removeAttempted(attempted, profiles);
   }, 120_000);
 
   const newProfile = async (what: string) => {
     const name = `bs-${RUN}-${what}`;
+    // Never one that was there before: cleanup deletes every name tracked here.
+    if ((await profiles.list()).some((p) => p.name === name)) throw new Error(`${name} already exists.`);
+    attempted.push(name);
     await profiles.create({ name });
-    made.push(name);
     return name;
   };
   /** A Bot Chat as Bot setup opens one: hidden, titled, following the profile's config, the brief seeded as a hidden row. */
@@ -258,8 +265,10 @@ describe.skipIf(!BASE)("Bot setup's spikes against a throwaway Hermes", () => {
       expect(noticed(evs)).toBe(true);
       const reply = replyOf(evs);
       console.log(`kanban_list (block ${block}, reconnect ${reconnect}):`, reply.slice(0, 200));
-      expect(reply).toMatch(/^TOOL RESULT: /);
-      expect(reply).not.toMatch(/unknown tool|not available|not enabled|does not exist|not a known tool/i);
+      // The board's answer (spikes/s1v2.out), not an error Hermes returned in its place.
+      const result = JSON.parse(reply.replace(/^TOOL RESULT: /, "")) as Record<string, unknown>;
+      expect(result).toMatchObject({ tasks: [], count: 0 });
+      expect(result).not.toHaveProperty("error");
       const shown = JSON.stringify(await socket.rpc("tools.show", { session_id: sid }));
       expect(shown).toContain("kanban_list");
       expect(shown).not.toContain("web_search");

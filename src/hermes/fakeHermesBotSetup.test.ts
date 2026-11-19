@@ -93,6 +93,17 @@ describe("a hidden prompt.submit", () => {
     expect(resumed.messages).toEqual([expect.objectContaining({ role: "user", text: "Liam" })]);
   });
 
+  it("is left out of a resume that reattaches a session waiting on the owner, and not counted", async () => {
+    const { server, call, botChat, turn } = await connected();
+    await call("client.capabilities", { server_requests: true });
+    const chat = await botChat();
+    await turn(chat.sid, BEGIN, { display_kind: "hidden" });
+    await turn(chat.sid, "Liam");
+    expect(server.ask(chat.sid, "clarify", { question: "Which city?", choices: null })).toBeDefined();
+    const resumed = (await call("session.resume", { session_id: chat.stored, profile: BOT })).result!;
+    expect(resumed).toMatchObject({ running: true, message_count: 1, messages: [expect.objectContaining({ role: "user", text: "Liam" })] });
+  });
+
   it("takes no other display kind from a client", async () => {
     const { botChat, turn, stored } = await connected();
     const chat = await botChat();
@@ -209,13 +220,28 @@ describe("a Bot Chat whose capabilities change mid-chat", () => {
     expect(h.server.modelCalls.at(-1)).toMatchObject({ soul: "Your name is After.\n", tools: expect.arrayContaining(["image_generate"]) });
   });
 
+  it("is told once: every resume attaches the one live session, so a later unchanged turn isn't told again", async () => {
+    const h = await connected();
+    const chat = await h.botChat();
+    await h.turn(chat.sid, "one");
+    await change(h);
+    const resume = async () => String((await h.call("session.resume", { session_id: chat.stored, profile: BOT })).result!.session_id);
+    const sid = await resume();
+    expect(sid).toBe(chat.sid);
+    expect((await h.turn(sid, "two")).filter((e) => e.type === "notice")).toHaveLength(1);
+    expect(await resume()).toBe(chat.sid);
+    expect((await h.turn(chat.sid, "three")).some((e) => e.type === "notice")).toBe(false);
+  });
+
   it("isn't told after the session was closed: the resume builds a new one from the profile as it is", async () => {
     const h = await connected();
     const chat = await h.botChat();
     await h.turn(chat.sid, "one");
-    await h.call("session.close", { session_id: chat.sid });
+    const resume = async () => String((await h.call("session.resume", { session_id: chat.stored, profile: BOT })).result!.session_id);
+    await h.call("session.close", { session_id: await resume() });
     await change(h);
-    const sid = String((await h.call("session.resume", { session_id: chat.stored, profile: BOT })).result!.session_id);
+    const sid = await resume();
+    expect(sid).not.toBe(chat.sid);
     expect((await h.turn(sid, "two")).some((e) => e.type === "notice")).toBe(false);
     expect(h.server.modelCalls.at(-1)).toMatchObject({ soul: "Your name is After.\n" });
   });

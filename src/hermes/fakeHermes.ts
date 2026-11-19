@@ -970,7 +970,7 @@ export class FakeHermes {
       if (open.length) {
         const sid = open[0][1].sid;
         this.runtime.set(sid, stored);
-        const messages = this.transcripts[stored] ?? [];
+        const messages = shownHistory(this.transcripts[stored] ?? []);
         return this.respond(r.id, { session_id: sid, stored_session_id: stored, message_count: messages.length, messages, info: this.sessionInfo, running: true, open_requests: this.openRequestsOf(sid) });
       }
       const busy = this.reattachTurns && [...this.inflight].find(([sid, t]) => t.stored === stored && this.turns.has(sid));
@@ -985,12 +985,17 @@ export class FakeHermes {
         // Hermes answers on its own task, so the app is already waiting on the resume when these frames reach it.
         return queueMicrotask(() => (before(sid), answer()));
       }
-      const runtimeId = `rt-r${++this.resumed}`;
-      this.runtime.set(runtimeId, stored);
-      this.runtimeProfile.set(runtimeId, (r.params.profile as string | undefined) || "default");
-      // Hermes keeps a session live after its connection goes, and a resume attaches it with what its last turn saw.
-      const live = [...this.agents].find(([id]) => this.runtime.get(id) === stored)?.[1];
-      this.buildAgent(runtimeId, (r.params.profile as string | undefined) || "default", live?.capsSeen);
+      // Hermes keeps a session live after its connection goes until `session.close`, and a resume attaches that one
+      // session, its agent and what its last turn saw (`_resume_reuse_live`); only a session not live is built anew.
+      const live = [...this.agents.keys()].find((id) => this.runtime.get(id) === stored);
+      const runtimeId = live ?? `rt-r${++this.resumed}`;
+      if (!live) {
+        this.runtime.set(runtimeId, stored);
+        this.runtimeProfile.set(runtimeId, (r.params.profile as string | undefined) || "default");
+        this.buildAgent(runtimeId, (r.params.profile as string | undefined) || "default");
+      }
+      // The row exists now, so the live session's first prompt doesn't add another.
+      this.created.delete(runtimeId);
       const messages = shownHistory(this.transcripts[stored] ?? []);
       const info = { ...this.sessionInfo, ...this.sessionModel.get(stored) };
       this.respond(r.id, { session_id: runtimeId, stored_session_id: stored, message_count: messages.length, messages, info, running: false });
@@ -1600,7 +1605,13 @@ export class FakeHermes {
       this.sessionCwd.set(sid, cwd);
       this.respond(r.id, { ...this.sessionInfo, cwd });
     },
-    "session.close": (r) => (this.agents.delete(String(r.params.session_id ?? "")), this.respond(r.id, { closed: true })),
+    // `_pop_session_by_id`: the session and its agent are gone, and a later resume builds a new one.
+    "session.close": (r) => {
+      const sid = String(r.params.session_id ?? "");
+      this.agents.delete(sid);
+      this.agentTools.delete(sid);
+      this.respond(r.id, { closed: true });
+    },
     // `reload.mcp` (`tui_gateway/methods_tools.py` at ae2a81cc): without `confirm: true` it asks first, unless
     // `approvals.mcp_reload_confirm` is off. Then it reconnects the servers of the launch profile and of every profile
     // with a live session, whichever session it names, and refreshes every live session's tools. Nothing else makes a

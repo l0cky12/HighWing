@@ -1,0 +1,102 @@
+diff --git a/src/App.tsx b/src/App.tsx
+index edf7b51..6dd563b 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -2327,6 +2327,7 @@ export function Main({
+   const onBotChat = !!shownChat && chatKind(shownChat) === "bot";
+   /** `visiting`: what becomes of a bot visit (ADR 0203); none ends it, here or with the switch to the bot's profile. */
+   const openBot = (b: Bot, then: "open" | "new", visiting?: BotVisit) => {
++    ((globalThis as unknown as { __perf?: [number, string][] }).__perf ??= []).push([Math.round(performance.now()), `openBot ${b.profile}`]);
+     guard(() => {
+       if (then === "open" && b.profile === profile && !(shownChat && policyOf(shownChat).ofBot)) beforeBotChat.current = active.chatId;
+       if (b.profile !== profile) void switchProfileNow(b.profile, { visit: visiting });
+diff --git a/src/hermes/transport.ts b/src/hermes/transport.ts
+index 8495719..1a07e3b 100644
+--- a/src/hermes/transport.ts
++++ b/src/hermes/transport.ts
+@@ -138,6 +138,7 @@ import { displayMetadata, returnedItem } from "./returned";
+  * takes an edit (rename, pin, archive, read) only on a local client's row whose source it knows (`LEGACY_LOCAL_SOURCES`,
+  * `authorize_history` at the deployed `bf0203a`): every edit of a `hermes-chat` row was answered 404 `not_found`.
+  */
++const __t = (k: string) => { const g = globalThis as unknown as { __perf?: [number, string][] }; (g.__perf ??= []).push([Math.round(performance.now()), k]); };
+ export const APP_SOURCE = "gui";
+ 
+ /** Resolves once the page has been drawn with what is on it now. */
+@@ -1389,6 +1390,7 @@ export class Hermes {
+             return this.openPipe(onEvent, profile, stop.signal);
+           })
+         : await this.openPipe(onEvent, profile, stop.signal);
++      __t(kept?.reopen ? "pipe reopened" : "pipe opened");
+       pipe.attempt?.ready();
+       const payload = await Promise.race([
+         ready,
+@@ -1398,6 +1400,7 @@ export class Hermes {
+         }),
+       ]);
+       if (failure) throw failure;
++      __t("gateway.ready");
+       this.protocol = negotiate(payload, this.port);
+       readyPayload = payload;
+       pipe.attempt?.connected();
+@@ -1873,7 +1876,9 @@ export class Hermes {
+     if (this.profile !== name || this.closing) return;
+     if (this.pipe && this.pipeProfile === name) return void this.sync();
+     if (this.pipe) this.detach(`Switching to the ${name} profile.`);
++    __t("reconnect>");
+     await this.reconnect();
++    __t("reconnect<");
+   }
+ 
+   /**
+@@ -2450,6 +2455,7 @@ export class Hermes {
+    * out, and its stored id is returned for a pane to open. Nothing about it is kept for later opens.
+    */
+   async openBotChat(bot: Bot): Promise<string> {
++    __t(`openBotChat ${bot.profile}`);
+     const profile = this.profile;
+     if (bot.profile !== profile) throw new Error(`Switch to ${bot.profile} first.`);
+     let found: { openId: string; registryId: string };
+@@ -2664,6 +2670,7 @@ export class Hermes {
+    * of the chat that pane showed before; the same chat may be open in both panes.
+    */
+   async open(chatId: string, pane = "main"): Promise<void> {
++    __t(`open ${chatId}`);
+     if (!this.snapshot.chats.some((c) => c.id === chatId)) return;
+     const before = this.viewing.get(pane);
+     this.viewing.set(pane, chatId);
+@@ -5886,7 +5893,8 @@ export class Hermes {
+     // Once closed (signed out), nothing more goes out: the Rust side relays through whichever sign-in is current, which
+     // may be another server's by then.
+     if (!this.pipe || this.closing) throw new Error("Not connected to Hermes.");
+-    return JSON.parse(await this.relay(this.pipe, method, pathAndQuery, body));
++    __t(`rest> ${method} ${pathAndQuery.slice(0, 60)}`);
++    try { return JSON.parse(await this.relay(this.pipe, method, pathAndQuery, body)); } finally { __t(`rest< ${method} ${pathAndQuery.slice(0, 60)}`); }
+   }
+ 
+   /**
+@@ -5951,6 +5959,7 @@ export class Hermes {
+     const lacking = this.capabilities.lacks({ rpc: method });
+     if (lacking) return Promise.reject(new RouteMissingError(lacking));
+     const id = this.nextId++;
++    __t(`rpc> ${method}`);
+     let reader: { resolve: (v: unknown) => void; reject: (e: Error) => void } | undefined;
+     const answer =
+       read &&
+@@ -5990,6 +5999,7 @@ export class Hermes {
+       this.pending.get(id)?.reject(err instanceof Error ? err : new Error(String(err)));
+       this.pending.delete(id);
+     });
++    done.then(() => __t(`rpc< ${method}`), () => __t(`rpc! ${method}`));
+     return answer ?? (done as Promise<T>);
+   }
+ 
+@@ -6084,6 +6094,9 @@ export class Hermes {
+    * every other change made by then; any change heard of at once before that takes the waiting ones with it.
+    */
+   private update(patch: Partial<Snapshot>, nextFrame = false) {
++    if (patch.status !== undefined && patch.status !== this.snapshot.status) __t(`status ${patch.status}`);
++    if ("switching" in patch) __t(`switching ${JSON.stringify(patch.switching ?? null)}`);
++    if (patch.profile !== undefined) __t(`profile ${patch.profile}`);
+     if (patch.chats) patch = { ...patch, chats: keepSidePlaces(this.snapshot.chats, patch.chats) };
+     this.snapshot = { ...this.snapshot, ...patch };
+     if (nextFrame) this.notifySoon();

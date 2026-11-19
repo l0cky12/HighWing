@@ -142,6 +142,10 @@ import { displayMetadata, returnedItem } from "./returned";
  */
 export const APP_SOURCE = "gui";
 
+/** Resolves once the page has been drawn with what is on it now. */
+const afterPaint = () =>
+  new Promise<void>((resolve) => (typeof requestAnimationFrame === "function" ? requestAnimationFrame(() => setTimeout(resolve)) : setTimeout(resolve)));
+
 /** Why a Bot Chat can't be renamed here (ADR 0066). */
 const BOT_CHAT_RENAME = "A Bot Chat's name is how Hermes finds it, so it can't be renamed.";
 /** Hermes runs only the job in a Job run's session, and stores a refusal in the run's history if it is sent a message. */
@@ -761,6 +765,9 @@ export class Hermes {
   private busyIn = new Map<string, string[]>();
   /** Chats the owner picked from a search though the list doesn't hold them; they stay in it until the profile changes. */
   private revealed = new Set<string>();
+  /** Bot Chats `showBotChat` put out ahead of their title lookup, by id, each with the lookup's verdict: whether it found
+   * that chat (ADR 0232). Until it does, nothing resumes, marks read or sends there. Kept until the profile changes. */
+  private earlyBotChats = new Map<string, { confirmed: Promise<boolean>; settle?: (same: boolean) => void }>();
   private readonly port: Port = {
     call: (method, params, { file, observe, read } = {}) => this.egress(method, params, file, observe, read),
     reply: (id, result) => {
@@ -1853,6 +1860,8 @@ export class Hermes {
     this.staleItems.clear();
     this.resumeOnReconnect.clear();
     this.revealed.clear();
+    this.settleEarlyBotChats();
+    this.earlyBotChats.clear();
     this.kanbanWatch.reset();
     this.update({
       profile: name,
@@ -2451,18 +2460,73 @@ export class Hermes {
   async openBotChat(bot: Bot): Promise<string> {
     const profile = this.profile;
     if (bot.profile !== profile) throw new Error(`Switch to ${bot.profile} first.`);
-    const { openId, registryId } = await this.botChats.open(profile, bot.name, !!bot.botChat);
+    let found: { openId: string; registryId: string };
+    try {
+      found = await this.botChats.open(profile, bot.name, !!bot.botChat);
+    } catch (e) {
+      if (this.profile === profile) this.settleEarlyBotChats();
+      throw e;
+    }
+    const { openId, registryId } = found;
     this.botChatIds.set(profile, new Set([...(this.botChatIds.get(profile) ?? []), registryId, openId]));
     if (this.profile !== profile) throw new Error(`Switched to the ${this.profile} profile before ${bot.name}'s Bot Chat opened.`);
-    const listed = this.snapshot.chats.find((c) => c.id === openId);
-    if (listed) {
-      if (!listed.bot) this.patchChat(openId, (c) => ({ ...c, bot: true }));
-    } else {
-      this.revealed.add(openId);
-      const updatedAt = bot.botChat?.lastActive || Date.now();
-      this.update({ chats: [...this.snapshot.chats, { id: openId, title: BOT_CHAT_TITLE, source: "app", settled: true, bot: true, updatedAt, items: [] }] });
-    }
+    this.placeBotChat(openId, bot);
+    this.settleEarlyBotChats(openId);
     return openId;
+  }
+
+  /**
+   * Puts the Bot Chat the roster names for `bot` beside the list at once, for a pane to show its Saved copy while the
+   * connection opens and `openBotChat` confirms it (ADR 0232). Undefined when the bot isn't the shown profile's, or its
+   * row names no Bot Chat. Nothing is asked of Hermes or kept for later opens.
+   */
+  showBotChat(bot: Bot): string | undefined {
+    if (bot.profile !== this.profile || !bot.botChat) return undefined;
+    const id = bot.botChat.resolvedId;
+    this.earlyBotChats.get(id)?.settle?.(false);
+    let settle!: (same: boolean) => void;
+    const confirmed = new Promise<boolean>((resolve) => (settle = resolve));
+    this.earlyBotChats.set(id, { confirmed, settle });
+    this.placeBotChat(id, bot, true);
+    return id;
+  }
+
+  /** Ends the wait on every early Bot Chat: `found`, the one the lookup found, is confirmed; the others aren't. */
+  private settleEarlyBotChats(found?: string) {
+    for (const [id, early] of this.earlyBotChats) {
+      early.settle?.(id === found);
+      if (id === found) this.earlyBotChats.delete(id);
+      else {
+        this.earlyBotChats.set(id, { confirmed: early.confirmed });
+        if (!this.resuming.has(id)) this.patchChat(id, (c) => (c.loading ? { ...c, loading: false } : c));
+      }
+    }
+  }
+
+  /** Whether the chat may be resumed and written to: anything but an early Bot Chat its lookup hasn't confirmed. */
+  private async confirmedChat(chatId: string): Promise<boolean> {
+    const early = this.earlyBotChats.get(chatId);
+    return !early || (await early.confirmed);
+  }
+
+  /** Takes back a Bot Chat `showBotChat` put out that the lookup didn't confirm, unless it holds a reply or a send. */
+  dropShownBotChat(id: string): void {
+    const chat = this.snapshot.chats.find((c) => c.id === id);
+    if (!chat?.bot || !this.revealed.has(id) || chat.running || chat.items.some(isOutgoing) || this.snapshot.queues[id]?.items.length) return;
+    this.revealed.delete(id);
+    this.update({ chats: this.snapshot.chats.filter((c) => c.id !== id) });
+  }
+
+  /** `loading`: the chat shows as loading until its Saved copy or history is in. */
+  private placeBotChat(id: string, bot: Bot, loading = false): void {
+    const listed = this.snapshot.chats.find((c) => c.id === id);
+    if (listed) {
+      if (!listed.bot) this.patchChat(id, (c) => ({ ...c, bot: true }));
+      return;
+    }
+    this.revealed.add(id);
+    const updatedAt = bot.botChat?.lastActive || Date.now();
+    this.update({ chats: [...this.snapshot.chats, { id, title: BOT_CHAT_TITLE, source: "app", settled: true, bot: true, updatedAt, items: [], ...(loading && { loading }) }] });
   }
 
   /**
@@ -2613,8 +2677,15 @@ export class Hermes {
     this.viewing.set(pane, chatId);
     if (before !== undefined && before !== chatId && !this.isViewing(before)) this.readWhenBack.delete(before);
     if (this.isStored(chatId)) return this.snapshot.status === "connected" ? this.readStored(chatId) : undefined;
+    // An early Bot Chat's bot is drawn first; a long Saved copy can take the next frames to lay out.
+    if (this.earlyBotChats.has(chatId)) {
+      await afterPaint();
+      if (!this.isViewing(chatId)) return;
+    }
     this.showSaved(chatId);
-    if (this.snapshot.status !== "connected") return;
+    // A switch shows the new profile before the old profile's socket is let go.
+    if (!this.connectedTo(this.profile)) return;
+    if (this.earlyBotChats.has(chatId) && (!(await this.confirmedChat(chatId)) || !this.isViewing(chatId) || !this.connectedTo(this.profile))) return;
     // A list saved before job runs had a kind of their own may hold a run as another platform's chat. The list read
     // drops it, and the pane then finds it by its id as what it is, so nothing is marked or resumed before then. If the
     // list can't be read, the chat shows its Saved copy until it can, and opens in full on the next open.
@@ -4450,6 +4521,11 @@ export class Hermes {
     return this.listedAt !== undefined;
   }
 
+  /** The connection is open, and for `profile`. */
+  connectedTo(profile: string): boolean {
+    return this.snapshot.status === "connected" && !!this.pipe && this.pipeProfile === profile;
+  }
+
   /**
    * The owner's own profile while a bot visit (ADR 0203) shows another one, or none: the next launch opens on `home`,
    * not on the profile shown. With none, the profile shown is the one remembered again, once it has listed.
@@ -5168,6 +5244,11 @@ export class Hermes {
   /** The chat's runtime id on this connection, resuming it first if needed. The history goes before anything sent
    * meanwhile. */
   private resume(chatId: string): Promise<string> {
+    if (this.earlyBotChats.has(chatId))
+      return this.confirmedChat(chatId).then((ok) => {
+        if (!ok) throw new Error("Hermes hasn't confirmed this is the bot's Bot Chat, so nothing went to it.");
+        return this.resume(chatId);
+      });
     const known = this.snapshot.chats.find((c) => c.id === chatId)?.runtimeId;
     if (known) return Promise.resolve(known);
     if (this.isStored(chatId)) return Promise.reject(new Error(JOB_RUN_NO_SESSION));

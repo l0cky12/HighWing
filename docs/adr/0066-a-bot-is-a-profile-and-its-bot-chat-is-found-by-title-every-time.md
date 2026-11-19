@@ -2,6 +2,8 @@
 
 > **One line changed by [ADR 0231](0231-new-bot-asks-only-for-a-name-the-bot-interviews-the-owner-in-its-bot-chat-and-one-card-sets-it-up.md)** (#85). "No intro is sent" no longer holds for a bot New bot makes: its Bot Chat is created with Bot setup's brief seeded as a hidden row, and a hidden turn starts the bot's first reply. Nothing shows in the owner's name. A Bot Chat opened by a click, when the bot has none, is still created with no message sent.
 
+> **Amended by [ADR 0232](0232-a-bot-opens-its-roster-bot-chat-at-the-click-and-the-title-lookup-confirms-it.md):** the Bot Chat the roster names shows at the click, from its Saved copy, and the `session.list` lookup confirms it once connected. A click no longer costs that lookup before the chat opens (Consequences), and the panel no longer waits in bot mode for the chat to open ("The panel stays in bot mode until that chat opens").
+
 > **Amended by [ADR 0224](0224-switching-away-from-a-running-reply-asks-nothing-and-a-toast-says-it-keeps-going.md):** switching to a bot in another profile no longer asks because a reply is running (line 24); an Approval or Question waiting still asks.
 
 > **Partly superseded by [ADR 0203](0203-the-bots-view-folds-into-bots-mode-and-a-bot-opened-there-is-a-visit.md).** The Bots view and the rail's Bots button are gone: the chat list's Bots mode lists the bots, and a bot in another profile opened there is a visit. **One line changed by [ADR 0207](0207-bots-message-each-other-through-hermess-message-agent-which-the-owner-turns-on-in-bots-mode.md).** Bots talking to each other needs a switch on a Hermes with no desktop app, and its rows are read as cards.

@@ -1435,7 +1435,8 @@ describe("A bot opened while its profile's connection opens (ADR 0232)", () => {
     await waitFor(() => expect(head()).toBe("SScribeBot Chat"));
     expect(dials.waiting("scribe")).toBe(true);
     expect(current()).toEqual([null, "true"]);
-    expect(screen.getByText("Draft the release notes for 0.9")).toBeTruthy();
+    // The bot is drawn first, and its Saved copy follows a frame later.
+    await waitFor(() => expect(screen.getByText("Draft the release notes for 0.9")).toBeTruthy());
     await dials.release("scribe");
     await resumed(hermes, "scribe-bot");
   });

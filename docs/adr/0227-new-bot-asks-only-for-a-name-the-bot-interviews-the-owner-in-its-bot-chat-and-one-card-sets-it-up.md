@@ -13,7 +13,7 @@ Every probe ran in a throwaway sandbox dashboard at that commit, with its own ho
 - **A Bot Chat follows its profile's toolsets and persona at the next turn.** Hermes fingerprints the profile at each turn's start and rebuilds the Bot Chat's agent when it changed, with the notice "Capabilities updated" (from v0.20.3). Probed in all four cases (Bot Mode block or none, reconnect or none): after a toolset and SOUL.md change, the next turn had the new tools and persona, and a new tool ran.
 - **An MCP server added mid-chat is not reachable without `reload.mcp`.** Not by `tool_search`, not by `tool_call`, not after Hermes's own server test, and not after 75 seconds. `reload.mcp {session_id, confirm: true}` on the Bot Chat made it run there. It reconnects every MCP server in the dashboard process and clears the prompt cache. `tools.show` never lists MCP tools.
 - **A deliberate archive frees the title "Bot Chat"** (`aa432bc55b`, first in v0.23.1). The title is cleared and the row unhidden, the title lookup comes back empty, a retitle works, and the next open makes a new Bot Chat. Unarchiving doesn't take the title back.
-- **A fresh `POST /api/profiles` copies the launch profile's `.env` keys and model** (`mirror_credentials`, default true, from v0.21.1). A model Hermes can't set still makes the profile and answers 200 with `model_error`.
+- **A fresh `POST /api/profiles` copies the launch profile's `.env` keys and model** (`mirror_credentials`, default true, first in v0.23.2; probed at `ae2a81cc`). Up to v0.23.1 a fresh profile gets no keys at all, so a new bot there has no credentials and its first reply fails. A model Hermes can't set still makes the profile and answers 200 with `model_error`.
 - **MCP servers.** `GET /api/mcp/servers` shows env values half-masked (`secr...ue-1`). `MCPServerCreate` has no `enabled` field, so a server can't be added turned off. No catalog entry at `ae2a81cc` installs from git (0 of 66), so no catalog command points into a profile's folder today.
 - **Profile ids.** `_suggest_profile_name` lowercases a name, turns each run of other characters into `-`, trims `-` and `_` from the ends, and answers `my-work` when nothing valid is left.
 
@@ -43,7 +43,7 @@ Every probe ran in a throwaway sandbox dashboard at that commit, with its own ho
 
   So two Creates, a lost create, a lost begin and a relaunch each end with one brief and one begin.
 - **The hidden rows show as one Setup started line.** It is a `setup` field on a Returned result, as ADR 0207 did for Bot messages, not a new kind of item. No row is drawn as the owner's message, live or after a reload.
-- **Two version floors.** The interview needs Hermes 0.21.6, the app's existing bot floor (`BOT_MESSAGING_SINCE`), which is above every fact it uses. After the first brief, the app reads the stored rows back. When they aren't hidden, Bot setup turns off for that Hermes and Connection diagnostics says why. Start fresh needs 0.23.1, where an archive first frees the title. Below 0.21.6, New bot makes the bot from the name and model only.
+- **One version floor: 0.23.2.** That is the first Hermes whose fresh profile gets the launch profile's keys, so the new bot can answer at all, and the version every spike ran on. It is above every other fact the feature uses: hidden seeded rows (0.21.2), the first-contact note (0.21.6), and the archive that frees the title, which Start fresh needs (0.23.1). After the first brief, the app reads the stored rows back. When they aren't hidden, Bot setup turns off for that Hermes and Connection diagnostics says why. Below 0.23.2, and on a Hermes without Bot Mode, New bot (and New profile) makes the bot from the name and model only, with no interview (#85 owner decision 7). New bot stays off only while the app isn't connected or the server lacks `POST /api/profiles`.
 - **Between Create and Set it up, nothing is written to the bot's profile** but its name in Bot Mode and the session's own calls.
 
 ### The card
@@ -70,13 +70,13 @@ Every probe ran in a throwaway sandbox dashboard at that commit, with its own ho
 - **A value read is never sent.** Hermes shows env values half-masked, so a copy that reused them would write the masked string as the secret. **Connect** asks for every env var and bearer token fresh, in write-only fields. The value is kept in the app's memory and sent only at Set it up. Leaving the card loses it.
 - **A copy that points into the source bot's folder is refused, with the reason.** That is a copy whose command or arguments contain the source profile's path. A git install would clone under that profile's `mcp-installs`. No catalog entry does that today, and the guard is kept for when one does.
 - **OAuth servers stay off the card in v1.** Hermes signs in to a server only after it exists, and a server can't be added turned off: `MCPServerCreate` has no `enabled` field, and the relay refuses one (`create_allowed` in `src-tauri/src/mcp.rs`). The card names such a server and points to Settings → MCP servers.
-- **Not copied, and said on the item:** a server a plugin provides, a server whose name the app can't send, and a server's tool filter, timeout and extra headers, which Hermes doesn't list.
+- **Not copied, and said on the item:** a server a plugin provides, a server whose name the app can't send, and a server's tool filter, which Hermes lists but v1 doesn't copy, and its timeout and extra headers, which Hermes doesn't list.
 
 ### Set up again
 
 - **A bot's menu has Set up again.** It first asks **Keep history** or **Start fresh**. The brief then tells the bot to describe how it is set up now and ask what to change, not to repeat the five questions. The current setup comes from the app's own reads of Hermes. The card shows before → after, with "before" read from Hermes, and unchanged items fold under "N more that don't change".
 - **Keep history** seeds nothing. It sends the brief into the existing Bot Chat as a hidden turn, and its messages and the bot's memory stay. A Bot Chat that was never used has an empty history, so the first-contact note would fire on that brief. The brief tells the bot to ignore any note about introductions or building a profile.
-- **Start fresh** is offered only on Hermes 0.23.1 or later, and never on `default`. It is refused, with the reason, while a reply runs or an Approval waits in the Bot Chat. Its question counts the memory entries that will go and says they can't come back. It then leaves the live session, archives the Bot Chat in Hermes (`Hermes.archive`), and checks that the title lookup is empty. It retitles the old chat so it can be found in Archived, clears memory entry by entry under Hermes's lock (`MemoryApi.removeMany`, ADR 0118), and opens a new Bot Chat with the brief seeded. If the lookup still finds the old chat, the app unarchives it, clears no memory, and says this Hermes can't start a Bot Chat fresh.
+- **Start fresh** is offered only where Bot setup is (0.23.2 or later), and never on `default`. It is refused, with the reason, while a reply runs or an Approval waits in the Bot Chat. Its question counts the memory entries that will go and says they can't come back. It then leaves the live session, archives the Bot Chat in Hermes (`Hermes.archive`), and checks that the title lookup is empty. It retitles the old chat so it can be found in Archived, clears memory entry by entry under Hermes's lock (`MemoryApi.removeMany`, ADR 0118), and opens a new Bot Chat with the brief seeded. If the lookup still finds the old chat, the app unarchives it, clears no memory, and says this Hermes can't start a Bot Chat fresh.
 
 ## Owner calls
 
@@ -88,7 +88,7 @@ Each was decided on 2026-11-19 with the default below. The other choice is noted
 4. **Connect keeps a pasted key in the app's memory and sends it only at Set it up.** Leaving the card loses it. (Or: send it at Connect, which adds the server early.)
 5. **The bot may open with one short sentence saying who it is**, before question 1. (Or: the question alone.)
 6. **The model row on a new bot's card is greyed "Already in use"** and not counted in the ticked totals. (Or: hide it unless the bot proposes another model.)
-7. **Set up again on a never-used Bot Chat:** the brief tells the bot to ignore any first-contact or introduction note. (Or: archive the empty chat and seed a new one, on 0.23.1 or later.)
+7. **Set up again on a never-used Bot Chat:** the brief tells the bot to ignore any first-contact or introduction note. (Or: archive the empty chat and seed a new one.)
 8. **The name dialog shows the derived id** as one faint line, so a `-2` in Hermes's own clients isn't a surprise. (Or: no hint.)
 
 Settled with the owner earlier, on 2026-11-18, and kept:
@@ -105,14 +105,14 @@ Settled with the owner earlier, on 2026-11-18, and kept:
 - **Restart the gateway after Set it up.** Rejected: it cuts running replies in every profile (ADR 0205), and the Bot Chat's own refresh is enough.
 - **Add an OAuth server turned off, sign in, then turn it on.** Impossible at `ae2a81cc`: `MCPServerCreate` has no `enabled` field.
 - **Rebuild the card only as the difference between the block and Hermes.** Rejected: after an in-place edit and a reload, the card would offer to write the bot's value over the owner's.
-- **Gate the interview on 0.20.4, where the hidden `prompt.submit` first ships.** Rejected: seeded rows stay hidden only from 0.21.2, and the bot floor the app already has, 0.21.6, is above both.
+- **Gate the interview on 0.20.4, where the hidden `prompt.submit` first ships, or on the app's bot floor 0.21.6.** Rejected: seeded rows stay hidden only from 0.21.2, and below 0.23.2 a new profile has no keys, so the bot can't answer the brief.
 - **Reuse an env value read from the source bot.** Rejected: it is half-masked, and would be written as the secret.
 
 ## Consequences
 
 - New bot and New profile lose the form. `ProfileForm` keeps Edit only. Write with AI stays on Edit's Persona, where ADR 0206 and ADR 0209 still apply.
 - Writing the typed name creates a Bot Mode block, so making a bot turns Bots message each other on for the server if it was off.
-- A new bot made on Hermes 0.21.1 or later starts with the launch profile's `.env` keys and model. The relay doesn't pass `mirror_credentials`, so the app can't turn that off. Bot setup doesn't rely on those keys. Clone's fresh copy (ADR 0074) goes through the same route and gets them too.
+- A new bot starts with the launch profile's `.env` keys and model, and Bot setup relies on them: without keys the bot can't answer the brief. The relay doesn't pass `mirror_credentials`. Clone's fresh copy (ADR 0074) goes through the same route and gets the keys too on 0.23.2 (issue #117).
 - A `reload.mcp` at Set it up reconnects MCP servers for every bot with an open chat on that Hermes, and the next message in each re-sends its full input.
 - After Start fresh the bot's `session_search` can still find the archived Bot Chat. An external memory provider such as Honcho isn't cleared, since the app can't read or edit what it stores.
 - `Hermes.archive`, which ADR 0202 left with no caller in the app, gets one: Start fresh.

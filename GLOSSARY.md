@@ -253,7 +253,7 @@ Another of the owner's chats in the same profile, picked with "@" in the compose
 _Avoid_: chat reference or `ChatRef` (a chat named by connection, profile and id), mention, link, attachment
 
 **Ask**:
-A message the owner sends from a Bot Chat that names other bots with "@". It goes to each named bot's own Bot Chat as the owner's message, with the asking chat as a Referenced chat, and the asking bot takes no turn. The asking chat shows an **Asked** card with the words and each bot's reply, kept on this computer, so it is there after a restart. It isn't Bot messaging: no bot sends it, and it works with that switch on or off (ADR 0232).
+A message the owner sends from a Bot Chat that names other bots with "@". It goes to each named bot's own Bot Chat as the owner's message, with the asking chat as a Referenced chat, and the asking bot takes no turn. The asking chat shows an **Asked** card with the words and each bot's reply, kept on this computer, so it is there after a restart. It isn't Bot messaging: no bot sends it, and it works with that switch on or off (ADR 0233).
 _Avoid_: mention (an @handle is how an Ask names a bot), relay, DM, room
 
 **Annotation**:

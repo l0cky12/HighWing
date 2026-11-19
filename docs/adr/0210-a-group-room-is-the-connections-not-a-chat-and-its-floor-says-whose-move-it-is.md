@@ -1,6 +1,6 @@
 # A Group room is the connection's, not a Chat, and its floor says whose move it is
 
-> **Superseded by [ADR 0232](0232-group-rooms-are-removed-and-an-at-in-a-bot-chat-asks-the-named-bot.md).** Group rooms are gone (#82): no code calls `groups.*`, and the files this ADR names were deleted. Rooms already on the server stay there; the app never lists, opens, disbands or deletes them, and their `Group: <room_id>` sessions stay out of every list. Bots message each other from their Bot Chats (ADR 0207), and the owner brings one in with an @ in a Bot Chat.
+> **Superseded by [ADR 0233](0233-group-rooms-are-removed-and-an-at-in-a-bot-chat-asks-the-named-bot.md).** Group rooms are gone (#82): no code calls `groups.*`, and the files this ADR names were deleted. Rooms already on the server stay there; the app never lists, opens, disbands or deletes them, and their `Group: <room_id>` sessions stay out of every list. Bots message each other from their Bot Chats (ADR 0207), and the owner brings one in with an @ in a Bot Chat.
 
 The owner wanted to put 2 to 6 bots in a room, watch them take turns, and join the conversation. Hermes already hosts such rooms. It calls them Group Chat and serves them as `groups.*` on the dashboard's `/api/ws`, with no setting to turn on. Highwing called none of those methods.
 

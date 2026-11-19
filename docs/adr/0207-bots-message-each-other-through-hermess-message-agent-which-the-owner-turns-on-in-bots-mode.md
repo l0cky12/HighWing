@@ -37,7 +37,7 @@ Two things stood in the way:
 - **Off deletes every block.** Rejected: it would erase names, colours, pins and what Hermes's desktop keeps there, which ADR 0189 forbids.
 - **Turn on by writing a block on the sender, or on every profile.** Rejected: Hermes's gate holds for the whole install, so a per-bot write buys nothing, and writing every profile leaves Off unable to tell its own blocks from the owner's.
 - **The switch in each bot's menu, or in Settings → Profiles.** Rejected: a per-bot entry suggests a per-bot effect, and Settings is far from the bots.
-- **This app relays the message.** Rejected by the owner: Hermes delivers durably with no client attached, and a relay would stop when the app closes. An @ in a Bot Chat ([ADR 0232](0232-group-rooms-are-removed-and-an-at-in-a-bot-chat-asks-the-named-bot.md)) isn't one: it is the owner's own message to the named bot, sent to its Bot Chat whether this switch is on or off.
+- **This app relays the message.** Rejected by the owner: Hermes delivers durably with no client attached, and a relay would stop when the app closes. An @ in a Bot Chat ([ADR 0233](0233-group-rooms-are-removed-and-an-at-in-a-bot-chat-asks-the-named-bot.md)) isn't one: it is the owner's own message to the named bot, sent to its Bot Chat whether this switch is on or off.
 
 ## Consequences
 

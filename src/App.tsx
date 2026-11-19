@@ -4354,7 +4354,7 @@ function ChatView({
   );
   const hermesList = serverCommands.state === "ready" ? serverCommands.list.hermes : undefined;
   const commandList = useMemo(() => commandSet(hermesList), [hermesList]);
-  // A message naming other bots goes to them (ADR 0232): the cards, and this chat as the chip it carries once it has
+  // A message naming other bots goes to them (ADR 0233): the cards, and this chat as the chip it carries once it has
   // something to summarize.
   const asked = useSyncExternalStore(hermes.asks.subscribe, hermes.asks.list);
   const hasHistory = chat.items.some((i) => (i.kind === "user" && !i.outgoing) || i.kind === "assistant");

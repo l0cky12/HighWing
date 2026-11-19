@@ -105,7 +105,7 @@ type Block = { kind: "tools"; id: string; tools: ToolItem[] } | SentBlock | CuRu
 const isItem = (b: Block): b is Exclude<Item, ToolItem> => b.kind !== "tools" && b.kind !== "sent" && b.kind !== "cu-run";
 /** A block with a Question still waiting in it: a Question's card, or a computer-use run with an Approval under a step. */
 const waitsIn = (b: Block) => (isItem(b) && isWaiting(b)) || (b.kind === "cu-run" && b.state === "asking");
-/** What goes between the chat's own items: a side question (ADR 0070), or a message asked of other bots (ADR 0232). */
+/** What goes between the chat's own items: a side question (ADR 0070), or a message asked of other bots (ADR 0233). */
 type SideBlock = { kind: "side"; id: string; question: SideQuestion } | { kind: "ask"; id: string; ask: Ask };
 const isSide = (b: Block | SideBlock): b is SideBlock => b.kind === "side" || b.kind === "ask";
 /** Whether the item `id` shows in this block: as the block itself, in a group of tool calls, or in a computer-use run. */
@@ -601,7 +601,7 @@ export function ChatPane({
    * a Hermes without the checkpoint methods.
    */
   onCheckpoints?: () => void;
-  /** A Bot Chat's asks of other bots (ADR 0232): its Asked cards, and the composer's route for a message naming a bot. */
+  /** A Bot Chat's asks of other bots (ADR 0233): its Asked cards, and the composer's route for a message naming a bot. */
   ask?: AskHost;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -2004,7 +2004,7 @@ function Composer({
   /** While a reply runs, Enter queues or steers by its `mode`, and Ctrl+Enter does the other. */
   followUp?: FollowUpHost;
   compare?: Comparing;
-  /** In a Bot Chat: a message whose pills name bots goes to them instead (ADR 0232). */
+  /** In a Bot Chat: a message whose pills name bots goes to them instead (ADR 0233). */
   ask?: AskHost;
 }) {
   const keys = useBindings();
@@ -2421,7 +2421,7 @@ function Composer({
   // The "@" word the menu is open on stays words until it is picked, so typing "@bram" in full doesn't flash a pill.
   const bots = commands?.references?.bots;
   const atButton = bots ? atWords.button : "Reference a chat";
-  // The first bot named brings this chat along as a Referenced chat, which the owner can remove (ADR 0232).
+  // The first bot named brings this chat along as a Referenced chat, which the owner can remove (ADR 0233).
   const self = ask?.self;
   const naming = !!self && !!bots && askTargets(text, bots).length > 0;
   useEffect(() => {
@@ -2480,7 +2480,7 @@ function Composer({
     const words = sentText(text.trim(), attachments, numbers).trim();
     if (!words && !attachments.length) return;
     // A message that names bots goes to them, and this chat takes no turn, so whether its reply runs or its queue holds
-    // anything doesn't matter (ADR 0232). It goes once, from this pane, even while comparing.
+    // anything doesn't matter (ADR 0233). It goes once, from this pane, even while comparing.
     const asked = ask && bots ? askTargets(words, bots) : [];
     if (ask && asked.length) {
       if (attachments.length) return setRefused([askWords.noFiles]);

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// The owner's "@" in a Bot Chat, in the app (ADR 0232): the chip for this chat, the send to the named bot, the
+// The owner's "@" in a Bot Chat, in the app (ADR 0233): the chip for this chat, the send to the named bot, the
 // composer's refusals, and the Asked card with the reply.
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";

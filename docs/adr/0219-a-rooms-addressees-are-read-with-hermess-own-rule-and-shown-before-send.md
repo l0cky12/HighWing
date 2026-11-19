@@ -1,6 +1,6 @@
 # A room's addressees are read with Hermes's own rule and shown before the owner sends
 
-> **Superseded by [ADR 0232](0232-group-rooms-are-removed-and-an-at-in-a-bot-chat-asks-the-named-bot.md).** The room picker and its reader of addressees went with Group rooms. The @ picker in a Bot Chat lists the other bots (ADR 0165), and a message that names one goes to that bot's Bot Chat.
+> **Superseded by [ADR 0233](0233-group-rooms-are-removed-and-an-at-in-a-bot-chat-asks-the-named-bot.md).** The room picker and its reader of addressees went with Group rooms. The @ picker in a Bot Chat lists the other bots (ADR 0165), and a message that names one goes to that bot's Bot Chat.
 
 The owner wanted `@bram` in a Group room to send the turn to Bram and nobody else, and to see before pressing Enter who Hermes would hand the message to.
 

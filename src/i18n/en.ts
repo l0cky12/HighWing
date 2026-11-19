@@ -80,7 +80,7 @@ export const en = {
       },
     },
     /**
-     * An "@" in a Bot Chat that asks other bots (ADR 0232): the Asked card, each bot's line on it, the chip for this chat,
+     * An "@" in a Bot Chat that asks other bots (ADR 0233): the Asked card, each bot's line on it, the chip for this chat,
      * and why a message to another bot can't go.
      */
     ask: {

@@ -68,15 +68,9 @@
 //   AI, Regenerate title) answers: `answer` its text, `failure` Hermes's failure reason (null clears it), `signedOut`
 //   the providers with no sign-in on the server, and `hold: true` keeps each answer until `POST /__oneshot?release=1`
 //   (a test's control). `/__state` lists each profile's SOUL.md under `souls` and every call's params under `oneshots`.
-// Group rooms (`groups.*`, src/hermes/fakeGroups.ts): the stand-in's bots take their turns by themselves, one starting
-//   HV_ROOM_DELAY_MS (default 1500) after the last change and replying that long after. What they say follows the
-//   owner's words (`standInScript`): `pingpong` has the first two bots name each other until the cap of 3 rounds;
-//   `approve` has the last bot ask to run `rm -rf /srv/tmp/build-cache`; `clarify` has the second bot wait in the
-//   `clarify` tool for 12 s; anything else gets one round of short replies. `/__state` lists each room's roster and log
-//   under `rooms`, and every `groups.*` call's method under `roomCalls`.
 // HV_ROOMS=1 adds three bots to seat, the profiles `ada`, `bram` and `cleo`, each with a Bot Chat.
-// HV_ROOMS_BUILD=bf0203a|f0d9488 answers as that Hermes does: no `groups.continue`, no `max_continues`, no
-//   `groups.changed` push (the default is `ae2a81cc`, which has all three).
+// HV_SEAT=1 stores a Group room seat's session in `default`, as Hermes stores one: source `bot_room`, hidden, titled
+//   "Group: r1", holding the word "quokka", and listed as working in `session.active_list`.
 // HV_INBOX=1 gives the `work` profile two Unread chats for the Rail inbox: one last active 3 days ago, one an hour ago.
 // HV_EVERYWHERE=1 gives `work` a chat about the backup and adds a third profile, `ops`, with another, so an Everywhere
 //   search for "backup" finds a chat in three profiles. A second stand-in without it finds one in `default`.
@@ -117,7 +111,6 @@ import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createServer } from "node:http";
 import type { Socket } from "node:net";
-import { GROUPS_BUILDS, standInScript } from "../../../../src/hermes/fakeGroups";
 import { CU } from "../../../../src/hermes/fakeComputerUse";
 import { DOCTOR_NO_DISPLAY, FakeHermes, row } from "../../../../src/hermes/fakeHermes";
 import { HONCHO, RETAINDB } from "../../../../src/hermes/fakeMemoryProviders";
@@ -226,10 +219,7 @@ if (process.env.HV_ROOMS === "1")
     server.otherProfiles[profile] = [row(`${profile}-bot`, 1, { title: "Bot Chat", hidden: true })];
     server.profileMeta[profile] = { ui_meta: { "hermes-bots": { title: profile[0].toUpperCase() + profile.slice(1), color } } };
   }
-const roomsBuild = process.env.HV_ROOMS_BUILD;
-if (roomsBuild === "bf0203a" || roomsBuild === "f0d9488") server.groups.build = { ...GROUPS_BUILDS[roomsBuild] };
-server.groups.script = standInScript;
-server.groups.auto = { delayMs: Number(process.env.HV_ROOM_DELAY_MS ?? 1500), clarifyMs: 12_000 };
+if (process.env.HV_SEAT === "1") server.seatSession("default", "r1", "The quokka census is done.");
 server.mcp.servers.default = {
   filesystem: { command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", "/srv/notes"] },
   github: { url: "https://mcp.example.com/github", headers: { Authorization: "Bearer ${MCP_GITHUB_API_KEY}" } },
@@ -305,8 +295,6 @@ const dump = () =>
       profileCreates: server.restRequests.filter((r) => r.method === "POST" && r.path === "/api/profiles").map((r) => r.body),
       oneshots: server.requests.filter((r) => r.method === "llm.oneshot").map((r) => r.params),
       gatewayRestarts: server.gateways.restarts,
-      rooms: server.groups.dump(),
-      roomCalls: server.groups.calls.map((c) => c.method),
       lease: server.display?.lease,
       stopCalls: server.requests.filter((r) => /^(session\.interrupt|display\.(observe|lease\.acquire|lease\.release))$/.test(r.method)).map((r) => r.method),
     },

@@ -108,14 +108,12 @@ export function ApprovalCard({
   item,
   offline,
   movedAt = 0,
-  heading,
   app,
   onAnswer,
 }: {
   item: ApprovalItem;
   offline: boolean;
   movedAt?: number;
-  heading?: string;
   /** For a computer_use action: the window the gated step aimed at, when it named one. */
   app?: string;
   onAnswer: (c: ApprovalChoice, confirmed?: boolean) => void;
@@ -128,7 +126,7 @@ export function ApprovalCard({
   const { cua } = item;
   const what = cua && grantWords(cua, l);
   const label = (c: ApprovalChoice) => (!cua || !what ? CHOICE_LABEL[c] : c === "once" ? l.once : c === "session" ? l.session(what) : c === "always" ? l.always(what) : l.deny);
-  heading ??= cua ? l.heading(visible(cua.target)) : "Hermes wants to run a command";
+  const heading = cua ? l.heading(visible(cua.target)) : "Hermes wants to run a command";
   const card = useRef<HTMLDivElement>(null);
   const headId = useId();
   // The buttons go when the card closes, however it closes, and when a grant's confirmation opens or goes back. If one

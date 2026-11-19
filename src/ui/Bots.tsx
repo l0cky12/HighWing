@@ -6,7 +6,7 @@
 // opens its menu (ADR 0194): Chat, Settings, Edit persona (ADR 0206), Clone, Pin, Hide and Delete, through Settings →
 // Profiles' own dialogs and `Hermes.editBot`, which never writes over a change made elsewhere (ADR 0189). Every word
 // comes from the catalogue (ADR 0100).
-import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import { ChevronDown, ChevronRight, Copy, EyeOff, Eye, Loader, MessageSquare, Pin, PinOff, Plus, RefreshCw, Settings2, ShieldAlert, Sparkles, SquarePen, Trash2 } from "lucide-react";
 import { agentMessaging, type Bot, type BotActivity, type BotLook, type MessagingSave } from "../hermes/bots";
 import { predatesBotMessaging } from "../hermes/capabilities";
@@ -99,7 +99,6 @@ export function useBotActions({
   shown,
   onRefresh,
   onNote,
-  headExtra,
 }: {
   profiles: Omit<ProfilesWiring, "showTab">;
   botEdit: BotEditWiring;
@@ -109,7 +108,6 @@ export function useBotActions({
   shown: boolean;
   onRefresh: () => void;
   onNote: (text: string) => void;
-  headExtra?: ReactNode;
 }) {
   const l = useLocale();
   const w = l.bots;
@@ -227,7 +225,6 @@ export function useBotActions({
     <>
       <div className="bots-head">
         {roster && <MessagingSwitch roster={roster} why={messagingWhy} save={botEdit.messaging} onNote={onNote} />}
-        {headExtra}
         <button ref={newBtn} className="icon-btn" title={newWhy ?? w.newBot} aria-label={w.newBot} disabled={!!newWhy} onClick={() => setMaking(true)}>
           <Plus size={15} />
         </button>

@@ -13,7 +13,6 @@ import { FakeServerFiles } from "./fakeServerFiles";
 import { FakeProjectContext } from "./fakeProjectContext";
 import { FakeCheckpoints, inlineDiff, type FakeEdit } from "./fakeCheckpoints";
 import { FakeGoals } from "./fakeGoals";
-import { FakeGroups } from "./fakeGroups";
 import { DENIED, HUMAN_HAS_CONTROL, cuApproval, type FakeCuTurn } from "./fakeComputerUse";
 import { ScheduleError, isoIn, parseSchedule, upcomingRuns } from "./schedule";
 import { skillInvocationText } from "./skillCommands";
@@ -500,7 +499,6 @@ export class FakeHermes {
   readonly runtimeProfile = new Map<string, string>();
   /** Goals (fakeGoals.ts, ADR 0187). `standingMissions` false: a Hermes without `session.control`, "method not found". */
   readonly goals = new FakeGoals();
-  readonly groups = new FakeGroups();
   standingMissions = true;
   /** Starts the turn that follows a goal's turn at once, as Hermes does; none in tests, which send turns themselves. */
   goalTurn?: (runtimeId: string, prompt: string) => void;
@@ -815,7 +813,6 @@ export class FakeHermes {
     for (const r of ["GET /api/health", "GET /api/files", "GET /api/files/read", "GET /api/fs/list"]) delete this.rest[r];
     this.status = { version: "0.16.0", release_date: "2026.6.8", auth_required: true, auth_providers: ["basic"] };
     this.botMode = "none";
-    this.groups.build.absent = true;
   }
 
   authority?: FakeAuthority;
@@ -2021,7 +2018,6 @@ export class FakeHermes {
       if (canonical) return canonical.request(req);
       const handler = this.handlers[req.method];
       if (handler) handler(req);
-      else if (req.method.startsWith("groups.")) this.groupsCall(req);
     };
     return {
       route: this.route,
@@ -2868,14 +2864,6 @@ export class FakeHermes {
     this.respond(id, { ...this.display.status, ...own, lease: this.display.lease, profile_key: "/home/lena/.hermes" });
   }
 
-  private groupsCall(r: Request) {
-    this.groups.onChange ??= (room_ids) => this.broadcast("groups.changed", { room_ids, broadcast_id: `e1:${++this.groupBroadcasts}` });
-    const answer = this.groups.handle(r.method, r.params);
-    if ("error" in answer) this.fail(r.id, answer.error.code, answer.error.message);
-    else this.respond(r.id, answer.result);
-  }
-  private groupBroadcasts = 0;
-
   /** A session-less broadcast such as `sessions.changed` (tui_gateway `_broadcast_global_event`). */
   broadcast(type: string, payload: Record<string, unknown> = {}) {
     this.event("", type, payload);
@@ -2971,7 +2959,6 @@ export class FakeHermes {
     const status = this.turnIsolation ? "working" : "waiting";
     const rows = this.liveSessions.map((l) => (asking.has(l.id) ? { ...l, status } : l));
     for (const [sid, stored] of asking) if (!rows.some((l) => l.id === sid)) rows.push({ id: sid, session_key: stored, status, last_active: Date.now() / 1000 });
-    rows.push(...this.groups.liveRows());
     return rows;
   }
 
@@ -3056,6 +3043,21 @@ export class FakeHermes {
     const said = messages.filter((m) => m.role === "user" || m.role === "assistant");
     store.push(row(id, hours / 24, { title: `Bot Thread: ${topic}`, hidden: true, message_count: messages.length, preview: said[0]?.text ?? "" }));
     this.transcripts[id] = messages;
+    return id;
+  }
+
+  /**
+   * A Group room seat's session, working, as Hermes's room driver makes one in the bot's profile: source `bot_room`
+   * and titled `Group: <room>` (`tui_gateway/hosted_room_driver.py` at v0.23.2), stored hidden
+   * (`hosted_room_server_rpc.py`), and listed in `session.active_list` with no profile, like every live row.
+   */
+  seatSession(profile: string, room: string, said: string): string {
+    const store = this.store(profile) ?? (this.otherProfiles[profile] = []);
+    const id = `seat-${room}-${profile}`;
+    const title = `Group: ${room}`;
+    store.push(row(id, 0, { source: "bot_room", hidden: true, title, message_count: 1, preview: said }));
+    this.storeMessage(id, { role: "assistant", text: said });
+    this.liveSessions.push({ id: `rt-${id}`, session_key: id, status: "working", last_active: now(), title });
     return id;
   }
 

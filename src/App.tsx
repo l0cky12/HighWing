@@ -1,6 +1,6 @@
 import { type ReactNode, type RefObject, Suspense, lazy, useCallback, useLayoutEffect, useMemo, useEffect, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal, flushSync } from "react-dom";
-import { ArrowLeft, ArrowRight, Columns2, FolderCog, PanelBottom, PanelLeft, PanelRight, PanelTop, Target, UsersRound, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Columns2, FolderCog, PanelBottom, PanelLeft, PanelRight, PanelTop, Target, X } from "lucide-react";
 import { CONNECT_STOPPED, RenameConflict, TitleModelUnavailable, connect, openSaved, readSaved, toSource, type Delivery, type Hermes, type NoticeCard, type Notify } from "./hermes/transport";
 import { invoke } from "@tauri-apps/api/core";
 import type { CommandHost } from "./ui/SlashCommands";
@@ -52,10 +52,6 @@ import { desktopLinks, type LinkInbox } from "./hermes/tauriLinks";
 import { ChatLinkNotice, type LinkNoticeView } from "./ui/ChatLinkNotice";
 import { Inbox } from "./ui/Inbox";
 import { BotList, useBotActions, type BotEditWiring } from "./ui/Bots";
-import { GroupRoomPane } from "./ui/GroupRoomPane";
-import { GroupRoomList, RoomsNeedYou, roomsWaiting, useGroupRooms } from "./ui/GroupRooms";
-import { NewRoomDialog } from "./ui/NewRoomDialog";
-import { roomMarks } from "./hermes/groupRoomsStore";
 import { CHAT_POLICY, chatKind, policyOf } from "./hermes/chatKind";
 import { jobRunTitle } from "./hermes/cronJobs";
 import { botActivity, botsWaiting, newInBotChatNote, type Bot } from "./hermes/bots";
@@ -1512,9 +1508,6 @@ export function Main({
   const [inboxOpen, setInboxOpen] = useState(false);
   const [arrival, setArrival] = useState<Arrival>();
   const [visit, setVisit] = useState<BotVisit>();
-  const [openRoom, setOpenRoom] = useState<string>();
-  const [newRoom, setNewRoom] = useState(false);
-  const newRoomBtn = useRef<HTMLButtonElement>(null);
   const ackScope = inboxScope(connection);
   const acks = useMemo(() => inboxAcks(localStorage, ackScope), [ackScope]);
   const dismissed = useSyncExternalStore(acks.subscribe, acks.getSnapshot);
@@ -1797,10 +1790,7 @@ export function Main({
   // eslint-disable-next-line react-hooks/exhaustive-deps -- settle once, when Hermes has listed and clears are held; adding `chats`, `snoozes` or `pins` would run it again on each change to them
   }, [listedFromHermes, status, cleared, clearedStore]);
   const where = routeLabel(route) ?? addressLabel(connection);
-  const hasRooms = caps.caps.groupRooms.state === "supported";
-  const rooms = useGroupRooms(hermes.groupRooms, hasRooms);
-  useEffect(() => hermes.groupRooms.keepMarks(roomMarks(localStorage, ackScope)), [hermes, ackScope]);
-  const inbox = inboxEntries({ profile, chats, connected: status === "connected", others, live, seen, handoffs: handoffMap, rooms });
+  const inbox = inboxEntries({ profile, chats, connected: status === "connected", others, live, seen, handoffs: handoffMap });
   const inboxShown = inbox.entries.filter((e) => !acks.isDismissed(e, dismissed));
   // Writes only when a resumed chat shows cards a dismissed waiting session covered.
   useEffect(() => acks.keepCovered(inbox.entries));
@@ -1877,7 +1867,6 @@ export function Main({
       activeKeyRef.current = pane;
       setActiveKey(pane);
       setReopening(undefined);
-      setOpenRoom(undefined);
       if (!keepSettings) setSettingsOpen(false);
       setProjectOpen(false);
       setJobsOpen(false);
@@ -1930,7 +1919,6 @@ export function Main({
     hermes.reveal(found);
     patchPane(active.key, { chatId: found.chatId, picked: { found, at: Date.now() }, jump: undefined });
     setReopening(undefined);
-    setOpenRoom(undefined);
     rememberChat(found.chatId);
     setSearchOpen(false);
     setSettingsOpen(false);
@@ -2264,22 +2252,11 @@ export function Main({
     />
   );
 
-  const showRoom = (id: string) =>
-    guard(() => {
-      navGen.current++;
-      setOpenRoom(id);
-      setSettingsOpen(false);
-      setProjectOpen(false);
-      setJobsOpen(false);
-      setUsageOpen(false);
-      setWorkOpen(false);
-    });
   // An inbox entry opens its chat, in its own profile, in the pane already showing it or else the active one. Another
   // profile is switched to first, the way the switcher does, and the chat opens once that profile's list has it.
   // An unsaved memory or skill edit asks first, as any other way of leaving Settings does.
   const openEntry = (e: InboxEntry) => {
     setInboxOpen(false);
-    if (e.roomId) return showRoom(e.roomId);
     guard(() => {
       if (e.profile !== profile) switchProfile(e.profile);
       setGoTo({ entry: e, approval: e.kind === "approval" && !e.ended });
@@ -2960,7 +2937,7 @@ export function Main({
   const previewFits = !mainWidth || mainWidth >= CHAT_MIN_WIDTH + PANE_MIN_WIDTH;
   const paneMax = mainWidth ? mainWidth - CHAT_MIN_WIDTH : 1200;
   const paneWidth = Math.min(Math.max(dragWidth ?? previewWidth ?? PREVIEW_DEFAULT_WIDTH, PANE_MIN_WIDTH), Math.max(PANE_MIN_WIDTH, paneMax));
-  const covering = settingsOpen || projectScreenOpen || jobsOpen || usageOpen || workOpen || !!openRoom;
+  const covering = settingsOpen || projectScreenOpen || jobsOpen || usageOpen || workOpen;
   const previewShown = panelOpen && !covering && (previewFits || !panelHidden);
   const previewCovers = previewShown && !previewFits;
 
@@ -3256,20 +3233,7 @@ export function Main({
     shown: botsInList,
     onRefresh: () => void hermes.checkOtherProfiles(),
     onNote: (text) => setToast({ text, at: Date.now() }),
-    headExtra: hasRooms && (
-      <button
-        ref={newRoomBtn}
-        className="icon-btn"
-        title={roster.length < 2 ? words.groupRooms.tooFewBots : words.groupRooms.newRoom}
-        aria-label={words.groupRooms.newRoom}
-        disabled={status !== "connected" || roster.length < 2}
-        onClick={() => setNewRoom(true)}
-      >
-        <UsersRound size={15} />
-      </button>
-    ),
   });
-  const waitingRooms = roomsWaiting(rooms);
 
   return (
     <LinksProvider preview={openPreview} path={openPath} web={webPages} onToast={(text) => setToast({ text, at: Date.now() })}>
@@ -3352,9 +3316,6 @@ export function Main({
                   pictures: botPictures,
                   leaving: leavingNote(profile, chats, words.profiles.leaving),
                   onOpenBot: (b) => openBot(b, "open"),
-                  rooms: hasRooms
-                    ? { waiting: waitingRooms.length, line: (onShowBots) => <RoomsNeedYou rooms={waitingRooms} bots={roster} onOpen={showRoom} onShowBots={onShowBots} /> }
-                    : undefined,
                 }
               : undefined
           }
@@ -3367,7 +3328,6 @@ export function Main({
           bots={
             <>
               {botActions.head}
-              {hasRooms && <GroupRoomList rooms={rooms} bots={roster} pictures={botPictures} openId={openRoom} onOpen={showRoom} />}
               {bots ? (
                 <BotList
                   bots={bots.roster}
@@ -3504,15 +3464,6 @@ export function Main({
         </div>
       )}
       {botActions.element}
-      {newRoom && (
-        <NewRoomDialog
-          bots={roster.filter((b) => !b.hidden)}
-          pictures={botPictures}
-          returnTo={newRoomBtn}
-          onCreate={(draft) => hermes.groupRooms.create(draft).then(showRoom)}
-          onClose={() => setNewRoom(false)}
-        />
-      )}
       {inboxOpen && (
         <Inbox
           entries={elsewhere.length ? [...inboxShown, ...elsewhere] : inboxShown}
@@ -3779,8 +3730,6 @@ export function Main({
               focusPane(active.key);
             }}
           />
-        ) : openRoom ? (
-          <GroupRoomPane key={openRoom} store={hermes.groupRooms} roomId={openRoom} bots={roster} pictures={botPictures} offline={status !== "connected"} />
         ) : null}
         <Split panes={slots} dir={splitDir} activeKey={active.key} onActivate={activate} covered={covered || covering || previewCovers || windowHidden} />
         </div>

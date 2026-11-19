@@ -4,7 +4,7 @@
 // shown also shows its card here, the chat's own, answered the same way (ADR 0173). Nothing else here answers,
 // retries or resends: that happens in the chat, the usual way.
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from "react";
-import { CircleAlert, CircleCheck, CircleHelp, CirclePause, Loader, RefreshCw, ShieldAlert, X } from "lucide-react";
+import { CircleAlert, CircleCheck, CircleHelp, Loader, RefreshCw, ShieldAlert, X } from "lucide-react";
 import type { ApprovalChoice, ApprovalItem, LiveSessions, OtherProfiles } from "../hermes/model";
 import { INBOX_FILTERS, dismissable, needsOwner, type InboxEntry, type InboxFilter, type InboxKind } from "../hermes/inbox";
 import type { CheckTimesStore } from "../hermes/otherProfiles";
@@ -23,7 +23,6 @@ const FILTER_LABEL: Record<InboxFilter, string> = {
 const KIND_LABEL: Record<InboxKind, string> = {
   running: "Running",
   approval: "Needs approval",
-  paused: "Paused",
   failed: "Failed",
   uncertain: "May not have sent",
   completed: "Completed, unread",
@@ -32,7 +31,6 @@ const KIND_LABEL: Record<InboxKind, string> = {
 const KIND_ICON: Record<InboxKind, typeof X> = {
   running: Loader,
   approval: ShieldAlert,
-  paused: CirclePause,
   failed: CircleAlert,
   uncertain: CircleHelp,
   completed: CircleCheck,
@@ -133,7 +131,7 @@ export function Inbox({
   }, [focusAt]);
 
   // An entry on another live connection leaves nothing here behind: this connection carries on in the background.
-  const open = (e: InboxEntry) => (!e.server && !e.roomId && e.profile !== profile && leaving ? setAsking(e) : onOpen(e));
+  const open = (e: InboxEntry) => (!e.server && e.profile !== profile && leaving ? setAsking(e) : onOpen(e));
   const dismiss = (e: InboxEntry) => {
     setFocusAt(shown.indexOf(e));
     onDismiss(e);
@@ -251,12 +249,11 @@ function Row({
   const when = e.at || e.noticedAt;
   const state = e.ended ? "Expired" : e.waiting ? "Waiting" : KIND_LABEL[e.kind];
   const whenText = when ? `${e.at ? "" : "noticed "}${ago(l, when, "now")}` : "time not known";
-  const where = e.roomId ? "Group room" : e.profile;
   return (
     <li className={`inbox-row kind-${e.kind}${e.ended ? " is-ended" : ""}${e.stale ? " is-stale" : ""}`}>
       <button
         className="inbox-open"
-        aria-label={`${state}: ${e.title}, ${e.roomId ? "a Group room" : `in ${e.profile}`} on ${server}, ${whenText}. ${e.summary}${e.stale ? " As last seen." : ""}`}
+        aria-label={`${state}: ${e.title}, in ${e.profile} on ${server}, ${whenText}. ${e.summary}${e.stale ? " As last seen." : ""}`}
         onClick={onOpen}
       >
         <span className="inbox-line">
@@ -274,7 +271,7 @@ function Row({
         </span>
         <span className="inbox-title">{e.title}</span>
         <span className="inbox-where">
-          {where} · {server}
+          {e.profile} · {server}
         </span>
         <span className="inbox-summary">
           {e.summary}

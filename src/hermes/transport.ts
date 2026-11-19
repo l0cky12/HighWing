@@ -39,8 +39,6 @@ import { CheckTimesStore, noOthers, OtherProfilesCheck } from "./otherProfiles";
 import { failureMark } from "./inbox";
 // Projects are Hermes's own, read and written with legacy `projects.*` (projects.ts, research doc "Projects").
 import { projectsApi, type ProjectsApi } from "./projects";
-import { memberSessionRoom } from "./groupRooms";
-import { GroupRoomsStore } from "./groupRoomsStore";
 import { STEER, askSideQuestion, listServerCommands, runServerCommand, sideAnswer, type CommandDef, type CommandResult, type ServerCommandList } from "./commands";
 import { GoalBoard, GoalWriteError, controlOf, goalAction, maxTurnsOf, readControl, setGoal, type Control, type GoalAction, type GoalDraft } from "./goals";
 import { callText, offeredSkills, runSkill, skillInvocationText, type SkillCall, type SkillCommands } from "./skillCommands";
@@ -156,6 +154,11 @@ const HERMES_MESSAGES_PAGE_MAX = 500;
 const STORED_PAGES = 10;
 /** What this app stamped before, still shown as this app's. Hermes won't edit these chats. */
 const OLD_APP_SOURCE = "hermes-chat";
+/**
+ * What Hermes stores as the source of a Group room seat's session (`ROOM_SESSION_SOURCE`,
+ * `tui_gateway/hosted_room_driver.py` at v0.22.6 and v0.23.2). Such a session is hidden plumbing.
+ */
+const ROOM_SEAT_SOURCE = "bot_room";
 const READY_TIMEOUT_MS = 15_000;
 /** Waits before each try to reconnect a dropped connection. When the last try fails the app is Offline until the
  * owner asks to reconnect, so a wrong password isn't retried for ever. */
@@ -353,6 +356,7 @@ type SearchRow = Pick<SessionRow, "id" | "source" | "title" | "preview" | "start
   /** The compression lineage's first session, for a hit in a compressed chat. */
   lineage_root?: string;
 };
+type Owner = { profile: string; title: string; source: Source };
 /** Dashboard REST `GET /api/profiles` (`web_routers/profiles.py`), as far as this app reads it. */
 type ProfileList = { profiles: { name: string; model?: string | null; provider?: string | null }[] };
 
@@ -890,10 +894,6 @@ export class Hermes {
     rpc: (method, params) => this.request(method, params),
     get: (pathAndQuery) => this.rest("GET", pathAndQuery),
   });
-  readonly groupRooms = new GroupRoomsStore({
-    rpc: (method, params) => this.request(method, params),
-    ready: () => this.snapshot.status === "connected" && this.role === "target" && this.capabilities.get("groupRooms").state !== "unsupported",
-  });
   /** The titles chats had when the owner switched away from their profile, by `profile chatId`, for the inbox. */
   private titlesSeen = new Map<string, string>();
   /**
@@ -902,7 +902,7 @@ export class Hermes {
    * doesn't change profile, so an answer is kept while it stays live; the same chat started again, perhaps in a
    * profile copied since, is looked up afresh.
    */
-  private sessionOwners = new Map<string, { profile: string; title: string; source: Source } | null>();
+  private sessionOwners = new Map<string, Owner | null | "seat">();
   /** When each live session not yet placed was last looked up, by the same key, so every one gets its turn. */
   private ownerTried = new Map<string, number>();
   /** The profile and chat of each runtime session this app started or resumed, for as long as it runs. */
@@ -1326,10 +1326,7 @@ export class Hermes {
   setRole(role: Role) {
     if (this.role === role) return;
     this.role = role;
-    if (role === "target") {
-      this.pumpSoon();
-      this.groupRooms.wake();
-    } else this.groupRooms.sleep();
+    if (role === "target") this.pumpSoon();
     this.tellListeners();
   }
 
@@ -1432,7 +1429,6 @@ export class Hermes {
     this.track(told);
     // Checks start a little later, once the chat list has loaded (capabilities.ts).
     this.capabilities.connected(gen, profile, readyPayload, told);
-    this.groupRooms.wake();
   }
 
   /** Tries to connect again now, after a drop or from Offline, and keeps retrying on its own if that fails. */
@@ -1840,7 +1836,6 @@ export class Hermes {
       this.pipeProfile = undefined;
       // Nothing checked for the old profile's connection lands now; the new one checks again.
       this.capabilities.disconnected();
-      this.groupRooms.sleep();
       // Nor is any more of its running turns heard, until the owner comes back and they are resumed.
       this.recorder.drop(Date.now());
     }
@@ -1913,8 +1908,6 @@ export class Hermes {
         this.closeUnwaited(shown, Array.isArray(res?.sessions) ? res.sessions : []);
         const sessions = (Array.isArray(res?.sessions) ? res.sessions : []).flatMap((r): (LiveSession & { key: string })[] => {
           const row = obj(r);
-          const room = memberSessionRoom(row?.title);
-          if (room !== undefined && this.groupRooms.has(room)) return [];
           const status = row?.status === "waiting" ? "waiting" : row?.status === "working" || row?.status === "starting" ? "working" : undefined;
           const chatId = typeof row?.session_key === "string" ? row.session_key : "";
           // A session this app started or resumed is known by its runtime id, which names its profile for sure.
@@ -1926,8 +1919,7 @@ export class Hermes {
         // Answers about sessions no longer live are dropped.
         const live = new Set(sessions.map((s) => s.key));
         for (const m of [this.sessionOwners, this.ownerTried]) for (const k of m.keys()) if (!live.has(k)) m.delete(k);
-        // Rows don't say their profile. Each other session is looked up by its id in every profile, a few per check,
-        // the ones tried longest ago first.
+        // Rows don't say their profile or source.
         const unknown = sessions
           .filter((s) => !s.profile && !this.sessionOwners.has(s.key))
           .sort((a, b) => (this.ownerTried.get(a.key) ?? 0) - (this.ownerTried.get(b.key) ?? 0))
@@ -1939,9 +1931,11 @@ export class Hermes {
           if (owner !== undefined) this.sessionOwners.set(s.key, owner);
         }
         if (gen !== this.generation) return;
-        const placed = sessions.map(({ key, ...s }): LiveSession => {
-          const owner = s.profile ? undefined : this.sessionOwners.get(key);
-          return owner ? { ...s, ...owner } : s;
+        const placed = sessions.flatMap(({ key, ...s }): LiveSession[] => {
+          if (s.profile) return [s];
+          const owner = this.sessionOwners.get(key);
+          if (owner === "seat" || (owner === undefined && !this.ownerTried.has(key))) return [];
+          return [owner ? { ...s, ...owner } : s];
         });
         this.checkTimes.set({ live: Date.now() });
         this.showLive({ sessions: placed });
@@ -2069,20 +2063,23 @@ export class Hermes {
    * title and source with it, null when more than one profile has it, and undefined when none does yet (a new chat is
    * stored with its first message) or a profile couldn't be asked, so it is looked up again later.
    */
-  private async ownerOf(chatId: string, profiles: string[]): Promise<{ profile: string; title: string; source: Source } | null | undefined> {
-    const found: { profile: string; title: string; source: Source }[] = [];
+  private async ownerOf(chatId: string, profiles: string[]): Promise<Owner | null | "seat" | undefined> {
+    const found: Owner[] = [];
+    let seat = false;
     let unsure = false;
     for (let i = 0; i < profiles.length; i += LOOKUP_AT_ONCE)
       await Promise.all(
         profiles.slice(i, i + LOOKUP_AT_ONCE).map(async (profile) => {
           try {
             const row = (await this.rest("GET", `${sessionPath(chatId)}?${new URLSearchParams({ profile })}`)) as SessionRow;
-            found.push({ profile, title: listTitle(row), source: toSource(row.source) });
+            if (row.source === ROOM_SEAT_SOURCE) seat = true;
+            else found.push({ profile, title: listTitle(row), source: toSource(row.source) });
           } catch (e) {
             if (!sessionNotFound(e)) unsure = true;
           }
         }),
       );
+    if (seat) return "seat";
     if (found.length > 1) return null;
     return unsure || !found.length ? undefined : found[0];
   }
@@ -2140,7 +2137,8 @@ export class Hermes {
   }
 
   private leftOut(profile: string, r: SearchRow, archived: boolean): boolean {
-    return (!archived && this.isArchived(profile, r)) || this.deleted.has(profile, r.id) || this.apart(profile, r) !== undefined;
+    // Hermes's search finds hidden sessions too, a seat's among them.
+    return r.source === ROOM_SEAT_SOURCE || (!archived && this.isArchived(profile, r)) || this.deleted.has(profile, r.id) || this.apart(profile, r) !== undefined;
   }
 
   /**
@@ -2680,7 +2678,6 @@ export class Hermes {
    */
   setFocused(focused: boolean) {
     this.focused = focused;
-    this.groupRooms.setFocused(focused);
     if (!focused) return;
     const back = [...this.readWhenBack];
     this.readWhenBack.clear();
@@ -4713,7 +4710,6 @@ export class Hermes {
     this.abortDial?.(new Error("Closed by the app."));
     this.generation++;
     this.capabilities.disconnected();
-    this.groupRooms.sleep();
     this.kanbanWatch.stop();
     clearTimeout(this.rosterTimer);
     clearTimeout(this.retryTimer);
@@ -4772,10 +4768,6 @@ export class Hermes {
     // Broadcast when any process changes the session store (tui_gateway/change_watcher.py).
     if (type === "sessions.changed") {
       void this.sync();
-      return;
-    }
-    if (type === "groups.changed") {
-      this.groupRooms.changed(payload);
       return;
     }
     if (type === "status.update") {
@@ -5234,7 +5226,6 @@ export class Hermes {
     this.control.rescope();
     this.generation++;
     this.capabilities.disconnected();
-    this.groupRooms.sleep();
     this.kanbanWatch.stop();
     clearTimeout(this.rosterTimer);
     clearInterval(this.heartbeat);
@@ -5779,6 +5770,7 @@ export class Hermes {
       // in the archived view, and one born visible elsewhere is still named "Bot Chat".
       // Only the archived view lists hidden sessions, so a thread any other view lists isn't hidden.
       for (const r of res.sessions) {
+        if (r.source === ROOM_SEAT_SOURCE) continue;
         const kind = this.apart(profile, r);
         if (kind === "botChat") botChats.add(r.id);
         else if (kind === undefined) rows.push(r);

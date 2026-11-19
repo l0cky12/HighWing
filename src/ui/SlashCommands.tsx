@@ -46,7 +46,7 @@ export type CommandHost = {
   references?: { chats: readonly ReferableChat[]; bots?: readonly NamedBot[]; reference(chat: ReferableChat): void };
 };
 
-export type NamedBot = BotLookShown & Pick<Bot, "handle" | "description">;
+export type NamedBot = BotLookShown & Pick<Bot, "profile" | "handle" | "description">;
 
 /** `why`: why an extension's command can't run here now. `run` resolves with its note, as `CommandHost.run` does. */
 export type ExtensionCommands = {

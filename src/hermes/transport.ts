@@ -56,10 +56,10 @@ import { SkillsApi } from "./skills";
 import { CapabilityStore, CapabilityUnsupportedError, PROBE_NAME, RouteMissingError, checkpointsSettingOf, failureOf, isNoRoute, sharesChats, specOf, type CapabilityId, type ServerFacts } from "./capabilities";
 import { parseCheckpointList, type RelPath } from "./fileChanges";
 import type { Restored, RollbackIO } from "./fileUndo";
-import { ConnectionLostError, FILE_MARK, LIMITS, LegacyProtocol, PromptUnconfirmedError, ProtocolMismatchError, RpcError, negotiate, type Admitted, type AnswerOutcome, type BranchAnswer, type GoingOut, type Inbound, type PlainMethod, type Port, type RpcFrame, type ServerRequest, type SessionProtocol } from "./sessionProtocol";
+import { ConnectionLostError, FILE_MARK, echoesInflight, LIMITS, LegacyProtocol, PromptUnconfirmedError, ProtocolMismatchError, RpcError, negotiate, type Admitted, type AnswerOutcome, type BranchAnswer, type GoingOut, type Inbound, type PlainMethod, type Port, type RpcFrame, type ServerRequest, type SessionProtocol } from "./sessionProtocol";
 import type { AppMethod } from "./canonicalVerbs";
 import { policyOf } from "./chatKind";
-import { askFirstBlocks } from "./askFirst";
+import { askFirstBlocks, askFirstRule } from "./askFirst";
 import { getUIPrefs } from "./uiPrefs";
 import { projectStored, type TranscriptMessage } from "./storedTranscript";
 import {
@@ -89,6 +89,7 @@ import { plan, settle as settleEdits, type EditResult, type Edits, type Outcomes
 import { conflictOf, sessionNotFound, statusOf, type OpenPipe, type Pipe, type PipeEvent, type RestMethod, type Route, type Speech, type Transcript, type VoiceSetup } from "./pipe";
 import { projectContextFiles, type ChatContext, type ProjectContextFiles } from "./projectContextFiles";
 import { peelImages, typedText } from "./branch";
+import { createAsks, type Ask, type Asks, type AskWire } from "./asks";
 import type { SentHere } from "./sentImages";
 import { SUMMARY_INSTRUCTIONS, SUMMARY_MAX_TOKENS, cleanSummary, referenceBlock, storedReferences, summaryInput } from "./chatReferences";
 import { previewSupport, remoteFiles, type EditIo, type RemoteFiles } from "./remoteFiles";
@@ -266,6 +267,10 @@ export type ChatCache = {
   loadSentHere(profile: string): SentHere[];
   /** Adds the images Hermes stored for a message sent in `chat`, dropping the oldest past `SENT_HERE_KEPT`. */
   saveSentHere(profile: string, chat: string, images: readonly SentImage[]): void;
+  /** The asks made from the profile's Bot Chat (asks.ts, ADR 0232), as stored; `createAsks` reads them. */
+  loadAsks(profile: string): unknown;
+  /** Keeps them; none deletes them. False: storage refused it, so they last until the app closes. */
+  saveAsks(profile: string, asks: readonly Ask[]): boolean;
 };
 /**
  * What clicking a notification about a waiting card does: `open` shows the card in its chat. `deny`, for an Approval
@@ -306,6 +311,8 @@ const noCache: ChatCache = {
   saveReplyTime: () => {},
   loadSentHere: () => [],
   saveSentHere: () => {},
+  loadAsks: () => null,
+  saveAsks: () => true,
 };
 
 /** A row of dashboard REST `GET /api/sessions`; times are Unix seconds. */
@@ -1421,6 +1428,7 @@ export class Hermes {
     this.uploads = new Set();
     this.heartbeat = setInterval(() => this.beat(), PING_EVERY_MS);
     this.update({ status: "connected", closedReason: undefined, route: pipe.route, unsecure: isUnsecure(pipe.route) });
+    this.askWire.connected();
     this.kanbanWatch.start();
     // Without this, Hermes never sends this connection an Approval (research doc §6). Its answer lists the requests
     // Hermes may send, which is how diagnostics knows Approvals are there.
@@ -1641,6 +1649,43 @@ export class Hermes {
 
   /** Each chat's goal as Hermes last showed it (goals.ts, ADR 0187), for the goal bar. Kept in memory only. */
   readonly goals = new GoalBoard();
+
+  private readonly askDesk = createAsks({
+    shown: () => {
+      const bot = this.snapshot.bots?.roster.find((b) => b.profile === this.profile);
+      return { profile: this.profile, name: bot?.name ?? this.profile, handle: bot?.handle ?? this.profile };
+    },
+    cantSend: () => (this.role === "background" ? "background" : this.snapshot.status === "connected" && this.pipe ? undefined : "offline"),
+    newestRow: (chatId) => {
+      const rows = (this.snapshot.chats.find((c) => c.id === chatId)?.items ?? []).flatMap((i) => ("rowId" in i && typeof i.rowId === "number" ? [i.rowId] : []));
+      const newest = Math.max(this.knownRow.get(this.profile, chatId) ?? -Infinity, ...rows);
+      return Number.isFinite(newest) ? newest : undefined;
+    },
+    botChat: async (profile, name) => {
+      const known = this.snapshot.bots?.roster.find((b) => b.profile === profile);
+      return (await this.botChats.open(profile, name, !!known?.botChat)).openId;
+    },
+    attach: async (session, profile) => {
+      const res = await this.protocol.resume(session, profile);
+      this.runtimeOwners.set(res.runtimeId, { profile, chatId: session });
+      return { runtimeId: res.runtimeId, running: res.running, ...(res.inflight && { inflight: res.inflight }), ...(res.inflightUser && { inflightUser: res.inflightUser }), asking: res.asking.length > 0 };
+    },
+    // An ask always goes to a Bot Chat, so it carries Ask first's rule as any message the owner sends there does.
+    submit: (runtimeId, profile, text, context, going) =>
+      this.protocol.submit(runtimeId, { profile, text, attachments: [], hold: true, context: [...context, askFirstRule(getUIPrefs().askFirst)] }, () => going()),
+    latestRows: async (session, profile, offset, limit) => {
+      const query = new URLSearchParams({ profile, order: "latest", limit: String(limit), offset: String(offset), inline_images: "false" });
+      const got = ((await this.rest("GET", `${sessionPath(session)}/messages?${query}`)) as { messages?: StoredBranchRow[] }).messages ?? [];
+      return got.filter((r) => Number.isSafeInteger(r?.id));
+    },
+    fold: (scratch, type, payload) => applyEvent(scratch, type, payload),
+    load: (profile) => this.cache.loadAsks(profile),
+    save: (profile, asks) => this.cache.saveAsks(profile, asks),
+    track: (work) => this.track(work),
+  });
+  /** The owner's asks from the shown profile's Bot Chat to other bots (asks.ts, ADR 0232). */
+  readonly asks: Asks = this.askDesk.asks;
+  private readonly askWire: AskWire = this.askDesk.wire;
 
   /** The chat's live session id, or a rejection saying it isn't open on Hermes. */
   private liveSession(chatId: string): string {
@@ -4610,6 +4655,8 @@ export class Hermes {
     }
     const chat = session_id ? this.snapshot.chats.find((c) => c.runtimeId === session_id) : undefined;
     if (!chat) {
+      // Another bot's Bot Chat, attached by an ask (asks.ts): its turn shows on the asking chat's card.
+      if (session_id && this.askWire.hear({ type, sessionId: session_id, payload })) return;
       if (session_id && this.resuming.size > 0) this.earlyEvents.set(session_id, [...(this.earlyEvents.get(session_id) ?? []), heard]);
       return;
     }
@@ -4960,6 +5007,8 @@ export class Hermes {
     const chat = this.snapshot.chats.find((c) => c.runtimeId === sid);
     const asked: Asked = { req, at: Date.now() };
     if (chat) this.showQuestions(chat.id, [asked]);
+    // An asked bot's turn waits on the owner: it is answered in that bot's Bot Chat, never from the card.
+    else if (this.askWire.asked(sid)) return;
     else this.earlyRequests.set(sid, [...(this.earlyRequests.get(sid) ?? []), asked]);
   }
 
@@ -5065,6 +5114,7 @@ export class Hermes {
     if (keep && pipe?.reopen) this.socketClosed = pipe;
     // Lets the Rust side end the tunnel.
     else if (pipe) this.droppedClosing = pipe.close().catch(() => {}).finally(() => (this.droppedClosing = undefined));
+    this.askWire.detached();
     for (const p of this.pending.values()) p.reject(new ConnectionLostError(`Connection closed: ${reason}`));
     this.pending.clear();
     this.earlyRequests.clear();
@@ -6640,17 +6690,6 @@ function runningCall(items: Item[], toolId: unknown): number {
     if (i.kind === "tool" && i.callId === callId && i.status === "running") return at;
   }
   return -1;
-}
-
-/**
- * Whether a delta is the end of a resume's in-flight text, by its stamp: the turn's first segment, ending where the
- * text ends. The in-flight text joins every segment with no bounds, and a delta without stamps can't be told from a
- * repeated word, so either is kept.
- */
-function echoesInflight(inflight: string, p: Record<string, unknown>): boolean {
-  const { text, segment, offset } = p;
-  if (typeof text !== "string" || !text || segment !== 0 || typeof offset !== "number" || !Number.isInteger(offset)) return false;
-  return offset + text.length === inflight.length && inflight.endsWith(text);
 }
 
 // Fold one session event into a chat. Text deltas extend the trailing assistant item, or start a new one

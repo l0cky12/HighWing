@@ -39,6 +39,8 @@ export const BRANCH_PREFIX = "hermes-chat.branches.";
 export const REPLY_TIMES_PREFIX = "hermes-chat.reply-times.";
 /** The images this app sent, per connection and profile (sentImages.ts `SentHere`). */
 export const SENT_HERE_PREFIX = "hermes-chat.sent-images.";
+/** The asks made from each profile's Bot Chat, per connection and profile (asks.ts, ADR 0232). Clearing the cache keeps them. */
+export const ASKS_PREFIX = "hermes-chat.asks.";
 /** Where drafts.ts kept a chat's sent messages Hermes didn't take, or may not have, before the outbox: moved into it. */
 export const HELD_PREFIX = "hermes-chat.undelivered.";
 
@@ -355,6 +357,7 @@ export function localChatCache(connection: ScopeSource): ChatCache {
   const branchKey = (profile: string) => BRANCH_PREFIX + scope(profile);
   const replyTimesKey = (profile: string) => REPLY_TIMES_PREFIX + scope(profile);
   const sentHereKey = (profile: string) => SENT_HERE_PREFIX + scope(profile);
+  const asksKey = (profile: string) => ASKS_PREFIX + scope(profile);
   const loadSentHere = (profile: string) => {
     try {
       return sentHereOf(JSON.parse(localStorage.getItem(sentHereKey(profile)) ?? "null"));
@@ -550,6 +553,16 @@ export function localChatCache(connection: ScopeSource): ChatCache {
     loadReplyTimes,
     saveReplyTime(profile, t) {
       persist(() => localStorage, replyTimesKey(profile), JSON.stringify(withReplyTime(loadReplyTimes(profile), t)));
+    },
+    loadAsks(profile) {
+      try {
+        return JSON.parse(localStorage.getItem(asksKey(profile)) ?? "null");
+      } catch {
+        return null;
+      }
+    },
+    saveAsks(profile, asks) {
+      return persist(() => localStorage, asksKey(profile), asks.length ? JSON.stringify(asks) : null);
     },
     loadSentHere,
     saveSentHere(profile, chat, images) {

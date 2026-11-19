@@ -113,6 +113,7 @@ import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createServer } from "node:http";
 import type { Socket } from "node:net";
+import { typedText } from "../../../../src/hermes/branch";
 import { CU } from "../../../../src/hermes/fakeComputerUse";
 import { DOCTOR_NO_DISPLAY, FakeHermes, row } from "../../../../src/hermes/fakeHermes";
 import { HONCHO, RETAINDB } from "../../../../src/hermes/fakeMemoryProviders";
@@ -695,7 +696,8 @@ http.on("upgrade", async (req, sock: Socket) => {
       if (msg.method && msg.method !== "gateway.ping") console.log(new Date().toISOString(), "WS", msg.method, msg.params?.session_id ?? "", answer);
       if (msg.method === "prompt.submit" && msg.params?.session_id) {
         const { session_id, text } = msg.params;
-        const prompt = String(text ?? "");
+        // By the words typed: a Referenced chat's summary or an ask's note after them picks no scripted turn.
+        const prompt = typedText(String(text ?? ""));
         setTimeout(() => {
           save();
           if (/^computer use/i.test(prompt)) computerUse(session_id, prompt);

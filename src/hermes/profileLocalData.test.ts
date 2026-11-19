@@ -68,6 +68,7 @@ function seed(c: ScopeSource, p: string) {
   localStorage.setItem(key("hermes-chat.queue.", c, p, "chat-1"), `{"items":[{"id":"q1","text":"later"}]}`);
   localStorage.setItem(key("hermes-chat.undelivered.", c, p, "chat-1"), "[]");
   localStorage.setItem(key("hermes-chat.branches.", c, p), "{}");
+  localStorage.setItem(key("hermes-chat.asks.", c, p), "[]");
   localStorage.setItem(key("hermes-chat.draft.", c, p, "chat-1"), "half a thought");
   localStorage.setItem(`${key("hermes-chat.persona.", c, p)}.draft`, `{"text":"x"}`);
   localStorage.setItem(`${key("hermes-chat.persona.", c, p)}.earlier`, "[]");

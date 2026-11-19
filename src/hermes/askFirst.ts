@@ -28,4 +28,7 @@ export const SEND_FREELY_RULE: string = [
  * anywhere else: Hermes offers message_agent only in a session titled "Bot Chat".
  */
 export const askFirstBlocks = (chat: Pick<Chat, "source" | "bot" | "title">, ask: boolean): readonly string[] =>
-  chatKind(chat) === "bot" ? [ask ? ASK_FIRST_RULE : SEND_FREELY_RULE] : [];
+  chatKind(chat) === "bot" ? [askFirstRule(ask)] : [];
+
+/** Pure. The rule for a message that is known to go to a Bot Chat, such as an @ ask (ADR 0232). */
+export const askFirstRule = (ask: boolean): string => (ask ? ASK_FIRST_RULE : SEND_FREELY_RULE);

@@ -1,7 +1,7 @@
 // Bot setup's review card as data (botSetupCard.ts, ADR 0231): which block is the live card, what it would change in
 // Hermes, and what survives Set it up and a reload. Rows are shaped as Hermes stores them. All data is synthetic.
 import { describe, expect, it } from "vitest";
-import { BOT_SETUP_COLORS, BOT_SETUP_FENCE, botSetupBrief, type BotSetupBlock } from "./botSetupBrief";
+import { BOT_SETUP_CAPS, BOT_SETUP_COLORS, BOT_SETUP_FENCE, botSetupBrief, type BotSetupAgainBlock, type BotSetupNewBlock } from "./botSetupBrief";
 import {
   ACCEPTED_FENCE,
   BOT_SETUP_COLOR_HEX,
@@ -23,7 +23,7 @@ import {
 } from "./botSetupCard";
 import { lookOf } from "./bots";
 
-const block = (over: Partial<BotSetupBlock> = {}): BotSetupBlock => ({
+const block = (over: Partial<BotSetupNewBlock> = {}): BotSetupNewBlock => ({
   v: 1,
   persona: "You are Travel Buddy. You plan trips. Never book or pay for anything. Check before you email anyone.",
   description: "Plans trips: flights, trains, places to stay.",
@@ -58,11 +58,14 @@ const now = (over: Partial<HermesNow> = {}): HermesNow => ({
   ...over,
 });
 
-const brief = (id: string): SetupRow => ({
+const inventory = { models: [], skills: [], toolsets: [], bots: [] };
+const brief = (id: string): SetupRow => ({ role: "user", display_kind: "hidden", content: botSetupBrief({ id, name: "Travel Buddy", inventory }) });
+const briefAgain = (id: string, persona: string): SetupRow => ({
   role: "user",
   display_kind: "hidden",
-  content: botSetupBrief({ id, name: "Travel Buddy", inventory: { models: [], skills: [], toolsets: [], bots: [] } }),
+  content: botSetupBrief({ id, name: "Travel Buddy", inventory, current: { persona, description: "Plans trips.", model: null, color: "#14b8a6", skillsOn: [], toolsetsOn: [] } }),
 });
+const keeping = (over: Partial<BotSetupAgainBlock> = {}): BotSetupAgainBlock => ({ ...block(), persona: null, description: null, color: null, ...over });
 const fenced = (lang: string, body: string) => `\`\`\`${lang}\n${body}\n\`\`\``;
 const reply = (id: number, body: string, words = "Here's how I'd set myself up."): SetupRow => ({ id, role: "assistant", content: `${words}\n\n${fenced(BOT_SETUP_FENCE, body)}` });
 const said = (id: number, role: "user" | "assistant", content: string): SetupRow => ({ id, role, content });
@@ -186,7 +189,7 @@ describe("fenced blocks", () => {
 
 describe("reading a block strictly", () => {
   it("reads a block the brief asks for", () => {
-    expect(readBlock(JSON.stringify(block()))).toEqual({ ok: true, block: block() });
+    expect(readBlock(JSON.stringify(block()), "new")).toEqual({ ok: true, checked: { again: false, block: block() } });
   });
 
   it("refuses a key the format doesn't have, anywhere, so a command or URL can't ride beside a name", () => {
@@ -198,14 +201,14 @@ describe("reading a block strictly", () => {
       [{ ...block(), copy: [{ from: "R", skills: [], toolsets: [], mcp: [], env: { KEY: "sk-123" } }] }, /copy\[0\]: keys env/],
     ];
     for (const [raw, reason] of cases) {
-      const read = readBlock(JSON.stringify(raw));
+      const read = readBlock(JSON.stringify(raw), "new");
       expect(read.ok).toBe(false);
       if (!read.ok) expect(read.reason).toMatch(reason);
     }
   });
 
   it("refuses each field of the wrong type or out of range", () => {
-    const bad: Partial<Record<keyof BotSetupBlock, unknown>>[] = [
+    const bad: Partial<Record<keyof BotSetupNewBlock, unknown>>[] = [
       { v: 99 },
       { v: "1" },
       { persona: "" },
@@ -223,11 +226,11 @@ describe("reading a block strictly", () => {
       { mcp: [{ catalog: "" }] },
       { copy: [{ from: "R", skills: "deep-research", toolsets: [], mcp: [] }] },
     ];
-    for (const over of bad) expect(readBlock(JSON.stringify({ ...block(), ...over })), JSON.stringify(over)).toMatchObject({ ok: false });
+    for (const over of bad) expect(readBlock(JSON.stringify({ ...block(), ...over }), "new"), JSON.stringify(over)).toMatchObject({ ok: false });
     const missing: Record<string, unknown> = { ...block() };
     delete missing.copy;
-    expect(readBlock(JSON.stringify(missing))).toEqual({ ok: false, reason: "block: keys copy" });
-    expect(readBlock(JSON.stringify({ ...block(), description: "x".repeat(80) })).ok).toBe(true);
+    expect(readBlock(JSON.stringify(missing), "new")).toEqual({ ok: false, reason: "block: keys copy" });
+    expect(readBlock(JSON.stringify({ ...block(), description: "x".repeat(80) }), "new").ok).toBe(true);
   });
 
   it("never throws, on any junk", () => {
@@ -241,13 +244,13 @@ describe("reading a block strictly", () => {
     const valid = JSON.stringify(block());
     for (let i = 0; i < 2000; i++) {
       const junk = i % 3 === 0 ? valid.slice(0, rand(valid.length)) + atoms[rand(atoms.length)] + valid.slice(rand(valid.length)) : Array.from({ length: rand(40) }, () => atoms[rand(atoms.length)]).join("");
-      expect(() => readBlock(junk)).not.toThrow();
+      expect(() => readBlock(junk, "new")).not.toThrow();
       expect(() => readAcceptedRecord(junk)).not.toThrow();
       expect(() => parseSetup([brief("s1"), { role: "assistant", content: `\`\`\`${BOT_SETUP_FENCE}\n${junk}` }, { role: "user", content: `\`\`\`${ACCEPTED_FENCE}\n${junk}` }])).not.toThrow();
     }
     const odd: unknown[] = [null, undefined, 5, "x", [], {}, { role: 5 }, { role: "user", content: [{ type: "image" }, null, 3] }, { role: "assistant", content: { text: "x" } }];
     expect(() => parseSetup(odd as SetupRow[])).not.toThrow();
-    for (const v of ["null", "[]", '"x"', "1", '{"__proto__": {"v": 1}}']) expect(readBlock(v).ok).toBe(false);
+    for (const v of ["null", "[]", '"x"', "1", '{"__proto__": {"v": 1}}']) expect(readBlock(v, "new").ok).toBe(false);
   });
 });
 
@@ -387,6 +390,47 @@ describe("the plan", () => {
   });
 });
 
+describe("Set up again", () => {
+  const has = now({ persona: "You are Travel Buddy. Never book anything.", description: "Plans trips.", color: "#3B82F6" });
+
+  it("plans no write for a null persona, description or colour: each row shows the value Hermes keeps", () => {
+    const r = cardOf([briefAgain("s1", has.persona), reply(2, JSON.stringify(keeping()))]);
+    expect(r.card).toMatchObject({ again: true, block: { persona: null, description: null, color: null } });
+    const plan = planCard(r.card, has);
+    expect(listedItem(plan, "persona")).toMatchObject({ before: has.persona, after: has.persona, status: "same" });
+    expect(listedItem(plan, "description")).toMatchObject({ before: "Plans trips.", after: "Plans trips.", status: "same" });
+    expect(listedItem(plan, "color")).toMatchObject({ before: "#3B82F6", after: "#3B82F6", status: "same" });
+    const record = acceptedRecord(plan, { ticked: new Set(plan.items.map((i) => i.key)), edits: {} });
+    expect(record.items.filter((i) => ["persona", "description", "color"].includes(i.kind))).toEqual([]);
+  });
+
+  it("writes a persona, description or colour the block does change", () => {
+    const b = keeping({ persona: "You are Travel Buddy. Never book anything. Check prices daily.", color: "pink" });
+    const plan = planCard(cardOf([briefAgain("s1", has.persona), reply(2, JSON.stringify(b))]).card, has);
+    expect(listedItem(plan, "persona")).toMatchObject({ after: b.persona, status: "change", ticked: true });
+    expect(listedItem(plan, "color")).toMatchObject({ after: BOT_SETUP_COLOR_HEX.pink, status: "change", ticked: true });
+    expect(listedItem(plan, "description").status).toBe("same");
+  });
+
+  it("refuses a persona when the brief left the persona out", () => {
+    const long = `You are Travel Buddy. ${"Rule. ".repeat(BOT_SETUP_CAPS.persona / 6)}`;
+    const rows = [briefAgain("s1", long), reply(2, JSON.stringify(keeping({ persona: "You are Travel Buddy." })))];
+    expect(parseSetup(rows)).toMatchObject({ kind: "unreadable", reason: "persona: not null, though the brief left it out" });
+    expect(cardOf([...rows, reply(3, JSON.stringify(keeping()))]).card.block.persona).toBeNull();
+  });
+
+  it("reads a block that changes everything as Set up again's", () => {
+    expect(cardOf([briefAgain("s1", has.persona), reply(2, JSON.stringify(block()))]).card).toMatchObject({ again: true, block: block() });
+  });
+
+  it("refuses a block that keeps a value when the brief was a new bot's", () => {
+    for (const over of [{ persona: null }, { description: null }, { color: null }]) {
+      const rows = [brief("s1"), reply(2, JSON.stringify({ ...block(), ...over }))];
+      expect(parseSetup(rows), JSON.stringify(over)).toMatchObject({ kind: "unreadable", reason: "a new bot's block keeps nothing: persona, description and color can't be null" });
+    }
+  });
+});
+
 describe("colours", () => {
   it("maps every block colour to a hex colour Bot Mode stores and the roster shows", () => {
     expect(Object.keys(BOT_SETUP_COLOR_HEX).sort()).toEqual([...BOT_SETUP_COLORS].sort());
@@ -402,7 +446,7 @@ describe("colours", () => {
 });
 
 describe("what the owner accepted", () => {
-  const rowsWith = (b: BotSetupBlock) => [brief("s1"), reply(2, JSON.stringify(b))];
+  const rowsWith = (b: BotSetupNewBlock) => [brief("s1"), reply(2, JSON.stringify(b))];
   const readyRow = (id: number, record: Parameters<typeof acceptedRecordBlock>[0]): SetupRow => ({
     id,
     role: "user",

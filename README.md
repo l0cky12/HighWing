@@ -39,10 +39,10 @@ Highwing is now in your Start menu.
 You need Ubuntu 24.04, Debian 13, or a newer version.
 
 1. Open the [Highwing releases page](https://github.com/l0cky12/Highwing/releases) and download the file that ends in `_amd64.deb`.
-2. Open a terminal in the folder you downloaded it to, and run this command. Replace the file name with the one you downloaded:
+2. Open a terminal in the folder you downloaded it to, and run this command:
 
 	```sh
-	sudo apt install ./hermes-chat_0.1.5_amd64.deb
+	sudo apt install ./hermes-chat_*_amd64.deb
 	```
 
 Highwing is now in your app menu.

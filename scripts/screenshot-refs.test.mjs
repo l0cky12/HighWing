@@ -71,8 +71,8 @@ it("keeps an image a PR links through a branch name, not one pinned to a commit"
   writeFileSync(
     prs,
     JSON.stringify([
-      { number: 7, body: "![b](https://github.com/l0cky12/hermes-chat/blob/feat/x-1/docs/screenshots/a/branch.png?raw=true)", comments: [] },
-      { number: 8, body: "", comments: [{ body: "![p](https://raw.githubusercontent.com/l0cky12/hermes-chat/0123abcd/docs/screenshots/a/pinned.png)" }] },
+      { number: 7, body: "![b](https://github.com/l0cky12/HighWing/blob/feat/x-1/docs/screenshots/a/branch.png?raw=true)", comments: [] },
+      { number: 8, body: "", comments: [{ body: "![p](https://raw.githubusercontent.com/l0cky12/HighWing/0123abcd/docs/screenshots/a/pinned.png)" }] },
     ]),
   );
   const out = run(root, "--github", prs, "--all");
@@ -95,7 +95,7 @@ it("decodes a percent-encoded name, in a tracked file and in a PR's branch-name 
     "docs/screenshots/b/stale.png": "png",
   });
   const prs = join(root, "prs.json");
-  writeFileSync(prs, JSON.stringify([{ number: 9, body: "![t](https://github.com/l0cky12/hermes-chat/blob/main/docs/screenshots/b/two%20words.png?raw=true)", comments: [] }]));
+  writeFileSync(prs, JSON.stringify([{ number: 9, body: "![t](https://github.com/l0cky12/HighWing/blob/main/docs/screenshots/b/two%20words.png?raw=true)", comments: [] }]));
   const out = run(root, "--github", prs, "--all");
   expect(out).toContain("docs/screenshots/a/chat-shot.png\n    <- README.md");
   expect(out).toContain("docs/screenshots/b/two words.png\n    <- GitHub #9 (main)");

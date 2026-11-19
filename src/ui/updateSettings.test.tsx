@@ -23,7 +23,7 @@ const pkg: Found = {
   notes: [{ text: "#38 Status bar" }],
   more: 3,
   via: "pacman",
-  allUrl: "https://github.com/l0cky12/hermes-chat/compare/ef433a2...main",
+  allUrl: "https://github.com/l0cky12/HighWing/compare/ef433a2...main",
   command: "git pull && packaging/aur/build.sh -si",
 };
 

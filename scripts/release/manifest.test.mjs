@@ -25,12 +25,12 @@ describe("the release manifest", () => {
   it("stages the AppImage and its signature under host-safe names and points the manifest at them", () => {
     const bundleDir = bundle({ "Highwing_0.2.0_amd64.AppImage": "\x7fELF built", "Highwing_0.2.0_amd64.AppImage.sig": "c2ln\n" });
     const out = join(scratch(), "release");
-    const manifest = stage(bundleDir, out, "https://github.com/l0cky12/hermes-chat/releases/download/v0.2.0/", "Notes.", new Date("2026-11-05T12:34:56.789Z"));
+    const manifest = stage(bundleDir, out, "https://github.com/l0cky12/HighWing/releases/download/v0.2.0/", "Notes.", new Date("2026-11-05T12:34:56.789Z"));
     expect(manifest).toEqual({
       version: "0.2.0",
       notes: "Notes.",
       pub_date: "2026-11-05T12:34:56Z",
-      platforms: { "linux-x86_64": { signature: "c2ln", url: "https://github.com/l0cky12/hermes-chat/releases/download/v0.2.0/hermes-chat_0.2.0_amd64.AppImage" } },
+      platforms: { "linux-x86_64": { signature: "c2ln", url: "https://github.com/l0cky12/HighWing/releases/download/v0.2.0/hermes-chat_0.2.0_amd64.AppImage" } },
     });
     expect(JSON.parse(readFileSync(join(out, "latest.json"), "utf8"))).toEqual(manifest);
     expect(readFileSync(join(out, "hermes-chat_0.2.0_amd64.AppImage"), "utf8")).toBe("\x7fELF built");

@@ -2,7 +2,7 @@ pkgbase = hermes-chat-git
 	pkgdesc = Desktop chat client for a remote Hermes Agent
 	pkgver = r0
 	pkgrel = 1
-	url = https://github.com/l0cky12/hermes-chat
+	url = https://github.com/l0cky12/HighWing
 	arch = x86_64
 	license = GPL-3.0-or-later
 	makedepends = git
@@ -27,7 +27,7 @@ pkgbase = hermes-chat-git
 	conflicts = hermes-chat
 	options = !debug
 	options = !lto
-	source = hermes-chat::git+https://github.com/l0cky12/hermes-chat.git
+	source = hermes-chat::git+https://github.com/l0cky12/HighWing.git
 	sha256sums = SKIP
 
 pkgname = hermes-chat-git

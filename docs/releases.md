@@ -66,7 +66,7 @@ scripts/release/verify.sh release "$(cat release/updater.key.pub)"
   "platforms": {
     "linux-x86_64": {
       "signature": "<the .sig file's contents>",
-      "url": "https://github.com/l0cky12/hermes-chat/releases/download/v0.2.0/hermes-chat_0.2.0_amd64.AppImage"
+      "url": "https://github.com/l0cky12/HighWing/releases/download/v0.2.0/hermes-chat_0.2.0_amd64.AppImage"
     }
   }
 }
@@ -106,7 +106,7 @@ To release:
 The endpoint is a requirement on the owner's hosting, not something the app provides:
 
 - `https` only. A release build refuses a plain `http` endpoint. The tests' local server uses `dangerousInsecureTransportProtocol`, which no release config sets.
-- It serves `latest.json` at the URL in `tauri.release.conf.json`, and every `url` in it serves the exact staged AppImage. The configured URL is `https://github.com/l0cky12/hermes-chat/releases/latest/download/latest.json`, which works once a GitHub release carries the staged files as assets.
+- It serves `latest.json` at the URL in `tauri.release.conf.json`, and every `url` in it serves the exact staged AppImage. The configured URL is `https://github.com/l0cky12/HighWing/releases/latest/download/latest.json`, which works once a GitHub release carries the staged files as assets.
 - It answers with the newest release only. The app asks it at launch (unless the owner turned that off) and when the owner checks. No account, cookie or token is sent.
 - Hosting is availability, not trust. A host that serves a tampered AppImage or an edited manifest makes the update fail, not install. A host that's down makes the check fail with an error, and the installed copy stays as it is.
 

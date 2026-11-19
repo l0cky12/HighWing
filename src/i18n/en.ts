@@ -47,7 +47,7 @@ export const en = {
       noAnswer: "No answer came back",
       hide: "Hide the message",
       show: "Show the message",
-      /** A sent message's lines (ADR 0227), each from one thing Hermes sent. */
+      /** A sent message's lines (ADR 0228), each from one thing Hermes sent. */
       delivery: {
         queued: (to: string) => `Queued for ${to}.`,
         claimed: (to: string) => `${to}'s Bot Chat had already taken it.`,
@@ -167,7 +167,7 @@ export const en = {
         already: "You already hold the Bot Desktop.",
         notHeld: (why: string) => `Couldn't take the Bot Desktop: ${why}`,
       },
-      /** A Bot Chat's note when its bot has desktop control off, and the Turn on beside it (ADR 0227). */
+      /** A Bot Chat's note when its bot has desktop control off, and the Turn on beside it (ADR 0230). */
       desktopOff: {
         text: "This bot can't use its Bot Desktop: desktop control is off for it.",
         turnOn: "Turn on",
@@ -450,7 +450,7 @@ export const en = {
       failed: (why: string) => `Bot messaging wasn't changed. ${why}`,
       tooOld: "This Hermes is older than 0.21.6, the oldest known to let bots message each other.",
     },
-    /** Settings → General → Chats: the rule Highwing adds, hidden, to a message sent in a Bot Chat (ADR 0226). */
+    /** Settings → General → Chats: the rule Highwing adds, hidden, to a message sent in a Bot Chat (ADR 0229). */
     askFirst: {
       section: "Bots",
       name: "Ask before messaging another bot",

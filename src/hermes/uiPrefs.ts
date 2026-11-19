@@ -78,7 +78,7 @@ export type UIPrefs = {
   summonSelection: boolean;
   /** Open the side panel's Screen once when a computer-use run starts in the chat on screen (ADR 0216). Off by default. */
   followScreen: boolean;
-  /** Ask first (ADR 0226): tell a bot, in each Bot Chat message sent from here, to ask before it messages another bot. On by default. */
+  /** Ask first (ADR 0229): tell a bot, in each Bot Chat message sent from here, to ask before it messages another bot. On by default. */
   askFirst: boolean;
   /**
    * The keyboard shortcuts the owner changed (ui/keybindings.ts, ADR 0147): each command's chords, by command id. Only

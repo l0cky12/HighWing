@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Ask first (ADR 0226) through the real transport against FakeHermes: what a message sent from here carries in a Bot
+// Ask first (ADR 0229) through the real transport against FakeHermes: what a message sent from here carries in a Bot
 // Chat, in each setting, and nowhere else.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ASK_FIRST_RULE, SEND_FREELY_RULE } from "./askFirst";

@@ -1,4 +1,4 @@
-// Ask first (ADR 0226): a message the owner sends in a Bot Chat carries a rule, hidden from both Hermes clients after
+// Ask first (ADR 0229): a message the owner sends in a Bot Chat carries a rule, hidden from both Hermes clients after
 // the Attached Context marker, about messaging other bots. Hermes can't enforce it: message_agent has no approval
 // gate. So it is an instruction, and the Messaged card shows any message a bot sends anyway.
 import { chatKind } from "./chatKind";

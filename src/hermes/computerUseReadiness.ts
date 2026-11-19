@@ -139,7 +139,7 @@ export async function checkReadiness(deps: { screen: Pick<ScreenApi, "doctor" | 
 export type TurnOnFailed = { kind: "rejected"; reason: string } | { kind: "unknown"; reason: string } | { kind: "mismatch" } | { kind: "readFailed"; reason: string };
 
 /**
- * What a Bot Chat's Desktop control notice shows (ADR 0227).
+ * What a Bot Chat's Desktop control notice shows (ADR 0230).
  * `hidden`: on, not listed, not this app's to switch, or not read. `off`: the notice, with `why` the last Turn on didn't
  * turn it on. `busy`: checking the cautions, or saving. `ask`: the cautions to confirm before anything is sent. `on`:
  * the line saying it is on now, until the chat changes.

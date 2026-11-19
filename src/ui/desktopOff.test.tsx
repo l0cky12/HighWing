@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// A Bot Chat whose bot has desktop control off says so, and Turn on does what Settings → Toolsets does (ADR 0227): the
+// A Bot Chat whose bot has desktop control off says so, and Turn on does what Settings → Toolsets does (ADR 0230): the
 // cautions wait for the owner, a change counts only once Hermes reads it back, and a failure keeps the note with Hermes's reason.
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";

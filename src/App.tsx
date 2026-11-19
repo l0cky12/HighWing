@@ -3237,7 +3237,7 @@ export function Main({
     onNote: (text) => setToast({ text, at: Date.now() }),
   });
 
-  // What a Messaged card's Open chip opens (ADR 0226): a bot on this connection, as a Bot visit.
+  // What a Messaged card's Open chip opens (ADR 0229): a bot on this connection, as a Bot visit.
   const teammates = useMemo<Teammates>(
     () => ({
       open: (handle) => {

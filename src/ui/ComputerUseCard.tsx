@@ -316,7 +316,7 @@ const failedText = (why: TurnOnFailed, l: ReturnType<typeof useLocale>["chat"]["
   why.kind === "mismatch" ? l.mismatch : l[why.kind](why.reason);
 
 /**
- * Above the composer in a Bot Chat whose bot has computer_use off (ADR 0227). Turn on goes through Settings →
+ * Above the composer in a Bot Chat whose bot has computer_use off (ADR 0230). Turn on goes through Settings →
  * Toolsets' own check and write, so a caution waits for the owner and a change counts only once Hermes reads it back.
  * Reads on mount, when the window comes back to the front, and when a toolset change from anywhere in the app ends.
  */

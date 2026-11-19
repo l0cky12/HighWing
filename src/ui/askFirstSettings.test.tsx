@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Settings → General → Chats → Ask before messaging another bot (ADR 0226): on by default, kept on this computer as it
+// Settings → General → Chats → Ask before messaging another bot (ADR 0229): on by default, kept on this computer as it
 // is changed, and every word from the catalogue.
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";

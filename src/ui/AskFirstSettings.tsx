@@ -1,4 +1,4 @@
-// Whether Highwing tells a bot, in each message sent in a Bot Chat, to ask before it messages another bot (ADR 0226).
+// Whether Highwing tells a bot, in each message sent in a Bot Chat, to ask before it messages another bot (ADR 0229).
 // Kept in the display preferences (uiPrefs.ts), on this computer only.
 import { useSyncExternalStore } from "react";
 import { getUIPrefs, setUIPrefs, subscribe } from "../hermes/uiPrefs";

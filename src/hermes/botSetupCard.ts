@@ -12,6 +12,7 @@ import {
   BOT_SETUP_BLOCK_KEYS,
   BOT_SETUP_BLOCK_VERSION,
   BOT_SETUP_COLORS,
+  BOT_SETUP_CURRENT_HEADER,
   BOT_SETUP_DESCRIPTION_MAX,
   BOT_SETUP_FENCE,
   botSetupMarkerId,
@@ -288,11 +289,9 @@ const cardIdOf = (setupId: string, block: BotSetupAgainBlock) => `${setupId}:${f
 
 const rowText = (row: SetupRow) => textOf(row.content);
 
-const CURRENT_HEADER = "CURRENT (";
-
 function briefKind(brief: string): BriefKind {
   const lines = brief.split(/\r?\n/);
-  const at = lines.findIndex((l) => l.startsWith(CURRENT_HEADER));
+  const at = lines.findIndex((l) => l === BOT_SETUP_CURRENT_HEADER);
   if (at < 0) return "new";
   try {
     const current: unknown = JSON.parse(lines[at + 1] ?? "");

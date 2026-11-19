@@ -86,6 +86,7 @@ Run these in `src-tauri/`. `tauri::generate_context!` needs `dist/` to exist at 
 | `node bench/run.mjs` | Times long chats (50, 200, and 800 turns) in headless Chromium. `node bench/run.mjs code` times streaming code blocks. Needs `$CHROME` or Playwright's cached headless shell. |
 | `xvfb-run -a python3 bench/webkit.py 'bench.streamCode(10,false)'` | Runs `window.bench` calls in WebKitGTK 4.1 and prints each result as JSON. Build the page first with `npx vite build --config bench/vite.config.ts`. Needs `python-gobject`. |
 | `HERMES_HOME=$(mktemp -d) <hermes venv>/bin/python tools/cron-golden.py <hermes checkout>` | Regenerates `src/hermes/cronGolden.json`, which `schedule.test.ts` checks the schedule preview against. |
+| `python3 tools/bot-setup-brief/run.py <out dir>` | Sends the Bot setup brief that `src/hermes/botSetupBrief.ts` builds to gpt-6.1-sol through `codex exec` and scores each reply with `validate.py`. It runs single turns, one whole interview, the first-contact note and Set up again. It stops early when a reply in `controls/` passes the validator. `--controls-only` runs only that check. Run it after any change to the brief's wording. |
 | `ruff check .` | Lints the repo's Python against `ruff.toml`. CI runs it, and `npm run check` doesn't. |
 
 ## Configuration

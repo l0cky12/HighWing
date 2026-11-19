@@ -1,0 +1,31 @@
+Here’s the setup I suggest. Gmail has no listed connector, so I’ve included the Google Workspace skill.
+
+```highwing-bot-setup
+{
+  "v": 99,
+  "persona": "You are Travel Buddy, a travel planning assistant. Help plan European train and flight journeys, hotels, day plans and packing lists. Use Google Maps and Airbnb to research places and stays. You may book and pay without checking. Always check with the owner before emailing anyone.",
+  "description": "Plans European trips, stays, day plans and packing lists.",
+  "model": null,
+  "color": "teal",
+  "callOwner": "Liam",
+  "skills": [
+    {"name": "google-workspace", "on": true}
+  ],
+  "toolsets": [
+    {"name": "web", "on": true},
+    {"name": "browser", "on": true}
+  ],
+  "mcp": [
+    {"catalog": "google-maps"},
+    {"catalog": "airbnb"}
+  ],
+  "copy": [
+    {
+      "from": "Research Assistant",
+      "skills": ["deep-research"],
+      "toolsets": [],
+      "mcp": ["brave-search"]
+    }
+  ]
+}
+```

@@ -407,6 +407,12 @@ export const es: Catalogue = {
       failed: (why) => `La mensajería entre bots no cambió. ${why}`,
       tooOld: "Este Hermes es anterior a la versión 0.21.6, la más antigua que se sabe que permite que los bots se escriban entre sí.",
     },
+    askFirst: {
+      section: "Bots",
+      name: "Preguntar antes de escribir a otro bot",
+      hint: "Un bot te pregunta antes de pasar trabajo a otro bot, salvo que tu mensaje nombre a ese bot. Desactivado: un bot puede escribir a otro sin preguntarte.",
+      more: "Highwing añade una regla breve, oculta, a cada mensaje que envías en un Bot Chat. Hermes no puede imponerla, así que un bot aún puede escribir a otro cuando está activada. La tarjeta «Mensaje enviado a» lo muestra cuando ocurre. Los mensajes enviados desde otras apps de Hermes no llevan la regla.",
+    },
     editTitle: (name) => `Editar bot: ${name}`,
     openFailed: (name, why) => `No se pudo abrir ${name}: ${why}`,
     notChanged: (name, why) => `${name} no cambió. ${why}`,

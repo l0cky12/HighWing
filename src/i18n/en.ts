@@ -430,6 +430,13 @@ export const en = {
       failed: (why: string) => `Bot messaging wasn't changed. ${why}`,
       tooOld: "This Hermes is older than 0.21.6, the oldest known to let bots message each other.",
     },
+    /** Settings → General → Chats: the rule Highwing adds, hidden, to a message sent in a Bot Chat (ADR 0226). */
+    askFirst: {
+      section: "Bots",
+      name: "Ask before messaging another bot",
+      hint: "A bot asks you before it sends work to another bot, unless your message names that bot. Off: a bot may message another bot without asking you.",
+      more: "Highwing adds a short rule, hidden, to each message you send in a Bot Chat. Hermes can't enforce it, so a bot may still message another when it is on. The Messaged card shows when one does. Messages sent from Hermes's other apps don't carry the rule.",
+    },
     editTitle: (name: string) => `Edit bot: ${name}`,
     openFailed: (name: string, why: string) => `Couldn't open ${name}: ${why}`,
     notChanged: (name: string, why: string) => `${name} wasn't changed. ${why}`,

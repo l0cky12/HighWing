@@ -1,0 +1,224 @@
+{
+ "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+ "reserved": [
+  "default",
+  "hermes",
+  "root",
+  "sudo",
+  "test",
+  "tmp"
+ ],
+ "cases": [
+  {
+   "name": "Travel Buddy",
+   "id": "travel-buddy"
+  },
+  {
+   "name": "travel-buddy",
+   "id": "travel-buddy"
+  },
+  {
+   "name": "Bot #2",
+   "id": "bot-2"
+  },
+  {
+   "name": "My Work",
+   "id": "my-work"
+  },
+  {
+   "name": "snake_case_bot",
+   "id": "snake_case_bot"
+  },
+  {
+   "name": "Dr. Who?",
+   "id": "dr-who"
+  },
+  {
+   "name": "C++ Helper",
+   "id": "c-helper"
+  },
+  {
+   "name": "a",
+   "id": "a"
+  },
+  {
+   "name": "42",
+   "id": "42"
+  },
+  {
+   "name": "  spaced   out  ",
+   "id": "spaced-out"
+  },
+  {
+   "name": "Tab\tand\nnewline",
+   "id": "tab-and-newline"
+  },
+  {
+   "name": "Mixed_-_Separators",
+   "id": "mixed_-_separators"
+  },
+  {
+   "name": "___leading underscores",
+   "id": "leading-underscores"
+  },
+  {
+   "name": "trailing dashes---",
+   "id": "trailing-dashes"
+  },
+  {
+   "name": "--Ünïcödé Bot--",
+   "id": "n-c-d-bot"
+  },
+  {
+   "name": "  --Ünïcödé Bot--  ",
+   "id": "n-c-d-bot"
+  },
+  {
+   "name": "Café Crème",
+   "id": "caf-cr-me"
+  },
+  {
+   "name": "Zoë",
+   "id": "zo"
+  },
+  {
+   "name": "Ångström",
+   "id": "ngstr-m"
+  },
+  {
+   "name": "İstanbul",
+   "id": "i-stanbul"
+  },
+  {
+   "name": "Straße",
+   "id": "stra-e"
+  },
+  {
+   "name": "K Kelvin",
+   "id": "k-kelvin"
+  },
+  {
+   "name": "Ｆｕｌｌｗｉｄｔｈ",
+   "id": "my-work",
+   "fellBack": true
+  },
+  {
+   "name": "🦅 Eagle",
+   "id": "eagle"
+  },
+  {
+   "name": "Bot 🤖",
+   "id": "bot"
+  },
+  {
+   "name": "🤖",
+   "id": "my-work",
+   "fellBack": true
+  },
+  {
+   "name": "日本語",
+   "id": "my-work",
+   "fellBack": true
+  },
+  {
+   "name": "日本語 bot",
+   "id": "bot"
+  },
+  {
+   "name": "中文助手",
+   "id": "my-work",
+   "fellBack": true
+  },
+  {
+   "name": "한국어",
+   "id": "my-work",
+   "fellBack": true
+  },
+  {
+   "name": "Привет",
+   "id": "my-work",
+   "fellBack": true
+  },
+  {
+   "name": "   ",
+   "id": "my-work",
+   "fellBack": true
+  },
+  {
+   "name": "",
+   "id": "my-work",
+   "fellBack": true
+  },
+  {
+   "name": "---",
+   "id": "my-work",
+   "fellBack": true
+  },
+  {
+   "name": "_",
+   "id": "my-work",
+   "fellBack": true
+  },
+  {
+   "name": "!!!",
+   "id": "my-work",
+   "fellBack": true
+  },
+  {
+   "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  {
+   "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  {
+   "name": "word word word word word word word word word word word word word word word word word word word word ",
+   "id": "word-word-word-word-word-word-word-word-word-word-word-word-word"
+  },
+  {
+   "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx tail",
+   "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-"
+  },
+  {
+   "name": "Long name name name name name name name name name name name name name name name name name name name name name name name name name name name name name name end",
+   "id": "long-name-name-name-name-name-name-name-name-name-name-name-name"
+  },
+  {
+   "name": "hermes",
+   "id": "hermes"
+  },
+  {
+   "name": "Hermes",
+   "id": "hermes"
+  },
+  {
+   "name": "default",
+   "id": "default"
+  },
+  {
+   "name": "Default",
+   "id": "default"
+  },
+  {
+   "name": "test",
+   "id": "test"
+  },
+  {
+   "name": "TMP",
+   "id": "tmp"
+  },
+  {
+   "name": "root",
+   "id": "root"
+  },
+  {
+   "name": "sudo ",
+   "id": "sudo"
+  },
+  {
+   "name": "Root!",
+   "id": "root"
+  }
+ ]
+}

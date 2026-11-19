@@ -3,11 +3,14 @@
     python3 tools/bot-setup-brief/run.py <out dir> [--model gpt-6.1-sol] [--effort high] [--jobs 4] [--controls-only]
 
 The briefs come from src/hermes/botSetupBrief.ts through write-briefs.mjs, so this tests the text the app sends. First
-it checks that every reply in controls/ fails the validator; a validator that passes them proves nothing, and the run
-stops there. Then, for the brief with MCP servers (new-mcp) and without (new), it runs 8 single turns (first message,
-question 3, card, redraw after a change; two of each) and one whole interview where each bot turn is the model's own
-reply to the conversation so far. Last, Hermes's first-contact note is appended to the brief, as Hermes does on a
-profile's first turn, for the first message and for Set up again (again1, again-card). The model runs through
+it checks the validator: the good-*.txt replies in controls/ must pass, and every other reply there must fail, as must
+each mutant, a good reply with one thing changed (a wrong type, a reversed rule, a kept field overwritten). A validator
+that gets one of them wrong proves nothing, and the run stops there. Then, for the brief with MCP servers (new-mcp) and
+without (new), it runs 8 single turns (first message, question 3, card, redraw after a change; two of each) and one
+whole interview where each bot turn is the model's own reply to the conversation so far. Then Hermes's first-contact
+note is appended to the brief, as Hermes does on a profile's first turn, for the first message and for Set up again
+(again1, again-card). Last, Set up again on a bot whose persona is too long for the brief and whose colour isn't listed
+(keep: again1, again-keep), where the block must keep both. The model runs through
 `codex exec`, read-only and in an empty folder; stdin is closed, or codex waits on it. Replies, prompts and logs land
 in <out dir>, and the last lines print the score per group.
 """
@@ -21,6 +24,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.dont_write_bytecode = True
 from validate import check
 
 ANSWERS = ["Liam", "Plan trips: trains and flights in Europe, hotels, day plans and packing lists.",
@@ -45,8 +49,59 @@ AGAIN_FIRST = ("I'm set up as a European trip planner for trains, flights, hotel
                "and the find-nearby and deep-research skills. I never book or pay, and I check with you before emailing anyone. "
                "What would you like to change?")
 AGAIN_ANSWER = "Make it blue and turn on the weather skill."
+KEPT_FIRST = ("I'm set up to plan European trips, stays, day plans and packing lists, in my own custom colour, with web search and the "
+              "find-nearby and deep-research skills. What would you like to change?")
+KEPT_ANSWER = "Turn on the weather skill."
 CONTROLS = [("two-questions.txt", "q1", "new-mcp"), ("bad-card.txt", "card", "new-mcp"), ("help-intro.txt", "q1", "new"),
             ("again-interview.txt", "again1", "again"), ("mcp-without-catalog.txt", "card", "new")]
+GOOD = {"good-card.txt": ("card", "new-mcp"), "good-again-keep.txt": ("again-keep", "again-kept")}
+
+
+def persona(text):
+    return lambda b: b.update(persona=text)
+
+
+EMAIL = " Always check with the owner before emailing anyone."
+# (name, good reply it changes, the change, whether the validator must pass it)
+MUTANTS = [
+    ("array fields as objects", "good-card.txt", lambda b: b.update(skills={}, toolsets={}, mcp={}, copy={}), False),
+    ("mcp item with a command and a key", "good-card.txt",
+     lambda b: b.update(mcp=[{"catalog": "airbnb", "command": "rm -rf .", "env": {"TOKEN": "my_private_token"}}]), False),
+    ("copy item missing a list", "good-card.txt", lambda b: b["copy"][0].pop("toolsets"), False),
+    ("v true", "good-card.txt", lambda b: b.update(v=True), False),
+    ("callOwner a number", "good-card.txt", lambda b: b.update(callOwner=1), False),
+    ("booking allowed", "good-card.txt", persona("You are Travel Buddy. You may book trains and hotels. Never pay for anything." + EMAIL), False),
+    ("paying allowed", "good-card.txt", persona("You are Travel Buddy. Never book train tickets. Pay without permission." + EMAIL), False),
+    ("booking allowed with an ask", "good-card.txt", persona("You are Travel Buddy. Never pay for anything. Never book without asking." + EMAIL), False),
+    ("email check reversed", "good-card.txt", persona("You are Travel Buddy. Never book or pay for anything. Never ask before emailing anyone."), False),
+    ("email check waived", "good-card.txt", persona("You are Travel Buddy. Never book or pay for anything. You don't need to check before emailing anyone."), False),
+    ("all three reversed", "good-card.txt", persona("Never book train tickets. Pay without permission. Never ask before emailing anyone."), False),
+    ("rules said another way", "good-card.txt",
+     persona("You are Travel Buddy. Do not make bookings or payments of any kind. Never email anyone without checking with the owner first."), True),
+    ("persona written though the brief left it out", "good-again-keep.txt", persona("You are Travel Buddy. Never book or pay for anything." + EMAIL), False),
+    ("colour changed though the owner didn't ask", "good-again-keep.txt", lambda b: b.update(color="teal"), False),
+    ("colour null on a new bot", "good-card.txt", lambda b: b.update(color=None), False),
+    ("persona null on a new bot", "good-card.txt", lambda b: b.update(persona=None), False),
+]
+
+
+def mutant(reply, change):
+    """The reply with its block replaced by the block after `change`."""
+    head, rest = reply.split("```highwing-bot-setup", 1)
+    body, tail = rest.split("```", 1)
+    block = json.loads(body)
+    change(block)
+    return f"{head}```highwing-bot-setup\n{json.dumps(block)}\n```{tail}"
+
+
+def control_results(briefs):
+    """Each control as (label, failures, whether it must pass)."""
+    rows = [(f"{f} ({kind}, {b})", check((HERE / "controls" / f).read_text(), kind, briefs[b]), False) for f, kind, b in CONTROLS]
+    rows += [(f"{f} ({kind}, {b})", check((HERE / "controls" / f).read_text(), kind, briefs[b]), True) for f, (kind, b) in GOOD.items()]
+    for name, base, change, ok in MUTANTS:
+        kind, b = GOOD[base]
+        rows.append((f"{base} with {name}", check(mutant((HERE / "controls" / base).read_text(), change), kind, briefs[b]), ok))
+    return rows
 HEAD = ("You are the chat bot in the conversation below, inside a chat app. Output only the bot's next message, exactly as it would appear in the chat, "
         "and nothing else. Don't run commands or read files.\n\nCONVERSATION\n[user message, hidden by the app]\n")
 
@@ -98,14 +153,15 @@ def main():
     args.empty = out / "empty"
     args.empty.mkdir(parents=True, exist_ok=True)
     subprocess.run(["node", str(HERE / "write-briefs.mjs"), str(out / "briefs")], check=True)
-    briefs = {b: (out / "briefs" / f"{b}.txt").read_text() for b in ("new-mcp", "new", "again")}
+    briefs = {b: (out / "briefs" / f"{b}.txt").read_text() for b in ("new-mcp", "new", "again", "again-kept")}
     note = (HERE / "first-contact-note.txt").read_text()
 
-    passed_controls = [f for f, kind, b in CONTROLS if not check((HERE / "controls" / f).read_text(), kind, briefs[b])]
-    for f, kind, b in CONTROLS:
-        print(f"control {f} ({kind}, {b}): FAIL {'; '.join(check((HERE / 'controls' / f).read_text(), kind, briefs[b])) or '(passed)'}")
-    if passed_controls:
-        sys.exit(f"validator passed controls {passed_controls}; fix it before trusting a run")
+    wrong = []
+    for label, fails, ok in control_results(briefs):
+        print(f"control {label}: {'PASS' if not fails else 'FAIL ' + '; '.join(fails)}{'' if (not fails) == ok else '  <- WRONG'}")
+        if (not fails) != ok: wrong.append(label)
+    if wrong:
+        sys.exit(f"validator got controls wrong: {wrong}; fix it before trusting a run")
     if args.controls_only:
         return
 
@@ -122,6 +178,8 @@ def main():
         jobs.append(("note", f"note-q1-{i}", "new", "q1", convo(briefs["new"] + note, [])))
         jobs.append(("note", f"note-again1-{i}", "again", "again1", convo(briefs["again"] + note, [])))
         jobs.append(("note", f"note-again-card-{i}", "again", "again-card", convo(briefs["again"] + note, [(AGAIN_FIRST, AGAIN_ANSWER)])))
+        jobs.append(("keep", f"keep-again1-{i}", "again-kept", "again1", convo(briefs["again-kept"], [])))
+        jobs.append(("keep", f"keep-card-{i}", "again-kept", "again-keep", convo(briefs["again-kept"], [(KEPT_FIRST, KEPT_ANSWER)])))
 
     with ThreadPoolExecutor(args.jobs) as pool:
         futures = [pool.submit(chain, f"{b}", b, briefs, out, args) for b in ("new-mcp", "new")]
@@ -134,7 +192,7 @@ def main():
             line = f"{group}\t{name}\t{kind}\t{'PASS' if not fails else 'FAIL ' + '; '.join(fails)}"
             f.write(line + "\n")
             print(line)
-    for group in ("new-mcp", "new", "note"):
+    for group in ("new-mcp", "new", "note", "keep"):
         rs = [r for r in results if r[0] == group]
         print(f"{group}: {sum(not r[3] for r in rs)}/{len(rs)}")
     sys.exit(0 if all(not r[3] for r in results) else 1)

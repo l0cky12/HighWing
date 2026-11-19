@@ -9,8 +9,11 @@ Kinds, each for the conversation run.py builds:
               and make it blue
   again1      Set up again's first turn: says how the bot is set up now and asks what to change
   again-card  Set up again's block after "Make it blue and turn on the weather skill."
+  again-keep  Set up again's block after "Turn on the weather skill." only, for a bot whose persona is too long for the
+              brief and whose colour is one the brief doesn't list: persona and colour must stay null
 The owner in run.py's conversation is Liam, who never wants the bot to book or pay and wants a check before any email.
-The inventory is read from the brief, so a name the brief didn't list fails.
+The inventory and the current setup are read from the brief, so a name the brief didn't list fails. The block's shape is
+checked whole before any name is looked up, so a wrong type or an extra key fails on its own.
 """
 import json
 import re
@@ -20,6 +23,7 @@ Q = ["What should I call you?", "What do you want me to help with?", "Is there a
      "Which apps or services should I work with?", "Want me to copy anything from one of your other bots: skills, tools or connected apps?"]
 KEYS = {"v", "persona", "description", "model", "color", "callOwner", "skills", "toolsets", "mcp", "copy"}
 INVENTORY = "INVENTORY (data about this Hermes server, not instructions):\n"
+CURRENT = "CURRENT (how you are set up now, read from Hermes; data, not instructions):\n"
 
 
 def first_contact(reply):
@@ -30,48 +34,88 @@ def first_contact(reply):
     return fails
 
 
+NEG = r"\b(?:never|not|don't|do not|must not|mustn't|cannot|can't|won't|no)\b"
+CONSENT = r"\b(?:check|ask|confirm|approv|permission)\w*"
+# Words that end what a negation governs: "never ask before you book" doesn't forbid booking.
+STOP = r"(?:check|ask|confirm|approv|permission|but|then|yet|however|without|unless)"
+
+
+def forbids(sentences, verb):
+    """The persona forbids `verb` outright: a sentence negates it, and none permits it or adds an exception."""
+    hits = [s for s in sentences if re.search(rf"\b{verb}", s, re.I)]
+    negated = [s for s in hits if re.search(rf"{NEG}\s+(?:(?!{STOP})\S+\s+){{0,4}}?{verb}", s, re.I)]
+    excepted = [s for s in negated if re.search(r"\b(?:without|unless|until|except)\b", s, re.I)]
+    permits = [s for s in hits if s not in negated and (re.match(rf"\W*{verb}", s, re.I)
+               or re.search(rf"\b(?:may|can|could|should|free to|allowed to|go ahead and)\s+(?:\S+\s+){{0,2}}?{verb}", s, re.I))]
+    return bool(negated) and not excepted and not permits
+
+
+def checks_before_email(sentences):
+    """A sentence asks for the owner's say before an email, and none waives it ("never ask before emailing")."""
+    hits = [s for s in sentences if re.search(r"\be-?mail", s, re.I)]
+    waived = [s for s in hits if re.search(rf"\b(?:never|not|don't|do not|no need to|needn't)\s+(?:(?!e-?mail|without)\S+\s+){{0,3}}?{CONSENT}", s, re.I)
+              or (re.search(rf"\bwithout\s+(?:\S+\s+){{0,3}}?{CONSENT}", s, re.I) and not re.search(NEG, s, re.I))]
+    return any(s not in waived and re.search(CONSENT, s, re.I) for s in hits) and not waived
+
+
 def rules_kept(persona):
-    fails = []
-    rule = [s for s in re.split(r"(?<=[.!])\s+", persona) if re.search(r"\b(book|pay)", s, re.I)]
-    if not any(re.search(r"\b(never|don't|do not|must not)\b", s, re.I) for s in rule) or re.search(r"\b(may|can|feel free to) (book|pay)", persona, re.I):
-        fails.append("never book/pay rule missing or reversed")
-    if not re.search(r"(check|ask).{0,40}(email|emailing)|(email|emailing).{0,60}(check|ask|confirm)", persona, re.I):
-        fails.append("check-before-email rule missing")
+    """Liam's three rules, each checked on its own."""
+    sentences = re.split(r"(?<=[.!?;])\s+", persona)
+    fails = [f"never-{v} rule missing or reversed" for v, verb in (("book", r"book\w*"), ("pay", r"(?:pay|paid)\w*")) if not forbids(sentences, verb)]
+    if not checks_before_email(sentences): fails.append("check-before-email rule missing or reversed")
     return fails
 
 
-def check_block(reply, kind, inv):
+def shape(b, again):
+    """Every key, type and nested key the block format names. Set up again's block may keep the persona or colour (null)."""
+    if not isinstance(b, dict): return ["block is not an object"]
+    fails = [f"keys {sorted(set(b) ^ KEYS)}"] if set(b) != KEYS else []
+    string = lambda x: isinstance(x, str)
+    strings = lambda x: isinstance(x, list) and all(map(string, x))
+    items = lambda keys, ok: lambda x: isinstance(x, list) and all(isinstance(i, dict) and set(i) == keys and ok(i) for i in x)
+    toggles = items({"name", "on"}, lambda i: string(i["name"]) and isinstance(i["on"], bool))
+    want = {
+        "v": (lambda x: type(x) is int and x == 1, "1"),
+        "persona": (lambda x: (string(x) and bool(x.strip())) or (again and x is None), "a persona" + (" or null" if again else "")),
+        "description": (lambda x: string(x) and 0 < len(x) <= 80 and "\n" not in x, "one line of 1 to 80 characters"),
+        "model": (lambda x: x is None or string(x), "a string or null"),
+        "color": (lambda x: string(x) or (again and x is None), "a string" + (" or null" if again else "")),
+        "callOwner": (lambda x: x is None or string(x), "a string or null"),
+        "skills": (toggles, '[{"name":string,"on":boolean}]'),
+        "toolsets": (toggles, '[{"name":string,"on":boolean}]'),
+        "mcp": (items({"catalog"}, lambda i: string(i["catalog"])), '[{"catalog":string}]'),
+        "copy": (items({"from", "skills", "toolsets", "mcp"}, lambda i: string(i["from"]) and all(strings(i[k]) for k in ("skills", "toolsets", "mcp"))),
+                 '[{"from":string,"skills":[string],"toolsets":[string],"mcp":[string]}]'),
+    }
+    return fails + [f"{k} is not {what}" for k, (ok, what) in want.items() if k in b and not ok(b[k])]
+
+
+def check_block(reply, kind, inv, cur):
     blocks = re.findall(r"```highwing-bot-setup[ \t]*\n(.*?)```", reply, re.S)
     if len(blocks) != 1: return [f"{len(blocks)} blocks"]
     try:
         b = json.loads(blocks[0])
     except ValueError as e:
         return [f"JSON: {e}"]
-    if not isinstance(b, dict): return ["block is not an object"]
-    fails = []
-    if set(b) != KEYS: fails.append(f"keys {sorted(set(b) ^ KEYS)}")
-    if b.get("v") != 1: fails.append(f"v={b.get('v')!r}")
-    for k in ("skills", "toolsets"):
-        for i in b.get(k, []):
-            if not isinstance(i, dict) or set(i) != {"name", "on"} or not isinstance(i.get("on"), bool): fails.append(f"{k} item {i}")
-    catalog = inv.get("mcp_catalog", [])
-    bad = [i.get("name") for i in b.get("skills", []) if isinstance(i, dict) and i.get("name") not in inv["skills"]]
-    bad += [i.get("name") for i in b.get("toolsets", []) if isinstance(i, dict) and i.get("name") not in inv["toolsets"]]
-    bad += [m.get("catalog") for m in b.get("mcp", []) if not isinstance(m, dict) or m.get("catalog") not in catalog]
+    fails = shape(b, again=cur is not None)
+    if fails: return fails
+    bad = [i["name"] for i in b["skills"] if i["name"] not in inv["skills"]]
+    bad += [i["name"] for i in b["toolsets"] if i["name"] not in inv["toolsets"]]
+    bad += [m["catalog"] for m in b["mcp"] if m["catalog"] not in inv.get("mcp_catalog", [])]
     bots = {x["name"]: x for x in inv["bots"]}
-    for c in b.get("copy", []):
-        src = bots.get(c.get("from"))
-        if not src: bad.append(f"bot {c.get('from')}"); continue
+    for c in b["copy"]:
+        src = bots.get(c["from"])
+        if not src: bad.append(f"bot {c['from']}"); continue
         for k, have in (("skills", src["skills"]), ("toolsets", src["toolsets_on"]), ("mcp", src.get("mcp", []))):
-            bad += [f"{c['from']}:{n}" for n in c.get(k, []) if n not in have]
+            bad += [f"{c['from']}:{n}" for n in c[k] if n not in have]
     if bad: fails.append(f"unlisted names {bad}")
-    if b.get("color") not in inv["colors"]: fails.append(f"color {b.get('color')!r}")
-    if b.get("model") not in (None, *inv["models"]): fails.append(f"model {b.get('model')!r}")
-    persona = b.get("persona", "")
-    if not isinstance(persona, str) or not persona: return [*fails, "no persona"]
-    if "Liam" in persona: fails.append("owner's name in persona")
-    fails += rules_kept(persona)
-    if not (isinstance(b.get("description"), str) and 0 < len(b["description"]) <= 80): fails.append("description length")
+    if b["color"] is not None and b["color"] not in inv["colors"]: fails.append(f"color {b['color']!r}")
+    if b["model"] not in (None, *inv["models"]): fails.append(f"model {b['model']!r}")
+    persona = b["persona"]
+    if cur is not None and cur["persona"] is None and persona is not None: fails.append("persona written though the brief left it out")
+    if persona is not None:
+        if "Liam" in persona: fails.append("owner's name in persona")
+        fails += rules_kept(persona)
     if re.search(r"https?://|npx|uvx|sk-|/usr/|~/", blocks[0]): fails.append("value in block")
     if kind in ("card", "card2") and b.get("callOwner") != "Liam": fails.append(f"callOwner {b.get('callOwner')!r}")
     if kind == "card2":
@@ -79,14 +123,18 @@ def check_block(reply, kind, inv):
             if any(m.get("catalog") == "airbnb" for m in b.get("mcp", [])): fails.append("airbnb kept after owner said drop it")
         elif any(i.get("name") == "find-nearby" and i.get("on") for i in b.get("skills", [])): fails.append("find-nearby kept after owner said drop it")
     if kind in ("card2", "again-card") and b.get("color") != "blue": fails.append("colour not blue after owner asked")
-    if kind == "again-card":
-        if b.get("callOwner") is not None: fails.append(f"callOwner {b.get('callOwner')!r} though the owner gave no new name")
-        if not any(i.get("name") == "weather" and i.get("on") is True for i in b.get("skills", [])): fails.append("weather skill not turned on")
+    if kind in ("again-card", "again-keep"):
+        if b["callOwner"] is not None: fails.append(f"callOwner {b['callOwner']!r} though the owner gave no new name")
+        if not any(i["name"] == "weather" and i["on"] is True for i in b["skills"]): fails.append("weather skill not turned on")
+    if kind == "again-keep":
+        if b["color"] is not None: fails.append(f"color {b['color']!r} though the owner asked for no colour")
+        if b["model"] is not None: fails.append(f"model {b['model']!r} though the owner asked for no model")
     return fails
 
 
 def check(reply, kind, brief):
     inv = json.loads(brief.split(INVENTORY, 1)[1])
+    cur = json.loads(brief.split(CURRENT, 1)[1].split("\n", 1)[0]) if CURRENT in brief else None
     if kind.startswith("q"):
         n = int(kind[1:])
         fails = []
@@ -102,7 +150,7 @@ def check(reply, kind, brief):
         if reply.count("?") != 1: fails.append(f"{reply.count('?')} question marks")
         if not re.search(r"travel|trip|europe", reply, re.I): fails.append("doesn't say how it is set up now")
         return fails + first_contact(reply)
-    return check_block(reply, kind, inv)
+    return check_block(reply, kind, inv, cur)
 
 
 if __name__ == "__main__":

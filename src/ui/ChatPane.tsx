@@ -1111,14 +1111,14 @@ export function ChatPane({
           {branchedFrom}
           {chat.savedAt !== undefined && (
             <div className="saved-note" role="note">
-              {status === "connected" ? <HardDrive size={13} /> : <CloudOff size={13} />}
+              {status === "offline" ? <CloudOff size={13} /> : <HardDrive size={13} />}
               <span>
                 <b>Saved copy</b> from {savedWhen(chat.savedAt)}.{" "}
                 {status === "connected"
                   ? chat.loading
                     ? "Loading the latest from Hermes…"
                     : "It may be out of date."
-                  : status === "connecting"
+                  : status !== "offline"
                     ? "Connecting to Hermes, so newer messages may be missing until it loads."
                     : "You're offline, so newer messages may be missing."}
               </span>

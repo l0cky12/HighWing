@@ -1086,9 +1086,11 @@ type BotVisit = { home: string; before: string | null };
 
 /**
  * What opens once the profile switched to has listed its chats, unless the owner goes elsewhere first (`nav`): a bot's
- * Bot Chat (ADR 0066), the New chat pane, or the chat a bot visit left (ADR 0203).
+ * Bot Chat (ADR 0066), the New chat pane, or the chat a bot visit left (ADR 0203). A Bot Chat's lookup waits only for
+ * the connection; `shown` is the chat the roster named, put in the pane as soon as the profile is the bot's, or null
+ * when the roster named none (ADR 0232).
  */
-type Arrival = { profile: string; nav: number } & ({ open: "bot"; bot: Bot; opening?: boolean } | { open: "new" } | { open: "chat"; chatId: string });
+type Arrival = { profile: string; nav: number } & ({ open: "bot"; bot: Bot; opening?: boolean; shown?: string | null } | { open: "new" } | { open: "chat"; chatId: string });
 
 /**
  * Starts a pane's chat if it hasn't started, and sends to it. `mirrored`: the message was typed in the other compared
@@ -2342,7 +2344,17 @@ export function Main({
     const go = arrival;
     if (!go) return;
     if (navGen.current !== go.nav) return setArrival(undefined);
-    if ((go.open === "bot" && go.opening) || go.profile !== profile || switching || !hermes.hasListed()) return;
+    if ((go.open === "bot" && go.opening) || go.profile !== profile) return;
+    if (go.open === "bot" && go.shown === undefined) {
+      // The click already passed `guard`, and a second ask would end this open.
+      const shown = hermes.showBotChat(go.bot) ?? null;
+      if (shown) {
+        openChat(shown, { remember: false, keepSettings: true });
+        setSettingsOpen(false);
+      }
+      return setArrival({ ...go, shown, nav: navGen.current });
+    }
+    if (go.open === "bot" ? !hermes.connectedTo(go.profile) : switching || !hermes.hasListed()) return;
     if (go.open !== "bot") {
       setArrival(undefined);
       if (go.open === "new") newChat();
@@ -2355,11 +2367,15 @@ export function Main({
     const still = () => navGen.current === go.nav && hermes.profile === go.profile;
     hermes
       .openBotChat(go.bot)
-      .then((id) => still() && openChat(id, { remember: false }))
+      .then((id) => {
+        if (!still() || id === go.shown) return;
+        openChat(id, { remember: false });
+        if (go.shown) hermes.dropShownBotChat(go.shown);
+      })
       .catch((e: unknown) => still() && setToast({ text: (e as Error).message, at: Date.now() }))
       .finally(() => setArrival((g) => (g === opening ? undefined : g)));
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- run when the pick, profile or list changes; `newChat` and `openChat` are new functions each render and would run it on every render
-  }, [arrival, profile, switching, chats]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- run when the pick, profile, list or connection changes; `newChat` and `openChat` are new functions each render and would run it on every render
+  }, [arrival, profile, switching, chats, status]);
 
   // A bot visit (ADR 0203). A bot row in Bots mode whose profile isn't shown starts one, or carries one on, and the
   // owner's own bot ends it there. Chats and New chat go back to `home`; an ordinary chat of the bot's profile on screen

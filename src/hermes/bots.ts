@@ -1,3 +1,4 @@
+import { typedPreview } from "./branch";
 import { errorText, isObj } from "./values";
 import type { PlainMethod, SessionProtocol } from "./sessionProtocol";
 import type { Same } from "./fieldMerge";
@@ -111,7 +112,7 @@ function botChatOf(v: unknown): BotChatRow | null {
   return {
     id,
     resolvedId: trimmedOrEmpty(v.resolved_id) || id,
-    preview: trimmedOrEmpty(v.preview).replace(/\s+/g, " "),
+    preview: typedPreview(trimmedOrEmpty(v.preview).replace(/\s+/g, " ")),
     lastActive: num(v.last_active || v.started_at) * 1000,
     messageCount: num(typeof v.live_message_count === "number" ? v.live_message_count : v.message_count),
   };

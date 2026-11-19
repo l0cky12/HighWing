@@ -380,3 +380,23 @@ describe("Bot messaging, read from the roster (ADR 0207)", () => {
     });
   });
 });
+
+describe("a preview without the context Highwing and Hermes attach", () => {
+  const preview = (text: string) => rosterOf({ profiles: [{ name: "scribe", description: "", display_name: "", canonical_session: { id: "root", preview: text }, ui_meta_revisions: {} }], bot_mode_protocol: true })[0].botChat!.preview;
+
+  it("shows the words typed, without an attached context block", () => {
+    expect(preview("hi\n\n--- Attached Context ---\n\n[The owner's rule for messaging other bots]")).toBe("hi");
+    expect(preview("hi --- Context Warnings --- @file:x not found")).toBe("hi");
+  });
+
+  it("drops the start of a marker the 80-character cut ended in", () => {
+    expect(preview("Watch the release disk tonight and tell me when it passes ninety --- Attac...")).toBe("Watch the release disk tonight and tell me when it passes ninety");
+    expect(preview("Watch the release disk tonight and tell me when it passes ninety ---...")).toBe("Watch the release disk tonight and tell me when it passes ninety");
+  });
+
+  it("keeps a preview with no marker, including typed dashes", () => {
+    expect(preview("Draft the notes")).toBe("Draft the notes");
+    expect(preview("a --- b")).toBe("a --- b");
+    expect(preview("Draft the release notes for the next version and send them to every one of...")).toBe("Draft the release notes for the next version and send them to every one of...");
+  });
+});

@@ -21,6 +21,7 @@ APP=$TARGET/debug/hermes-chat
 CARGO=$(command -v cargo || echo "$HOME/.cargo/bin/cargo")
 DEB_PKGS="xvfb xdotool libxdo3 x11-apps x11-xkb-utils xkb-data xserver-common libunwind8 libxfont2 libfontenc1
   openbox libobrender32v5 libobt2v5 libimlib2t64 libstartup-notification0 libxcb-util1 webkitgtk-webdriver"
+PORT_HOLDER_PID=""
 
 die() { echo "hv: $*" >&2; exit 1; }
 # A tool from PATH, else from the private root.
@@ -36,11 +37,29 @@ load() {
   # shellcheck disable=SC1091
   . "$HV_RUN/state.env"
 }
-free_port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])'; }
 alive() { [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null; }
 # Process group $1 still has a member, even if its leader has exited (a driver whose WebKitWebDriver outlived it).
 # The kernel doesn't hand out a PID still in use as a group ID, so its members are still the ones we started.
 group_alive() { [ -n "${1:-}" ] && pgrep -g "$1" >/dev/null 2>&1; }
+# The listeners a connection to 127.0.0.1:$1 reaches: on that address or a wildcard that takes IPv4. One on ::1, an
+# IPv6-only wildcard or another address can share the port number without ever answering this run's clients.
+listeners() { ss -ltnpeH "sport = :$1" 2>/dev/null | awk '$4 ~ /^(127\.0\.0\.1|0\.0\.0\.0|\*|\[::\]):[0-9]+$/ && !/ v6only:1 /'; }
+port_held_by_group() {
+  local line p found=""
+  while read -r line; do
+    [[ $line == *pid=* ]] || return 1
+    for p in $(grep -o 'pid=[0-9]*' <<<"$line"); do
+      [ "$(ps -o pgid= -p "${p#pid=}" 2>/dev/null | tr -d ' ')" = "$2" ] || return 1
+    done
+    found=1
+  done < <(listeners "$1")
+  [ -n "$found" ]
+}
+listened() { [ -n "$(listeners "$1")" ]; }
+port_who() {
+  local who; who=$(listeners "$1" | awk '{print match($0, /users:.*/) ? substr($0, RSTART) : "a process of another user"}' | tr '\n' ' ')
+  echo "${who:-nothing}"
+}
 # Waits up to $2 seconds for command $1 to succeed.
 wait_for() { local i; for ((i = 0; i < $2 * 5; i++)); do eval "$1" >/dev/null 2>&1 && return 0; sleep 0.2; done; return 1; }
 # Display $1 is served by the X server in process group $2: its socket exists and its lock file names a member of
@@ -89,6 +108,7 @@ STATE
 up_failed() {
   local code=$?
   trap - EXIT INT TERM
+  kill "$PORT_HOLDER_PID" 2>/dev/null || true
   echo "hv: up failed; stopping what this run started" >&2
   (HV_RUN=$1 cmd_down >&2) || true
   exit "$code"
@@ -97,7 +117,7 @@ up_failed() {
 cmd_bootstrap() {
   local missing=() t
   for t in Xvfb xwd xdotool openbox WebKitWebDriver; do [ -n "$(tool $t)" ] || missing+=("$t"); done
-  for t in node npm dbus-daemon bwrap python3; do command -v $t >/dev/null || die "$t is not installed; install it with the system package manager"; done
+  for t in node npm dbus-daemon bwrap python3 ss; do command -v $t >/dev/null || die "$t is not installed; install it with the system package manager"; done
   [ -x "$CARGO" ] || die "cargo not found (not on PATH, not at ~/.cargo/bin/cargo)"
   if [ ${#missing[@]} -gt 0 ]; then
     if command -v apt-get >/dev/null; then
@@ -157,14 +177,37 @@ cmd_up() {
   local run=$HV_HOME/runs/$name ev=$HV_HOME/evidence/$name
   mkdir -p "$run"/{home,data,config,cache} "$ev"
   install -d -m 700 "$run/runtime"
-  local display="" url="" bridge_port driver_port native_port dbus_addr="" xvfb_pid="" wm_pid="" dbus_pid="" bridge_pid="" driver_pid=""
-  bridge_port=$(free_port); driver_port=$(free_port); native_port=$(free_port)
+  local display="" url="" bridge_port="" driver_port="" native_port="" dbus_addr="" xvfb_pid="" wm_pid="" dbus_pid="" bridge_pid="" driver_pid=""
   save_state
   # From here on, any failure (or Ctrl-C) stops what this run started, through the same path as `hv down`.
   # shellcheck disable=SC2064
   trap "up_failed '$run'" EXIT
   trap 'exit 130' INT TERM
   xenv
+
+  # bind(0) never hands out a bound port, and a program that sets SO_REUSEADDR (tauri-driver, WebKitWebDriver, node)
+  # can still bind and listen on it (#88).
+  local want_ports; read -ra want_ports <<<"${HV_TEST_PORTS:-0 0 0}"
+  local holder_out
+  exec {holder_out}< <(exec python3 -c 'import os, signal, socket, sys, time
+signal.signal(signal.SIGINT, signal.SIG_IGN)
+socks = []
+for p in sys.argv[2:]:
+    s = socket.socket()
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        s.bind(("127.0.0.1", int(p)))
+    except OSError as e:
+        sys.exit(f"port {p} is in use by another process ({e.strerror})")
+    socks.append(s)
+print(*(s.getsockname()[1] for s in socks), flush=True)
+while os.getppid() == int(sys.argv[1]):
+    time.sleep(0.1)' "$$" "${want_ports[@]}" 2>"$run/ports.err")
+  PORT_HOLDER_PID=$!
+  read -r -t 10 -u "$holder_out" driver_port native_port bridge_port ||
+    die "couldn't hold this run's ports: $(tail -1 "$run/ports.err" | grep . || echo "the holder printed none in 10 s")"
+  exec {holder_out}<&-
+  save_state
 
   # X server. Another run can take a free-looking display between our check and Xvfb's lock, so the display is ours
   # only once our Xvfb holds its lock. Otherwise our Xvfb exits (or is killed here) and we try the next number.
@@ -221,6 +264,7 @@ XML
     bridge_pid=$!
     save_state
     wait_for "grep -q 'stand-in dashboard ready' '$ev/bridge.log'" 20 || die "stand-in didn't start; see $ev/bridge.log"
+    port_held_by_group "$bridge_port" "$bridge_pid" || die "port $bridge_port: want this run's stand-in, found $(port_who "$bridge_port")"
     url=http://127.0.0.1:$bridge_port
   else
     url=$dashboard
@@ -233,9 +277,14 @@ XML
     setsid "$driver" --port "$driver_port" --native-port "$native_port" --native-driver "$(tool WebKitWebDriver)" >"$ev/driver.log" 2>&1 &
   driver_pid=$!
   save_state
+  wait_for "{ listened $driver_port && listened $native_port; } || ! { alive $driver_pid || group_alive $driver_pid; }" 20 || true
+  for n in "$driver_port" "$native_port"; do
+    port_held_by_group "$n" "$driver_pid" || die "port $n: want this run's tauri-driver, found $(port_who "$n"); see $ev/driver.log"
+  done
   wait_for "curl -sf http://127.0.0.1:$driver_port/status" 20 || die "tauri-driver didn't answer; see $ev/driver.log"
 
   trap - EXIT INT TERM
+  kill "$PORT_HOLDER_PID" 2>/dev/null || true
   echo "hv: up. Run this in every later command (each shell starts fresh):"
   echo "export HV_RUN=$run"
   echo "dashboard: $url$([ -z "$dashboard" ] && echo "  (stand-in: username verify, password verify-pass)")"
@@ -253,16 +302,18 @@ cmd_doctor() {
   owns "$DBUS_PID" dbus-daemon && ok "private D-Bus (pid $DBUS_PID)" || no "private D-Bus not running"
   if [ "$STANDIN" = yes ]; then
     owns "$BRIDGE_PID" bridge.mjs && curl -sf "$DASHBOARD_URL/__state" >/dev/null && ok "stand-in dashboard $DASHBOARD_URL (pid $BRIDGE_PID)" || no "stand-in dashboard $DASHBOARD_URL not answering"
-    ss -ltnpH "sport = :$BRIDGE_PORT" 2>/dev/null | grep -q "pid=$BRIDGE_PID," && ok "port $BRIDGE_PORT is ours" || no "port $BRIDGE_PORT is not held by our stand-in"
+    port_held_by_group "$BRIDGE_PORT" "$BRIDGE_PID" && ok "port $BRIDGE_PORT is ours" || no "port $BRIDGE_PORT is not held by our stand-in"
   else
     curl -s -o /dev/null -w '%{http_code}' "$DASHBOARD_URL/api/status" | grep -q '^[23]' && ok "dashboard $DASHBOARD_URL answers /api/status" || no "dashboard $DASHBOARD_URL doesn't answer /api/status"
   fi
-  owns "$DRIVER_PID" tauri-driver && curl -sf "http://127.0.0.1:$DRIVER_PORT/status" >/dev/null && ok "tauri-driver :$DRIVER_PORT (pid $DRIVER_PID)" || no "tauri-driver :$DRIVER_PORT not answering"
+  owns "$DRIVER_PID" tauri-driver && port_held_by_group "$DRIVER_PORT" "$DRIVER_PID" && port_held_by_group "$NATIVE_PORT" "$DRIVER_PID" &&
+    curl -sf "http://127.0.0.1:$DRIVER_PORT/status" >/dev/null && ok "tauri-driver :$DRIVER_PORT (pid $DRIVER_PID)" ||
+    no "tauri-driver :$DRIVER_PORT not answering, or :$DRIVER_PORT/:$NATIVE_PORT not held by its group"
   [ "$BUILD_REV" = "$(source_rev)" ] && ok "build $BUILD_REV matches the source" || no "build $BUILD_REV != source $(source_rev): run \`hv down\`, \`hv build\`, \`hv up\`"
   if [ -s "$RUN/session" ]; then
     local sid; sid=$(cat "$RUN/session")
     curl -sf "http://127.0.0.1:$DRIVER_PORT/session/$sid/title" | grep -q '"value"' && ok "WebDriver session $sid answers (window title $(curl -s "http://127.0.0.1:$DRIVER_PORT/session/$sid/title" | python3 -c 'import json,sys; print(repr(json.load(sys.stdin)["value"]))'))" || no "WebDriver session $sid is dead: \`wd.mjs close\` then \`wd.mjs open\`"
-    local app_pid; app_pid=$(ps -eo pid=,args= | awk -v a="$APP" '$2 == a {print $1}' | while read -r p; do grep -qz "^DISPLAY=$DISPLAY_NUM$" "/proc/$p/environ" 2>/dev/null && echo "$p"; done | head -1)
+    local app_pid; app_pid=$(ps -eo pid=,args= | awk -v a="$APP" '$2 == a {print $1}' | while read -r p; do grep -qz "^DISPLAY=$DISPLAY_NUM$" "/proc/$p/environ" 2>/dev/null && echo "$p"; done | head -1) || true
     [ -n "$app_pid" ] && ok "app pid $app_pid on $DISPLAY_NUM" || no "no app process on $DISPLAY_NUM"
   else
     echo "--   no WebDriver session yet (\`wd.mjs open\` launches the app)"

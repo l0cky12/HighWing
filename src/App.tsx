@@ -30,6 +30,7 @@ import { needsAttention, type Updater } from "./hermes/updates";
 import { desktopNotify } from "./hermes/tauriNotify";
 import { AttachmentDesk, type AttachmentDeskApi } from "./hermes/attachmentDesk";
 import { ReferenceDesk } from "./hermes/chatReferences";
+import { mentionsIn } from "./hermes/mentionPicker";
 import { deadline } from "./hermes/remoteFiles";
 import { desktopSummon, type SummonApi, type Summoned } from "./hermes/summon";
 import { SelectionWatch, quoted, untilFocused } from "./hermes/selection";
@@ -4186,6 +4187,12 @@ function ChatView({
         referenceDesk.putBack(draftOf(null), references);
       }
       return false;
+    }
+    // SPIKE (issue 75 P5 prototype): a message that names a bot goes to that bot, and this chat's bot takes no turn.
+    const named = kind === "bot" ? mentionsIn(text, otherBots) : [];
+    if (named.length) {
+      for (const m of named) void hermes.askBot(to.id, { profile: m.bot.handle === "hermes" ? "default" : m.bot.handle, name: m.bot.name, handle: m.bot.handle }, text);
+      return true;
     }
     const { delivery, itemId } = await hermes.sendTracked(to.id, text, attachments, skill, references);
     // No item: the chat left the list before the message went in, so it is in no outbox. Its words go back to its Draft

@@ -360,7 +360,11 @@ export type Chat = {
    * branches or sends the chat sees them; the transcript shows each where it was asked (ADR 0070, ADR 0086).
    */
   sideQuestions?: SideQuestion[];
+  /** SPIKE (issue 75 P5 prototype): messages the owner sent from here to another bot. */
+  asks?: Ask[];
 };
+
+export type Ask = { id: string; after?: string; handle: string; name: string; text: string; reply: string; state: "sending" | "streaming" | "answered" | "failed"; error?: string };
 
 /** Whether the chat is in Archived: the owner archived it here (`settled`, ADR 0202), or Hermes has it archived. */
 export const inArchived = (c: Pick<Chat, "settled" | "archived">) => c.settled || !!c.archived;

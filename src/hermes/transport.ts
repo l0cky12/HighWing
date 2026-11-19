@@ -3649,6 +3649,27 @@ export class Hermes {
     return delivery;
   }
 
+  // SPIKE (issue 75 P5 prototype): the runtime sessions of other profiles' Bot Chats resumed on this socket for an ask.
+  private askRuntimes = new Map<string, { chatId: string; askId: string }>();
+
+  async askBot(chatId: string, bot: { profile: string; name: string; handle: string }, text: string): Promise<void> {
+    const chat = this.snapshot.chats.find((c) => c.id === chatId);
+    if (!chat) return;
+    const id = crypto.randomUUID();
+    const patch = (fn: (a: import("./model").Ask) => import("./model").Ask) =>
+      this.patchChat(chatId, (c) => ({ ...c, asks: c.asks?.map((a) => (a.id === id ? fn(a) : a)) }));
+    this.patchChat(chatId, (c) => ({ ...c, asks: [...(c.asks ?? []), { id, after: c.items.at(-1)?.id, handle: bot.handle, name: bot.name, text, reply: "", state: "sending" }] }));
+    try {
+      const { openId } = await this.botChats.open(bot.profile, bot.name, true).catch(() => this.botChats.open(bot.profile, bot.name, false));
+      const res = await this.protocol.resume(openId, bot.profile);
+      console.info(`[spike] resumed ${bot.profile}'s Bot Chat ${openId} as ${res.runtimeId} on the socket of profile ${this.profile}`);
+      this.askRuntimes.set(res.runtimeId, { chatId, askId: id });
+      await this.protocol.submit(res.runtimeId, { profile: bot.profile, text, attachments: [], hold: false, context: [] }, () => {});
+    } catch (e) {
+      patch((a) => ({ ...a, state: "failed", error: errorText(e) }));
+    }
+  }
+
   /** The owner lets go of a message Hermes didn't take, or may not have. One still sending stays. */
   dismiss(chatId: string, itemId: string) {
     this.setOutgoing(this.profile, chatId, itemId, (r) => (r.outgoing.state === "sending" ? r : null));
@@ -4763,6 +4784,26 @@ export class Hermes {
       const shown = session_id ? this.snapshot.chats.find((c) => c.runtimeId === session_id) : undefined;
       if (shown && typeof payload.kind === "string" && typeof payload.text === "string")
         this.recorder.hear(this.profile, shown.id, { kind: "status", at: Date.now(), status: payload.kind, text: payload.text });
+      return;
+    }
+    const ask = session_id ? this.askRuntimes.get(session_id) : undefined;
+    if (ask) {
+      const text = typeof payload.text === "string" ? payload.text : "";
+      if (type === "message.start" || type === "message.delta" || type === "message.complete" || type === "error")
+        this.patchChat(ask.chatId, (c) => ({
+          ...c,
+          asks: c.asks?.map((a) =>
+            a.id !== ask.askId
+              ? a
+              : type === "message.delta"
+                ? { ...a, state: "streaming" as const, reply: a.reply + text }
+                : type === "message.complete"
+                  ? { ...a, state: "answered" as const, reply: text || a.reply }
+                  : type === "error"
+                    ? { ...a, state: "failed" as const, error: String(payload.message ?? "error") }
+                    : { ...a, state: "streaming" as const },
+          ),
+        }));
       return;
     }
     const chat = session_id ? this.snapshot.chats.find((c) => c.runtimeId === session_id) : undefined;

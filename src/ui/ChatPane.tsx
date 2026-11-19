@@ -98,7 +98,7 @@ type Block = { kind: "tools"; id: string; tools: ToolItem[] } | SentBlock | CuRu
 const isItem = (b: Block): b is Exclude<Item, ToolItem> => b.kind !== "tools" && b.kind !== "sent" && b.kind !== "cu-run";
 /** A block with a Question still waiting in it: a Question's card, or a computer-use run with an Approval under a step. */
 const waitsIn = (b: Block) => (isItem(b) && isWaiting(b)) || (b.kind === "cu-run" && b.state === "asking");
-type SideBlock = { kind: "side"; id: string; question: SideQuestion };
+type SideBlock = { kind: "side"; id: string; question: SideQuestion; ask?: import("../hermes/model").Ask };
 /** Whether the item `id` shows in this block: as the block itself, in a group of tool calls, or in a computer-use run. */
 const holds = (b: Block | SideBlock, id: string | undefined) =>
   b.id === id || (b.kind === "tools" && b.tools.some((t) => t.id === id)) || (b.kind === "cu-run" && b.items.some((i) => i.id === id));
@@ -106,10 +106,11 @@ const holds = (b: Block | SideBlock, id: string | undefined) =>
 // Consecutive tool calls collapse into one group so a long run doesn't dominate the transcript, and a computer-use run
 // is one card (ADR 0216). Each side question goes after the item it was asked after (ADR 0086), so one asked during a
 // run of tool calls splits it; one asked during a computer-use run goes after its card.
-function toBlocks(items: Item[], side: SideQuestion[] = []): (Block | SideBlock)[] {
+function toBlocks(items: Item[], side: SideQuestion[] = [], asks: import("../hermes/model").Ask[] = []): (Block | SideBlock)[] {
   const out: (Block | SideBlock)[] = [];
   const sideAfter = (id?: string) => {
     for (const q of side) if (q.after === id) out.push({ kind: "side", id: q.id, question: q });
+    for (const a of asks) if (a.after === id) out.push({ kind: "side", id: a.id, question: { id: a.id, question: a.text, state: "asking" }, ask: a });
   };
   sideAfter(undefined);
   for (const it of foldRuns(items)) {
@@ -905,7 +906,7 @@ export function ChatPane({
   };
 
   // Rebuilt only when the chat changes, so a reply streaming in the other pane costs this one little.
-  const blocks = useMemo(() => toBlocks(chat.items, chat.sideQuestions), [chat.items, chat.sideQuestions]);
+  const blocks = useMemo(() => toBlocks(chat.items, chat.sideQuestions, chat.asks), [chat.items, chat.sideQuestions, chat.asks]);
   const chunks = useMemo(() => chunkBlocks(blocks), [blocks]);
   // The message or tool call being gone to is found in the chat, not the DOM: its chunk may be far from the view.
   const jumpChunk = useMemo(() => {
@@ -1541,7 +1542,14 @@ const TranscriptChunk = memo(
           const message = b.kind === "user" || b.kind === "assistant";
           return (
             <ErrorBoundary key={b.id} fallback={(error) => <UndrawnMessage id={b.id} error={error} />}>
-              {b.kind === "side" ? (
+              {b.kind === "side" && b.ask ? (
+                <div className="spike-asked" data-ask={b.ask.handle} data-state={b.ask.state} style={{ border: "1px solid var(--accent)", borderRadius: 8, padding: 12, margin: "8px 0" }}>
+                  <strong>Asked @{b.ask.handle}</strong> <em>({b.ask.state})</em>
+                  <p>{b.ask.text}</p>
+                  <strong>{b.ask.name}</strong>
+                  <p className="spike-asked-reply">{b.ask.reply || b.ask.error || "…"}</p>
+                </div>
+              ) : b.kind === "side" ? (
                 <SideQuestionPair question={b.question} onDismiss={onDismissSideQuestion} />
               ) : (
                 <BlockView

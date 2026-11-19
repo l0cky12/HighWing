@@ -505,6 +505,18 @@ describe("An ordinary chat in Compare, in the app", { timeout: 30_000 }, () => {
     expect(String(submits(server)[0].params.text)).not.toContain("[Referenced chat:");
   });
 
+  it("offers a Bot Chat's chip again in Compare once the owner names a bot afresh, as outside Compare", async () => {
+    const { hermes, user } = await inHermesBotChat();
+    await compare(user, hermes);
+    await user.click(composerIn(0));
+    await user.keyboard("@quill hi");
+    await waitFor(() => expect(chip("summary ready")).toBeTruthy());
+    await user.click(screen.getByRole("button", { name: "Remove the reference to Bot Chat with Hermes" }));
+    await user.clear(composerIn(0));
+    await user.keyboard("@quill again");
+    await waitFor(() => expect(chip("summary ready")).toBeTruthy());
+  });
+
   it("offers no Edit on a failed ask while comparing, since the composer's words would go to both chats", async () => {
     const { server, hermes, user } = await inOrdinaryChat((s) => void (s.rejectPrompt = { code: 4010, message: "quill's Bot Chat is closed" }));
     await user.click(box());

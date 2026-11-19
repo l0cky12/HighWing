@@ -2422,13 +2422,14 @@ function Composer({
   const self = ask?.self;
   const rule = ask?.rule ?? "none";
   const naming = !!self && !!bots && askTargets(text, bots, rule).length > 0;
-  const comparing = !!compare;
+  // Compare stops an ordinary chat from asking while its words still pick a bot: the owner's removal of this chip stands.
+  const paused = !!compare && rule === "none" && !!ask && mentionsFor(text, ask.bots, "picked").length > 0;
   useEffect(() => {
     if (!self || !references) return;
     if (naming) references.desk.offer(draftKey, self);
-    else if (comparing) references.desk.hold(draftKey);
+    else if (paused) references.desk.hold(draftKey);
     else references.desk.withdraw(draftKey);
-  }, [naming, comparing, self, references, draftKey]);
+  }, [naming, paused, self, references, draftKey]);
   const pills = useMemo<ComposerMark[]>(() => {
     const named = mentionsFor(text, bots ?? [], rule).filter((m) => m.start !== slash.typingAt && !marks.some((k) => m.start < k.end && m.end > k.start));
     return named.length ? [...marks, ...named.map((m) => ({ ...m, kind: "bot" as const }))].sort((a, b) => a.start - b.start) : marks;

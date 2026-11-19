@@ -337,8 +337,11 @@ export function DesktopOffNotice() {
     return () => void (live.current = false);
   }, []);
 
+  /** Bumped when the connection or profile changes: a Turn on begun before it must not land after it. */
+  const epoch = useRef(0);
   // A new connection or profile drops what the last one said, and any answer still on its way from it.
   useEffect(() => {
+    epoch.current++;
     seq.current++;
     setNotice({ kind: "hidden" });
   }, [api, profile]);
@@ -360,6 +363,7 @@ export function DesktopOffNotice() {
 
   const save = async (row: Toolset, accepted: readonly Caution[]) => {
     if (!api || !profile) return;
+    const at = epoch.current;
     seq.current++;
     setNotice({ kind: "busy", row, step: "saving" });
     let next: DesktopNotice;
@@ -369,22 +373,25 @@ export function DesktopOffNotice() {
       // The write reads the list first, so a throw here means nothing was sent.
       next = { kind: "off", row, why: { kind: "readFailed", reason: errorText(e) } };
     }
+    if (!live.current || at !== epoch.current) return;
     seq.current++;
-    if (live.current) setNotice(next);
+    setNotice(next);
   };
 
   const turnOn = async (row: Toolset) => {
     if (!api || !profile) return;
+    const at = epoch.current;
     seq.current++;
     setNotice({ kind: "busy", row, step: "checking" });
     let cautions: Caution[];
     try {
       cautions = await api.cautions(profile, row, true);
     } catch (e) {
+      if (!live.current || at !== epoch.current) return;
       seq.current++;
-      return live.current ? setNotice({ kind: "off", row, why: { kind: "readFailed", reason: errorText(e) } }) : undefined;
+      return setNotice({ kind: "off", row, why: { kind: "readFailed", reason: errorText(e) } });
     }
-    if (!live.current) return;
+    if (!live.current || at !== epoch.current) return;
     if (cautions.length) setNotice({ kind: "ask", row, cautions });
     else await save(row, []);
   };

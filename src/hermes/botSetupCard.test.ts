@@ -293,7 +293,7 @@ describe("the plan", () => {
   // Owner call 6: on a new bot the model row is greyed "Already in use" and not counted, unless the bot proposes another.
   it("shows the model already in use as a row that isn't counted, unless the block proposes another model", () => {
     const keep = planCard(card(), now());
-    expect(listedItem(keep, "model")).toEqual({ kind: "model", key: "model", name: "claude-sonnet-4.5", proposed: "claude-sonnet-4.5", before: "claude-sonnet-4.5", after: "claude-sonnet-4.5", status: "same" });
+    expect(listedItem(keep, "model")).toEqual({ kind: "model", key: "model", name: "claude-sonnet-4.5", proposed: "claude-sonnet-4.5", before: "claude-sonnet-4.5", after: "claude-sonnet-4.5", over: "claude-sonnet-4.5", status: "same" });
     expect(tickable(item(keep, "model"))).toBe(false);
     expect(tickedCount(keep)).toBe(10);
     const sameNamed = planCard(card(block({ model: "claude-sonnet-4.5" })), now());
@@ -334,6 +334,11 @@ describe("the plan", () => {
     // Set it up records only items Hermes lists.
     const record = acceptedRecord(plan);
     expect(record.items.map((i) => i.key)).toEqual(["persona", "description", "color", "remember"]);
+  });
+
+  it("lists a name the bot copies though the block also names it as its own and Hermes doesn't list it there", () => {
+    const plan = planCard(card(block({ skills: [{ name: "deep-research", on: true }] })), now());
+    expect(listedItem(plan, "skill:deep-research")).toMatchObject({ from: "Research Assistant", before: "absent", after: "on", status: "change", ticked: true });
   });
 
   it("offers no MCP server when MCP isn't offered", () => {
@@ -416,6 +421,21 @@ describe("Set up again", () => {
     expect(listedItem(plan, "persona")).toMatchObject({ after: b.persona, status: "change", ticked: true });
     expect(listedItem(plan, "color")).toMatchObject({ after: BOT_SETUP_COLOR_HEX.pink, status: "change", ticked: true });
     expect(listedItem(plan, "description").status).toBe("same");
+  });
+
+  it("keeps a choice on an item the newer block leaves as Hermes has it, though Hermes changed it", () => {
+    const rows = [briefAgain("s1", has.persona), reply(2, JSON.stringify(keeping()))];
+    const { card } = cardOf(rows);
+    const redrawn = cardOf([...rows, reply(3, JSON.stringify(keeping({ callOwner: "Lee" })))]).card;
+    for (const [key, to, theirs] of [["persona", "You are B.", "You are C."], ["description", "Books trains.", "Plans cruises."], ["color", "#ec4899", "#22c55e"]] as const) {
+      const pending = [choose(listedItem(planCard(card, has), key), { to })];
+      const moved = { ...has, [key]: theirs };
+      expect(listedItem(planCard(redrawn, moved, null, pending), key), key).toMatchObject({ status: "change", ticked: true, before: theirs, after: to });
+      const record = acceptedRecord(planCard(card, has, null, pending));
+      const later = planCard(redrawn, moved, record);
+      expect(listedItem(later, key), key).toMatchObject({ status: "elsewhere", ticked: false, after: to });
+      expect(acceptedRecord(later, record).items.find((i) => i.key === key), key).toMatchObject({ to });
+    }
   });
 
   it("refuses a persona when the brief left the persona out", () => {
@@ -573,6 +593,24 @@ describe("what the owner accepted", () => {
     expect(listedItem(next, "toolset:browser")).toMatchObject({ status: "change", ticked: false });
     const rewritten = cardOf([...rowsWith(block()), reply(3, JSON.stringify(block({ persona: "You are C.", toolsets: [] })))]).card;
     expect(listedItem(planCard(rewritten, now(), null, pending), "persona")).toMatchObject({ status: "change", ticked: true, after: "You are C." });
+  });
+
+  it("keeps a choice the bot caught up with when the bot goes back to the value it was made over", () => {
+    const first = cardOf(rowsWith(block())).card;
+    const pending = [choose(listedItem(planCard(first, now()), "persona"), { to: "You are B." })];
+    const echoed = cardOf([...rowsWith(block()), reply(3, JSON.stringify(block({ persona: "You are B." })))]).card;
+    const plan = planCard(echoed, now(), null, pending);
+    const record = acceptedRecord(plan);
+    expect(record.items.find((i) => i.key === "persona")).toMatchObject({ proposed: block().persona, to: "You are B." });
+    const back = cardOf([...rowsWith(block()), reply(5, JSON.stringify(block({ color: "blue" })))]).card;
+    expect(listedItem(planCard(back, applied(now(), plan, record), record), "persona")).toMatchObject({ status: "same", after: "You are B." });
+  });
+
+  it("uses the owner's latest choice on an item", () => {
+    const { card } = cardOf(rowsWith(block()));
+    const edit = choose(listedItem(planCard(card, now()), "persona"), { to: "You are B." });
+    const untick = choose(listedItem(planCard(card, now(), null, [edit]), "persona"), { ticked: false });
+    expect(listedItem(planCard(card, now(), null, [edit, untick]), "persona")).toMatchObject({ status: "change", ticked: false, after: "You are B." });
   });
 
   // Persona B is applied, a toolset fails, and Try again sets up only the toolset.

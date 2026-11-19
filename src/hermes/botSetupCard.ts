@@ -88,9 +88,10 @@ type Proposal<K extends ItemKind> = { kind: K; key: string; name?: string; from?
 /**
  * One row Hermes lists. `key`: unique in the plan (`persona`, `skill:<name>`). `name`: Hermes's own spelling. `from`:
  * the bot it is copied from, as Hermes lists that bot. `before`: Hermes's value now. `proposed`: the block's value.
- * `after`: the value on the card, which the owner may have chosen instead.
+ * `after`: the value on the card, which the owner may have chosen instead. `over`: the bot's value the owner's choice
+ * on the item was made over, or `proposed` when no choice holds.
  */
-export type ListedItem = { [K in ItemKind]: Proposal<K> & { after: ItemValues[K] } & ItemStatus }[ItemKind];
+export type ListedItem = { [K in ItemKind]: Proposal<K> & { after: ItemValues[K]; over: ItemValues[K] } & ItemStatus }[ItemKind];
 
 /** A name the block gave that Hermes doesn't list. Shown with the block's own spelling; never ticked, never sent. */
 export type NotFoundItem = { kind: "model" | "skill" | "toolset" | "mcp"; key: string; name: string; from?: string; status: "notFound" };
@@ -378,7 +379,9 @@ function planBlock(card: Card, now: HermesNow): (Proposal<ItemKind> | NotFoundIt
   const b = card.block;
   const items: (Proposal<ItemKind> | NotFoundItem)[] = [];
   const add = (item: Proposal<ItemKind> | NotFoundItem) => {
-    if (!items.some((i) => i.key === item.key)) items.push(item);
+    const at = items.findIndex((i) => i.key === item.key);
+    if (at < 0) items.push(item);
+    else if ("status" in items[at] && !("status" in item)) items[at] = item;
   };
   add(listed("persona", "persona", now.persona, b.persona ?? now.persona));
   add(listed("description", "description", now.description, b.description ?? now.description));
@@ -427,9 +430,12 @@ function holds(c: Choice, proposed: unknown): boolean {
   return merged.settled.item?.kind !== "changedElsewhere";
 }
 
+const leftAlone = (b: BotSetupAgainBlock, kind: ItemKind) => (kind === "persona" || kind === "description" || kind === "model" || kind === "color") && b[kind] === null;
+
 /**
  * The card's plan: the block against Hermes now, with each choice the owner made laid over it, `accepted` at Set it up
- * and then `pending` on the card since. A choice made on a block that proposed something else for its item is dropped.
+ * and then `pending` on the card since, the last of each that holds. A choice made on a block that proposed something
+ * else for its item is dropped; a block that keeps the item keeps every choice on it.
  * For an accepted item, Hermes holding the accepted value means nothing to do; Hermes still holding the value it had
  * then offers it again; anything else was changed elsewhere since, and is shown unticked. An item left unticked stays
  * unticked.
@@ -438,17 +444,18 @@ export function planCard(card: Card, now: HermesNow, accepted: AcceptedRecord | 
   const kept = accepted && setupOf(accepted.card) === card.setupId ? accepted.items : [];
   const items = planBlock(card, now).map((p): PlanItem => {
     if ("status" in p) return p;
-    const choiceOn = <C extends Choice>(choices: readonly C[]) => choices.find((c) => c.key === p.key && c.kind === p.kind && holds(c, p.proposed));
+    const choiceOn = <C extends Choice>(choices: readonly C[]) => choices.filter((c) => c.key === p.key && c.kind === p.kind && (leftAlone(card.block, p.kind) || holds(c, p.proposed))).at(-1);
     const a = choiceOn(kept);
     const chosen = choiceOn(pending);
-    const after = chosen ? chosen.to : a ? a.to : p.proposed;
+    const held = chosen ?? a;
+    const after = held ? held.to : p.proposed;
     const before = p.kind === "remember" ? remembers(now, after as string | null) : p.before;
     const status: ItemStatus = same(p.kind, before, after)
       ? { status: "same" }
       : a?.ticked && !same(p.kind, before, a.from) && same(p.kind, after, a.to)
         ? { status: "elsewhere", ticked: chosen?.ticked ?? false }
-        : { status: "change", ticked: (chosen ?? a)?.ticked ?? true };
-    return { ...p, before, after, ...status } as ListedItem;
+        : { status: "change", ticked: held?.ticked ?? true };
+    return { ...p, before, after, over: held ? held.proposed : p.proposed, ...status } as ListedItem;
   });
   return { cardId: card.id, items };
 }
@@ -475,8 +482,8 @@ export function acceptedRecord(plan: Plan, previous: AcceptedRecord | null = nul
     if (item.status === "notFound") continue;
     const a = items.get(item.key);
     if (tickable(item) || !same(item.kind, item.after, item.proposed))
-      items.set(item.key, { kind: item.kind, key: item.key, proposed: item.proposed, ticked: tickable(item) ? item.ticked : true, from: item.before, to: item.after } as AcceptedItem);
-    else if (a && !holds(a, item.proposed)) items.delete(item.key);
+      items.set(item.key, { kind: item.kind, key: item.key, proposed: item.over, ticked: tickable(item) ? item.ticked : true, from: item.before, to: item.after } as AcceptedItem);
+    else if (a && !holds(a, item.over)) items.delete(item.key);
   }
   return { v: 1, card: plan.cardId, items: [...items.values()] };
 }

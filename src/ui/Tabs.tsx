@@ -75,7 +75,7 @@ const indexAt = (strip: HTMLElement, x: number) => slotAt([...strip.querySelecto
 
 /** One pane's tab strip. A chat dropped on it opens in a new tab before the tab under the pointer; a tab dragged along
  * it moves there, with a mark where it will land. `lastClosable`: closing the last tab closes the pane. `controls` sit
- * at the strip's far end: the pane's split buttons, or its close button once split. `menu`: the items of a tab's menu,
+ * at the strip's far end: a split pane's close button. `menu`: the items of a tab's menu,
  * opened by a right-click, the Menu key or Shift+F10. */
 export function TabStrip({
   pane,

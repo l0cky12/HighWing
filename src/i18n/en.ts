@@ -754,10 +754,6 @@ export const en = {
    */
   writing: {
     defaultModel: "its default model",
-    byPinText: (model: string, profile: string) => `Written by ${model}, ${profile}'s Text generation model, pinned on the server`,
-    byPinInstructions: (model: string, profile: string) => `Written by ${model}, ${profile}'s Project instructions model, pinned on the server`,
-    byApp: (model: string) => `Written by ${model}, your Writing model`,
-    byMain: (model: string, profile: string) => `Written by ${model}, ${profile}'s own model`,
     willPinText: (model: string, profile: string) => `${profile} writes with ${model}, its Text generation model, pinned on the server.`,
     willPinInstructions: (model: string, profile: string) => `${profile} writes with ${model}, its Project instructions model, pinned on the server.`,
     willApp: (model: string) => `Your Writing model writes it: ${model}.`,

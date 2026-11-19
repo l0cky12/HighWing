@@ -7,7 +7,7 @@
 // queue of messages waiting to go after its reply (ADR 0018).
 // Clearing the cache deletes every connection's chat lists and Saved copies, and nothing else: never the sign-in,
 // drafts, outboxes, appearance or display preferences (uiPrefs.ts).
-import { type ScopeSource, connectionScope, inScope } from "./connections";
+import { type ScopeSource, connectionScope } from "./connections";
 import { SOURCE_LABEL, type Attachment, type Chat, type ChatQueue, type Item, type Outgoing, type OutgoingItem, type Queued, type SentReference, type Source } from "./model";
 import type { ChatCache, SavedTranscript } from "./transport";
 import { UI_PREFS_KEY } from "./uiPrefs";
@@ -21,8 +21,6 @@ import { agentTurnOf } from "./returned";
 import { isServerPath } from "./preview";
 import { sentHereOf, sentImage, withSentHere } from "./sentImages";
 
-/** Every key prefix this module keeps a connection's data under, each followed by its scope (connections.ts). */
-export const CACHE_PREFIXES = () => [LIST_PREFIX, TRANSCRIPT_PREFIX, PROFILE_PREFIX, PULLED_PREFIX, OUTBOX_PREFIX, QUEUE_PREFIX, HELD_PREFIX, BRANCH_PREFIX, REPLY_TIMES_PREFIX, SENT_HERE_PREFIX];
 /** Each profile's chat list, by connection and profile. */
 export const LIST_PREFIX = "hermes-chat.chats.";
 /** A chat's Saved copy, by connection, profile and chat. */
@@ -51,13 +49,6 @@ const liveQueues = new Map<string, ChatQueue>();
 export function subscribeOutbox(fn: () => void): () => void {
   outboxListeners.add(fn);
   return () => void outboxListeners.delete(fn);
-}
-
-/** Drop failed-write outboxes/queues when a connection is removed, before Rust is told which staged files to keep. */
-export function forgetLiveChatData(parts: string[]) {
-  for (const [prefix, rows] of [[OUTBOX_PREFIX, liveOutboxes], [QUEUE_PREFIX, liveQueues]] as const) {
-    for (const key of rows.keys()) if (inScope(parts, key.slice(prefix.length))) rows.delete(key);
-  }
 }
 
 /**

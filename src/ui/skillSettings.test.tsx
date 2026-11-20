@@ -8,6 +8,7 @@ import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { FakeHermes, row } from "../hermes/fakeHermes";
+import { RestError } from "../hermes/pipe";
 import { memoryCache } from "../hermes/memoryCache";
 import type { ConnectionStatus } from "../hermes/model";
 import { connect, type Hermes } from "../hermes/transport";
@@ -438,6 +439,18 @@ describe("Settings → Skills New skill (ADR 0235)", () => {
     const note = (await screen.findByText(/^Created triage at/)).textContent!;
     expect(note).toMatch(/New chats list it, but the profile's skills\.platform_disabled\.tui list keeps it off in the chats Highwing starts, so the composer doesn't offer it\.$/);
     expect(note).not.toContain("runs it as");
+  });
+
+  it("doesn't promise the composer when the per-platform lists couldn't be read", async () => {
+    const { s, user } = await shown();
+    await startNew(user);
+    await user.type(nameBox(), "triage");
+    await setText(user, TRIAGE);
+    s.skills.config = () => {
+      throw new RestError(500, JSON.stringify({ detail: "config.yaml unreadable" }));
+    };
+    await user.click(button("Create skill"));
+    expect((await screen.findByText(/^Created triage at/)).textContent).toMatch(/New chats list it\. Highwing couldn't read the profile's per-platform skill lists, so it can't tell whether the composer offers it\.$/);
   });
 
   it("asks before dropping a draft, and goes straight back when nothing was written", async () => {

@@ -591,12 +591,14 @@ describe("a new skill's text", () => {
   });
 
   it("refuses a name or bare description Hermes's YAML 1.1 reads as a yes/no, number or date, which Hermes leaves out of its list", () => {
-    for (const name of ["yes", "off", "y", "null", "1", "1_000", "1.0", "0x1f", "1e5", "2024-01-02"]) {
+    for (const name of ["yes", "off", "y", "null", "0", "1", "1_000", "017", "0_7", "1.0", "0x1f", "0b101", "1e5", "0e0", "2024-01-02"]) {
       const problems = newSkillProblems({ name, content: skill(name, "Sort a ticket.") });
       expect(problems, name).toEqual([`Hermes reads name: ${name} as a yes/no, number or date, not as a name, and leaves such a skill out of its list. Add a word to it, such as ${name}-skill.`]);
     }
-    for (const name of ["yes-please", "1.2.3", "v1", "2024-q1", "onboarding"]) expect(newSkillProblems({ name, content: skill(name, "Sort a ticket.") }), name).toEqual([]);
+    // Strings YAML 1.1 keeps as text: not octal (an 8 or 9), a date without two-digit month and day, an empty hex number.
+    for (const name of ["yes-please", "1.2.3", "v1", "2024-q1", "onboarding", "08", "0_8", "019", "2024-1-2", "2024-13-45", "0x_"]) expect(newSkillProblems({ name, content: skill(name, "Sort a ticket.") }), name).toEqual([]);
     expect(newSkillProblems({ name: "triage", content: skill("triage", "yes") })[0]).toMatch(/^Hermes reads description: yes as a yes\/no/);
+    expect(newSkillProblems({ name: "triage", content: skill("triage", "2024-1-2 10:20:30") })[0]).toMatch(/^Hermes reads description: 2024-1-2 10:20:30 as/);
     expect(newSkillProblems({ name: "triage", content: skill("triage", "'yes'") })).toEqual([]);
     expect(newSkillProblems({ name: "triage", content: skill("triage", "Yes, sort it.") })).toEqual([]);
   });

@@ -373,7 +373,9 @@ export function SkillSettings({
             ? ` It's off: the profile's skills.disabled list already names ${at.name}. Turn it on with its switch, and new chats list it.`
             : offHere
               ? ` New chats list it, but the profile's skills.platform_disabled.${offHere.join("/")} list keeps it off in the chats Highwing starts, so the composer doesn't offer it.`
-              : ` New chats list it, and the composer runs it as /${skillSlug(at.name)}.`;
+              : !next.platformsRead
+                ? " New chats list it. Highwing couldn't read the profile's per-platform skill lists, so it can't tell whether the composer offers it."
+                : ` New chats list it, and the composer runs it as /${skillSlug(at.name)}.`;
       setRowNote({ name: next && !row ? "" : at.name, kind: "ok", text: `Created ${at.name} at ${file.path}, and read back from Hermes.${now}` });
       setCreating(undefined);
       setNotice(undefined);

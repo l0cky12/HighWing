@@ -297,6 +297,10 @@ export type ChatCache = {
   loadSetupRecord(profile: string, chatId: string): unknown;
   /** Keeps it; null deletes it. False: storage refused it. */
   saveSetupRecord(profile: string, chatId: string, record: AcceptedRecord | null): boolean;
+  /** The keys of the MCP servers Set it up added on the chat's card that wait on a reload (ADR 0231). */
+  loadMcpReload(profile: string, chatId: string): string[];
+  /** Keeps them; none deletes them. */
+  saveMcpReload(profile: string, chatId: string, keys: readonly string[]): void;
 };
 /**
  * What clicking a notification about a waiting card does: `open` shows the card in its chat. `deny`, for an Approval
@@ -341,6 +345,8 @@ const noCache: ChatCache = {
   saveAsks: () => true,
   loadSetupRecord: () => null,
   saveSetupRecord: () => true,
+  loadMcpReload: () => [],
+  saveMcpReload: () => {},
 };
 
 /** A row of dashboard REST `GET /api/sessions`; times are Unix seconds. */
@@ -731,6 +737,7 @@ export class Hermes {
   private noCompact = new Set<number>();
   /** Compactions asked of Hermes and not yet answered, by chat. A message sent meanwhile waits for it (`deliver`). */
   private compacting = new Map<string, Promise<unknown>>();
+  private mcpReloading?: Promise<"reloaded" | "replying">;
   /** The pipe being opened is waiting for `gateway.ready`. */
   private onReady?: (payload: Record<string, unknown>) => void;
   /** Ends the dial under way with this error. */
@@ -2709,6 +2716,7 @@ export class Hermes {
       accepted,
       readyOwed: accepted !== parse.accepted,
       live: blockAt(parse.card.at.index, parse.card.at.nth),
+      mcpReload: this.cache.loadMcpReload(profile, chatId),
       ...(parse.newerUnreadable && { unreadable: parse.newerUnreadable.source }),
       setup,
     };
@@ -2730,6 +2738,7 @@ export class Hermes {
     this.cache.saveSetupRecord(profile, chatId, record);
     const apis = this.setupApis(profile);
     const run = await runSetup(items, (item) => applyItem(apis, profile, setup, item, [], secrets), hear);
+    this.rememberMcpReloadOwed(profile, chatId, run.states);
     if (run.unanswered !== undefined) return run;
     await this.reloadMcpIfIdle(chatId, profile, run.states, hear);
     if (this.profile !== profile) return { ...run, readyFailed: { kind: "notShown", profile } };
@@ -2759,6 +2768,7 @@ export class Hermes {
   async retryBotSetupItem(read: BotSetupCardRead, item: ListedItem, accepted: Caution[] = [], secrets: McpSecrets = {}): Promise<CardState> {
     if (this.profile !== read.profile) return { kind: "failed", miss: { kind: "notShown", profile: read.profile } };
     const states = { [item.key]: (await applyItem(this.setupApis(read.profile), read.profile, read.setup, item, accepted, secrets)).state };
+    this.rememberMcpReloadOwed(read.profile, read.chatId, states);
     await this.reloadMcpIfIdle(read.chatId, read.profile, states, () => {});
     return states[item.key];
   }
@@ -2766,11 +2776,23 @@ export class Hermes {
   /**
    * Hermes's `reload.mcp` on a Bot Chat (ADR 0231, "MCP servers need reload.mcp"), so a server Set it up added reaches
    * the bot. The dashboard's handler shuts down every MCP server in its process and connects again those of each
-   * profile with a live session (`tui_gateway/methods_tools.py` at ae2a81cc). Rejects unless Hermes says it reloaded.
+   * profile with a live session (`tui_gateway/methods_tools.py` at ae2a81cc), so it is sent only while no reply runs
+   * anywhere on this Hermes (#85 owner call 1); `replying` when one does. Calls that overlap share one reload. Rejects
+   * unless Hermes says it reloaded; once it has, the chat's card stops waiting on it.
    */
-  async reloadBotSetupMcp(chatId: string): Promise<void> {
+  async reloadBotSetupMcp(chatId: string): Promise<"reloaded" | "replying"> {
+    const profile = this.profile;
+    this.mcpReloading ??= this.reloadMcpWhenIdle(chatId).finally(() => (this.mcpReloading = undefined));
+    const done = await this.mcpReloading;
+    if (done === "reloaded") this.cache.saveMcpReload(profile, chatId, []);
+    return done;
+  }
+
+  private async reloadMcpWhenIdle(chatId: string): Promise<"reloaded" | "replying"> {
+    if (await this.anyReplyRunningOrWaiting()) return "replying";
     const res = obj(await this.request("reload.mcp", { session_id: await this.resume(chatId), confirm: true })) ?? {};
     if (res.status !== "reloaded") throw new Error(textOf(res.message) ?? `Hermes didn't reload its MCP servers (${String(res.status ?? "no status")}).`);
+    return "reloaded";
   }
 
   private async anyReplyRunningOrWaiting(): Promise<boolean> {
@@ -2778,16 +2800,15 @@ export class Hermes {
     return (Array.isArray(res?.sessions) ? res.sessions : []).some((r) => ["starting", "working", "waiting"].includes(String(obj(r)?.status)));
   }
 
-  /** Only while no reply runs anywhere on this Hermes (#85 owner call 1). */
+  private rememberMcpReloadOwed(profile: string, chatId: string, states: Readonly<Record<string, CardState>>) {
+    const added = Object.keys(states).filter((k) => states[k].kind === "reload");
+    if (added.length) this.cache.saveMcpReload(profile, chatId, [...new Set([...this.cache.loadMcpReload(profile, chatId), ...added])]);
+  }
+
   private async reloadMcpIfIdle(chatId: string, profile: string, states: Record<string, CardState>, hear: (key: string, state: CardState) => void) {
     const waiting = Object.keys(states).filter((k) => states[k].kind === "reload");
     if (!waiting.length || this.profile !== profile) return;
-    try {
-      if (await this.anyReplyRunningOrWaiting()) return;
-      await this.reloadBotSetupMcp(chatId);
-    } catch {
-      return;
-    }
+    if ((await this.reloadBotSetupMcp(chatId).catch(() => undefined)) !== "reloaded") return;
     for (const k of waiting) {
       states[k] = { kind: "applied" };
       hear(k, states[k]);
@@ -7215,6 +7236,8 @@ export type BotSetupCardRead = {
   accepted: AcceptedRecord | null;
   readyOwed: boolean;
   live?: string;
+  /** The keys of the MCP servers added from the card that wait on a reload. */
+  mcpReload: string[];
   unreadable?: string;
   setup: SetupNow;
 };

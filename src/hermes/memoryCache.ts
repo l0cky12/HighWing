@@ -1,7 +1,7 @@
 // An in-memory ChatCache for tests: `saved` holds each profile's list, `transcripts` the Saved copies by
 // `profile/chatId`, `profile` the one shown last, `pulled` the profiles whose older history the owner pulled, and
 // `outbox` each chat's messages Hermes hasn't confirmed and `queues` each chat's queue, by `profile/chatId`, and
-// `branches` each profile's branches, `replyTimes` its reply times, `sentHere` the images sent from here, `asks` its asks and `setupRecords` each Bot Chat's accepted setup, which
+// `branches` each profile's branches, `replyTimes` its reply times, `sentHere` the images sent from here, `asks` its asks, `setupRecords` each Bot Chat's accepted setup and `mcpReloads` its MCP servers waiting on a reload, which
 // `clear` keeps. Values are copied through JSON, as localStorage would, so nothing kept shares objects with the app.
 // It has no storage limit.
 import type { Chat, ChatQueue, OutgoingItem } from "./model";
@@ -22,6 +22,7 @@ export type MemoryCache = ChatCache & {
   sentHere: Record<string, SentHere[]>;
   asks: Record<string, unknown>;
   setupRecords: Record<string, unknown>;
+  mcpReloads: Record<string, string[]>;
 };
 
 export function memoryCache({
@@ -41,6 +42,7 @@ export function memoryCache({
     sentHere: {},
     asks: {},
     setupRecords: {},
+    mcpReloads: {},
     load: (p) => cache.saved[p] ?? [],
     save: (p, chats) => void (cache.saved[p] = chats),
     loadTranscript: (p, id) => cache.transcripts[`${p}/${id}`],
@@ -93,6 +95,11 @@ export function memoryCache({
       if (record) cache.setupRecords[`${p}/${id}`] = JSON.parse(JSON.stringify(record));
       else delete cache.setupRecords[`${p}/${id}`];
       return true;
+    },
+    loadMcpReload: (p, id) => [...(cache.mcpReloads[`${p}/${id}`] ?? [])],
+    saveMcpReload: (p, id, keys) => {
+      if (keys.length) cache.mcpReloads[`${p}/${id}`] = [...keys];
+      else delete cache.mcpReloads[`${p}/${id}`];
     },
   };
   return cache;

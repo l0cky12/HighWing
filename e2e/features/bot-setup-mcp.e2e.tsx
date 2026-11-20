@@ -92,8 +92,14 @@ async function connectAndSetUp(scheme: "dark" | "light") {
   server.event(sid, "message.delta", { text: "I'm set up. Ask me to plan a trip whenever you like." });
   server.storeMessage("hermes-bot", { role: "assistant", text: "I'm set up. Ask me to plan a trip whenever you like." });
   server.event(sid, "message.complete", { status: "complete" });
-  server.liveSessions = [];
   await expect.element(reload).toBeEnabled();
+  await reload.click();
+  await expect.element(mcp.getByText("Not reloaded yet: a reply is running in a chat on this Hermes, and reloading would cut its MCP servers off. Try again once it's done.").first()).toBeVisible();
+  expect(server.requests.filter((r) => r.method === "reload.mcp")).toEqual([]);
+  mcp.element().scrollIntoView({ block: "center" });
+  await shot(`${scheme}-reload-replying`);
+
+  server.liveSessions = [];
   await reload.click();
   await expect.poll(() => mcp.getByText("Added, and Hermes reloaded it.").elements().length).toBe(2);
   expect(server.requests.filter((r) => r.method === "reload.mcp").map((r) => r.params.confirm)).toEqual([true]);

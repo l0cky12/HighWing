@@ -78,6 +78,29 @@ describe("mcpOffer", () => {
     expect(mcpOffer(sources, "neighbour", "Research")?.kind).toBe("copy");
   });
 
+  it("compares paths after resolving `.`, `..`, repeated and trailing slashes, on folder boundaries, POSIX or Windows", () => {
+    const judged = (folder: string, ...args: string[]) => {
+      const s: McpSources = { catalog: [], bots: { Research: { path: folder, servers: [server("x", { command: "python3", args })] } } };
+      return mcpOffer(s, "x", "Research")?.kind;
+    };
+    const refused = [
+      "/srv/hermes/profiles/./research/run",
+      "/srv/hermes/profiles/other/../research/run",
+      "/srv//hermes/profiles/research//run",
+      "/srv/hermes/profiles/research/",
+      "/srv/hermes/profiles/research",
+      "--dir=/srv/hermes/./profiles/research/x",
+    ];
+    for (const a of refused) expect([a, judged("/srv/hermes/profiles/research", a)]).toEqual([a, "refused"]);
+    expect(judged("/srv/hermes/profiles/research/", "/srv/hermes/profiles/research/run")).toBe("refused");
+    const allowed = ["/srv/hermes/profiles/research-2/run", "/srv/hermes/profiles/researcher", "/srv/hermes/profiles/research/../research-2/run", "/srv/hermes/profiles/./research2"];
+    for (const a of allowed) expect([a, judged("/srv/hermes/profiles/research", a)]).toEqual([a, "copy"]);
+
+    expect(judged("C:\\Users\\lena\\.hermes\\profiles\\research", "c:\\users\\lena\\.hermes\\profiles\\.\\research\\run.py")).toBe("refused");
+    expect(judged("C:\\Users\\lena\\.hermes\\profiles\\research", "C:/Users/lena/.hermes/profiles/x/../research/run.py")).toBe("refused");
+    expect(judged("C:\\Users\\lena\\.hermes\\profiles\\research", "C:\\Users\\lena\\.hermes\\profiles\\research-2\\run.py")).toBe("copy");
+  });
+
   it("names an OAuth server, a plugin's, one whose name can't be sent and one Hermes can't say how it connects, without adding them", () => {
     expect(mcpOffer(sources, "github")).toMatchObject({ kind: "refused", why: "oauth" });
     expect(mcpOffer(sources, "linear", "Research")).toMatchObject({ kind: "refused", why: "oauth" });

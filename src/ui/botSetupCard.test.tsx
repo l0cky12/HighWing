@@ -284,11 +284,97 @@ describe("MCP servers on the card", { timeout: 30_000 }, () => {
       server.storeMessage("hermes-bot", { role: "assistant", text: "I'm set up." });
       server.event(sid, "message.complete", { text: "I'm set up.", status: "complete" });
     });
-    server.liveSessions = [];
+    server.liveSessions = server.liveSessions.filter((l) => l.id === "rt-other");
     await waitFor(() => expect((reload as HTMLButtonElement).disabled).toBe(false));
     await user.click(reload);
+    await act(async () => void (await new Promise((r) => setTimeout(r, 50))));
+    expect(server.requests.filter((r) => r.method === "reload.mcp")).toEqual([]);
+    await within(liveCard()!).findByText(t.reloadReplying);
+
+    server.liveSessions = [];
+    await user.click(within(liveCard()!).getByRole("button", { name: t.reloadMcp }));
     await waitFor(() => expect(within(liveCard()!).getByText(t.mcpReloaded)).toBeTruthy());
     expect(server.requests.filter((r) => r.method === "reload.mcp").map((r) => r.params.confirm)).toEqual([true]);
+  });
+
+  const leaveAndReopen = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(document.querySelector<HTMLElement>('.sidebar [role=tab][data-mode="chats"]')!);
+    if (!screen.queryByText("Notes")) await user.click(screen.getByRole("button", { name: /^Archived/ }));
+    await user.click(await screen.findByText("Notes"));
+    await waitFor(() => expect(liveCard()).toBeNull());
+    await user.click(document.querySelector<HTMLElement>('.sidebar [role=tab][data-mode="bots"]')!);
+    await user.click(document.querySelector<HTMLElement>('.sb-bots .bots-row[data-profile="default"] .bots-open')!);
+    await waitCard();
+  };
+  const endReply = (server: FakeHermes) => {
+    const sid = String(server.last("prompt.submit")!.params.session_id);
+    act(() => {
+      server.event(sid, "message.start");
+      server.storeMessage("hermes-bot", { role: "assistant", text: "I'm set up." });
+      server.event(sid, "message.complete", { text: "I'm set up.", status: "complete" });
+    });
+  };
+
+  it("keeps a row waiting on Reload MCP servers after the owner leaves the Bot Chat and comes back, until a reload", async () => {
+    const { server, user } = await inBotChat(interview(card({ ...BLOCK, skills: [], toolsets: [], mcp: [{ catalog: "airbnb" }] })), (s) => {
+      withMcp(s);
+      s.liveSessions = [{ id: "rt-other", session_key: "side", status: "working", last_active: Math.floor(Date.now() / 1000) }];
+    });
+    await waitCard();
+    await user.click(within(liveCard()!).getByRole("button", { name: t.setUp }));
+    await within(row("airbnb")).findByRole("button", { name: t.reloadMcp }, { timeout: 5000 });
+    endReply(server);
+    server.liveSessions = [];
+
+    await leaveAndReopen(user);
+    const reload = await within(row("airbnb")).findByRole("button", { name: t.reloadMcp }, { timeout: 5000 });
+    expect(within(row("airbnb")).getByText(t.waitingReload("Hermes"))).toBeTruthy();
+    expect(within(row("airbnb")).queryByText(t.already)).toBeNull();
+    await user.click(reload);
+    await waitFor(() => expect(within(row("airbnb")).getByText(t.mcpReloaded)).toBeTruthy());
+
+    await leaveAndReopen(user);
+    await waitFor(() => expect(within(row("airbnb")).queryByText(t.waitingReload("Hermes"))).toBeNull());
+    expect(within(row("airbnb")).queryByRole("button", { name: t.reloadMcp })).toBeNull();
+    expect(server.requests.filter((r) => r.method === "reload.mcp")).toHaveLength(1);
+  });
+
+  it("keeps Connect's key for a row left waiting on it until the owner presses that row's Set it up", async () => {
+    const { server, user } = await inBotChat(interview(mcpCard), withMcp);
+    await waitCard();
+    await user.click(within(liveCard()!).getByRole("button", { name: t.setUp }));
+    await waitFor(() => expect(within(row("brave-search")).getByText(t.waitingConnect)).toBeTruthy(), { timeout: 5000 });
+    endReply(server);
+    server.liveSessions = [];
+
+    await user.click(within(row("brave-search")).getByRole("button", { name: t.connect }));
+    await user.type(within(row("brave-search")).getByLabelText("BRAVE_API_KEY"), "fresh-key-99{Enter}");
+    await act(async () => void (await new Promise((r) => setTimeout(r, 50))));
+    expect(sentAnywhere(server, "fresh-key-99")).toBe(false);
+    expect(server.mcp.writes.map((w) => w.what)).toEqual(["install airbnb"]);
+    expect(within(row("brave-search")).getByText(t.mcpReady)).toBeTruthy();
+
+    await user.click(within(row("brave-search")).getByRole("button", { name: t.setUp }));
+    await waitFor(() => expect(within(row("brave-search")).getByText(t.mcpReloaded)).toBeTruthy(), { timeout: 5000 });
+    expect(server.mcp.servers.default["brave-search"]?.env).toEqual({ BRAVE_API_KEY: "fresh-key-99" });
+  });
+
+  it("keeps Reload MCP servers off while Set it up still runs", async () => {
+    let writes = 0;
+    let open!: () => void;
+    const held = new Promise<void>((r) => (open = r));
+    const { server, user } = await inBotChat(interview(card({ ...BLOCK, skills: [], toolsets: [], mcp: [{ catalog: "airbnb" }, { catalog: "weather" }] })), (s) => {
+      withMcp(s);
+      s.mcp.catalogEntries.push({ name: "weather", description: "Forecasts", transport: "stdio", command: "npx", args: ["-y", "weather-mcp"] });
+      Object.defineProperty(s.mcp, "gate", { get: () => (writes++ ? held : undefined) });
+    });
+    await waitCard();
+    await user.click(within(liveCard()!).getByRole("button", { name: t.setUp }));
+    const reload = await within(row("airbnb")).findByRole("button", { name: t.reloadMcp }, { timeout: 5000 });
+    expect((reload as HTMLButtonElement).disabled).toBe(true);
+    open();
+    await waitFor(() => expect(within(row("weather")).getByText(t.mcpReloaded)).toBeTruthy(), { timeout: 5000 });
+    expect(server.requests.filter((r) => r.method === "reload.mcp")).toHaveLength(1);
   });
 });
 

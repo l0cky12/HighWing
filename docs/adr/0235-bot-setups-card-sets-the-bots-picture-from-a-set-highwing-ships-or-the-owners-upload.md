@@ -59,6 +59,6 @@ Mockups of all three were shown to the owner on 2026-11-19.
 - The app is about 90 KB larger.
 - A pick or an upload made while the bot is still answering the ready turn is dropped when that reply ends, as an edit to any other item is: the card is then read again from what Set it up recorded.
 
-## Not verified yet
+## Verified
 
-- **A model following the brief's picture lines.** The wording follows the colour's, which `gpt-6.1-sol` followed in every run of `tools/bot-setup-brief/run.py`. The validator and its controls cover the picture, with mutants for a URL, image data and a name the set doesn't have. The model turns have not been run on this wording.
+- **A model following the brief's picture lines.** `tools/bot-setup-brief/run.py` with `gpt-6.1-sol` at high effort, on this wording, passed all 38 turns: new-mcp 14/14, new 14/14, note 6/6, keep 4/4. Every new bot's card named a picture from the set (`plane`, for the travel bot), and every Set up again card on a bot that has a picture kept it as null. The validator and its controls cover the picture, with mutants for a URL, image data and a name the set doesn't have.

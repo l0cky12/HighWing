@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FakeHermes, row } from "./fakeHermes";
-import { carryOptions, catalogFromServer, describePick, effortsFor, fallbackCatalog, guessCapabilities, modelFromArg } from "./models";
+import { allHidden, carryOptions, catalogFromServer, describePick, effortsFor, fallbackCatalog, guessCapabilities, modelFromArg, offeredCatalog, offeredProviders, pickerRows } from "./models";
 import { connect } from "./transport";
 
 async function signedIn(server = new FakeHermes()) {
@@ -252,5 +252,68 @@ describe("A model typed after /model", () => {
     expect(describePick(current, catalog)).toBe("claude-opus-5-5 (Anthropic) · reasoning High · fast mode");
     expect(describePick({ provider: "openrouter", model: "openai/gpt-5" }, catalog)).toBe("gpt-5 (OpenRouter)");
     expect(describePick(undefined, catalog)).toBe("the profile's default model");
+  });
+});
+
+describe("A provider hidden in Highwing's model lists (ADR 0235)", () => {
+  const catalog = catalogFromServer("default", {
+    model: "gpt-5",
+    provider: "openai",
+    providers: [
+      { slug: "openai", name: "OpenAI", models: ["gpt-5", "gpt-5-mini"] },
+      { slug: "openrouter", name: "OpenRouter", models: ["openai/gpt-5", "anthropic/claude-sonnet-5-5"] },
+    ],
+  })!;
+  const openrouter = new Set(["openrouter"]);
+  const keys = (hidden: ReadonlySet<string>, favorites: string[] = [], query = "") =>
+    pickerRows(catalog, favorites, query, hidden).map((s) => [s.title, s.rows.map((r) => r.key)]);
+
+  it("leaves its models out of every section, its starred ones too, and not as unavailable rows", () => {
+    const favorites = ["openrouter/openai/gpt-5", "openai/gpt-5-mini"];
+    expect(keys(new Set(), favorites)).toEqual([
+      ["Favorites", ["openrouter/openai/gpt-5", "openai/gpt-5-mini"]],
+      ["OpenAI", ["openai/gpt-5"]],
+      ["OpenRouter", ["openrouter/anthropic/claude-sonnet-5-5"]],
+    ]);
+    expect(keys(openrouter, favorites)).toEqual([
+      ["Favorites", ["openai/gpt-5-mini"]],
+      ["OpenAI", ["openai/gpt-5"]],
+    ]);
+    // A star whose provider Hermes no longer lists still comes back as unavailable, unless that provider is hidden.
+    expect(keys(openrouter, ["openrouter/gone"])).toEqual([["OpenAI", ["openai/gpt-5", "openai/gpt-5-mini"]]]);
+    expect(keys(new Set(), ["openrouter/gone"])[0]).toEqual(["Favorites", ["openrouter/gone"]]);
+  });
+
+  it("is left out of a search, keeping the same model through a provider that shows", () => {
+    expect(keys(openrouter, [], "gpt-5")).toEqual([["OpenAI", ["openai/gpt-5", "openai/gpt-5-mini"]]]);
+    expect(keys(openrouter, [], "sonnet")).toEqual([]);
+  });
+
+  it("is left out of the fallback list Highwing makes when Hermes lists none", () => {
+    const fallback = fallbackCatalog("default", undefined);
+    expect(fallback.providers.some((p) => p.slug === "openrouter")).toBe(true);
+    expect(pickerRows(fallback, [], "", openrouter).map((s) => s.title)).not.toContain("OpenRouter");
+    expect(offeredCatalog(fallback, openrouter)!.providers.map((p) => p.slug)).not.toContain("openrouter");
+  });
+
+  it("can't be picked by typing /model: it says it's hidden here and how to show it, and picks nothing", () => {
+    const current = { provider: "openai", model: "gpt-5" };
+    for (const typed of ["openrouter:anthropic/claude-sonnet-5-5", "openrouter/openai/gpt-5", "claude-sonnet-5-5", "sonnet"])
+      expect(modelFromArg(catalog, typed, current, openrouter)).toEqual({
+        problem: expect.stringMatching(/^OpenRouter is hidden in Highwing's model lists, so .* isn't picked\. Settings → Providers shows it again\.$/),
+      });
+    // The same model through a provider that shows is still found, and is no longer ambiguous.
+    expect(modelFromArg(catalog, "gpt-5", current, new Set())).toEqual({ problem: expect.stringMatching(/^2 models match/) });
+    expect(modelFromArg(catalog, "gpt-5", current, openrouter)).toEqual({ pick: { provider: "openai", model: "gpt-5" } });
+    expect(modelFromArg(catalog, "gemini", current, openrouter)).toEqual({ problem: expect.stringMatching(/No model here matches/) });
+  });
+
+  it("filters any catalog shape, and tells every provider hidden from a catalog that lists none", () => {
+    expect(offeredProviders([{ slug: "openai" }, { slug: "openrouter" }], openrouter)).toEqual([{ slug: "openai" }]);
+    expect(offeredCatalog(catalog, new Set())).toBe(catalog);
+    expect(allHidden(catalog, openrouter)).toBe(false);
+    expect(allHidden(catalog, new Set(["openai", "openrouter"]))).toBe(true);
+    expect(pickerRows(catalog, ["openai/gpt-5"], "", new Set(["openai", "openrouter"]))).toEqual([]);
+    expect(allHidden(undefined, openrouter)).toBe(false);
   });
 });

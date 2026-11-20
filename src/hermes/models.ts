@@ -213,6 +213,33 @@ export function pickFromInfo(info: unknown): ModelPick | undefined {
   return { provider, model, ...(isEffort(effort) && { effort }), ...(typeof i.fast === "boolean" && { fast: i.fast }) };
 }
 
+/**
+ * The providers the owner turned off on one connection, by slug (Settings → Providers, ADR 0235). Only what Highwing
+ * offers for a new pick changes: Hermes keeps the provider, its keys and sign-ins, and whatever runs on it. A provider
+ * is its route, so OpenAI's models through OpenRouter belong to OpenRouter.
+ */
+export type HiddenProviders = ReadonlySet<string>;
+export const NO_HIDDEN: HiddenProviders = new Set();
+
+/**
+ * The providers a model list offers: all but the hidden ones. Every catalog shape goes through here: the composer's,
+ * Settings → Model's, and a task's.
+ */
+export function offeredProviders<P extends { slug: string }>(providers: readonly P[], hidden: HiddenProviders): P[] {
+  return providers.filter((p) => !hidden.has(p.slug));
+}
+
+/** The catalog as a new pick sees it: without the hidden providers. Its source, default and reason stay as read. */
+export function offeredCatalog(catalog: ModelCatalog | undefined, hidden: HiddenProviders): ModelCatalog | undefined {
+  return catalog && hidden.size ? { ...catalog, providers: offeredProviders(catalog.providers, hidden) } : catalog;
+}
+
+/** What a field says beside a model already set whose provider is hidden: the model stays, and isn't offered anew. */
+export const hiddenNote = (providerName: string) => `${providerName} is hidden in Highwing's model lists, so its models aren't offered for a new pick.`;
+
+/** What a model list says when the owner hid every provider Hermes lists. */
+export const ALL_HIDDEN = "Every provider is hidden in Highwing's model lists. Settings → Providers shows them again.";
+
 /** One row of the list. `favorite`: it sits under Favorites. */
 export type PickerRow = { key: string; option: ModelOption; favorite: boolean };
 
@@ -231,42 +258,68 @@ export const hasWords = (text: string, words: string[]) => {
 
 const matches = (o: ModelOption, words: string[]) => hasWords(`${o.model} ${o.provider} ${o.providerName}`, words);
 
-/** The rows the picker lists for `query`: Favorites first, then each provider's other models. */
-export function pickerRows(catalog: ModelCatalog | undefined, favorites: string[], query: string): { title: string; rows: PickerRow[] }[] {
+/**
+ * The rows the picker lists for `query`: Favorites first, then each provider's other models. A hidden provider's
+ * models show nowhere, its starred ones included; the stars are kept for when it shows again.
+ */
+export function pickerRows(catalog: ModelCatalog | undefined, favorites: string[], query: string, hidden: HiddenProviders = NO_HIDDEN): { title: string; rows: PickerRow[] }[] {
   const words = searchWords(query);
   const starred = new Set(favorites);
   const favRows = favorites
+    .filter((key) => !hidden.has(fromKey(key)?.provider ?? ""))
     .map((key) => ({ key, option: findOption(catalog, fromKey(key)) ?? missingOption(key) }))
     .filter((r): r is { key: string; option: ModelOption } => !!r.option && matches(r.option, words))
     .map((r) => ({ ...r, favorite: true }));
   const sections = favRows.length ? [{ title: "Favorites", rows: favRows }] : [];
-  for (const p of catalog?.providers ?? []) {
+  for (const p of offeredProviders(catalog?.providers ?? [], hidden)) {
     const rows = p.models.filter((m) => !starred.has(modelKey(m)) && matches(m, words)).map((option) => ({ key: modelKey(option), option, favorite: false }));
     if (rows.length) sections.push({ title: p.name, rows });
   }
   return sections;
 }
 
+/** Whether the owner hid every provider the catalog lists, so an empty list is their choice and not Hermes's. */
+export const allHidden = (catalog: ModelCatalog | undefined, hidden: HiddenProviders) => !!catalog?.providers.length && !offeredProviders(catalog.providers, hidden).length;
+
+const list = (names: string[]) => (names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`);
+
+/** The models `typed` names among `options`: `provider:model` or `provider/model`, else an id or short name, else a search. */
+function named(options: ModelOption[], typed: string): ModelOption[] {
+  const lower = typed.toLowerCase();
+  const sep = lower.search(/[:/]/);
+  const keyed = sep > 0 ? options.filter((o) => o.provider.toLowerCase() === lower.slice(0, sep) && o.model.toLowerCase() === lower.slice(sep + 1)) : [];
+  if (keyed.length) return keyed;
+  const byName = options.filter((o) => o.model.toLowerCase() === lower || shortName(o.model).toLowerCase() === lower);
+  if (byName.length) return byName;
+  const words = searchWords(typed);
+  return options.filter((o) => hasWords(`${o.model} ${o.provider} ${o.providerName}`, words));
+}
+
 /**
  * The model `/model <arg>` names, with the chat's effort and fast mode carried over as a picker click carries them, or
  * why it names none. Never guessed, as Hermes's own picker never guesses: `provider:model` (Hermes's form, split at the
  * first colon) or `provider/model`; a model's id or short name one provider lists; or a search, as the picker's, that
- * leaves one model. Hermes's flags and `reset` change more than this chat's model, so they are refused.
+ * leaves one model. Hermes's flags and `reset` change more than this chat's model, so they are refused. Only the
+ * providers shown are searched; a name only a hidden one lists says so, and how to show it again.
  */
-export function modelFromArg(catalog: ModelCatalog | undefined, arg: string, current: ModelPick | undefined): { pick: ModelPick } | { problem: string } {
+export function modelFromArg(
+  catalog: ModelCatalog | undefined,
+  arg: string,
+  current: ModelPick | undefined,
+  hidden: HiddenProviders = NO_HIDDEN,
+): { pick: ModelPick } | { problem: string } {
   const typed = arg.trim();
   if (/(^|\s)--/.test(typed) || typed.toLowerCase() === "reset")
     return { problem: "Highwing's /model switches this chat's model only. Settings → Model sets the profile's model; the pills beside the model set its reasoning and fast mode." };
   if (!catalog) return { problem: "Hermes hasn't listed its models yet. Try again in a moment." };
-  const options = catalog.providers.flatMap((p) => p.models);
-  const lower = typed.toLowerCase();
-  const sep = lower.search(/[:/]/);
-  const keyed = sep > 0 ? options.filter((o) => o.provider.toLowerCase() === lower.slice(0, sep) && o.model.toLowerCase() === lower.slice(sep + 1)) : [];
-  const named = options.filter((o) => o.model.toLowerCase() === lower || shortName(o.model).toLowerCase() === lower);
-  const words = searchWords(typed);
-  const found = keyed.length ? keyed : named.length ? named : options.filter((o) => hasWords(`${o.model} ${o.provider} ${o.providerName}`, words));
+  const found = named(offeredProviders(catalog.providers, hidden).flatMap((p) => p.models), typed);
   const name = (o: ModelOption) => `${o.provider}:${o.model}`;
-  if (!found.length) return { problem: `No model here matches "${typed}". Type /model and a space to see them.` };
+  if (!found.length) {
+    const behind = [...new Set(named(catalog.providers.flatMap((p) => p.models), typed).map((o) => o.providerName))];
+    if (behind.length)
+      return { problem: `${list(behind)} ${behind.length === 1 ? "is" : "are"} hidden in Highwing's model lists, so "${typed}" isn't picked. Settings → Providers shows ${behind.length === 1 ? "it" : "them"} again.` };
+    return { problem: `No model here matches "${typed}". Type /model and a space to see them.` };
+  }
   if (found.length > 1)
     return { problem: `${found.length} models match "${typed}": ${found.slice(0, 5).map(name).join(", ")}${found.length > 5 ? ", …" : ""}. Type provider:model, or pick one from the list.` };
   if (!found[0].available) return { problem: `${name(found[0])} isn't available on this Hermes now.` };

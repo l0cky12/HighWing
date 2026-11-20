@@ -3913,6 +3913,7 @@ div.export-preview.export-page { height: auto; padding: 10px 12px; background: v
 .profile-conflict-picture { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; vertical-align: middle; }
 .profile-model select { flex: 0 1 200px; min-width: 0; background: var(--raised); border: 1px solid var(--line-2); border-radius: 9px; padding: 8px 10px; color: var(--text); }
 .profile-model input { flex: 1 1 220px; background: var(--raised); border: 1px solid var(--line-2); border-radius: 9px; padding: 9px 12px; outline: none; font-size: calc(13rem / 14); color: var(--text); }
+.profile-model-note { flex-basis: 100%; }
 .profile-soul { min-height: 90px; }
 .profile-dialog .confirm-actions { flex-wrap: wrap; align-items: center; }
 .profile-clone-link { align-self: flex-start; font-size: calc(12.5rem / 14); }

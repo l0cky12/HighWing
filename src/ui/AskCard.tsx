@@ -1,8 +1,7 @@
-// The Asked card (ADR 0233): a message the owner sent from this Bot Chat to other bots with "@", with each bot's
-// reply under it, read from the asks this computer keeps (asks.ts).
 import { createContext, useContext } from "react";
 import { AtSign, CircleAlert, Link2, RotateCcw } from "lucide-react";
 import type { Ask, AskId, AskRefusal, AskTarget } from "../hermes/asks";
+import type { AskRule } from "../hermes/mentionPicker";
 import type { SentReference } from "../hermes/model";
 import { useLocale } from "../i18n/locale";
 import { BotFace } from "./BotFace";
@@ -11,18 +10,19 @@ import type { NamedBot } from "./SlashCommands";
 import { Spinner } from "./bits";
 import { TurnCard } from "./TurnCard";
 
-/** What a Bot Chat's pane can do with asks: send one from the composer, and act on its cards. */
 export type AskHost = {
   asks: readonly Ask[];
   /** The other bots, as the "@" menu lists them, for each card's faces. */
   bots: readonly NamedBot[];
   /** This chat as the chip a message that names a bot carries; none while it has nothing to summarize. */
   self?: { chatId: string; title: string };
+  rule: AskRule;
   connected: boolean;
   send(to: readonly NamedBot[], text: string, references: SentReference[]): AskRefusal | undefined;
   retry(id: AskId, profile: string): void;
   dismiss(id: AskId, profile: string): void;
-  edit(id: AskId): void;
+  /** None while nothing the composer sends asks a bot, as in Compare. */
+  edit?(id: AskId): void;
   open(profile: string): void;
 };
 
@@ -98,8 +98,8 @@ function TargetLine({ ask, t, host }: { ask: Ask; t: AskTarget; host: AskHost })
             <button className="btn" onClick={() => host.dismiss(ask.id, t.profile)}>
               {l.dismiss}
             </button>
-            {t.state === "failed" && (
-              <button className="btn" onClick={() => host.edit(ask.id)}>
+            {t.state === "failed" && host.edit && (
+              <button className="btn" onClick={() => host.edit?.(ask.id)}>
                 {l.edit}
               </button>
             )}

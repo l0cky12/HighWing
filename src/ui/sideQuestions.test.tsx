@@ -5,6 +5,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { FakeHermes, row } from "../hermes/fakeHermes";
+import { PICK_MARK } from "../hermes/mentionPicker";
 import { memoryCache } from "../hermes/memoryCache";
 import { connect, type Hermes } from "../hermes/transport";
 import { Main } from "../App";
@@ -70,6 +71,18 @@ describe("/btw in the menu", () => {
     expect(composer().value).toBe("/btw Which repo?");
     expect(server.requests.some((r) => r.method === "prompt.btw")).toBe(false);
     expect(pairs()).toEqual([]);
+  });
+});
+
+describe("/btw with a bot picked in its words", () => {
+  it("asks Hermes the words without the pick mark, and the composer keeps it until the question has gone", async () => {
+    const { server, user, runtime } = await launch();
+    await user.click(composer());
+    await user.paste(`/btw who is @${PICK_MARK}bram?`);
+    expect(composer().value).toBe(`/btw who is @${PICK_MARK}bram?`);
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(server.last("prompt.btw")).toBeTruthy());
+    expect(server.last("prompt.btw")?.params).toEqual({ session_id: runtime, text: "who is @bram?" });
   });
 });
 

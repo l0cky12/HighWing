@@ -157,9 +157,13 @@ export class ReferenceDesk {
     this.add(key, chat);
   }
 
-  /** The message names no bot any more: the chat `offer` added goes, and may be offered again. */
   withdraw(key: string) {
     this.declined.delete(key);
+    this.hold(key);
+  }
+
+  /** Takes away the chat `offer` added and keeps the owner's removal, while Compare stops an ordinary chat from asking. */
+  hold(key: string) {
     const id = this.offered.get(key);
     if (id === undefined) return;
     this.offered.delete(key);

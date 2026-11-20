@@ -737,7 +737,10 @@ export class Hermes {
   private noCompact = new Set<number>();
   /** Compactions asked of Hermes and not yet answered, by chat. A message sent meanwhile waits for it (`deliver`). */
   private compacting = new Map<string, Promise<unknown>>();
-  private mcpReloading?: Promise<"reloaded" | "replying">;
+  /** The `reload.mcp` not yet started, which a server written now can still count on. */
+  private mcpReloadNext?: Promise<"reloaded" | "replying">;
+  /** Bot setup's reloads and ready turns, one at a time, so no reload's idle check runs beside a ready turn. */
+  private mcpTurns: Promise<unknown> = Promise.resolve();
   /** The pipe being opened is waiting for `gateway.ready`. */
   private onReady?: (payload: Record<string, unknown>) => void;
   /** Ends the dial under way with this error. */
@@ -2753,7 +2756,8 @@ export class Hermes {
       const was = this.snapshot.chats.find((c) => c.id === chatId)?.running;
       this.patchChat(chatId, (c) => ({ ...c, running: true, updatedAt: readyAt }));
       try {
-        this.noteRows(profile, chatId, [(await this.protocol.submitHidden(runtimeId, profile, readyTurn(read.parse.card.setupId, items, run.states, record))).userRowId]);
+        const sent = await this.inMcpTurn(() => this.protocol.submitHidden(runtimeId, profile, readyTurn(read.parse.card.setupId, items, run.states, record)));
+        this.noteRows(profile, chatId, [sent.userRowId]);
       } catch (e) {
         if (!lostAnswer(e) && this.profile === profile) this.patchChat(chatId, (c) => ({ ...c, running: !!was && !!c.running }));
         throw e;
@@ -2778,14 +2782,25 @@ export class Hermes {
    * Hermes's `reload.mcp` on a Bot Chat (ADR 0231, "MCP servers need reload.mcp"), so a server Set it up added reaches
    * the bot. The dashboard's handler shuts down every MCP server in its process and connects again those of each
    * profile with a live session (`tui_gateway/methods_tools.py` at ae2a81cc), so it is sent only while no reply runs
-   * anywhere on this Hermes (#85 owner call 1); `replying` when one does. Calls that overlap share one reload. Rejects
-   * unless Hermes says it reloaded; once it has, the chat's card stops waiting on it.
+   * anywhere on this Hermes (#85 owner call 1); `replying` when one does. Calls that overlap share one reload that
+   * hasn't started; a reload already started may predate a server written since, so the call waits for it and sends its
+   * own. Rejects unless Hermes says it reloaded; once it has, the card stops waiting on the servers owed at the call.
    */
   async reloadBotSetupMcp(chatId: string): Promise<"reloaded" | "replying"> {
     const profile = this.profile;
-    this.mcpReloading ??= this.reloadMcpWhenIdle(chatId).finally(() => (this.mcpReloading = undefined));
-    const done = await this.mcpReloading;
-    if (done === "reloaded") this.cache.saveMcpReload(profile, chatId, []);
+    const owed = this.cache.loadMcpReload(profile, chatId);
+    this.mcpReloadNext ??= this.inMcpTurn(() => {
+      this.mcpReloadNext = undefined;
+      return this.reloadMcpWhenIdle(chatId);
+    });
+    const done = await this.mcpReloadNext;
+    if (done === "reloaded") this.cache.saveMcpReload(profile, chatId, this.cache.loadMcpReload(profile, chatId).filter((k) => !owed.includes(k)));
+    return done;
+  }
+
+  private inMcpTurn<T>(turn: () => Promise<T>): Promise<T> {
+    const done = this.mcpTurns.then(turn);
+    this.mcpTurns = done.catch(() => undefined);
     return done;
   }
 
@@ -2809,8 +2824,6 @@ export class Hermes {
   private async reloadMcpIfIdle(chatId: string, profile: string, states: Record<string, CardState>, hear: (key: string, state: CardState) => void) {
     const waiting = Object.keys(states).filter((k) => states[k].kind === "reload");
     if (!waiting.length || this.profile !== profile) return;
-    // A reload already sent may predate these servers' writes, so it can't stand for them.
-    await this.mcpReloading?.catch(() => undefined);
     if ((await this.reloadBotSetupMcp(chatId).catch(() => undefined)) !== "reloaded") return;
     for (const k of waiting) {
       states[k] = { kind: "applied" };

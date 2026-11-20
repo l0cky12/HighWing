@@ -40,7 +40,8 @@ export function trapTab(e: KeyboardEvent, root: HTMLElement | null) {
   const items = [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => !(el as HTMLButtonElement).disabled && el.tabIndex >= 0 && isTabStop(el, root));
   if (!items.length) return e.preventDefault();
   const active = document.activeElement;
-  const outside = !root.contains(active);
+  // The root itself has focus after a press on its background; Tab either way goes to a control.
+  const outside = active === root || !root.contains(active);
   if (e.shiftKey && (outside || active === items[0])) {
     e.preventDefault();
     items[items.length - 1].focus();

@@ -7,9 +7,11 @@
 // sends the model after a description write that got no answer. A field counts as applied only once Hermes answered
 // the read that follows its write.
 import { settleItem, noAnswer, type ItemState, type Miss, type SetupApis as CapabilityApis, type SetupItem } from "./botSetup";
-import { acceptedRecordBlock, tickable, type AcceptedRecord, type Card, type HermesNow, type ListedItem, type Plan, type PlanItem } from "./botSetupCard";
+import { acceptedRecordBlock, mcpSourceKey, tickable, type AcceptedRecord, type Card, type HermesNow, type ListedItem, type Plan, type PlanItem } from "./botSetupCard";
+import { addMcp, mcpOffer, type McpRefusal, type McpSecrets, type McpSources } from "./botSetupMcp";
 import type { Bot, BotLook } from "./bots";
 import type { EditResult, FieldOutcome } from "./fieldMerge";
+import { McpUnsupportedError, type McpApi } from "./mcp";
 import type { MemoryApi } from "./memory";
 import type { ModelCatalog } from "./models";
 import { PersonaError, type PersonaApi, type Soul } from "./persona";
@@ -24,6 +26,7 @@ export type SetupApis = CapabilityApis & {
   persona: Pick<PersonaApi, "read" | "save">;
   profiles: Pick<ProfilesApi, "list" | "edit">;
   memory: Pick<MemoryApi, "load">;
+  mcp: Pick<McpApi, "list" | "catalog" | "add" | "install">;
   bots(): Promise<Bot[]>;
   /** The models the bot's profile can switch to, when Hermes lists them. */
   models(): Promise<ModelCatalog | undefined>;
@@ -34,6 +37,8 @@ export type SetupApis = CapabilityApis & {
  * The bot as the card was drawn against it. `soul`: SOUL.md as read, which the persona is saved over only while
  * Hermes still has it. `model`: the profile's model as `ProfilesApi.edit` compares it. `providers`: each listed
  * model's provider. `copyFrom`: the profile of each bot the block copies from, by its name. `labels`: each toolset's.
+ * `mcp`: where the MCP servers the block names come from, read for Set up again or when it names one, where Hermes
+ * has the routes.
  */
 export type SetupNow = {
   now: HermesNow;
@@ -42,12 +47,16 @@ export type SetupNow = {
   providers: Readonly<Record<string, string>>;
   copyFrom: Readonly<Record<string, string>>;
   labels: Readonly<Record<string, string>>;
+  mcp?: McpSources;
 };
 
 const named = <T extends { name: string }>(rows: readonly T[]) => rows.map((r) => r.name);
 
-/** The bot `profile` as Hermes has it now, and what it lists, read for `card`. Rejects when a read fails. */
-export async function readSetupNow(apis: SetupApis, profile: string, card: Card): Promise<SetupNow> {
+/**
+ * The bot `profile` as Hermes has it now, and what it lists, with the bots `asked.block.copy` copies from and the MCP
+ * servers when `asked` is Set up again's, whose "before" shows the bot's own, or names any. Rejects when a read fails.
+ */
+export async function readSetupNow(apis: SetupApis, profile: string, asked: { again: boolean; block: Pick<Card["block"], "copy" | "mcp"> }): Promise<SetupNow> {
   const [soul, rows, roster, skills, toolsets, catalog, memory] = await Promise.all([
     apis.persona.read(profile),
     apis.profiles.list(),
@@ -62,13 +71,17 @@ export async function readSetupNow(apis: SetupApis, profile: string, card: Card)
   if (!row) throw new ProfileError({ kind: "gone", detail: `Hermes lists no profile named ${profile}.` });
   const providers: Record<string, string> = {};
   for (const p of catalog?.providers ?? []) for (const m of p.models) providers[m.model] ??= p.slug;
-  const sources = card.block.copy.flatMap((c) => roster.filter((b) => b.name.trim() === c.from && b.profile !== profile));
-  const bots = await Promise.all(
-    sources.map(async (b) => {
-      const [theirSkills, theirToolsets] = await Promise.all([apis.skills.rows(b.profile), apis.toolsets.list(b.profile)]);
-      return { name: b.name, skills: named(theirSkills), toolsetsOn: named(theirToolsets.toolsets.filter((t) => t.enabled)) };
-    }),
-  );
+  const sources = asked.block.copy.flatMap((c) => roster.filter((b) => b.name.trim() === c.from && b.profile !== profile));
+  const mcpNamed = asked.block.mcp.length > 0 || asked.block.copy.some((c) => c.mcp.length > 0);
+  const [bots, mcp] = await Promise.all([
+    Promise.all(
+      sources.map(async (b) => {
+        const [theirSkills, theirToolsets] = await Promise.all([apis.skills.rows(b.profile), apis.toolsets.list(b.profile)]);
+        return { name: b.name, skills: named(theirSkills), toolsetsOn: named(theirToolsets.toolsets.filter((t) => t.enabled)) };
+      }),
+    ),
+    asked.again || mcpNamed ? readMcp(apis.mcp, profile, sources, rows) : undefined,
+  ]);
   const model = row.model?.trim() || null;
   return {
     now: {
@@ -80,25 +93,57 @@ export async function readSetupNow(apis: SetupApis, profile: string, card: Card)
       skills,
       toolsets: toolsets.toolsets,
       models: [...new Set([...(model ? [model] : []), ...Object.keys(providers)])],
-      bots,
+      bots: bots.map((b) => ({ ...b, ...(mcp && { mcp: named(mcp.sources.bots[b.name]?.servers ?? []) }) })),
+      ...(mcp && { mcp: mcp.now }),
     },
     soul,
     model: row.provider || row.model ? { provider: row.provider ?? "", model: row.model ?? "" } : null,
     providers,
     copyFrom: Object.fromEntries(sources.map((b) => [b.name, b.profile])),
     labels: Object.fromEntries(toolsets.toolsets.map((t) => [t.name, t.label])),
+    ...(mcp && { mcp: mcp.sources }),
   };
+}
+
+async function readMcp(mcp: SetupApis["mcp"], profile: string, from: readonly Bot[], rows: readonly { name: string; path?: string }[]) {
+  try {
+    const [own, catalog, theirs] = await Promise.all([mcp.list(profile), mcp.catalog(profile), Promise.all(from.map((b) => mcp.list(b.profile)))]);
+    const sources: McpSources = {
+      catalog: catalog.entries,
+      bots: Object.fromEntries(from.map((b, i) => [b.name, { path: rows.find((r) => r.name === b.profile)?.path, servers: theirs[i].servers }])),
+    };
+    const refused: Record<string, McpRefusal> = {};
+    const judge = (name: string, bot?: string) => {
+      const offer = mcpOffer(sources, name, bot);
+      if (offer?.kind === "refused") refused[mcpSourceKey(name, bot)] = offer.why;
+    };
+    for (const e of catalog.entries) judge(e.name);
+    for (const b of from) for (const s of sources.bots[b.name].servers) judge(s.name, b.name);
+    return { sources, now: { catalog: named(catalog.entries), servers: named(own.servers), refused } };
+  } catch (e) {
+    if (e instanceof McpUnsupportedError) return undefined;
+    throw e;
+  }
 }
 
 /**
  * Why an item wasn't applied: ADR 0197's misses, and those only the card has. `profile`: a profile call failed.
- * `noProvider`: Hermes lists no provider for the model. `mcpLater`: MCP servers aren't set up from the card yet.
+ * `noProvider`: Hermes lists no provider for the model. `mcpRefused`: an MCP server the card won't add.
  * `notShown`: the bot's profile isn't the one shown, which every write goes through.
  */
-export type CardMiss = Miss | { kind: "profile"; failure: ProfileFailure } | { kind: "noProvider"; model: string | null } | { kind: "mcpLater" } | { kind: "notShown"; profile: string };
+export type CardMiss =
+  | Miss
+  | { kind: "profile"; failure: ProfileFailure }
+  | { kind: "noProvider"; model: string | null }
+  | { kind: "mcpRefused"; why: McpRefusal; from?: string }
+  | { kind: "notShown"; profile: string };
 
-/** Where an item stands at Set it up: ADR 0197's states, and `waiting` for the Remember row, which the bot saves. */
-export type CardState = Exclude<ItemState, { kind: "failed" }> | { kind: "failed"; miss: CardMiss } | { kind: "waiting" };
+/**
+ * Where an item stands at Set it up: ADR 0197's states, `waiting` for the Remember row, which the bot saves, and for
+ * an MCP server, `connect` while Connect lacks a value it needs and `reload` once added, until Hermes reloads its MCP
+ * servers. An MCP server is `applied` once Hermes said it reloaded them.
+ */
+export type CardState = Exclude<ItemState, { kind: "failed" }> | { kind: "failed"; miss: CardMiss } | { kind: "waiting" } | { kind: "connect" } | { kind: "reload" };
 
 /** One item's write judged. `unanswered`: why its call got no answer from Hermes, after which nothing more is sent. */
 export type Step = { state: CardState; unanswered?: string };
@@ -156,8 +201,8 @@ async function copySkill(apis: SetupApis, profile: string, from: string, item: S
   return judged(await settleItem(apis, profile, item));
 }
 
-/** `accepted`: the cautions the owner confirmed with Apply anyway. */
-export async function applyItem(apis: SetupApis, profile: string, read: SetupNow, item: ListedItem, accepted: Caution[] = []): Promise<Step> {
+/** `accepted`: the cautions the owner confirmed with Apply anyway. `secrets`: what Connect took. */
+export async function applyItem(apis: SetupApis, profile: string, read: SetupNow, item: ListedItem, accepted: Caution[] = [], secrets: McpSecrets = {}): Promise<Step> {
   const capability = (area: SetupItem["area"], want: boolean): SetupItem => {
     const name = item.name ?? item.key;
     return { area, name, label: area === "toolset" ? (read.labels[name] ?? name) : name, want, state: APPLIED.state as SetupItem["state"] };
@@ -184,8 +229,13 @@ export async function applyItem(apis: SetupApis, profile: string, read: SetupNow
     }
     case "toolset":
       return judged(await settleItem(apis, profile, capability("toolset", item.after === "on"), accepted));
-    case "mcp":
-      return missed({ kind: "mcpLater" });
+    case "mcp": {
+      const name = item.name ?? "";
+      const offer = read.mcp && mcpOffer(read.mcp, name, item.from);
+      if (!offer) return missed({ kind: "missing" });
+      if (offer.kind === "refused") return missed({ kind: "mcpRefused", why: offer.why, ...(item.from !== undefined && { from: item.from }) });
+      return addMcp(apis.mcp, profile, name, offer, secrets[item.key]);
+    }
   }
 }
 
@@ -249,13 +299,15 @@ const words = (i: ListedItem) => (ITEM_WORDS[i.kind] as (i: ListedItem) => strin
  */
 export function readyTurn(setupId: string, items: readonly ListedItem[], states: Readonly<Record<string, CardState>>, record: AcceptedRecord): string {
   const applied = items.filter((i) => states[i.key]?.kind === "applied");
-  const missed = items.filter((i) => i.kind !== "remember" && states[i.key]?.kind !== "applied");
+  const unreached = items.filter((i) => states[i.key]?.kind === "reload");
+  const missed = items.filter((i) => i.kind !== "remember" && states[i.key]?.kind !== "applied" && states[i.key]?.kind !== "reload");
   const remember = items.find((i): i is Extract<ListedItem, { kind: "remember" }> => i.kind === "remember");
   const askedBefore = record.items.some((a) => a.kind === "remember" && a.ticked);
   return [
     botSetupReady(setupId),
     "This message comes from the Highwing app, not from the owner, and the owner doesn't see it. The owner pressed Set it up on your card, so Bot setup is over: don't ask the setup questions again, and draw a new card only if the owner asks to change your setup.",
     applied.length ? `Highwing applied and read back: ${applied.map(words).join("; ")}.` : "Highwing applied nothing.",
+    ...(unreached.length ? [`Added, but you can't reach them until Hermes reloads its MCP servers, which the owner does from the card: ${unreached.map(words).join("; ")}.`] : []),
     ...(missed.length ? [`Not applied, so the card still offers it: ${missed.map(words).join("; ")}.`] : []),
     ...(remember?.after
       ? [`Save one memory entry now with your memory tool, and nothing else: "The owner wants to be called ${remember.after}."`]

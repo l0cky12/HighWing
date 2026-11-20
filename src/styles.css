@@ -544,6 +544,10 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
   overflow-wrap: anywhere; font-size: calc(13rem / 14);
 }
 .bot-setup-persona.clamped { max-height: 6.5em; overflow: hidden; mask-image: linear-gradient(to bottom, #000 60%, transparent); }
+.bot-setup-persona.was { margin-top: 4px; color: var(--muted); }
+.bot-setup-was { color: var(--muted); text-decoration: line-through; }
+.msg.assistant .bot-setup-unchanged, .bot-setup-unchanged { margin: 0; padding: 2px 0 4px; }
+.bot-setup-body > .link-btn + .link-btn { margin-left: 12px; }
 .bot-setup-ok { color: var(--ok); }
 .bot-setup-bad { color: var(--bad); }
 .bot-setup-warn { color: var(--warn); }
@@ -554,6 +558,9 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
 .bot-setup-field { width: 100%; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line-3); background: var(--bg); color: var(--text); font: inherit; }
 textarea.bot-setup-field { resize: vertical; min-height: 8em; }
 .bot-setup-editor-actions { display: flex; gap: 6px; }
+.msg.assistant .bot-setup-runs, .bot-setup-runs { display: block; font-size: calc(12rem / 14); color: var(--text-2); background: none; padding: 0; }
+.bot-setup-connect { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--raised-2); }
+.bot-setup-secret { display: grid; gap: 4px; font-size: calc(12.5rem / 14); }
 .bot-setup-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; border-top: 1px solid var(--line-2); margin-top: 6px; padding-top: 10px; }
 .bot-setup-foot-note { color: var(--text-2); font-size: calc(12.5rem / 14); }
 .bot-setup-sent summary { cursor: pointer; color: var(--muted); font-size: calc(12.5rem / 14); }
@@ -4314,6 +4321,14 @@ div.export-preview.export-page { height: auto; padding: 10px 12px; background: v
 button.budget-chat:hover { text-decoration: underline; }
 .budget-chat-amount { grid-column: 2; grid-row: 1; font-variant-numeric: tabular-nums; color: var(--text-2); text-align: right; }
 .budget-notes ul { padding-left: 18px; display: grid; gap: 4px; }
+
+.again-how { display: flex; flex-direction: column; gap: 8px; }
+.again-choice { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 8px; color: var(--text-2); line-height: 1.5; cursor: pointer; }
+.again-choice:has(input:checked) { border-color: var(--line-3); background: var(--raised-2); }
+.again-choice.off { cursor: default; color: var(--muted); }
+.again-choice input { flex: none; margin: 3px 0 0; accent-color: var(--accent); }
+.again-choice strong { color: var(--text); font-weight: 600; }
+.again-warn svg { color: var(--warn); vertical-align: -2px; }
 
 /* New bot's name dialog (NewBot.tsx, ADR 0231): the name box with Skip beside it, and Skip's menu of two choices. */
 .new-bot-name { display: flex; gap: 8px; }

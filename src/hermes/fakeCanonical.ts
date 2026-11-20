@@ -102,7 +102,7 @@ const PROFILE_IMPLICIT = new Set([
 const AUTHORITY_AS_LEGACY = new Set([
   "session.active_list", "session.context_breakdown", "session.control.read", "session.control", "approval.received", "clarify.lock", "file.attach", "model.options",
   "config.get", "config.set", "profiles.list", "llm.oneshot", "commands.catalog", "command.dispatch", "slash.exec", "prompt.btw", "rollback.list", "rollback.diff",
-  "rollback.restore", "tools.show", "subagent.list", "subagent.tail", "subagent.steer", "subagent.interrupt", "shell.exec",
+  "rollback.restore", "tools.show", "reload.mcp", "subagent.list", "subagent.tail", "subagent.steer", "subagent.interrupt", "shell.exec",
 ]);
 
 /** What `tui_gateway/ws_legacy_fallback.py` keeps from the legacy handlers: no session verb but these. */

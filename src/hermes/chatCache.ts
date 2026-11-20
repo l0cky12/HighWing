@@ -43,6 +43,8 @@ export const SENT_HERE_PREFIX = "hermes-chat.sent-images.";
 export const ASKS_PREFIX = "hermes-chat.asks.";
 /** What the owner accepted on a Bot Chat's setup card, until the ready turn's row reads back (ADR 0231), by chat. */
 export const SETUP_RECORD_PREFIX = "hermes-chat.bot-setup-accepted.";
+/** The MCP servers a Bot Chat's setup card added that wait on a reload (ADR 0231), by chat. */
+export const MCP_RELOAD_PREFIX = "hermes-chat.bot-setup-mcp-reload.";
 /** Where drafts.ts kept a chat's sent messages Hermes didn't take, or may not have, before the outbox: moved into it. */
 export const HELD_PREFIX = "hermes-chat.undelivered.";
 
@@ -363,6 +365,7 @@ export function localChatCache(connection: ScopeSource): ChatCache {
   const sentHereKey = (profile: string) => SENT_HERE_PREFIX + scope(profile);
   const asksKey = (profile: string) => ASKS_PREFIX + scope(profile);
   const setupRecordKey = (profile: string, chatId: string) => SETUP_RECORD_PREFIX + scope(profile, chatId);
+  const mcpReloadKey = (profile: string, chatId: string) => MCP_RELOAD_PREFIX + scope(profile, chatId);
   const loadSentHere = (profile: string) => {
     try {
       return sentHereOf(JSON.parse(localStorage.getItem(sentHereKey(profile)) ?? "null"));
@@ -585,6 +588,17 @@ export function localChatCache(connection: ScopeSource): ChatCache {
       const ok = persist(() => localStorage, key, record ? JSON.stringify(record) : null);
       if (ok) liveSetupRecords.delete(key);
       return ok;
+    },
+    loadMcpReload(profile, chatId) {
+      try {
+        const keys: unknown = JSON.parse(localStorage.getItem(mcpReloadKey(profile, chatId)) ?? "[]");
+        return Array.isArray(keys) ? keys.filter((k): k is string => typeof k === "string") : [];
+      } catch {
+        return [];
+      }
+    },
+    saveMcpReload(profile, chatId, keys) {
+      persist(() => localStorage, mcpReloadKey(profile, chatId), keys.length ? JSON.stringify(keys) : null);
     },
     loadSentHere,
     saveSentHere(profile, chat, images) {

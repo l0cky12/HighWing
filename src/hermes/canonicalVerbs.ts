@@ -73,6 +73,7 @@ export const APP_METHODS = [
   "projects.update",
   "prompt.btw",
   "prompt.submit",
+  "reload.mcp",
   "request.answer",
   "rollback.diff",
   "rollback.list",
@@ -325,6 +326,13 @@ export const APP_VERBS: AppVerb[] = [
 
   // Tools and subagents.
   { method: "tools.show", params: (s) => ({ session_id: s.sid }), route: "authority", answer: "ok" },
+  {
+    method: "reload.mcp",
+    params: (s) => ({ session_id: s.sid, confirm: true }),
+    route: "authority",
+    answer: "ok",
+    unprobed: "it reconnects every MCP server in the gateway's process; added after the recording, its route is from the source at ae2a81cc (`gateway/session_ancillary.py`)",
+  },
   { method: "subagent.list", params: (s) => ({ session_id: s.sid }), route: "authority", answer: "ok" },
   { method: "subagent.tail", params: (s) => ({ session_id: s.sid, subagent_id: "none" }), route: "authority", answer: "ok" },
   { method: "subagent.steer", params: (s) => ({ session_id: s.sid, subagent_id: "none", text: "x" }), route: "authority", answer: "ok" },

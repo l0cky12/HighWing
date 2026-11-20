@@ -40,6 +40,8 @@ export type ProfileRow = {
   gatewayRunning?: boolean;
   /** The profile distribution it was installed from. */
   distribution?: string;
+  /** Its folder on the server. */
+  path?: string;
 };
 
 /** Hermes's profile ids (`hermes_constants.PROFILE_ID_RE`). */
@@ -111,6 +113,7 @@ export function toProfileRow(r: unknown): ProfileRow | undefined {
     ...(count !== undefined && { skillCount: count }),
     ...(r.gateway_running === true && { gatewayRunning: true }),
     ...(trimmedNonBlank(r.distribution_name) && { distribution: trimmedNonBlank(r.distribution_name) }),
+    ...(trimmedNonBlank(r.path) && { path: trimmedNonBlank(r.path) }),
   };
 }
 

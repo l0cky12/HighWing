@@ -13,7 +13,7 @@
 // A test (profileLocalData.test.ts) reads every storage key the app's source names and fails on one that isn't listed
 // here or in `NOT_PER_PROFILE`.
 import { BUDGETS_KEY } from "./budgetWatch";
-import { ASKS_PREFIX, BRANCH_PREFIX, HELD_PREFIX, LIST_PREFIX, OUTBOX_PREFIX, PROFILE_PREFIX, PULLED_PREFIX, QUEUE_PREFIX, REPLY_TIMES_PREFIX, SENT_HERE_PREFIX, SETUP_RECORD_PREFIX, TRANSCRIPT_PREFIX, moveLiveChatData } from "./chatCache";
+import { ASKS_PREFIX, BRANCH_PREFIX, HELD_PREFIX, LIST_PREFIX, MCP_RELOAD_PREFIX, OUTBOX_PREFIX, PROFILE_PREFIX, PULLED_PREFIX, QUEUE_PREFIX, REPLY_TIMES_PREFIX, SENT_HERE_PREFIX, SETUP_RECORD_PREFIX, TRANSCRIPT_PREFIX, moveLiveChatData } from "./chatCache";
 import { type ScopeSource, connectionScope, inScope, isPrefOf, prefScope, scopeParts } from "./connections";
 import { DRAFT_PREFIX, type Drafts } from "./drafts";
 import { IMPORTS_KEY } from "./importTranscripts";
@@ -43,6 +43,7 @@ export const PROFILE_KEYS: readonly { prefix: string; suffix?: RegExp }[] = [
   { prefix: BRANCH_PREFIX },
   { prefix: ASKS_PREFIX },
   { prefix: SETUP_RECORD_PREFIX },
+  { prefix: MCP_RELOAD_PREFIX },
   { prefix: REPLY_TIMES_PREFIX },
   { prefix: SENT_HERE_PREFIX },
   { prefix: DRAFT_PREFIX },

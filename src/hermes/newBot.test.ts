@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { Bot } from "./bots";
 import { FakeHermes } from "./fakeHermes";
 import { memoryCache } from "./memoryCache";
+import type { McpApi } from "./mcp";
 import { makeBot, newBotInventory, type InventoryIo, type NewBotIo } from "./newBot";
 import { ProfileError } from "./profiles";
 import { connect, type Hermes } from "./transport";
@@ -107,6 +108,25 @@ describe("newBotInventory", () => {
       bots: [{ name: "Scribe", description: "Scribe bot", skills: ["notes"], toolsetsOn: ["kanban"] }],
     });
     expect("mcpCatalog" in inv).toBe(false);
+  });
+
+  it("offers Hermes's MCP catalog and the servers other bots have, as Hermes lists them", async () => {
+    const server = (name: string) => ({ name }) as Awaited<ReturnType<McpApi["list"]>>["servers"][number];
+    const mcp: InventoryIo["mcp"] = {
+      catalog: async () => ({ entries: [{ name: "airbnb" }, { name: "github" }] as Awaited<ReturnType<McpApi["catalog"]>>["entries"], problems: [] }),
+      list: async (p) => {
+        if (p === "broken") throw new Error("down");
+        return { profile: p, readAt: 0, servers: [server("brave-search"), server("notes")] };
+      },
+    };
+    const inv = await newBotInventory({ ...io, mcp }, "ada", [bot("scribe", "Scribe"), bot("broken", "Broken")]);
+    expect(inv.mcpCatalog).toEqual(["airbnb", "github"]);
+    expect(inv.bots.map((b) => [b.name, b.mcp])).toEqual([
+      ["Scribe", ["brave-search", "notes"]],
+      ["Broken", []],
+    ]);
+    const none = await newBotInventory({ ...io, mcp: { ...mcp, catalog: () => Promise.reject(new Error("no route")) } }, "ada", [bot("scribe", "Scribe")]);
+    expect("mcpCatalog" in none).toBe(false);
   });
 
   it("leaves a list Hermes didn't answer empty instead of holding the interview back", async () => {

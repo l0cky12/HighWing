@@ -50,7 +50,7 @@ import { WritingDesk, type WritingPick } from "./writingModel";
 import { ToolsetsApi, type Caution } from "./toolsets";
 import { VoiceSettingsApi } from "./voiceSettings";
 import { readBack, sendImport, type PlannedChat } from "./importTranscripts";
-import { memoryApi, type MemoryApi } from "./memory";
+import { memoryApi, type MemoryApi, type MemoryEntry } from "./memory";
 import { MemoryProvidersApi } from "./memoryProviders";
 import { SkillsApi } from "./skills";
 import {
@@ -148,11 +148,13 @@ import {
 import { cannotResend, laterOf, replayBlocked, resendText, replayTarget, splitRefs, turnAt, variantRoot, withRefs, withoutMarkers, type ReplayKind, type ReplayPreview } from "./replay";
 import { errorText, formatBytes, isObj, nonBlankText, nonEmptyText, optionalText } from "./values";
 import { displayMetadata, returnedItem } from "./returned";
-import { botSetupMarkerId } from "./botSetupBrief";
-import { BotSetupStarts, botSetupBegin, lostAnswer, runStart, withSetupLine, type BotSetupRefusal, type BotSetupStart, type StartAsk, type StartIo } from "./botSetupStart";
+import { botSetupMarkerId, type BotSetupCurrent } from "./botSetupBrief";
+import { BotSetupStarts, botSetupBegin, briefTurn, lostAnswer, runStart, withSetupLine, type BotSetupRefusal, type BotSetupStart, type StartAsk, type StartIo } from "./botSetupStart";
+import { againBusy, currentSetup, runFresh, type AgainStart, type FreshEnd, type FreshIo } from "./botSetupAgain";
 import { acceptedRecord, fencedBlocks, parseSetup, readAcceptedRecord, type AcceptedRecord, type ListedItem, type ParseResult, type Plan } from "./botSetupCard";
 import { BOT_SETUP_FENCE } from "./botSetupBrief";
 import { applyItem, readSetupNow, readyTurn, runSetup, setupItems, type BotSetupRestart, type CardState, type SetupApis, type SetupNow } from "./botSetupApply";
+import type { McpSecrets } from "./botSetupMcp";
 
 /**
  * The `source` this app stamps on chats it starts. Legacy `session.create` stores any string as-is, but the gateway
@@ -296,6 +298,10 @@ export type ChatCache = {
   loadSetupRecord(profile: string, chatId: string): unknown;
   /** Keeps it; null deletes it. False: storage refused it. */
   saveSetupRecord(profile: string, chatId: string, record: AcceptedRecord | null): boolean;
+  /** The keys of the MCP servers Set it up added on the chat's card that wait on a reload (ADR 0231). */
+  loadMcpReload(profile: string, chatId: string): string[];
+  /** Keeps them; none deletes them. */
+  saveMcpReload(profile: string, chatId: string, keys: readonly string[]): void;
 };
 /**
  * What clicking a notification about a waiting card does: `open` shows the card in its chat. `deny`, for an Approval
@@ -340,6 +346,8 @@ const noCache: ChatCache = {
   saveAsks: () => true,
   loadSetupRecord: () => null,
   saveSetupRecord: () => true,
+  loadMcpReload: () => [],
+  saveMcpReload: () => {},
 };
 
 /** A row of dashboard REST `GET /api/sessions`; times are Unix seconds. */
@@ -730,6 +738,10 @@ export class Hermes {
   private noCompact = new Set<number>();
   /** Compactions asked of Hermes and not yet answered, by chat. A message sent meanwhile waits for it (`deliver`). */
   private compacting = new Map<string, Promise<unknown>>();
+  /** The `reload.mcp` not yet started, which a server written now can still count on. */
+  private mcpReloadNext?: Promise<"reloaded" | "replying">;
+  /** Bot setup's reloads and ready turns, one at a time, so no reload's idle check runs beside a ready turn. */
+  private mcpTurns: Promise<unknown> = Promise.resolve();
   /** The pipe being opened is waiting for `gateway.ready`. */
   private onReady?: (payload: Record<string, unknown>) => void;
   /** Ends the dial under way with this error. */
@@ -816,6 +828,11 @@ export class Hermes {
   private botSetups = new BotSetupStarts();
   /** The Bot Chats the latest roster named, by profile: registry rows and lineage tips, which search leaves out. */
   private botChatIds = new Map<string, Set<string>>();
+  /**
+   * By profile, the old Bot Chat Start fresh archived and hasn't named yet. Hermes cleared its title as it archived it,
+   * so nothing in Hermes says which archived chat it was, and only this app's run knows.
+   */
+  private freshUnnamed = new Map<string, string>();
   /** See `setVisitHome`. */
   private visitHome?: string;
   /** The roster read for the Bot Chats' ids on a connection (`knownBotChats`). */
@@ -2611,11 +2628,8 @@ export class Hermes {
     const isLine = (i: Item, id: string) => i.kind === "returned" && i.setup?.id === id;
     const io: StartIo = {
       read: async () => {
-        const found = await this.botChats.find(profile, bot.name, !!bot.botChat);
-        if (!found) return null;
-        const chatId = found.resolvedId;
-        this.listBotChat(profile, bot, found.id, chatId);
-        await this.resume(chatId);
+        const chatId = await this.foundBotChat(profile, bot);
+        if (!chatId) return null;
         const chat = this.snapshot.chats.find((c) => c.id === chatId);
         const runningBeforeRows = !!chat?.running;
         const last = chat?.items.at(-1);
@@ -2665,6 +2679,116 @@ export class Hermes {
     }
   }
 
+  private async foundBotChat(profile: string, bot: Bot): Promise<string | null> {
+    const found = await this.botChats.find(profile, bot.name, !!bot.botChat);
+    if (!found) return null;
+    this.listBotChat(profile, bot, found.id, found.resolvedId);
+    await this.resume(found.resolvedId);
+    return found.resolvedId;
+  }
+
+  /** How the shown profile's bot is set up now, for Set up again's brief (ADR 0231): the reads the card's "before" comes from. */
+  async botSetupCurrent(bot: Bot): Promise<BotSetupCurrent> {
+    const profile = this.profile;
+    if (bot.profile !== profile) throw new Error(`Switch to ${bot.profile} first.`);
+    return currentSetup((await readSetupNow(this.setupApis(profile), profile, { again: true, block: { copy: [], mcp: [] } })).now);
+  }
+
+  /**
+   * Set up again with Keep history (ADR 0231): sends `brief`, under a new setup id, into the shown profile's Bot Chat
+   * for `bot` as one hidden turn. Nothing is seeded, archived or cleared, and nothing is written to the profile. A bot
+   * with no Bot Chat yet gets one with the brief seeded, as a new bot does. Resolves `refused`, with nothing sent,
+   * where `botSetupOff` says why, or while a reply runs or a Question waits there. A send whose answer was lost is
+   * settled by the stored rows, never by a second send.
+   */
+  async setUpBotAgain(bot: Bot, brief: (id: string) => string): Promise<AgainStart> {
+    const profile = this.profile;
+    if (bot.profile !== profile) throw new Error(`Switch to ${bot.profile} first.`);
+    const off = this.botSetupOff();
+    if (off) return { kind: "refused", reason: off };
+    const chatId = await this.foundBotChat(profile, bot);
+    if (!chatId) return this.startBotSetup(bot, brief);
+    const was = this.snapshot.chats.find((c) => c.id === chatId);
+    const busy = againBusy(was);
+    if (busy) return { kind: "refused", reason: busy };
+    const id = crypto.randomUUID();
+    const text = briefTurn(brief(id), id);
+    if (botSetupMarkerId(text) !== id) throw new Error("The brief doesn't start with this setup's marker, so it wasn't sent.");
+    const runtimeId = await this.resume(chatId);
+    const isLine = (i: Item) => i.kind === "returned" && i.setup?.id === id;
+    this.patchChat(chatId, (c) => ({ ...c, running: true, updatedAt: Date.now(), items: withSetupLine(c.items, { id }, nextId(c.items, "w")) }));
+    try {
+      this.noteRows(profile, chatId, [(await this.protocol.submitHidden(runtimeId, profile, text)).userRowId]);
+    } catch (e) {
+      const stored = async () => (await this.storedRows(chatId, profile)).some((r) => r.role === "user" && botSetupMarkerId(storedText(r.content)) === id);
+      if (lostAnswer(e) && (await stored().catch(() => false))) return { kind: "waiting", chatId, id };
+      if (this.profile === profile) this.patchChat(chatId, (c) => ({ ...c, running: !!was?.running && !!c.running, items: c.items.filter((i) => !isLine(i)) }));
+      throw e;
+    }
+    return { kind: "waiting", chatId, id };
+  }
+
+  /**
+   * Set up again with Start fresh (ADR 0231), through `botSetupAgain.ts`'s steps: leaves the Bot Chat's live session,
+   * archives the chat in Hermes, checks the title lookup no longer finds it, names it `title` so it can be found in
+   * Archived, removes `entries`, the memory entries the owner was shown, one at a time under Hermes's lock, and makes a
+   * new Bot Chat with `brief` seeded. Never on `default`. Resolves `refused`, with nothing sent, where `botSetupOff`
+   * says why, or while a reply runs or a Question waits in the Bot Chat. When the lookup still finds the old chat, it
+   * is unarchived and no memory is cleared.
+   */
+  async startBotFresh(bot: Bot, brief: (id: string) => string, entries: readonly MemoryEntry[], title: string): Promise<FreshEnd> {
+    const profile = this.profile;
+    if (bot.profile !== profile) throw new Error(`Switch to ${bot.profile} first.`);
+    const off = this.botSetupOff();
+    if (off) return { kind: "refused", reason: off };
+    if (bot.isDefault || profile === "default") return { kind: "refused", reason: "default" };
+    const io: FreshIo = {
+      find: async () => {
+        const chatId = await this.foundBotChat(profile, bot);
+        const busy = chatId ? againBusy(this.snapshot.chats.find((c) => c.id === chatId)) : undefined;
+        return chatId ? { chatId, ...(busy && { busy }) } : null;
+      },
+      unnamed: async () => {
+        const chatId = this.freshUnnamed.get(profile);
+        if (!chatId) return null;
+        const row = (await this.rest("GET", `${sessionPath(chatId)}?${new URLSearchParams({ profile })}`)) as SessionRow;
+        if (row.archived && !row.title) return chatId;
+        this.freshUnnamed.delete(profile);
+        return null;
+      },
+      leave: async (chatId) => {
+        const runtimeId = this.snapshot.chats.find((c) => c.id === chatId)?.runtimeId;
+        if (!runtimeId) return;
+        await this.protocol.leave(runtimeId);
+        this.runtimeOwners.delete(runtimeId);
+        if (this.profile !== profile) return;
+        this.staleItems.set(chatId, this.snapshot.chats.find((c) => c.id === chatId)?.items.length ?? 0);
+        this.patchChat(chatId, (c) => ({ ...c, runtimeId: undefined, live: undefined }));
+      },
+      archive: async (chatId) => {
+        this.freshUnnamed.set(profile, chatId);
+        if (!(await this.archive(chatId))) throw new Error(`Hermes doesn't have ${bot.name}'s Bot Chat archived.`);
+      },
+      titleTaken: async () => (await this.botChats.find(profile, bot.name, false)) !== null,
+      unarchive: (chatId) => this.restore(chatId),
+      retitle: async (chatId) => {
+        const refused = await this.fencedPatch(chatId, profile, { title }, await this.revision(chatId, profile)).then(
+          () => undefined,
+          (e: unknown) => e,
+        );
+        // Hermes cleared the title as it archived the chat, so it is an ordinary archived chat now, under the title it has.
+        const now = await this.readTitle(chatId, profile).catch(() => title);
+        this.botChatIds.delete(profile);
+        if (this.profile === profile) this.patchChat(chatId, (c) => ({ ...c, bot: false, title: now }));
+        if (refused) throw refused;
+        this.freshUnnamed.delete(profile);
+      },
+      clearMemory: async () => (await this.memory.removeMany(profile, entries)).outcomes.filter((o) => o.kind !== "removed").length,
+      start: () => this.startBotSetup({ ...bot, botChat: null }, brief),
+    };
+    return runFresh(io);
+  }
+
   private setupApis(profile: string): SetupApis {
     return {
       skills: this.skills,
@@ -2672,6 +2796,7 @@ export class Hermes {
       persona: this.persona,
       profiles: this.manageProfiles,
       memory: this.memory,
+      mcp: this.mcp,
       bots: () => this.bots(),
       models: async () => (this.snapshot.models?.profile === profile ? this.snapshot.models : this.readModels(profile).catch(() => undefined)),
       editBot: (name, edits) => this.editBot(name, edits),
@@ -2707,6 +2832,7 @@ export class Hermes {
       accepted,
       readyOwed: accepted !== parse.accepted,
       live: blockAt(parse.card.at.index, parse.card.at.nth),
+      mcpReload: this.cache.loadMcpReload(profile, chatId),
       ...(parse.newerUnreadable && { unreadable: parse.newerUnreadable.source }),
       setup,
     };
@@ -2716,30 +2842,37 @@ export class Hermes {
    * Set it up on a Bot Chat's card (ADR 0231): records what the owner accepted on this computer first, writes each
    * ticked item one at a time and reads it back, then sends the hidden ready turn that carries the record and ends the
    * interview. Once a call gets no answer, nothing more is sent: the items after it aren't tried, and the ready turn
-   * waits for the next Set it up. `hear` learns each item's state as it changes. `readyAt`: when the ready turn went.
+   * waits for the next Set it up. MCP servers added are reloaded before the ready turn when no reply runs on this
+   * Hermes, and otherwise wait for the owner's Reload MCP servers. `hear` learns each item's state as it changes.
+   * `secrets`: what Connect took for each MCP server, sent only now. `readyAt`: when the ready turn went.
    */
-  async applyBotSetup(read: BotSetupCardRead, plan: Plan, hear: (key: string, state: CardState | { kind: "working" }) => void): Promise<BotSetupRun> {
+  async applyBotSetup(read: BotSetupCardRead, plan: Plan, hear: (key: string, state: CardState | { kind: "working" }) => void, secrets: McpSecrets = {}): Promise<BotSetupRun> {
     const { chatId, profile, setup } = read;
     if (this.profile !== profile) return { states: {}, readyFailed: { kind: "notShown", profile } };
     const items = setupItems(plan, read.parse.accepted);
     const record = acceptedRecord(plan, read.accepted);
     this.cache.saveSetupRecord(profile, chatId, record);
     const apis = this.setupApis(profile);
-    const run = await runSetup(items, (item) => applyItem(apis, profile, setup, item), hear);
+    const run = await runSetup(items, (item) => applyItem(apis, profile, setup, item, [], secrets), hear);
+    this.rememberMcpReloadOwed(profile, chatId, run.states);
     if (run.unanswered !== undefined) return run;
+    await this.reloadMcpIfIdle(chatId, profile, run.states, hear);
     if (this.profile !== profile) return { ...run, readyFailed: { kind: "notShown", profile } };
     const readyAt = Date.now();
     try {
       // A ready turn already stored with this record has told the bot all this one would, unless this run applied
       // something that one couldn't: the bot must rebuild for it.
       const appliedNow = Object.values(run.states).some((s) => s.kind === "applied");
-      const stored = appliedNow ? undefined : parseSetup(await this.storedRows(chatId, profile));
-      if (stored?.kind === "card" && JSON.stringify(stored.accepted) === JSON.stringify(record)) return run;
+      const stored = parseSetup(await this.storedRows(chatId, profile));
+      // Set up again may have started another setup in this Bot Chat meanwhile, whose interview this turn would end.
+      if ((stored.kind === "card" ? stored.card.setupId : stored.setupId) !== read.parse.card.setupId) return run;
+      if (!appliedNow && stored.kind === "card" && JSON.stringify(stored.accepted) === JSON.stringify(record)) return run;
       const runtimeId = await this.resume(chatId);
       const was = this.snapshot.chats.find((c) => c.id === chatId)?.running;
       this.patchChat(chatId, (c) => ({ ...c, running: true, updatedAt: readyAt }));
       try {
-        this.noteRows(profile, chatId, [(await this.protocol.submitHidden(runtimeId, profile, readyTurn(read.parse.card.setupId, items, run.states, record))).userRowId]);
+        const sent = await this.inMcpTurn(() => this.protocol.submitHidden(runtimeId, profile, readyTurn(read.parse.card.setupId, items, run.states, record)));
+        this.noteRows(profile, chatId, [sent.userRowId]);
       } catch (e) {
         if (!lostAnswer(e) && this.profile === profile) this.patchChat(chatId, (c) => ({ ...c, running: !!was && !!c.running }));
         throw e;
@@ -2750,10 +2883,67 @@ export class Hermes {
     return { ...run, readyAt };
   }
 
-  /** `accepted`: the cautions the owner confirmed with Apply anyway. */
-  async retryBotSetupItem(read: BotSetupCardRead, item: ListedItem, accepted: Caution[] = []): Promise<CardState> {
+  /** `accepted`: the cautions the owner confirmed with Apply anyway. `secrets`: what Connect took. */
+  async retryBotSetupItem(read: BotSetupCardRead, item: ListedItem, accepted: Caution[] = [], secrets: McpSecrets = {}): Promise<CardState> {
     if (this.profile !== read.profile) return { kind: "failed", miss: { kind: "notShown", profile: read.profile } };
-    return (await applyItem(this.setupApis(read.profile), read.profile, read.setup, item, accepted)).state;
+    const step = await applyItem(this.setupApis(read.profile), read.profile, read.setup, item, accepted, secrets);
+    const states = { [item.key]: step.state };
+    this.rememberMcpReloadOwed(read.profile, read.chatId, states);
+    if (step.unanswered === undefined) await this.reloadMcpIfIdle(read.chatId, read.profile, states, () => {});
+    return states[item.key];
+  }
+
+  /**
+   * Hermes's `reload.mcp` on a Bot Chat (ADR 0231, "MCP servers need reload.mcp"), so a server Set it up added reaches
+   * the bot. The dashboard's handler shuts down every MCP server in its process and connects again those of each
+   * profile with a live session (`tui_gateway/methods_tools.py` at ae2a81cc), so it is sent only while no reply runs
+   * anywhere on this Hermes (#85 owner call 1); `replying` when one does. Calls that overlap share one reload that
+   * hasn't started; a reload already started may predate a server written since, so the call waits for it and sends its
+   * own. Rejects unless Hermes says it reloaded; once it has, the card stops waiting on the servers owed at the call.
+   */
+  async reloadBotSetupMcp(chatId: string): Promise<"reloaded" | "replying"> {
+    const profile = this.profile;
+    const owed = this.cache.loadMcpReload(profile, chatId);
+    this.mcpReloadNext ??= this.inMcpTurn(() => {
+      this.mcpReloadNext = undefined;
+      return this.reloadMcpWhenIdle(chatId);
+    });
+    const done = await this.mcpReloadNext;
+    if (done === "reloaded") this.cache.saveMcpReload(profile, chatId, this.cache.loadMcpReload(profile, chatId).filter((k) => !owed.includes(k)));
+    return done;
+  }
+
+  private inMcpTurn<T>(turn: () => Promise<T>): Promise<T> {
+    const done = this.mcpTurns.then(turn);
+    this.mcpTurns = done.catch(() => undefined);
+    return done;
+  }
+
+  private async reloadMcpWhenIdle(chatId: string): Promise<"reloaded" | "replying"> {
+    if (await this.anyReplyRunningOrWaiting()) return "replying";
+    const res = obj(await this.request("reload.mcp", { session_id: await this.resume(chatId), confirm: true })) ?? {};
+    if (res.status !== "reloaded") throw new Error(textOf(res.message) ?? `Hermes didn't reload its MCP servers (${String(res.status ?? "no status")}).`);
+    return "reloaded";
+  }
+
+  private async anyReplyRunningOrWaiting(): Promise<boolean> {
+    const res = obj(await this.request("session.active_list", {}));
+    return (Array.isArray(res?.sessions) ? res.sessions : []).some((r) => ["starting", "working", "waiting"].includes(String(obj(r)?.status)));
+  }
+
+  private rememberMcpReloadOwed(profile: string, chatId: string, states: Readonly<Record<string, CardState>>) {
+    const added = Object.keys(states).filter((k) => states[k].kind === "reload");
+    if (added.length) this.cache.saveMcpReload(profile, chatId, [...new Set([...this.cache.loadMcpReload(profile, chatId), ...added])]);
+  }
+
+  private async reloadMcpIfIdle(chatId: string, profile: string, states: Record<string, CardState>, hear: (key: string, state: CardState) => void) {
+    const waiting = Object.keys(states).filter((k) => states[k].kind === "reload");
+    if (!waiting.length || this.profile !== profile) return;
+    if ((await this.reloadBotSetupMcp(chatId).catch(() => undefined)) !== "reloaded") return;
+    for (const k of waiting) {
+      states[k] = { kind: "applied" };
+      hear(k, states[k]);
+    }
   }
 
   /**
@@ -7177,6 +7367,8 @@ export type BotSetupCardRead = {
   accepted: AcceptedRecord | null;
   readyOwed: boolean;
   live?: string;
+  /** The keys of the MCP servers added from the card that wait on a reload. */
+  mcpReload: string[];
   unreadable?: string;
   setup: SetupNow;
 };

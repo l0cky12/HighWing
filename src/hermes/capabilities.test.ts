@@ -12,6 +12,7 @@ import {
   failureOf,
   sharesChats,
   predatesBotSetup,
+  reachesBotSetup,
   BOT_SETUP_SINCE,
   flagsFrom,
   healthFacts,
@@ -313,6 +314,14 @@ describe("partial and malformed answers", () => {
     expect(predatesBotSetup({ version: BOT_SETUP_SINCE })).toBe(false);
     expect(predatesBotSetup({ build: "v0.24.0-12-gae2a81c" })).toBe(false);
     expect(predatesBotSetup({})).toBe(false);
+  });
+
+  it("offers Set up again only once Hermes says it is 0.23.2 or later: not before the version is read, nor when none is named", () => {
+    expect(reachesBotSetup({ version: BOT_SETUP_SINCE })).toBe(true);
+    expect(reachesBotSetup({ build: "v0.24.0-12-gae2a81c" })).toBe(true);
+    expect(reachesBotSetup({ version: "0.23.1" })).toBe(false);
+    expect(reachesBotSetup({})).toBe(false);
+    expect(reachesBotSetup({ version: "dev" })).toBe(false);
   });
 
   it("knows a Hermes that shares chats by declines_not_shown or by a version from 0.21.3", () => {

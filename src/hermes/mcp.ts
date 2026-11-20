@@ -84,14 +84,14 @@ export type CatalogEntry = {
 };
 export type Catalog = { entries: CatalogEntry[]; problems: string[] };
 
-/** What a change came to. */
+/** What a change came to. `lost`: why the write itself got no answer, though the list read after it may settle it. */
 export type McpChange =
   /** Read back as asked. `note`: something to say alongside, such as a background install. */
-  | { kind: "saved"; list: McpList; note?: string }
+  | { kind: "saved"; list: McpList; note?: string; lost?: string }
   /** Hermes refused it, or it was refused before sending; nothing changed. `list`, when it could be read again. */
   | { kind: "refused"; reason: string; list?: McpList }
   /** Hermes may have written it, but the list read afterwards (if any) doesn't show it as asked. */
-  | { kind: "unconfirmed"; reason: string; list?: McpList };
+  | { kind: "unconfirmed"; reason: string; list?: McpList; lost?: string };
 
 /** One signed-in dashboard REST call; resolves to the parsed JSON body. */
 export type McpRest = (method: RestMethod, pathAndQuery: string, body?: unknown) => Promise<unknown>;
@@ -101,6 +101,7 @@ export const envKeyFor = (name: string) => `MCP_${name.toUpperCase().replace(/[^
 
 /** Rust's `mcp::server_name`: what this app names in a path. */
 const NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
+export const serverNameOk = (name: string) => NAME.test(name);
 /** An environment variable's name, as Rust checks it. */
 export const envNameOk = (k: string) => /^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(k);
 
@@ -298,9 +299,10 @@ export class McpApi {
       if (f.signedOut) return { kind: "unconfirmed", reason: f.reason };
       const list = await this.again(profile);
       if (refusedBy(f) && !(e instanceof NotConfirmed)) return { kind: "refused", reason: f.reason, list };
+      const lost = f.status === undefined ? { lost: f.reason } : {};
       // A lost answer may still have landed: the list settles it, when it can show all of the change.
-      if (listSettles && list && done(list)) return { kind: "saved", list };
-      return { kind: "unconfirmed", reason: f.reason, list };
+      if (listSettles && list && done(list)) return { kind: "saved", list, ...lost };
+      return { kind: "unconfirmed", reason: f.reason, list, ...lost };
     }
     const list = await this.again(profile);
     if (!list) return { kind: "unconfirmed", reason: "Hermes answered, but the list couldn't be read again to confirm it." };

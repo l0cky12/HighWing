@@ -12,6 +12,7 @@ import {
   fencedBlocks,
   parseSetup,
   planCard,
+  previewWithoutSetup,
   readAcceptedRecord,
   readBlock,
   tickable,
@@ -191,6 +192,16 @@ describe("fenced blocks", () => {
 
   it("closes only on a fence of the same kind, at least as long", () => {
     expect(fencedBlocks("````highwing-bot-setup\n```\n~~~~\n````", BOT_SETUP_FENCE)).toEqual(["```\n~~~~"]);
+  });
+});
+
+describe("a Bot Chat's preview", () => {
+  it("stops before Bot setup's block, even one Hermes's cut ends inside, and leaves other code alone", () => {
+    expect(previewWithoutSetup(`Here's how I'd set myself up. \`\`\`${BOT_SETUP_FENCE} {"v":1,"persona":"You are...`)).toBe("Here's how I'd set myself up.");
+    expect(previewWithoutSetup("Here's the change. Everything else stays as it is. ```highwing-b...")).toBe("Here's the change. Everything else stays as it is.");
+    expect(previewWithoutSetup(`~~~${ACCEPTED_FENCE} {"v":1}`)).toBe("");
+    expect(previewWithoutSetup("Run this: ```bash ls ```")).toBe("Run this: ```bash ls ```");
+    expect(previewWithoutSetup("Release notes drafted: three fixes.")).toBe("Release notes drafted: three fixes.");
   });
 });
 
@@ -437,6 +448,20 @@ describe("Set up again", () => {
       expect(listedItem(later, key), key).toMatchObject({ status: "elsewhere", ticked: false, after: to });
       expect(acceptedRecord(later, record).items.find((i) => i.key === key), key).toMatchObject({ to });
     }
+  });
+
+  it("lists what the bot has on and the block leaves alone, with nothing to do; a new bot's card lists only what its block names", () => {
+    const b = keeping({ skills: [{ name: "find-nearby", on: true }], toolsets: [{ name: "browser", on: true }], copy: [] });
+    const plan = planCard(cardOf([briefAgain("s1", has.persona), reply(2, JSON.stringify(b))]).card, has);
+    expect(plan.items.filter((i) => i.kind === "skill" || i.kind === "toolset").map((i) => [i.key, i.status])).toEqual([
+      ["skill:find-nearby", "change"],
+      ["toolset:browser", "change"],
+      ["skill:weather", "same"],
+      ["toolset:terminal", "same"],
+    ]);
+    expect(acceptedRecord(plan).items.map((i) => i.key).filter((k) => /^(skill|toolset):/.test(k))).toEqual(["skill:find-nearby", "toolset:browser"]);
+    const fresh = planCard(cardOf([brief("s2"), reply(2, JSON.stringify(block({ toolsets: [], copy: [] })))]).card, has);
+    expect(fresh.items.filter((i) => i.kind === "skill" || i.kind === "toolset").map((i) => i.key)).toEqual(["skill:find-nearby"]);
   });
 
   it("refuses a persona when the brief left the persona out", () => {

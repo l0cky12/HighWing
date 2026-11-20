@@ -34,7 +34,8 @@ import { Menu } from "./ChatMenu";
 import { CloneProfileDialog } from "./CloneProfile";
 import { NewBot } from "./NewBot";
 import { failureText } from "./profileFailure";
-import { PICTURE_TYPES, readPictureFile } from "./pictureFile";
+import { pictureKey } from "../hermes/botPictures";
+import { PicturePicker } from "./PicturePicker";
 import { useModal } from "./modal";
 import { RephraseButton, RephrasePanel, usePersonaRephrase } from "./PersonaRephrase";
 import type { Writer } from "../hermes/writingModel";
@@ -858,8 +859,8 @@ export function ProfileForm({
   const [title, setTitle] = useState(base.look?.title ?? "");
   const [color, setColor] = useState(base.look?.color ?? null);
   const [picture, setPicture] = useState(base.look?.picture ?? null);
-  const [pictureNote, setPictureNote] = useState<string>();
-  const pictureInput = useRef<HTMLInputElement>(null);
+  const [picking, setPicking] = useState(false);
+  const pictureBox = useRef<HTMLDivElement>(null);
   const [soul, setSoul] = useState("");
   const [catalog, setCatalog] = useState<CatalogProvider[]>();
   const [catalogError, setCatalogError] = useState<string>();
@@ -990,15 +991,6 @@ export function ProfileForm({
     } finally {
       if (live.current) setWriting(false);
     }
-  };
-
-  const pickPicture = async (file: File | undefined) => {
-    if (!file) return;
-    const read = await readPictureFile(file);
-    if (!live.current) return;
-    if (read.kind !== "read") return setPictureNote(read.kind === "format" ? f.pictureFormat : read.kind === "tooBig" ? f.pictureTooBig : f.pictureUnread);
-    setPicture(read.dataUrl);
-    setPictureNote(undefined);
   };
 
   const save = async () => {
@@ -1237,36 +1229,37 @@ export function ProfileForm({
                   <span className="field-label" id={pictureId}>
                     {f.picture}
                   </span>
-                  <div className="profile-picture" role="group" aria-labelledby={pictureId}>
-                    <span className={`bots-face${color ? " has-color" : ""}`} style={color ? { background: color } : undefined} aria-hidden translate="no">
-                      {picture ? <img src={picture} alt="" /> : ((title.trim() || row.name)[0] ?? "?").toUpperCase()}
-                    </span>
-                    <input
-                      ref={pictureInput}
-                      type="file"
-                      hidden
-                      accept={PICTURE_TYPES.join(",")}
-                      aria-label={f.pictureChoose}
-                      onChange={(e) => {
-                        void pickPicture(e.target.files?.[0]);
-                        e.target.value = "";
-                      }}
-                    />
-                    <button className="btn" disabled={saving || !!pictureWhy} title={pictureWhy} onClick={() => pictureInput.current?.click()}>
+                  <div ref={pictureBox} className="profile-picture picture-anchor" role="group" aria-labelledby={pictureId}>
+                    <button
+                      type="button"
+                      className={`bots-face${color ? " has-color" : ""}`}
+                      style={color ? { background: color } : undefined}
+                      aria-label={f.pictureChange}
+                      title={pictureWhy ?? f.pictureChange}
+                      aria-haspopup="dialog"
+                      disabled={saving || !!pictureWhy}
+                      onClick={() => setPicking(true)}
+                    >
+                      {picture ? <img src={picture} alt="" /> : <span translate="no">{((title.trim() || row.name)[0] ?? "?").toUpperCase()}</span>}
+                    </button>
+                    <button className="btn" aria-haspopup="dialog" aria-expanded={picking} disabled={saving || !!pictureWhy} title={pictureWhy} onClick={() => setPicking(true)}>
                       {f.pictureChoose}
                     </button>
                     {picture !== null && (
-                      <button className="btn" disabled={saving || !!pictureWhy} title={pictureWhy} onClick={() => setPicture(null)}>
+                      <button
+                        className="btn"
+                        disabled={saving || !!pictureWhy}
+                        title={pictureWhy}
+                        onClick={() => {
+                          setPicking(false);
+                          setPicture(null);
+                        }}
+                      >
                         {f.pictureRemove}
                       </button>
                     )}
+                    {picking && !saving && <PicturePicker anchor={pictureBox} picked={pictureKey(picture)} tab="pictures" onUse={setPicture} onClose={() => setPicking(false)} />}
                   </div>
-                  <div className="set-hint">{f.pictureHint}</div>
-                  {pictureNote && (
-                    <div className="small sign-in-error" role="alert">
-                      {pictureNote}
-                    </div>
-                  )}
                   {stateNote<string | null>(
                     "picture",
                     (theirs) =>

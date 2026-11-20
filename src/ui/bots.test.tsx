@@ -18,8 +18,12 @@ import { getUIPrefs } from "../hermes/uiPrefs";
 import { BOTS_REFRESH_MS } from "./Bots";
 import { connect, type Hermes } from "../hermes/transport";
 import { Main } from "../App";
+import { BOT_PICTURE_DATA } from "../hermes/botPictures";
+import { FAKE_PICTURE, fakeCrop } from "./fakePictureCanvas";
+import { CENTERED, CROP_FRAME_PX, sourceRect } from "./pictureCrop";
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }));
+vi.mock("./pictureCanvas", () => import("./fakePictureCanvas"));
 
 beforeAll(() => {
   Element.prototype.scrollIntoView = () => {};
@@ -642,19 +646,55 @@ describe("Edit bot, Edit persona, Clone, Pin and Hide from a bot's menu", { time
     expect(block(server)).toEqual({ title: "Writer", color: "#44aa77", ...DESKTOP_KEYS, sectionId: "s2" });
   });
 
-  it("Edit bot sets and removes the bot's picture, shown in its row", async () => {
+  it("Edit bot's picture picker opens on Pictures, and a picture chosen there is saved as the set's own bytes, shown in its row", async () => {
     const { server, user } = await launch(withDesktopKeys);
     await showBots(user);
     const dialog = await editBot(user);
-    const bytes = Uint8Array.from("\x89PNG\r\n\x1a\nface", (c) => c.charCodeAt(0));
-    const url = `data:image/png;base64,${btoa(String.fromCharCode(...bytes))}`;
-    await user.upload(within(dialog).getByLabelText("Choose a picture…", { selector: "input" }), new File([bytes], "face.png", { type: "image/png" }));
-    await waitFor(() => expect(dialog.querySelector(".profile-picture img")?.getAttribute("src")).toBe(url));
+    await user.click(within(dialog).getByRole("button", { name: "Choose a picture…" }));
+    const picker = within(dialog).getByRole("dialog", { name: "Choose a picture" });
+    expect(within(picker).getAllByRole("tab").map((tab) => [tab.textContent, tab.getAttribute("aria-selected")])).toEqual([
+      ["Pictures", "true"],
+      ["Upload", "false"],
+    ]);
+    expect(within(picker).getAllByRole("radio").filter((r) => r.getAttribute("aria-checked") === "true")).toEqual([]);
+    await user.click(within(picker).getByRole("radio", { name: "Moon" }));
+    expect(within(dialog).queryByRole("dialog")).toBeNull();
+    expect(dialog.querySelector(".profile-picture img")?.getAttribute("src")).toBe(BOT_PICTURE_DATA.moon);
+    expect(sent(server, "profiles.set_asset")).toEqual([]);
+
     await user.click(within(dialog).getByRole("button", { name: /Save changes/ }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: /Edit bot/ })).toBeNull());
-    expect(server.botAvatars.scribe).toBe(url);
+    expect(sent(server, "profiles.set_asset").map((r) => r.params)).toEqual([{ name: "scribe", asset: "avatar", data: BOT_PICTURE_DATA.moon }]);
+    expect(server.botAvatars.scribe).toBe(BOT_PICTURE_DATA.moon);
     expect(block(server)).toEqual({ title: "Scribe", color: "#44aa77", ...DESKTOP_KEYS, custom: true, imageKind: "photo" });
-    await waitFor(() => expect(rowOf("scribe").querySelector("img")?.getAttribute("src")).toBe(url));
+    await waitFor(() => expect(rowOf("scribe").querySelector("img")?.getAttribute("src")).toBe(BOT_PICTURE_DATA.moon));
+
+    // Opened again from the picture itself, the picker marks the picture the bot has.
+    const again = await editBot(user);
+    await user.click(within(again).getByRole("button", { name: "Change the picture" }));
+    expect(within(again).getAllByRole("radio").filter((r) => r.getAttribute("aria-checked") === "true").map((r) => r.getAttribute("aria-label"))).toEqual(["Moon"]);
+    await user.keyboard("{Escape}");
+    expect(within(again).queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("dialog", { name: /Edit bot/ })).toBeTruthy();
+    expect(document.activeElement).toBe(within(again).getByRole("button", { name: "Change the picture" }));
+  });
+
+  it("Edit bot saves the owner's upload as the picture the crop step made, and Remove picture clears it", async () => {
+    const { server, user } = await launch(withDesktopKeys);
+    await showBots(user);
+    const dialog = await editBot(user);
+    const cropped = fakeCrop(sourceRect(FAKE_PICTURE, CROP_FRAME_PX, CENTERED));
+    await user.click(within(dialog).getByRole("button", { name: "Choose a picture…" }));
+    await user.click(within(dialog).getByRole("tab", { name: "Upload" }));
+    // Over the 2 MB Hermes stores: what is sent is the 256 px PNG.
+    await user.upload(within(dialog).getByLabelText("Browse files", { selector: "input" }), new File([new Uint8Array(2_000_001)], "face.png", { type: "image/png" }));
+    await user.click(await within(dialog).findByRole("button", { name: "Use picture" }));
+    await waitFor(() => expect(dialog.querySelector(".profile-picture img")?.getAttribute("src")).toBe(cropped));
+    await user.click(within(dialog).getByRole("button", { name: /Save changes/ }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: /Edit bot/ })).toBeNull());
+    expect(sent(server, "profiles.set_asset").map((r) => r.params)).toEqual([{ name: "scribe", asset: "avatar", data: cropped }]);
+    expect(server.botAvatars.scribe).toBe(cropped);
+    await waitFor(() => expect(rowOf("scribe").querySelector("img")?.getAttribute("src")).toBe(cropped));
 
     const again = await editBot(user);
     await user.click(within(again).getByRole("button", { name: "Remove picture" }));
@@ -665,15 +705,17 @@ describe("Edit bot, Edit persona, Clone, Pin and Hide from a bot's menu", { time
     await waitFor(() => expect(rowOf("scribe").querySelector("img")).toBeNull());
   });
 
-  it("Edit bot refuses a picture Hermes wouldn't store, before sending it", async () => {
+  it("Edit bot refuses a file that can't be a picture, before sending anything", async () => {
     const { server, user } = await launch();
     await showBots(user);
     const dialog = await editBot(user);
-    const input = within(dialog).getByLabelText("Choose a picture…", { selector: "input" });
+    await user.click(within(dialog).getByRole("button", { name: "Choose a picture…" }));
+    await user.click(within(dialog).getByRole("tab", { name: "Upload" }));
+    const input = within(dialog).getByLabelText("Browse files", { selector: "input" });
     fireEvent.change(input, { target: { files: [new File(["GIF89a"], "face.gif", { type: "image/gif" })] } });
     expect(await within(dialog).findByText("Hermes takes PNG, JPEG or WebP pictures.")).toBeTruthy();
-    fireEvent.change(input, { target: { files: [new File([new Uint8Array(2_000_001)], "big.png", { type: "image/png" })] } });
-    expect(await within(dialog).findByText("That picture is over 2 MB, the most Hermes stores.")).toBeTruthy();
+    fireEvent.change(input, { target: { files: [new File(["not an image"], "torn.png", { type: "image/png" })] } });
+    expect(await within(dialog).findByText("Couldn't read that file.")).toBeTruthy();
     expect(within(dialog).getByRole("button", { name: /Save changes/ })).toHaveProperty("disabled", true);
     expect(sent(server, "profiles.set_asset")).toEqual([]);
   });

@@ -77,11 +77,11 @@ Each run deletes `e2e/out/` first.
 
 ## Screenshots
 
-`shot("name")` saves the whole window as `e2e/out/screenshots/<feature>/<test>--<name>.png` and lists it in the summary. A failing test also gets a screenshot at the moment it failed, under `e2e/out/attachments/failure-screenshots/`. Read the PNGs to check that each shows the state its name says.
+`shot("name")` saves the whole window as `e2e/out/screenshots/<feature>/<test>--<name>.png` and lists it in the summary. A failing test also gets a screenshot at the moment it failed, under `e2e/out/attachments/failure-screenshots/`. Read the PNGs to check that each shows the state its name says. A popover fades in, so `await settled(locator)` before a `shot` of one waits for it to finish.
 
 ## How it works
 
-- `e2e/harness.tsx` has `boot()`, `shot()` and `sessionOfPrompt()`. `boot()` makes a `FakeHermes`, seeds it, and starts the app in an iframe of its own from `src/main.tsx`, as the window does. Each test gets a new frame, so the app's modules and the state they keep start fresh.
+- `e2e/harness.tsx` has `boot()`, `shot()`, `settled()` and `sessionOfPrompt()`. `boot()` makes a `FakeHermes`, seeds it, and starts the app in an iframe of its own from `src/main.tsx`, as the window does. Each test gets a new frame, so the app's modules and the state they keep start fresh.
 - `e2e/ipc.ts` runs in that frame before the app. It sends every `invoke` to the test's fake Rust side.
 - The fake Rust side is a table of command handlers in `boot()`. The pipe commands (`hermes_connect`, `hermes_send`, `hermes_request`, …) go to the `FakeHermes` pipe that `hermes_connect` opened for that `attempt`. The keyring is a `Map`. The commands the app calls at launch get their empty value, as Rust gives them on a fresh install. A command not in the table returns `undefined` and is listed in the summary.
 - `boot({ signedIn: false })` leaves the keyring empty, so launch shows the sign-in screen. The default has the password saved, so launch signs in.

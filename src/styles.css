@@ -557,6 +557,28 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
 .bot-setup-pic:has(input:disabled) { cursor: default; opacity: 0.6; }
 .bot-setup-pick { position: absolute; top: -4px; right: -4px; padding: 1px; border-radius: 50%; background: var(--raised); color: var(--accent); }
 .bot-setup-sub { color: var(--text-2); font-size: calc(12.5rem / 14); overflow-wrap: anywhere; }
+/* The picture picker (ADR 0243): a popover under what opened it, in Edit bot and on Bot setup's card. */
+.picture-anchor { position: relative; }
+.status-popover.picture-picker { bottom: auto; top: calc(100% + 6px); width: 300px; max-width: calc(100vw - 24px); padding: 0; gap: 0; user-select: none; }
+.picture-tabs { display: flex; gap: 4px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.picture-tabs [role="tab"] { padding: 4px 10px; border-radius: 7px; color: var(--muted); font-size: calc(12.5rem / 14); }
+.picture-tabs [role="tab"][aria-selected="true"] { background: var(--raised-3); color: var(--text); }
+.picture-grid { display: grid; grid-template-columns: repeat(6, 36px); justify-content: space-between; gap: 12px 0; padding: 14px; }
+.picture-grid [role="radio"] { width: 36px; height: 36px; padding: 0; border: none; border-radius: 50%; background: none; cursor: pointer; outline-offset: 2px; }
+.picture-grid [role="radio"] img { display: block; width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.picture-grid [role="radio"][aria-checked="true"] { outline: 2px solid var(--accent); }
+.picture-grid [role="radio"]:focus-visible { outline: 2px dashed var(--accent); }
+.picture-drop { display: grid; justify-items: center; gap: 8px; margin: 12px; padding: 26px 10px; border: 1.5px dashed var(--line-2); border-radius: 10px; color: var(--muted); text-align: center; }
+.picture-drop.over { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+.picture-hint { font-size: calc(12rem / 14); }
+.picture-note { margin: 0 12px 12px; font-size: calc(12.5rem / 14); line-height: 1.5; color: var(--bad); }
+.picture-crop-frame { position: relative; flex: none; align-self: center; overflow: hidden; margin: 14px 0 10px; border-radius: 8px; background: var(--raised-3); cursor: grab; touch-action: none; }
+.picture-crop-frame:active { cursor: grabbing; }
+.picture-crop-frame:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.picture-crop-frame img { position: absolute; max-width: none; pointer-events: none; }
+.picture-crop-mask { position: absolute; inset: 0; border-radius: 50%; box-shadow: 0 0 0 200px rgba(0, 0, 0, 0.55); outline: 2px solid #fff; outline-offset: -2px; pointer-events: none; }
+.picture-zoom { align-self: center; width: 200px; margin: 0 0 10px; accent-color: var(--accent); }
+.picture-crop-actions { display: flex; justify-content: center; gap: 8px; padding: 0 12px 12px; }
 .bot-setup-persona {
   margin: 6px 0 2px; padding: 8px 10px; border-radius: 8px; background: var(--raised-2); color: var(--text-2); white-space: pre-wrap;
   overflow-wrap: anywhere; font-size: calc(13rem / 14);
@@ -3929,6 +3951,7 @@ div.export-preview.export-page { height: auto; padding: 10px 12px; background: v
 .profile-color input[type="color"] { flex: none; width: 44px; height: 30px; padding: 2px; background: var(--raised); border: 1px solid var(--line-2); border-radius: 8px; cursor: pointer; }
 .profile-color input[type="color"]:disabled { cursor: default; opacity: 0.6; }
 .profile-picture { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.profile-picture button.bots-face:disabled { cursor: default; }
 /* A field Hermes changed since the dialog opened: its value there, and the button that takes it. */
 .profile-conflict { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; color: var(--warn); line-height: 1.5; }
 .profile-conflict .link-btn { flex: none; }

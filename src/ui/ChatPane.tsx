@@ -39,6 +39,8 @@ import { ariaKeys, chordLabel, chordParts, pick as pickCommand, pickApp, typeNew
 import type { EditKind } from "../hermes/editHistory";
 import { wakeFull } from "../hermes/snooze";
 import { AttachmentChip, InlineSentImage, Previews, SentImages, readPreview } from "./previews";
+import { clipboardImages, pasteAttaches } from "./pasted";
+import { dropClaimed } from "./dropClaim";
 import { MarkUpDialog } from "./MarkUp";
 import { markedName, markupWords, type Marked } from "../hermes/markup";
 import { createPortal } from "react-dom";
@@ -279,49 +281,9 @@ export function refuseStrayFileDrops(target: Window = window) {
   target.addEventListener("drop", refuse);
 }
 
-/**
- * What a paste into the composer attaches. The webview pastes the text itself, except for a file copy, whose text is
- * only the files' paths.
- */
-export type PasteAttaches =
-  /** Files copied in a file manager: a `text/uri-list` of `file://` URIs, which WebKitGTK names but hides. Rust reads it. */
-  | { kind: "copied files" }
-  /** Files the paste event carries as bytes: a screenshot, or files copied in Explorer (Chromium). */
-  | { kind: "files"; files: File[]; keepText: boolean }
-  /** No text the page can see: WebKitGTK hides a clipboard image, and the text beside it, from the paste event. */
-  | { kind: "clipboard images" }
-  | { kind: "nothing" };
-
 /** Stages bytes with no file of their own (a paste, a Windows drop, a marked-up image) in Rust's private folder. */
 const stageBytes = (bytes: ArrayBuffer, name: string) =>
   invoke<string>("stage_clipboard_file", bytes, { headers: { "x-name": encodeURIComponent(name) } });
-
-export function pasteAttaches(data: { types: readonly string[]; files: ArrayLike<File>; getData(type: string): string }): PasteAttaches {
-  const files = Array.from(data.files);
-  const text = data.getData("text/plain");
-  if (files.length) return { kind: "files", files, keepText: !!text };
-  const uris = data.getData("text/uri-list").split(/\r?\n/).filter((l) => l && !l.startsWith("#"));
-  if (data.types.includes("text/uri-list") && uris.every((u) => u.startsWith("file:"))) return { kind: "copied files" };
-  return text ? { kind: "nothing" } : { kind: "clipboard images" };
-}
-
-/**
- * The images on the clipboard, as files. WebKitGTK leaves a paste event's `files` empty even for a screenshot, but the
- * async clipboard API, asked during the paste, has it. Empty when there are none or the clipboard can't be read.
- */
-async function clipboardImages(): Promise<File[]> {
-  try {
-    const items = await navigator.clipboard.read();
-    return await Promise.all(
-      items.flatMap((item) => {
-        const type = item.types.find((t) => t.startsWith("image/"));
-        return type ? [item.getType(type).then((b) => new File([b], "", { type }))] : [];
-      }),
-    );
-  } catch {
-    return [];
-  }
-}
 
 /**
  * The header's More (⋯) menu: the chat's less-used actions, each with its name. It opens below its button, at the
@@ -2302,12 +2264,13 @@ function Composer({
   }, [desk, autoFocus, draftKey, chatTitle]);
 
   // Tauri's native drop event (off on Windows, below): it gives real file paths, so Rust can read the bytes. Every composer
-  // hears every drop; with two panes, the one under the pointer takes it. Tauri gives the point in physical pixels.
+  // hears every drop; with two panes, the one under the pointer takes it, unless something above the pane claimed the point
+  // (dropClaim.ts). Tauri gives the point in physical pixels.
   useEffect(() => {
     const unlisten = getCurrentWebview().onDragDropEvent(({ payload }) => {
       const here = (p: { x: number; y: number }) => {
         const scale = window.devicePixelRatio || 1;
-        return dropHereRef.current?.(p.x / scale, p.y / scale) ?? true;
+        return !dropClaimed(p.x / scale, p.y / scale) && (dropHereRef.current?.(p.x / scale, p.y / scale) ?? true);
       };
       if (payload.type === "enter" || payload.type === "over") setDragging(here(payload.position));
       else {

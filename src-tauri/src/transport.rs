@@ -2655,7 +2655,7 @@ fn skill_dir_name(n: &str) -> bool {
 }
 
 /// Whether a `POST api/skills` body is Settings → Skills' copy of a skill into another profile (ADR 0118), or a skill
-/// written by hand with New skill (ADR 0235): exactly
+/// written by hand with New skill (ADR 0240): exactly
 /// `{"name", "content"}` and optionally `"category"`, the name and category each one folder name as Hermes allows
 /// it (`skill_dir_name`), the content a string. The profile goes in the query, never the body. Hermes's own front matter,
 /// size and security checks then apply, and it refuses a name the profile already has.

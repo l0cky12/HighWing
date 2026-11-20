@@ -355,7 +355,7 @@ describe("Settings → Skills editor", () => {
   });
 });
 
-describe("Settings → Skills New skill (ADR 0235)", () => {
+describe("Settings → Skills New skill (ADR 0240)", () => {
   const TRIAGE = skill("triage", "Sort a new ticket by area and urgency.", "## Procedure\n\n1. Read the ticket.\n");
   const draft = () => screen.getByRole("group", { name: "New skill" });
   const nameBox = () => within(draft()).getByRole<HTMLInputElement>("textbox", { name: "Name" });

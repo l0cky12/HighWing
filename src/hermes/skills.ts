@@ -11,7 +11,7 @@
 // - `PUT /api/skills/content?profile=` `{name, content}` → `_edit_skill`: Hermes's own front matter and size check
 //   (400 with its reason), then an atomic whole-file write that keeps the file's mode. No revision or If-Match.
 //
-// Writing a new skill (ADR 0235), copying one to another profile, and archiving one (ADR 0118) use two routes the
+// Writing a new skill (ADR 0240), copying one to another profile, and archiving one (ADR 0118) use two routes the
 // deployed `f0d94882` has:
 // - `POST /api/skills?profile=` `{name, content, category}` → `_create_skill`: Hermes's own name, front matter, size and
 //   security checks, and a refusal (400) when the profile already has a skill by that name. It writes SKILL.md only.

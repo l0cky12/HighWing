@@ -495,7 +495,7 @@ describe("copying and archiving across profiles (ADR 0118)", () => {
   });
 });
 
-describe("writing a new skill (ADR 0235)", () => {
+describe("writing a new skill (ADR 0240)", () => {
   const TRIAGE = skill("triage", "Sort a new ticket by area and urgency.", "## Procedure\n\n1. Read the ticket.\n");
   const posts = (server: FakeHermes) => server.restRequests.filter((r) => r.method === "POST" && r.path === "/api/skills");
 

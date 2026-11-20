@@ -6,7 +6,7 @@
 //
 // Any profile's skills can be shown (the picker Settings passes in), and in Select mode several can be copied or moved to
 // another profile, or archived, one at a time, each read back from Hermes (ADR 0118). New skill writes one by hand: a name,
-// a category and its SKILL.md, created through Hermes's own checks; a draft Hermes refuses stays on screen (ADR 0235).
+// a category and its SKILL.md, created through Hermes's own checks; a draft Hermes refuses stays on screen (ADR 0240).
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, ArrowLeft, ArrowRightLeft, Check, CheckSquare, Copy, GitMerge, History, Info, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import type { ConnectionStatus } from "../hermes/model";

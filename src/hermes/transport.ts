@@ -42,7 +42,8 @@ import { projectsApi, type ProjectsApi } from "./projects";
 import { STEER, askSideQuestion, listServerCommands, runServerCommand, sideAnswer, type CommandDef, type CommandResult, type ServerCommandList } from "./commands";
 import { GoalBoard, GoalWriteError, controlOf, goalAction, maxTurnsOf, readControl, setGoal, type Control, type GoalAction, type GoalDraft } from "./goals";
 import { callText, offeredSkills, runSkill, skillInvocationText, type SkillCall, type SkillCommands } from "./skillCommands";
-import { CronApi, jobRunTitle } from "./cronJobs";
+import { CronApi, jobRunTitle, statusLabel } from "./cronJobs";
+import { JobRunWatch, type FinishedJob } from "./jobRunWatch";
 import { followsSession, nextRoster, parseKanbanCreate, sameTask, type DispatchedTask } from "./dispatched";
 import { KanbanApi, KanbanWatch } from "./kanban";
 import { ModelSettingsApi } from "./modelSettings";
@@ -83,6 +84,7 @@ import {
   BotModeUnsupportedError,
   blockFor,
   blockOf,
+  botName,
   agentMessaging,
   configureParams,
   isBotChatTitle,
@@ -310,6 +312,8 @@ export type ChatCache = {
 export type NoticeActions = { open: () => void; deny?: () => void };
 /** The waiting card a notification's click opens. */
 export type NoticeCard = { profile: string; chatId: string; title: string; itemId: string };
+/** The job run a notification's click opens, read-only (ADR 0184). */
+export type NoticeRun = { profile: string; chatId: string; title: string; source: "cron" };
 /** Shows a desktop notification; rejects if it can't. */
 export type Notify = (n: { title: string; body: string }, actions?: NoticeActions) => Promise<void>;
 /** What notifications say. They never quote a chat's title or messages, or what a Question asks. */
@@ -318,6 +322,17 @@ export const NOTICES = {
   approval: { title: "Hermes is asking for approval", body: "A command is waiting for your answer in Highwing." },
   question: { title: "Hermes has a question", body: "A question is waiting for your answer in Highwing." },
   notDenied: { title: "The approval wasn't denied", body: "Open Highwing to see where it stands and answer there." },
+  /**
+   * A scheduled job's run finished (#28). It names the job and its bot, which the owner set up, and how Hermes recorded
+   * the run (`last_status`), never what the run said. `opens`: a click opens the run's chat.
+   */
+  jobRan: (job: string, bot: string, status: string | undefined, opens: boolean) => {
+    const result = status ? statusLabel(status) : undefined;
+    return {
+      title: `${bot}: “${job}” ${result?.tone === "bad" ? "failed" : "ran"}`,
+      body: `${result ? `${result.text}.` : "The scheduled job finished."} ${opens ? "Click to read the run." : "Its runs are in Scheduled jobs in Highwing."}`,
+    };
+  },
 };
 
 const noCache: ChatCache = {
@@ -732,6 +747,13 @@ export class Hermes {
   private pipeProfile?: string;
   /** Counts pipes opened; events from an older pipe than the current one are ignored. */
   private generation = 0;
+  /**
+   * Counts the times the connection dropped. A profile switch or a reroute opens a new pipe on purpose and leaves it
+   * alone, so the job run watch keeps what it read across them and starts afresh only after a drop.
+   */
+  private drops = 0;
+  /** When the connection came up after the latest drop, or at launch: the first dial since `drops` last changed. */
+  private upSince?: { drops: number; at: number };
   /** The connection whose Hermes has no `subagent.list`. */
   private noSubagentList?: number;
   /** The connections (by generation) whose Hermes answered that it has no `session.compress`. */
@@ -792,7 +814,9 @@ export class Hermes {
   /** Approvals already notified, or that arrived in focus, by runtime session and request id. Hermes lists one again
    * after a reconnect. */
   private notified = new Set<string>();
-  private noticeOpens = new Set<(card: NoticeCard) => void>();
+  private noticeOpens = new Set<(target: NoticeCard | NoticeRun) => void>();
+  /** The shown profile's Scheduled jobs are on screen (`showingJobs`), so its runs aren't announced. */
+  private jobsShown = false;
   /** The latest write marking each chat read, while it is under way. */
   private readWrites = new Map<string, Promise<void>>();
   /** Chats marked read since the list sync under way read the list, which may predate the write. */
@@ -987,6 +1011,20 @@ export class Hermes {
     },
     this.checkTimes,
   );
+  private jobRuns = new JobRunWatch({
+    connection: () => (this.connectedPipe() && !this.closing ? this.drops : undefined),
+    connectedAt: () => this.upSince?.at ?? this.connectedAt,
+    enabled: () => getUIPrefs().jobRunNotices && this.capabilities.get("scheduledJobs").state !== "unsupported",
+    profiles: async () => {
+      const res = obj(await this.rest("GET", "api/profiles"));
+      return (Array.isArray(res?.profiles) ? res.profiles : []).flatMap((r) => {
+        const row = obj(r);
+        return typeof row?.name === "string" && row.name ? [{ name: row.name, bot: botName({ ...row, name: row.name }) }] : [];
+      });
+    },
+    jobs: (profile) => this.cron.list(profile),
+    finished: (found) => this.track(this.announceRun(found)),
+  });
 
   /** Who drives the shown profile's Bot Desktop, and this connection's viewer of it (ADR 0217). */
   private readonly control = new ScreenControl({
@@ -1478,6 +1516,7 @@ export class Hermes {
     this.pipe = pipe;
     this.pipeProfile = profile;
     this.lastHeard = this.connectedAt = Date.now();
+    if (this.upSince?.drops !== this.drops) this.upSince = { drops: this.drops, at: this.connectedAt };
     this.uploads = new Set();
     this.heartbeat = setInterval(() => this.beat(), PING_EVERY_MS);
     this.update({ status: "connected", closedReason: undefined, route: pipe.route, unsecure: isUnsecure(pipe.route) });
@@ -1983,7 +2022,7 @@ export class Hermes {
    * (`settleAllQuestions`).
    */
   checkOtherProfiles(): Promise<void> {
-    return Promise.all([this.others.check(), this.checkLive(), this.settleAllQuestions()]).then(() => {});
+    return Promise.all([this.others.check(), this.checkLive(), this.settleAllQuestions(), this.jobRuns.check()]).then(() => {});
   }
 
   /**
@@ -5620,6 +5659,7 @@ export class Hermes {
    */
   private dropped(reason: string, socketClosed = false) {
     if (Date.now() - this.connectedAt >= STEADY_MS) this.failedTries = 0;
+    this.drops++;
     this.detach(reason, socketClosed);
     const wait = RETRY_DELAYS_MS[this.failedTries];
     if (this.socketClosed && wait !== undefined) this.retryTimer = setTimeout(() => void this.redial(), Math.max(0, this.connectedAt + wait - Date.now()));
@@ -6003,6 +6043,28 @@ export class Hermes {
     else this.readWhenBack.add(chatId);
   }
 
+  /**
+   * Tells the owner a scheduled job's run finished, unless the notification wouldn't show or that profile's Scheduled
+   * jobs are on screen. An agent run's notification opens its chat; the run is looked up only then.
+   */
+  private async announceRun({ profile, job }: FinishedJob) {
+    const heard = () => (!this.focused || this.role === "background") && !(this.jobsShown && this.role !== "background" && profile.name === this.profile);
+    if (!heard()) return;
+    const run = job.noAgent ? undefined : await this.cron.latestRun(profile.name, job.id).catch(() => undefined);
+    if (!heard()) return;
+    // The bot's name is its Bot Mode title where it has one, which only the roster carries (`profiles.list`).
+    const roster = this.snapshot.bots?.roster ?? (await this.bots().catch(() => undefined));
+    if (!heard()) return;
+    const bot = roster?.find((b) => b.profile === profile.name)?.name ?? profile.bot;
+    const target: NoticeRun | undefined = run?.sessionId ? { profile: profile.name, chatId: run.sessionId, title: jobRunTitle(run.startedAt, job.name), source: "cron" } : undefined;
+    this.alert(NOTICES.jobRan(job.name, bot, job.lastStatus, !!target), target && { open: () => this.noticeOpens.forEach((fn) => fn(target)) });
+  }
+
+  /** Whether the shown profile's Scheduled jobs are on screen: while they are, its runs aren't announced. */
+  showingJobs(shown: boolean) {
+    this.jobsShown = shown;
+  }
+
   /** A desktop notification, out of focus only. A missing notification service, or one that refuses, changes nothing. */
   private alert(n: { title: string; body: string }, actions?: NoticeActions) {
     if (!this.focused || this.role === "background") this.track(Promise.resolve().then(() => this.notify(n, actions)));
@@ -6021,8 +6083,8 @@ export class Hermes {
     await this.notify(NOTICES.notDenied, { open: () => this.noticeOpens.forEach((fn) => fn(card)) });
   }
 
-  /** Calls `fn` with the card a notification is about each time the owner clicks it. */
-  onNoticeOpen(fn: (card: NoticeCard) => void): () => void {
+  /** Calls `fn` with the card or job run a notification is about each time the owner clicks it. */
+  onNoticeOpen(fn: (target: NoticeCard | NoticeRun) => void): () => void {
     this.noticeOpens.add(fn);
     return () => void this.noticeOpens.delete(fn);
   }

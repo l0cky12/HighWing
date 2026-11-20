@@ -4278,6 +4278,33 @@ export class FakeCron {
     return row;
   }
 
+  /**
+   * The scheduler finished a run of job `id` in `profile` now, as `mark_job_run` records it: `last_run_at` and
+   * `last_status` on the job, and for an agent job the run's session (`local-…`) at the top of its runs.
+   */
+  ran(profile: string, id: string, status = "ok"): string | undefined {
+    const row = this.jobs[profile]?.find((j) => j.id === id);
+    if (!row) throw new Error(`No job ${id} in ${profile}`);
+    const now = this.now();
+    Object.assign(row, { last_run_at: isoIn(this.zoneOf(profile), now), last_status: status, last_error: status === "error" ? "The fixture failed." : null });
+    if (row.no_agent) return undefined;
+    const session = `local-${id}-${now}`;
+    const at = now / 1000;
+    (this.runs[id] ??= []).unshift({
+      id: session,
+      title: null,
+      preview: "[IMPORTANT: You are running as a scheduled cron job.",
+      source: "cron",
+      started_at: at - 5,
+      ended_at: at,
+      end_reason: status === "error" ? "cron_incomplete_no_output" : "cron_complete",
+      is_active: false,
+      scheduler_owned: false,
+      profile,
+    });
+    return session;
+  }
+
   /** A profile's own `timezone` setting, where it differs from `timezone` ("" for none). */
   timezones: Record<string, string> = {};
 

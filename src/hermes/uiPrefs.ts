@@ -80,6 +80,8 @@ export type UIPrefs = {
   followScreen: boolean;
   /** Ask first (ADR 0229): tell a bot, in each Bot Chat message sent from here, to ask before it messages another bot. On by default. */
   askFirst: boolean;
+  /** Post a desktop notification when a scheduled job's run finishes, in any profile of a live connection (#28). On by default. */
+  jobRunNotices: boolean;
   /**
    * The keyboard shortcuts the owner changed (ui/keybindings.ts, ADR 0147): each command's chords, by command id. Only
    * overrides, so a command never changed takes whatever default this version gives it. Checked for shape here only;
@@ -147,6 +149,7 @@ export const DEFAULT_UI_PREFS: Readonly<UIPrefs> = Object.freeze({
   summonSelection: true,
   followScreen: false,
   askFirst: true,
+  jobRunNotices: true,
   keybindings: Object.freeze({}) as Record<string, string[]>,
   writingModels: Object.freeze({}) as Record<string, WritingPick>,
 });
@@ -336,6 +339,7 @@ export function readUIPrefs(doc: UIPrefsDoc, d: Readonly<UIPrefs> = DEFAULT_UI_P
     summonSelection: typeof doc.summonSelection === "boolean" ? doc.summonSelection : d.summonSelection,
     followScreen: typeof doc.followScreen === "boolean" ? doc.followScreen : d.followScreen,
     askFirst: typeof doc.askFirst === "boolean" ? doc.askFirst : d.askFirst,
+    jobRunNotices: typeof doc.jobRunNotices === "boolean" ? doc.jobRunNotices : d.jobRunNotices,
     keybindings: toKeybindings(doc.keybindings) ?? { ...d.keybindings },
     writingModels: toWritingModels(doc.writingModels) ?? { ...d.writingModels },
   };

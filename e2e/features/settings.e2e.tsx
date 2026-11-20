@@ -25,3 +25,20 @@ it("changes the main model: Hermes stores it, and Settings shows it when opened 
   const writes = server.restRequests.filter((r) => r.method !== "GET").map((r) => [`${r.method} ${r.path}`, r.body]);
   expect(writes, "what Settings wrote to Hermes").toEqual([["POST /api/model/set", { scope: "main", provider: "openrouter", model: "deepseek/deepseek-v4-pro" }]]);
 });
+
+it("turns off notifications about finished job runs, on this computer only (#28)", async () => {
+  const { app, server } = await boot();
+  await app.getByPlaceholder("Message Hermes").click();
+  await userEvent.keyboard("{Control>},{/Control}");
+  await app.getByRole("tab", { name: /General/ }).click();
+  await app.getByRole("group", { name: /^General: / }).getByRole("button", { name: "Chats", exact: true }).click();
+  const toggle = app.getByRole("switch", { name: "Notify when a job runs" });
+  await expect.element(toggle).toHaveAttribute("aria-checked", "true");
+  toggle.element().scrollIntoView({ block: "center" });
+  await shot("on");
+
+  await toggle.click();
+  await expect.element(toggle).toHaveAttribute("aria-checked", "false");
+  await shot("off");
+  expect(server.restRequests.filter((r) => r.method !== "GET"), "nothing written to Hermes").toEqual([]);
+});

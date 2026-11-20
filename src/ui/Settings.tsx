@@ -56,6 +56,7 @@ import { ChatSectionSettings } from "./ChatSectionSettings";
 import { InboxSettings } from "./InboxSettings";
 import { AskFirstSettings } from "./AskFirstSettings";
 import { FollowScreenSettings } from "./FollowScreenSettings";
+import { JobRunSettings } from "./JobRunSettings";
 import { FollowUpSettings } from "./FollowUpSettings";
 import { SpellCheckSettings } from "./SpellCheckSettings";
 import { VoiceSettings, useVoiceChanges } from "./Voice";
@@ -761,6 +762,7 @@ export function SettingsScreen({
         <AskFirstSettings />
         <SpellCheckSettings />
         <InboxSettings />
+        <JobRunSettings />
       </>
     ),
     launch: (

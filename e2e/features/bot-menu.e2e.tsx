@@ -95,11 +95,12 @@ it("makes a bot from New bot above the rows, and Reload reads the bots again", a
   const { app, server, panel, rowOf } = await botMode();
   await shot("new-bot-and-reload");
   await panel.getByRole("button", { name: "New bot" }).click();
-  const form = app.getByRole("dialog", { name: "New bot" });
-  await form.getByLabelText("Name").fill("ada");
-  await form.getByRole("button", { name: /Create bot/ }).click();
-  await expect.element(form).not.toBeInTheDocument();
-  await expect.element(rowOf("Ada")).toHaveFocus();
+  const dialog = app.getByRole("dialog", { name: "New bot" });
+  await dialog.getByLabelText("Name").fill("Ada");
+  await dialog.getByRole("button", { name: /^Skip/ }).click();
+  await app.getByRole("menuitem", { name: /Start blank/ }).click();
+  await expect.element(dialog).not.toBeInTheDocument();
+  await expect.element(rowOf("Ada")).toHaveAttribute("aria-current", "true");
   await shot("new-bot-made");
   expect(writes(server)).toEqual(["POST /api/profiles"]);
 

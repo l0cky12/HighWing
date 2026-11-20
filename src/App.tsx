@@ -56,6 +56,9 @@ import { BotList, useBotActions, type BotEditWiring } from "./ui/Bots";
 import { CHAT_POLICY, askRule, chatKind, policyOf } from "./hermes/chatKind";
 import { jobRunTitle } from "./hermes/cronJobs";
 import { botActivity, botsWaiting, newInBotChatNote, teammateOf, type Bot } from "./hermes/bots";
+import { botSetupBrief } from "./hermes/botSetupBrief";
+import { MakeStopped, makeBot, newBotInventory, type MadeBot } from "./hermes/newBot";
+import { profileFailure } from "./hermes/profiles";
 import { blocksRestore, inboxAcks, inboxEntries, inboxScope, needsOwner, type InboxAcks, type InboxEntry } from "./hermes/inbox";
 import { searchEverywhere, type EverywhereFilter, type EverywhereOutcome, type EverywhereRow } from "./hermes/everywhere";
 import { LiveConnections, attention as attentionOf, withoutServer, type ChatRef, type LiveSummary } from "./hermes/liveConnections";
@@ -88,6 +91,7 @@ import { IDLE_COMPACT_CHECK_MS, IdleCompactor, idleCompactionNote } from "./herm
 import { runFilter } from "./hermes/chatFilter";
 import { SettingsScreen } from "./ui/Settings";
 import type { ProfilesWiring } from "./ui/ProfileSettings";
+import { failureText } from "./ui/profileFailure";
 import { LeaveArtifacts } from "./ui/ArtifactEditor";
 import { ASK_DEADLINE_MS, ArtifactStore, artifactIo, isDirty } from "./hermes/artifacts";
 import { useWindowTitle, windowTitle } from "./ui/windowTitle";
@@ -1091,9 +1095,14 @@ type BotVisit = { home: string; before: string | null };
  * What opens once the profile switched to has listed its chats, unless the owner goes elsewhere first (`nav`): a bot's
  * Bot Chat (ADR 0066), the New chat pane, or the chat a bot visit left (ADR 0203). A Bot Chat's lookup waits only for
  * the connection; `shown` is the chat the roster named, put in the pane as soon as the profile is the bot's, or null
- * when the roster named none (ADR 0232).
+ * when the roster named none (ADR 0232). `setup`: the name the owner gave a bot just made, whose Bot Chat Bot setup
+ * starts instead of opening it plain (ADR 0231).
  */
-type Arrival = { profile: string; nav: number } & ({ open: "bot"; bot: Bot; opening?: boolean; shown?: string | null } | { open: "new" } | { open: "chat"; chatId: string });
+type Arrival = { profile: string; nav: number } & (
+  | { open: "bot"; bot: Bot; opening?: boolean; shown?: string | null; setup?: string }
+  | { open: "new" }
+  | { open: "chat"; chatId: string }
+);
 
 /**
  * Starts a pane's chat if it hasn't started, and sends to it. `mirrored`: the message was typed in the other compared
@@ -2333,14 +2342,17 @@ export function Main({
     beforeBotChat.current = null;
   }, [profile]);
   const onBotChat = !!shownChat && chatKind(shownChat) === "bot";
-  /** `visiting`: what becomes of a bot visit (ADR 0203); none ends it, here or with the switch to the bot's profile. */
-  const openBot = (b: Bot, then: "open" | "new", visiting?: BotVisit) => {
+  /**
+   * `visiting`: what becomes of a bot visit (ADR 0203); none ends it, here or with the switch to the bot's profile.
+   * `setup`: the name the bot was just made with, to start Bot setup in its Bot Chat.
+   */
+  const openBot = (b: Bot, then: "open" | "new", visiting?: BotVisit, setup?: string) => {
     guard(() => {
       if (then === "open" && b.profile === profile && !(shownChat && policyOf(shownChat).ofBot)) beforeBotChat.current = active.chatId;
       if (b.profile !== profile) void switchProfileNow(b.profile, { visit: visiting });
       else setVisit(visiting);
       // Anything the owner opens or switches to after this, before the Bot Chat opens, wins over it (`navGen`).
-      setArrival(then === "open" ? { open: "bot", bot: b, profile: b.profile, nav: navGen.current } : { open: "new", profile: b.profile, nav: navGen.current });
+      setArrival(then === "open" ? { open: "bot", bot: b, profile: b.profile, nav: navGen.current, ...(setup !== undefined && { setup }) } : { open: "new", profile: b.profile, nav: navGen.current });
     }, b.profile !== profile ? "profile" : "leave");
   };
   useEffect(() => {
@@ -2368,8 +2380,7 @@ export function Main({
     const opening = { ...go, opening: true };
     setArrival(opening);
     const still = () => navGen.current === go.nav && hermes.profile === go.profile;
-    hermes
-      .openBotChat(go.bot)
+    (go.setup === undefined ? hermes.openBotChat(go.bot) : startBotSetup(go.bot, go.setup))
       .then((id) => {
         if (!still() || id === go.shown) return;
         openChat(id, { remember: false });
@@ -2380,10 +2391,28 @@ export function Main({
   // eslint-disable-next-line react-hooks/exhaustive-deps -- run when the pick, profile, list or connection changes; `newChat` and `openChat` are new functions each render and would run it on every render
   }, [arrival, profile, switching, chats, status]);
 
+  /**
+   * Starts Bot setup in a just-made bot's Bot Chat (ADR 0231), with the brief for the name the owner typed, and
+   * resolves the chat to show. Where the start is refused, the Bot Chat opens as it is.
+   */
+  const startBotSetup = async (bot: Bot, name: string): Promise<string> => {
+    const models = async () => {
+      await hermes.loadModels();
+      const m = hermes.getSnapshot().models;
+      return m?.profile === bot.profile ? m : undefined;
+    };
+    const others = hermes.getSnapshot().bots?.roster ?? [];
+    const brief = async (id: string) =>
+      botSetupBrief({ id, name, inventory: await newBotInventory({ models, skills: (p) => hermes.skills.rows(p), toolsets: (p) => hermes.toolsets.list(p) }, bot.profile, others) });
+    const started = await hermes.startBotSetup(bot, brief);
+    return started.kind === "refused" ? hermes.openBotChat(bot) : started.chatId;
+  };
+
   // A bot visit (ADR 0203). A bot row in Bots mode whose profile isn't shown starts one, or carries one on, and the
   // owner's own bot ends it there. Chats and New chat go back to `home`; an ordinary chat of the bot's profile on screen
-  // makes that profile the owner's. The next launch opens on `home` while a visit lasts.
-  const visitBot = (b: Bot) => openBot(b, "open", b.profile === profile ? visit : b.profile === visit?.home ? undefined : (visit ?? { home: profile, before: active.chatId }));
+  // makes that profile the owner's. The next launch opens on `home` while a visit lasts. `setup`: as `openBot`'s.
+  const visitBot = (b: Bot, setup?: string) =>
+    openBot(b, "open", b.profile === profile ? visit : b.profile === visit?.home ? undefined : (visit ?? { home: profile, before: active.chatId }), setup);
   const visitBotRef = useRef(visitBot);
   visitBotRef.current = visitBot;
   const goHome = (v: BotVisit, to: "chats" | "new") =>
@@ -3177,7 +3206,7 @@ export function Main({
     };
   });
 
-  // Settings → Profiles (ADR 0156), and Bots mode's New bot, which is its New profile form (ADR 0164).
+  // Settings → Profiles (ADR 0156), and the name dialog that New profile and Bots mode's New bot share (ADR 0231).
   const copyText = (text: string) => (navigator.clipboard?.writeText ? navigator.clipboard.writeText(text) : Promise.reject(new Error("No clipboard")));
   const profilesWiring: Omit<ProfilesWiring, "showTab"> = {
     api: hermes.manageProfiles,
@@ -3239,14 +3268,37 @@ export function Main({
     // Persona's Write with AI (ADR 0197, 0206): as the profile named, on the model that writes for it, only while connected.
     rephrase: status === "connected" ? (p) => writing.writer(p, "persona") : undefined,
     persona: hermes.persona,
-    setup: { skills: hermes.skills, toolsets: hermes.toolsets },
-    // A command to run (a settling delete's) gets the toast's Copy; a notice of something gone wrong stays longer.
-    notify: (n) => {
-      const text = n.command ? `${n.text} ${n.command}` : n.text;
-      const command = n.command;
-      const copy = command && { label: words.profiles.del.copy, run: () => void copyText(command).catch(() => setToast({ text, lasting: true, at: Date.now() })) };
-      setToast({ text, ...(copy && { action: copy }), lasting: n.tone === "bad", at: Date.now() });
+    // New bot and New profile (ADR 0231): the bot is made from the name, then opened as a Bot visit, where Create
+    // starts Bot setup when this Hermes runs it. Without Bot Mode there is no bot to go to.
+    makeBot: async (name, how, from) => {
+      const io = {
+        list: () => hermes.manageProfiles.list(),
+        create: (fields: { name: string; provider?: string; model?: string }) => hermes.manageProfiles.create(fields),
+        ...(hasBotMode && { name: (p: string, title: string) => hermes.editBot(p, { title: { from: "", to: title } }) }),
+      };
+      const made: MadeBot = from?.at === "unopened" ? { profile: from.profile } : await makeBot(io, name, profile, from?.profile);
+      const m = words.bots.make;
+      const note = made.modelError !== undefined ? m.modelNotSet(made.profile, made.modelError) : made.unnamed && m.unnamed(made.profile, failureText(words, made.unnamed, made.profile));
+      const roster = hasBotMode
+        ? await hermes.bots().catch((e: unknown) => {
+            if (note) setToast({ text: note, lasting: true, at: Date.now() });
+            throw new MakeStopped({ at: "unopened", profile: made.profile, failure: profileFailure(e, "create") });
+          })
+        : [];
+      const bot = roster.find((b) => b.profile === made.profile);
+      const interview =
+        !!bot &&
+        how === "setup" &&
+        !(await hermes.botSetupOffKnown().catch((e: unknown) => {
+          if (note) setToast({ text: note, lasting: true, at: Date.now() });
+          throw new MakeStopped({ at: "unopened", profile: made.profile, failure: profileFailure(e, "create") });
+        }));
+      if (bot) visitBotRef.current(bot, interview ? name.trim() : undefined);
+      // After the visit, whose switch clears the toast.
+      if (note) setToast({ text: note, lasting: true, at: Date.now() });
+      return { profile: made.profile, visited: !!bot };
     },
+    botSetupOff: () => hermes.botSetupOff(),
   };
   // Bots mode's New bot, Reload and row menu (ADR 0194, ADR 0203): the dialogs are drawn outside the list panel, so a
   // delete that switches away from the open bot's profile finishes.

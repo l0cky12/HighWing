@@ -27,6 +27,7 @@ const BLOCK: BotSetupNewBlock = {
   description: "Plans weekend trips.",
   model: null,
   color: "teal",
+  picture: "plane",
   callOwner: "Liam",
   skills: [],
   toolsets: [],

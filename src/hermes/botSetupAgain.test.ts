@@ -120,6 +120,7 @@ describe("the current setup in Set up again's brief", () => {
     description: "Plans trips.",
     model: "claude-sonnet-4-5",
     color: "#14b8a6",
+    picture: null,
     memory: ["The owner wants to be called Lena."],
     skills: [
       { name: "find-nearby", enabled: true },
@@ -134,7 +135,7 @@ describe("the current setup in Set up again's brief", () => {
   };
 
   it("is what Hermes has: persona, description, model, and only what is on", () => {
-    expect(currentSetup(now)).toEqual({ persona: "You are Travel Buddy.", description: "Plans trips.", model: "claude-sonnet-4-5", color: "teal", skillsOn: ["find-nearby"], toolsetsOn: ["web"] });
+    expect(currentSetup(now)).toEqual({ persona: "You are Travel Buddy.", description: "Plans trips.", model: "claude-sonnet-4-5", color: "teal", picture: null, skillsOn: ["find-nearby"], toolsetsOn: ["web"] });
   });
 
   it("names a colour the brief lists, and keeps any other as Hermes has it", () => {

@@ -4,6 +4,7 @@
 // elsewhere kept, the hidden ready turn, and the card after a reload. What the card offers is botSetupCard.test.ts's.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { botSetupReady } from "./botSetupApply";
+import { BOT_PICTURE_DATA, pictureKey } from "./botPictures";
 import { BOT_SETUP_FENCE, botSetupBrief, type BotSetupNewBlock } from "./botSetupBrief";
 import { ACCEPTED_FENCE, choose, fencedBlocks, planCard, tickable, tickedCount, type ListedItem, type Plan } from "./botSetupCard";
 import { SETUP_RECORD_PREFIX, localChatCache } from "./chatCache";
@@ -32,6 +33,7 @@ const BLOCK: BotSetupNewBlock = {
   description: "Plans trips.",
   model: null,
   color: "teal",
+  picture: null,
   callOwner: "Lena",
   skills: [
     { name: "recipes", on: true },
@@ -119,6 +121,7 @@ describe("Set it up", () => {
       ["description", "change"],
       ["model", "same"],
       ["color", "change"],
+      ["picture", "same"],
       ["remember", "change"],
       ["skill:recipes", "change"],
       ["skill:flight-tracker", "notFound"],
@@ -599,5 +602,130 @@ describe("MCP servers at Set it up", () => {
     ]);
     await hermes.applyBotSetup(read, plan, () => {});
     expect(server.mcp.writes.map((w) => w.what)).toEqual(["add echo"]);
+  });
+});
+
+describe("the picture", () => {
+  const assets = (server: FakeHermes) => server.requests.filter((r) => r.method === "profiles.set_asset").map((r) => r.params);
+  const noBytes = (text: string) => expect(text).not.toMatch(/base64|data:image/);
+
+  it("saves the set's picture the bot named as the profile's avatar, with the block keys Hermes's desktop needs, read back by its bytes", async () => {
+    const server = hermes0232();
+    const { hermes, chatId } = await withCard(server, cardText({ ...BLOCK, picture: "plane" }));
+    const read = cardOf(await hermes.readBotSetup(chatId));
+    const sent = writes(server);
+    const out = await hermes.applyBotSetup(read, planOf(read), () => {});
+
+    expect(out.states.picture).toEqual({ kind: "applied" });
+    expect(assets(server)).toEqual([{ name: "default", asset: "avatar", data: BOT_PICTURE_DATA.plane }]);
+    expect(server.botAvatars.default).toBe(BOT_PICTURE_DATA.plane);
+    expect(server.profileMeta.default?.ui_meta).toEqual({ "hermes-bots": { title: "Hermes", color: "#14b8a6", custom: true, imageKind: "photo" } });
+    expect(server.requests.filter((r) => r.method === "profiles.get_asset").length).toBeGreaterThan(0);
+    const [ready] = sent.submits();
+    expect(String(ready.text)).toContain("your picture: plane");
+    noBytes(String(ready.text));
+
+    const again = cardOf(await hermes.readBotSetup(chatId));
+    expect(item(planOf(again), "picture")).toMatchObject({ before: "set:plane", after: "set:plane", status: "same" });
+  });
+
+  it("sends no picture for an unticked Picture row", async () => {
+    const server = hermes0232();
+    const { hermes, chatId } = await withCard(server, cardText({ ...BLOCK, picture: "plane" }));
+    const read = cardOf(await hermes.readBotSetup(chatId));
+    const plan = planOf(read, [choose(item(planOf(read), "picture"), { ticked: false })]);
+    const out = await hermes.applyBotSetup(read, plan, () => {});
+    expect(out.states.picture).toBeUndefined();
+    expect(assets(server)).toEqual([]);
+    expect(server.botAvatars.default).toBeUndefined();
+  });
+
+  it("sends nothing about a picture the block gives as a URL or data URL", async () => {
+    for (const picture of ["https://example.com/face.png", "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAwS2OUAAAAABJRU5ErkJggg=="]) {
+      const server = hermes0232();
+      const { hermes, chatId } = await withCard(server, cardText({ ...BLOCK, picture }));
+      const read = cardOf(await hermes.readBotSetup(chatId));
+      const plan = planOf(read);
+      expect(plan.items.find((i) => i.kind === "picture")).toMatchObject({ status: "notFound" });
+      const before = server.requests.length;
+      await hermes.applyBotSetup(read, plan, () => {});
+      expect(assets(server)).toEqual([]);
+      for (const r of server.requests.slice(before)) expect(JSON.stringify(r.params)).not.toContain(picture);
+    }
+  });
+
+  it("saves the owner's upload, from the bytes the card holds, and only its key goes in the ready turn", async () => {
+    const server = hermes0232();
+    const { hermes, chatId } = await withCard(server, cardText({ ...BLOCK, picture: "plane" }));
+    const read = cardOf(await hermes.readBotSetup(chatId));
+    const upload = `data:image/webp;base64,${btoa("RIFF\x16\x00\x00\x00WEBPVP8 owner's own")}`;
+    const key = pictureKey(upload)!;
+    const plan = planOf(read, [choose(item(planOf(read), "picture"), { to: key })]);
+    const sent = writes(server);
+    const out = await hermes.applyBotSetup(read, plan, () => {}, {}, { [key]: upload });
+
+    expect(out.states.picture).toEqual({ kind: "applied" });
+    expect(assets(server)).toEqual([{ name: "default", asset: "avatar", data: upload }]);
+    const [ready] = sent.submits();
+    expect(String(ready.text)).toContain("your picture: one the owner uploaded");
+    noBytes(String(ready.text));
+    expect(String(ready.text)).toContain(key);
+  });
+
+  it("fails an upload the card no longer holds, with nothing sent", async () => {
+    const server = hermes0232();
+    const { hermes, chatId } = await withCard(server, cardText({ ...BLOCK, picture: "plane" }));
+    const read = cardOf(await hermes.readBotSetup(chatId));
+    const plan = planOf(read, [choose(item(planOf(read), "picture"), { to: "photo:0123456789abcdef" })]);
+    const out = await hermes.applyBotSetup(read, plan, () => {});
+    expect(out.states.picture).toEqual({ kind: "failed", miss: { kind: "uploadLost" } });
+    expect(assets(server)).toEqual([]);
+  });
+
+  it("fails with Hermes's reason when it refuses the picture, and Try again saves it", async () => {
+    const server = hermes0232();
+    const { hermes, chatId } = await withCard(server, cardText({ ...BLOCK, picture: "plane" }));
+    const read = cardOf(await hermes.readBotSetup(chatId));
+    const setAsset = server.handlers["profiles.set_asset"];
+    server.handlers["profiles.set_asset"] = (r) => server.fail(r.id, 4069, "asset too large");
+    const out = await hermes.applyBotSetup(read, planOf(read), () => {});
+    expect(out.states.picture).toEqual({ kind: "failed", miss: { kind: "profile", failure: { kind: "refused", status: 4069, detail: "asset too large" } } });
+    expect(out.states.persona).toEqual({ kind: "applied" });
+
+    server.handlers["profiles.set_asset"] = setAsset;
+    expect(await hermes.retryBotSetupItem(read, item(planOf(read), "picture"))).toEqual({ kind: "applied" });
+    expect(server.botAvatars.default).toBe(BOT_PICTURE_DATA.plane);
+  });
+
+  it("shows the row unavailable on a Hermes that can't check the Bot Mode block, and the other items still apply", async () => {
+    const server = hermes0232((s) => (s.uiMetaCas = false));
+    const { hermes, chatId } = await withCard(server, cardText({ ...BLOCK, picture: "plane" }));
+    const read = cardOf(await hermes.readBotSetup(chatId));
+    const plan = planOf(read);
+    expect(plan.items.find((i) => i.kind === "picture")).toEqual({ kind: "picture", key: "picture", name: "plane", status: "unavailable", off: { kind: "noCheck" } });
+    const out = await hermes.applyBotSetup(read, plan, () => {});
+    expect(out.states.persona).toEqual({ kind: "applied" });
+    expect(out.states.picture).toBeUndefined();
+    expect(assets(server)).toEqual([]);
+  });
+
+  it("shows the row unavailable once Hermes is found to lack profiles.set_asset", async () => {
+    const server = hermes0232((s) => (s.handlers["profiles.set_asset"] = (r) => s.fail(r.id, -32601, "unknown method: profiles.set_asset")));
+    const { hermes, chatId } = await withCard(server, cardText({ ...BLOCK, picture: "plane" }));
+    const read = cardOf(await hermes.readBotSetup(chatId));
+    const out = await hermes.applyBotSetup(read, planOf(read), () => {});
+    expect(out.states.picture).toEqual({ kind: "failed", miss: { kind: "profile", failure: { kind: "noRoute", action: "botPicture" } } });
+    const plan = planOf(cardOf(await hermes.readBotSetup(chatId)));
+    expect(plan.items.find((i) => i.kind === "picture")).toMatchObject({ status: "unavailable", off: { kind: "noRoute", action: "botPicture" } });
+  });
+
+  it("on Set up again, reads the picture Hermes has as before, and keeps it unless the block names another", async () => {
+    const server = hermes0232((s) => (s.botAvatars.default = BOT_PICTURE_DATA.moon));
+    const { hermes, chatId, me } = await withCard(server, cardText({ ...BLOCK, picture: null }));
+    expect((await hermes.botSetupCurrent(me)).picture).toBe("moon");
+    const plan = planOf(cardOf(await hermes.readBotSetup(chatId)));
+    expect(item(plan, "picture")).toMatchObject({ before: "set:moon", after: "set:moon", status: "same" });
+    await hermes.applyBotSetup(cardOf(await hermes.readBotSetup(chatId)), plan, () => {});
+    expect(assets(server)).toEqual([]);
   });
 });

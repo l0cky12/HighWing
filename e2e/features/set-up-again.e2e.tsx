@@ -17,6 +17,7 @@ const BLOCK: BotSetupAgainBlock = {
   description: "Plans trips, by train where it can.",
   model: null,
   color: null,
+  picture: null,
   callOwner: null,
   skills: [{ name: "rail-europe", on: true }],
   toolsets: [{ name: "terminal", on: false }],

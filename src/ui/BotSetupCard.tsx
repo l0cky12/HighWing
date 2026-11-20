@@ -3,13 +3,15 @@
 // read on open and after each reply (`useBotSetup`); what the card offers and what a choice does, from botSetupCard.ts;
 // what Set it up writes, from botSetupApply.ts. The pane keeps the pending edits above the transcript, so a card
 // scrolled out of the rendered window keeps them. What Connect takes for an MCP server is kept there too, in memory
-// only, until Set it up sends it; leaving the Bot Chat drops it (#85 owner call 4). Set up again's card shows each
-// change as before → after, and folds what stays as it is under one line per group.
+// only, until Set it up sends it, and so is a picture the owner uploads; leaving the Bot Chat drops both (#85 owner
+// call 4, ADR 0235). Set up again's card shows each change as before → after, and folds what stays as it is under one
+// line per group.
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Check, ChevronRight, CircleAlert, FileText, Hourglass, Pencil, Plug, RotateCcw, Sparkles, TriangleAlert } from "lucide-react";
-import { BOT_SETUP_COLORS, BOT_SETUP_DESCRIPTION_MAX, BOT_SETUP_FENCE } from "../hermes/botSetupBrief";
+import { Check, ChevronRight, CircleAlert, FileText, Hourglass, ImagePlus, Pencil, Plug, RotateCcw, Sparkles, TriangleAlert } from "lucide-react";
+import { BOT_PICTURE_DATA, pictureKey, setPicture } from "../hermes/botPictures";
+import { BOT_SETUP_COLORS, BOT_SETUP_DESCRIPTION_MAX, BOT_SETUP_FENCE, BOT_SETUP_PICTURES } from "../hermes/botSetupBrief";
 import { BOT_SETUP_COLOR_HEX, choose, fencedBlocks, planCard, tickable, type Choice, type ListedItem, type Plan, type PlanItem } from "../hermes/botSetupCard";
-import { rememberAsked, restartState, setupItems, type CardMiss, type CardState } from "../hermes/botSetupApply";
+import { rememberAsked, restartState, setupItems, type CardMiss, type CardState, type PictureUploads } from "../hermes/botSetupApply";
 import { connected, mcpOffer, type McpOffer, type McpSecrets } from "../hermes/botSetupMcp";
 import type { Note } from "../hermes/botSetup";
 import type { BotSetupStart } from "../hermes/botSetupStart";
@@ -20,6 +22,7 @@ import type { Caution } from "../hermes/toolsets";
 import { errorText } from "../hermes/values";
 import { useLocale, type Locale } from "../i18n/locale";
 import { composing, Spinner } from "./bits";
+import { PICTURE_TYPES, readPictureFile } from "./pictureFile";
 import { failureText } from "./profileFailure";
 import { cautionText } from "./ToolsetSettings";
 import { TurnCard } from "./TurnCard";
@@ -51,6 +54,10 @@ export type SetupHost = {
   secrets: McpSecrets;
   /** Keeps `values` for an MCP server, which only Set it up sends. */
   connect(item: ListedItem, values: Record<string, string>): void;
+  /** The owner's uploaded pictures, by picture key. Only Set it up sends one. */
+  uploads: PictureUploads;
+  /** Keeps an uploaded picture, given as a data URL, and answers its key. */
+  upload(dataUrl: string): string;
   reloadMcp(): void;
   /** `replying`: Hermes didn't reload, since a reply runs on it. */
   mcpReload?: "working" | "replying" | { failed: string };
@@ -85,6 +92,7 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
   const [restart, setRestart] = useState<Restart>();
   const [start, setStart] = useState<BotSetupStart>();
   const [secrets, setSecrets] = useState<McpSecrets>({});
+  const [uploads, setUploads] = useState<PictureUploads>({});
   const [mcpReload, setMcpReload] = useState<SetupHost["mcpReload"]>();
   const shown = useRef({ chatId, reads: 0, started: false, readOnce: false, holds: false, afterSetUp: false, setupId: null as string | null });
   // What the last Set it up ran on: a retry compares against what the card read then, not against a later reload.
@@ -100,6 +108,7 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
     setRestart(undefined);
     setStart(undefined);
     setSecrets({});
+    setUploads({});
     setMcpReload(undefined);
   }, []);
   useEffect(() => {
@@ -183,7 +192,7 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
     const setupId = on.read.parse.card.setupId;
     const hear = hearFor(setupId);
     hear(item.key, { kind: "working" });
-    api.retryBotSetupItem(on.read, on.items.get(item.key) ?? item, cautions, using).then(
+    api.retryBotSetupItem(on.read, on.items.get(item.key) ?? item, cautions, using, uploads).then(
       (state) => {
         hear(item.key, state);
         if (ours(setupId)) dropSecretsOfAdded({ [item.key]: state });
@@ -221,7 +230,7 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
       const items = setupItems(plan, r.parse.accepted);
       ranOn.current = { read: r, items: new Map(items.map((i) => [i.key, i])) };
       const setupId = r.parse.card.setupId;
-      api.applyBotSetup(r, plan, hearFor(setupId), secrets).then(
+      api.applyBotSetup(r, plan, hearFor(setupId), secrets, uploads).then(
         (out) => {
           setBusy(false);
           if (!ours(setupId)) return;
@@ -246,6 +255,12 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
     },
     secrets,
     connect: (item, values) => setSecrets((was) => ({ ...was, [item.key]: values })),
+    uploads,
+    upload(dataUrl) {
+      const key = pictureKey(dataUrl);
+      setUploads((was) => ({ ...was, [key]: dataUrl }));
+      return key;
+    },
     mcpReload,
     reloadMcp() {
       if (busy || mcpReload === "working") return;
@@ -352,7 +367,7 @@ function Unreadable({ host, source }: { host: SetupHost; source: string }) {
 }
 
 const GROUPS = [
-  { id: "about", kinds: ["persona", "description", "model", "color", "remember"] },
+  { id: "about", kinds: ["persona", "description", "model", "color", "picture", "remember"] },
   { id: "skills", kinds: ["skill"] },
   { id: "tools", kinds: ["toolset"] },
   { id: "mcp", kinds: ["mcp"] },
@@ -467,7 +482,7 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
     refocus.current = true;
     setEditing(false);
   };
-  const listed = item.status !== "notFound" ? item : undefined;
+  const listed = item.status !== "notFound" && item.status !== "unavailable" ? item : undefined;
   const run: ItemRun | undefined = host.runs[item.key] ?? (item.status === "same" && read.mcpReload.includes(item.key) ? { kind: "reload" } : undefined);
   // The Remember row is applied once the bot's memory lists the name, which the card reads back as nothing to change.
   const done = item.status === "same" && (run?.kind === "applied" || run?.kind === "waiting");
@@ -483,10 +498,28 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
   const offer = listed?.kind === "mcp" && read.setup.mcp && listed.name !== undefined ? mcpOffer(read.setup.mcp, listed.name, listed.from) : undefined;
   const label = labelOf(l, read, item);
   const beforeAfter = read.parse.card.again && tickable(item);
-  const value = listed && valueOf(l, listed, beforeAfter);
+  const src = pictureSrc(host, read);
+  const value = listed ? (
+    valueOf(l, listed, beforeAfter, src)
+  ) : item.status === "unavailable" && item.name ? (
+    <span className="bot-setup-value">
+      {" · "}
+      <PictureName pictureKey={`set:${item.name}`} now={null} src={src} />
+    </span>
+  ) : undefined;
   const edited = listed && listed.over.length > 0 && listed.after !== listed.proposed;
   const refused = item.status === "notFound" ? item.why : undefined;
-  const badge = refused ? l.mcpCantAdd : item.status === "notFound" ? l.notFound : item.from !== undefined ? l.from(item.from) : (item.kind === "skill" || item.kind === "toolset") && item.status === "change" ? l.suggested : undefined;
+  const badge = refused
+    ? l.mcpCantAdd
+    : item.status === "notFound"
+      ? l.notFound
+      : item.status === "unavailable"
+        ? l.unavailable
+        : item.from !== undefined
+          ? l.from(item.from)
+          : (item.kind === "skill" || item.kind === "toolset") && item.status === "change"
+            ? l.suggested
+            : undefined;
   const editable = listed && !host.busy && !shownRun && (item.kind === "persona" || item.kind === "description" || item.kind === "color" || (item.kind === "model" && read.setup.now.models.length > 1));
   const ticked = tickable(item) && item.ticked;
   const sub =
@@ -496,7 +529,9 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
           ? l.mcpRefused.path(item.from ?? "")
           : l.mcpRefused[refused]
         : l.notFoundWhy
-      : item.status === "same" && !done && !addedAwaitingReload
+      : item.status === "unavailable"
+        ? l.pictureOff(failureText(loc, item.off, read.profile))
+        : item.status === "same" && !done && !addedAwaitingReload
         ? item.kind === "model"
           ? l.inUse
           : item.kind === "remember"
@@ -512,8 +547,10 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
                 : item.after === "on"
                   ? l.turnOn
                   : l.turnOff
-              : undefined;
-  const dim = item.status === "notFound" || (item.status === "same" && !done && !addedAwaitingReload);
+              : !shownRun && item.kind === "picture"
+                ? pictureWhy(l, item.after)
+                : undefined;
+  const dim = item.status === "notFound" || item.status === "unavailable" || (item.status === "same" && !done && !addedAwaitingReload);
   return (
     <li className={`bot-setup-item${dim ? " dim" : ""}`}>
       <span className="bot-setup-mark">
@@ -567,6 +604,7 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
           </>
         )}
         {sub && <div className="bot-setup-sub">{sub}</div>}
+        {listed?.kind === "picture" && !shownRun && <PictureStrip host={host} item={listed} src={src} />}
         {listed && offer && offer.kind !== "refused" && !shownRun && tickable(item) && <McpDetail host={host} item={listed} offer={offer} onConnect={() => setConnecting(true)} />}
         {shownRun && <RunText host={host} item={item} run={shownRun} locale={loc} connectFilled={!!(listed && offer && host.secrets[listed.key] && connected(offer, host.secrets[listed.key]))} onConnect={() => setConnecting(true)} />}
         {connecting && listed && offer && offer.kind !== "refused" && (
@@ -608,6 +646,8 @@ function labelOf(l: Locale["chat"]["botSetup"], read: BotSetupCardRead, item: Pl
       return l.model;
     case "color":
       return l.color;
+    case "picture":
+      return l.picture;
     case "remember":
       return l.remember(item.after ?? "");
     case "toolset":
@@ -617,7 +657,38 @@ function labelOf(l: Locale["chat"]["botSetup"], read: BotSetupCardRead, item: Pl
   }
 }
 
-function valueOf(l: Locale["chat"]["botSetup"], item: ListedItem, beforeAfter: boolean): ReactNode {
+/** Where to draw a picture key from: the set, the card's uploads, or the picture Hermes has now. */
+const pictureSrc =
+  (host: SetupHost, read: BotSetupCardRead) =>
+  (key: string): string | undefined => {
+    const name = setPicture(key);
+    if (name) return BOT_PICTURE_DATA[name];
+    return host.uploads[key] ?? (key === read.setup.now.picture ? (read.setup.picture ?? undefined) : undefined);
+  };
+
+/** A picture's name: the set's, or what any other picture is to the bot. `now`: the key of the picture Hermes has. */
+const pictureName = (l: Locale["chat"]["botSetup"], key: string | null, now: string | null) => {
+  const name = setPicture(key);
+  return name ? l.pictures[name] : key === null ? l.noPicture : key === now ? l.pictureNow : l.pictureYours;
+};
+
+function PictureName({ pictureKey: key, now, src }: { pictureKey: string | null; now: string | null; src: (key: string) => string | undefined }) {
+  const l = useLocale().chat.botSetup;
+  const shown = key === null ? undefined : src(key);
+  return (
+    <>
+      {shown && <img className="bot-setup-thumb" src={shown} alt="" />}
+      {pictureName(l, key, now)}
+    </>
+  );
+}
+
+const pictureWhy = (l: Locale["chat"]["botSetup"], key: string | null) => {
+  const name = setPicture(key);
+  return name && l.pictureFor[name];
+};
+
+function valueOf(l: Locale["chat"]["botSetup"], item: ListedItem, beforeAfter: boolean, src: (key: string) => string | undefined): ReactNode {
   const was = (now: ReactNode) =>
     beforeAfter && (
       <>
@@ -660,6 +731,14 @@ function valueOf(l: Locale["chat"]["botSetup"], item: ListedItem, beforeAfter: b
           {color(item.after)}
         </span>
       );
+    case "picture":
+      return (
+        <span className="bot-setup-value">
+          {" · "}
+          {was(<PictureName pictureKey={item.before} now={item.before} src={src} />)}
+          <PictureName pictureKey={item.after} now={item.before} src={src} />
+        </span>
+      );
     case "toolset":
       return (
         <span className="bot-setup-value mono" translate="no">
@@ -670,6 +749,82 @@ function valueOf(l: Locale["chat"]["botSetup"], item: ListedItem, beforeAfter: b
     default:
       return null;
   }
+}
+
+/**
+ * The set as a strip of radio buttons, the bot's pick marked, then the picture Hermes has now and the owner's upload
+ * when they aren't of the set. Choosing one ticks the row. Upload your own… takes a file under Edit bot's rules.
+ */
+function PictureStrip({ host, item, src }: { host: SetupHost; item: Extract<ListedItem, { kind: "picture" }>; src: (key: string) => string | undefined }) {
+  const loc = useLocale();
+  const l = loc.chat.botSetup;
+  const f = loc.profiles.form;
+  const group = useId();
+  const input = useRef<HTMLInputElement>(null);
+  const [note, setNote] = useState<string>();
+  const live = useRef(true);
+  useEffect(
+    () => () => {
+      live.current = false;
+    },
+    [],
+  );
+  const pick = (to: string) => host.choose(choose(item, { to: to as typeof item.after, ticked: true }));
+  const others = [...new Set([item.before, item.after].flatMap((k) => (k !== null && !setPicture(k) ? [k] : [])))];
+  const options = [
+    ...BOT_SETUP_PICTURES.map((p) => ({ key: `set:${p}`, label: l.pictures[p] })),
+    ...others.map((k) => ({ key: k, label: pictureName(l, k, item.before) })),
+  ].flatMap((o) => {
+    const shown = src(o.key);
+    return shown ? [{ ...o, src: shown }] : [];
+  });
+  const upload = async (file: File | undefined) => {
+    if (!file) return;
+    const read = await readPictureFile(file);
+    if (!live.current) return;
+    if (read.kind !== "read") return setNote(read.kind === "format" ? f.pictureFormat : read.kind === "tooBig" ? f.pictureTooBig : f.pictureUnread);
+    setNote(undefined);
+    pick(host.upload(read.dataUrl));
+  };
+  return (
+    <div className="bot-setup-pictures">
+      <div className="bot-setup-strip" role="radiogroup" aria-label={l.pictureSet}>
+        {options.map((o) => {
+          const botsPick = item.name !== undefined && o.key === item.proposed;
+          return (
+            <label key={o.key} className="bot-setup-pic" title={botsPick ? l.botsPick(o.label, host.bot) : o.label}>
+              <input type="radio" className="sr-only" name={group} checked={item.after === o.key} disabled={host.busy} onChange={() => pick(o.key)} />
+              <img src={o.src} alt="" />
+              <span className="sr-only">{botsPick ? l.botsPick(o.label, host.bot) : o.label}</span>
+              {botsPick && <Sparkles size={11} className="bot-setup-pick" aria-hidden />}
+            </label>
+          );
+        })}
+      </div>
+      <div className="bot-setup-run">
+        <input
+          ref={input}
+          type="file"
+          hidden
+          accept={PICTURE_TYPES.join(",")}
+          aria-label={l.pictureUpload}
+          onChange={(e) => {
+            void upload(e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
+        <button className="btn" disabled={host.busy} onClick={() => input.current?.click()}>
+          <ImagePlus size={13} aria-hidden /> {l.pictureUpload}
+        </button>
+        <span className="bot-setup-sub">{f.pictureHint}</span>
+      </div>
+      {note && (
+        <div className="bot-setup-sub bot-setup-bad" role="alert">
+          {note}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function RunIcon({ run }: { run: ItemRun }) {
@@ -692,7 +847,7 @@ function RunIcon({ run }: { run: ItemRun }) {
 
 function RunText({ host, item, run, locale: loc, connectFilled, onConnect }: { host: SetupHost; item: PlanItem; run: ItemRun; locale: Locale; connectFilled: boolean; onConnect: () => void }) {
   const l = loc.chat.botSetup;
-  const listed = item.status !== "notFound" ? item : undefined;
+  const listed = item.status !== "notFound" && item.status !== "unavailable" ? item : undefined;
   const again = (accept: boolean) => listed && host.retry(listed, accept);
   switch (run.kind) {
     case "working":

@@ -14,6 +14,13 @@ export const BOT_SETUP_BLOCK_VERSION = 1;
 export const BOT_SETUP_COLORS = ["red", "orange", "amber", "green", "teal", "blue", "indigo", "purple", "pink", "gray"] as const;
 export type BotSetupColor = (typeof BOT_SETUP_COLORS)[number];
 
+/**
+ * The pictures Highwing ships for a bot (ADR 0235), by the name a block gives one. The bytes are in
+ * src/assets/bot-pictures/, drawn from scripts/bot-pictures/. A new bot's block always names one.
+ */
+export const BOT_SETUP_PICTURES = ["plane", "moon", "book", "leaf", "rocket", "compass", "music", "chart", "code", "paw", "pot", "sun"] as const;
+export type BotSetupPicture = (typeof BOT_SETUP_PICTURES)[number];
+
 /** A skill or toolset the bot suggests turning on, or off with `on: false`. */
 export type BotSetupToggle = { name: string; on: boolean };
 
@@ -22,7 +29,9 @@ export type BotSetupCopy = { from: string; skills: string[]; toolsets: string[];
 
 /**
  * One setup block as the brief asks for it. Names only: nothing in it is a command, a URL or a key. `model` null keeps
- * the current model. `callOwner` is what to call the owner, saved to memory at Set it up, never put in the persona.
+ * the current model. `picture` is a name the brief lists, kept as given so a name not in the set shows as not found;
+ * null keeps the current picture. `callOwner` is what to call the owner, saved to memory at Set it up, never put in the
+ * persona.
  */
 type SetupBlock<Persona, Description, Color> = {
   v: typeof BOT_SETUP_BLOCK_VERSION;
@@ -30,6 +39,7 @@ type SetupBlock<Persona, Description, Color> = {
   description: Description;
   model: string | null;
   color: Color;
+  picture: string | null;
   callOwner: string | null;
   skills: BotSetupToggle[];
   toolsets: BotSetupToggle[];
@@ -54,6 +64,7 @@ export const BOT_SETUP_BLOCK_FORMAT = {
   description: "string",
   model: "string|null",
   color: "string",
+  picture: "string",
   callOwner: "string|null",
   skills: '[{"name":string,"on":boolean}]',
   toolsets: '[{"name":string,"on":boolean}]',
@@ -67,6 +78,7 @@ export const BOT_SETUP_AGAIN_BLOCK_FORMAT = {
   persona: "string|null",
   description: "string|null",
   color: "string|null",
+  picture: "string|null",
 } as const satisfies Record<keyof BotSetupAgainBlock, string>;
 
 export const BOT_SETUP_BLOCK_KEYS = Object.keys(BOT_SETUP_BLOCK_FORMAT) as (keyof BotSetupNewBlock)[];
@@ -126,6 +138,8 @@ export type BotSetupCurrent = {
   description: string;
   model: string | null;
   color: string | null;
+  /** A name from the set, `"own"` for any other picture, or null for none. */
+  picture: BotSetupPicture | "own" | null;
   skillsOn: readonly string[];
   toolsetsOn: readonly string[];
   mcp?: readonly string[];
@@ -174,6 +188,7 @@ function inventoryText(inv: BotSetupInventory): string {
   const lists = {
     models: names(inv.models, C.models),
     colors: BOT_SETUP_COLORS,
+    pictures: BOT_SETUP_PICTURES,
     skills: names(inv.skills, C.skills),
     toolsets: names(inv.toolsets, C.toolsets),
     ...(mcp && { mcp_catalog: names(inv.mcpCatalog ?? [], C.mcpCatalog) }),
@@ -192,6 +207,7 @@ function currentText(cur: BotSetupCurrent, mcp: boolean): string {
     description: cut(cur.description.trim(), C.description),
     model: cur.model,
     color: cur.color,
+    picture: cur.picture,
     skills_on: names(cur.skillsOn, C.skills),
     toolsets_on: names(cur.toolsetsOn, C.toolsets),
     ...(mcp && { mcp: names(cur.mcp ?? [], C.mcpCatalog) }),
@@ -201,7 +217,7 @@ function currentText(cur: BotSetupCurrent, mcp: boolean): string {
 
 function blockFormatText(format: Record<string, string>): string {
   const f = Object.entries(format).map(([k, t]) => `"${k}":${t}`);
-  return `{${f.slice(0, 6).join(",")},\n ${f.slice(6, 9).join(",")},\n ${f.slice(9).join(",")}}`;
+  return `{${f.slice(0, 7).join(",")},\n ${f.slice(7, 10).join(",")},\n ${f.slice(10).join(",")}}`;
 }
 
 const RULES_BEFORE_CARD = [
@@ -240,6 +256,9 @@ export function botSetupBrief({ id, name, inventory, current }: BotSetupBriefInp
       : `- description: one line, at most ${BOT_SETUP_DESCRIPTION_MAX} characters.`,
     "- model: null to keep the current model, or a name from INVENTORY.models.",
     again ? "- color: null to keep the current colour, or one of INVENTORY.colors when the owner asks for a new one." : "- color: one of INVENTORY.colors; never null.",
+    again
+      ? "- picture: null to keep the current picture. Only when the owner asks for a new one, one name from INVENTORY.pictures."
+      : "- picture: exactly one name from INVENTORY.pictures, the one that best fits what you'll help with; never null.",
     again
       ? "- callOwner: a new name the owner asks you to call them, or null if they give none."
       : "- callOwner: the owner's answer to question 1, or null if they gave none.",

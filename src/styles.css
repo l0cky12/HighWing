@@ -538,6 +538,16 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
 .bot-setup-head .badge { align-self: center; }
 .bot-setup-edit { width: 24px; height: 24px; align-self: center; }
 .bot-setup-swatch { display: inline-block; width: 11px; height: 11px; border-radius: 50%; vertical-align: -1px; }
+/* The Picture row (ADR 0235): a thumbnail beside a picture's name, and the set as a strip of radio buttons. */
+.bot-setup-thumb { width: 18px; height: 18px; margin-right: 4px; border-radius: 50%; object-fit: cover; vertical-align: -4px; }
+.bot-setup-pictures { display: grid; gap: 8px; margin-top: 8px; }
+.bot-setup-strip { display: flex; flex-wrap: wrap; gap: 8px; }
+.bot-setup-pic { position: relative; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; outline: 2px solid transparent; outline-offset: 2px; }
+.bot-setup-pic img { display: block; width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.bot-setup-pic:has(input:checked) { outline-color: var(--accent); }
+.bot-setup-pic:has(input:focus-visible) { outline: 2px dashed var(--accent); }
+.bot-setup-pic:has(input:disabled) { cursor: default; opacity: 0.6; }
+.bot-setup-pick { position: absolute; top: -4px; right: -4px; padding: 1px; border-radius: 50%; background: var(--raised); color: var(--accent); }
 .bot-setup-sub { color: var(--text-2); font-size: calc(12.5rem / 14); overflow-wrap: anywhere; }
 .bot-setup-persona {
   margin: 6px 0 2px; padding: 8px 10px; border-radius: 8px; background: var(--raised-2); color: var(--text-2); white-space: pre-wrap;

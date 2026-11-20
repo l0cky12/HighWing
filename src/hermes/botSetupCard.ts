@@ -2,9 +2,9 @@
 // in Hermes, and what the owner accepted at Set it up. Pure: the transport reads the rows and Hermes's lists, and the
 // card UI draws what this returns.
 // The block is the bot's words, so nothing in it reaches Hermes as given. Every skill, toolset, model, MCP server and
-// bot it names is matched against what Hermes lists, and the plan carries Hermes's own spelling of it. A name Hermes
-// doesn't list is a row that can't be ticked. A key the format doesn't have makes the whole block unreadable, so a
-// command, URL or key can't ride in beside a name.
+// bot it names is matched against what Hermes lists, and the plan carries Hermes's own spelling of it. A picture is
+// matched against the app's own set. A name Hermes or the set doesn't list is a row that can't be ticked. A key the
+// format doesn't have makes the whole block unreadable, so a command, URL or key can't ride in beside a name.
 // What the owner did to an item is a Choice: its tick and value, and the values shown that they chose over. The card
 // the app draws is the bot's proposal, then what was accepted at Set it up, then the owner's pending choices. A newer
 // block keeps each choice unless the bot changed that same item to a value the owner hasn't moved away from (ADR 0231),
@@ -16,6 +16,7 @@ import {
   BOT_SETUP_CURRENT_HEADER,
   BOT_SETUP_DESCRIPTION_MAX,
   BOT_SETUP_FENCE,
+  BOT_SETUP_PICTURES,
   botSetupMarkerId,
   type BotSetupAgainBlock,
   type BotSetupColor,
@@ -25,10 +26,12 @@ import {
   type BotSetupToggle,
 } from "./botSetupBrief";
 import type { McpRefusal } from "./botSetupMcp";
+import { PICTURE_KEY, type PictureKey } from "./botPictures";
+import type { ProfileFailure } from "./profiles";
 import type { SkillRow } from "./skills";
 import { textOf } from "./storedTranscript";
 import type { Toolset } from "./toolsets";
-import { isObj } from "./values";
+import { fingerprint, isObj } from "./values";
 
 /** A Bot Chat row as Hermes stores it (`GET /api/sessions/{id}/messages`), hidden rows included: the brief is one. */
 export type SetupRow = { id?: number; role?: string; content?: unknown; display_kind?: unknown };
@@ -68,6 +71,8 @@ export type ItemValues = {
   model: string | null;
   /** A Bot Mode colour as `lookOf` reads it: lowercase hex, or null for Hermes's own. */
   color: string | null;
+  /** The profile's avatar by its key (botPictures.ts), never its bytes, or null for none. */
+  picture: PictureKey | null;
   /** The owner's name, once the bot's memory lists an entry with it. */
   remember: string | null;
   skill: "on" | "off" | "absent";
@@ -98,9 +103,15 @@ export type ListedItem = { [K in ItemKind]: Proposal<K> & { after: ItemValues[K]
  * A name the block gave that Hermes doesn't list, or (`why`) an MCP server Hermes lists that the card won't add. Shown
  * with the block's own spelling; never ticked, never sent.
  */
-export type NotFoundItem = { kind: "model" | "skill" | "toolset" | "mcp"; key: string; name: string; from?: string; status: "notFound"; why?: McpRefusal };
+export type NotFoundItem = { kind: "model" | "picture" | "skill" | "toolset" | "mcp"; key: string; name: string; from?: string; status: "notFound"; why?: McpRefusal };
 
-export type PlanItem = ListedItem | NotFoundItem;
+/**
+ * The Picture row on a Hermes that can't save a picture (`HermesNow.pictureOff`): shown with why, never ticked, never
+ * sent. `name`: the set's picture the block names, if any.
+ */
+export type UnavailableItem = { kind: "picture"; key: "picture"; name?: string; status: "unavailable"; off: ProfileFailure };
+
+export type PlanItem = ListedItem | NotFoundItem | UnavailableItem;
 
 /**
  * The card's items in the card's order: about the bot, then skills, toolsets and MCP servers. Set up again's plan also
@@ -118,6 +129,9 @@ export type HermesNow = {
   description: string;
   model: string | null;
   color: string | null;
+  picture: PictureKey | null;
+  /** Why this Hermes can't save a picture, when it can't (ADR 0235). */
+  pictureOff?: ProfileFailure;
   memory: readonly string[];
   skills: readonly Pick<SkillRow, "name" | "enabled">[];
   toolsets: readonly Pick<Toolset, "name" | "enabled">[];
@@ -249,7 +263,8 @@ export function readBlock(source: string, brief: BriefKind): { ok: true; checked
       throw new Bad("not JSON");
     }
     if (!isObj(raw)) throw new Bad("not a JSON object");
-    keysExactly(raw, BOT_SETUP_BLOCK_KEYS, "block");
+    // A block drawn before the picture was added (#86) has no picture key, and keeps the picture.
+    keysExactly(raw, "picture" in raw ? BOT_SETUP_BLOCK_KEYS : BOT_SETUP_BLOCK_KEYS.filter((k) => k !== "picture"), "block");
     if (raw.v !== BOT_SETUP_BLOCK_VERSION) throw new Bad(`v: not ${BOT_SETUP_BLOCK_VERSION}`);
     const description = orNull(raw.description, (v) => {
       const d = text(v, "description");
@@ -282,6 +297,7 @@ export function readBlock(source: string, brief: BriefKind): { ok: true; checked
       description,
       model: orNull(raw.model, (v) => text(v, "model")),
       color,
+      picture: orNull(raw.picture ?? null, (v) => text(v, "picture")),
       callOwner: orNull(raw.callOwner, (v) => text(v, "callOwner")),
       skills: toggles(raw.skills, "skills"),
       toolsets: toggles(raw.toolsets, "toolsets"),
@@ -297,18 +313,6 @@ export function readBlock(source: string, brief: BriefKind): { ok: true; checked
   } catch (e) {
     return { ok: false, reason: e instanceof Bad ? e.message : "unreadable" };
   }
-}
-
-/** Two 32-bit FNV-1a hashes over the text, as hex. */
-function fingerprint(s: string): string {
-  let a = 0x811c9dc5;
-  let b = 0x01000193 ^ s.length;
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    a = Math.imul(a ^ c, 0x01000193);
-    b = Math.imul(b ^ c, 0x01000193) ^ (b >>> 15);
-  }
-  return `${(a >>> 0).toString(16).padStart(8, "0")}${(b >>> 0).toString(16).padStart(8, "0")}`;
 }
 
 const cardIdOf = (setupId: string, block: BotSetupAgainBlock) => `${setupId}:${fingerprint(JSON.stringify(block))}`;
@@ -399,10 +403,10 @@ const notFound = (kind: NotFoundItem["kind"], name: string, from?: string, why?:
 });
 
 /** The block against Hermes now: one item per row the card shows. */
-function planBlock(card: Card, now: HermesNow): (Proposal<ItemKind> | NotFoundItem)[] {
+function planBlock(card: Card, now: HermesNow): (Proposal<ItemKind> | NotFoundItem | UnavailableItem)[] {
   const b = card.block;
-  const items: (Proposal<ItemKind> | NotFoundItem)[] = [];
-  const add = (item: Proposal<ItemKind> | NotFoundItem) => {
+  const items: (Proposal<ItemKind> | NotFoundItem | UnavailableItem)[] = [];
+  const add = (item: Proposal<ItemKind> | NotFoundItem | UnavailableItem) => {
     const at = items.findIndex((i) => i.key === item.key);
     if (at < 0) items.push(item);
     else if ("status" in items[at] && !("status" in item)) items[at] = item;
@@ -413,6 +417,11 @@ function planBlock(card: Card, now: HermesNow): (Proposal<ItemKind> | NotFoundIt
   const model = b.model === null ? now.model : now.models.find((m) => m === b.model);
   add(model === undefined ? notFound("model", b.model ?? "") : listed("model", "model", now.model, model, model === null ? {} : { name: model }));
   add(listed("color", "color", now.color, b.color === null ? now.color : BOT_SETUP_COLOR_HEX[b.color]));
+  // A picture is named, never given: the bytes come from the app's own set, or from the owner's upload on the card.
+  const picture = b.picture === null ? null : BOT_SETUP_PICTURES.find((p) => p === b.picture);
+  if (picture === undefined) add(notFound("picture", b.picture ?? ""));
+  else if (now.pictureOff) add({ kind: "picture", key: "picture", ...(picture !== null && { name: picture }), status: "unavailable", off: now.pictureOff });
+  else add(listed("picture", "picture", now.picture, picture === null ? now.picture : `set:${picture}`, picture === null ? {} : { name: picture }));
   // Whether Hermes has the Remember row depends on the name the card ends up with, so planCard reads it.
   if (b.callOwner !== null) add(listed("remember", "remember", null, b.callOwner));
 
@@ -457,7 +466,8 @@ function planBlock(card: Card, now: HermesNow): (Proposal<ItemKind> | NotFoundIt
 
 const holds = (c: Choice, proposed: unknown) => [c.to, ...c.over].some((v) => same(c.kind, v, proposed));
 
-const leftAlone = (b: BotSetupAgainBlock, kind: ItemKind) => (kind === "persona" || kind === "description" || kind === "model" || kind === "color") && b[kind] === null;
+const leftAlone = (b: BotSetupAgainBlock, kind: ItemKind) =>
+  (kind === "persona" || kind === "description" || kind === "model" || kind === "color" || kind === "picture") && b[kind] === null;
 
 /**
  * The card's plan: the block against Hermes now, with each choice the owner made laid over it, `accepted` at Set it up
@@ -514,7 +524,7 @@ export function acceptedRecord(plan: Plan, previous: AcceptedRecord | null = nul
   const earlier = previous && setupOf(previous.card) === setupOf(plan.cardId) ? previous.items : [];
   const items = new Map(earlier.map((a) => [a.key, a]));
   for (const item of plan.items) {
-    if (item.status === "notFound") continue;
+    if (item.status === "notFound" || item.status === "unavailable") continue;
     const a = items.get(item.key);
     if (tickable(item) || item.over.length || !item.ticked)
       items.set(item.key, { kind: item.kind, key: item.key, over: item.over, ticked: item.ticked, from: item.before, to: item.after } as AcceptedItem);
@@ -533,6 +543,7 @@ const VALUE_OK: { [K in ItemKind]: (v: unknown) => v is ItemValues[K] } = {
   description: (v): v is string => typeof v === "string",
   model: (v): v is string | null => v === null || typeof v === "string",
   color: (v): v is string | null => v === null || (typeof v === "string" && /^#[0-9a-f]{3,8}$/i.test(v)),
+  picture: (v): v is PictureKey | null => v === null || (typeof v === "string" && PICTURE_KEY.test(v)),
   remember: (v): v is string | null => v === null || typeof v === "string",
   skill: (v): v is ItemValues["skill"] => v === "on" || v === "off" || v === "absent",
   toolset: (v): v is ItemValues["toolset"] => v === "on" || v === "off",

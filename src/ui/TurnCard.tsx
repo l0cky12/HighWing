@@ -1,5 +1,5 @@
 // A card for a turn the owner didn't type in this chat, folded open: a Returned result (ADR 0175), a teammate's
-// message or a message this bot sent one (ADR 0207), and an Asked card (ADR 0232).
+// message or a message this bot sent one (ADR 0207), and an Asked card (ADR 0233).
 import { type HTMLAttributes, type ReactNode, useState } from "react";
 import { ChevronRight } from "lucide-react";
 

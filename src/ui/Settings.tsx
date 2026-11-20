@@ -1110,14 +1110,20 @@ export function SettingsScreen({
     seen.observe(root, { childList: true, subtree: true, characterData: true });
     return () => seen.disconnect();
   }, [shownTab, searching, sectioned]);
-  useEffect(() => {
+  // Before the links' passive effects. The highlight reads this publication to tell the page's first heading from a later scroll.
+  useLayoutEffect(() => {
     const main = mainRef.current;
     const root = panelRef.current;
     pinned.current = undefined;
     if (!main || !root || jumps.length < 2) return here.set(undefined);
-    let resting: ReturnType<typeof setTimeout> | undefined;
-    const place = () => {
-      if (pinned.current) return;
+    const spy = () => {
+      const pin = pinned.current;
+      if (pin && Date.now() < pin.settling) {
+        // The jump's own scroll: it settles once 150 ms pass without one.
+        pin.settling = Date.now() + 150;
+        return here.set(pin.name);
+      }
+      pinned.current = undefined;
       const secs = jumpSections(root);
       if (!secs.length) return;
       const top = main.getBoundingClientRect().top + 24;
@@ -1126,28 +1132,14 @@ export function SettingsScreen({
       if (main.scrollTop > 0 && main.scrollTop + main.clientHeight >= main.scrollHeight - 2) cur = secs[secs.length - 1];
       here.set(headingOf(cur));
     };
-    const spy = () => {
-      const pin = pinned.current;
-      if (pin && Date.now() < pin.settling) {
-        pin.settling = Date.now() + SCROLL_REST_MS;
-        return here.set(pin.name);
-      }
-      pinned.current = undefined;
-      // Restyling a link while WebKit coasts drops frames (#127).
-      clearTimeout(resting);
-      resting = setTimeout(place, SCROLL_REST_MS);
-    };
-    place();
+    spy();
     main.addEventListener("scroll", spy, { passive: true });
-    return () => {
-      main.removeEventListener("scroll", spy);
-      clearTimeout(resting);
-    };
+    return () => main.removeEventListener("scroll", spy);
   }, [jumps, here]);
   const jump = (name: string) => {
     const s = panelRef.current && jumpSections(panelRef.current).find((x) => headingOf(x) === name);
     if (!s) return;
-    pinned.current = { name, settling: Date.now() + SCROLL_REST_MS };
+    pinned.current = { name, settling: Date.now() + 150 };
     here.set(name);
     s.scrollIntoView?.({ block: "start" });
   };
@@ -1444,8 +1436,6 @@ export function SettingsScreen({
   );
 }
 
-const SCROLL_REST_MS = 150;
-
 /** Which jump link is current. Only the links subscribe, so a scroll renders them again and not the page. */
 type CurrentJump = { get: () => string | undefined; set: (name: string | undefined) => void; subscribe: (changed: () => void) => () => void };
 function currentJump(): CurrentJump {
@@ -1469,12 +1459,42 @@ function currentJump(): CurrentJump {
 type SubLink = { id: string; label: string; go: () => void } & ({ current: boolean; jump?: undefined } | { current?: undefined; jump: { here: CurrentJump; first: boolean } });
 const noJump: CurrentJump = currentJump();
 
+const HIGHLIGHT_SETTLE_MS = 200;
+
+function linkCurrent(link: SubLink, at: string | undefined): boolean {
+  if (!link.jump) return link.current;
+  return at === undefined ? link.jump.first : at === link.id;
+}
+
+function useSettledHighlight(defer: boolean, current: boolean, read: () => boolean): boolean {
+  const [painted, setPainted] = useState(current);
+  const armed = useRef(false);
+  const readRef = useRef(read);
+  readRef.current = read;
+  useEffect(() => {
+    if (!defer) return;
+    // The store subscription is passive, so this render can still show the previous page after the spy has published.
+    // Stay unarmed until a render shows the spy's heading. Until then the class follows `current`. A later scroll waits.
+    if (!armed.current) {
+      if (readRef.current() !== current) return;
+      armed.current = true;
+      if (painted !== current) setPainted(current);
+      return;
+    }
+    if (painted === current) return;
+    const id = window.setTimeout(() => setPainted(current), HIGHLIGHT_SETTLE_MS);
+    return () => window.clearTimeout(id);
+  }, [defer, current, painted]);
+  return defer && armed.current ? painted : current;
+}
+
 function SubLinkButton({ link, className, onClick }: { link: SubLink; className?: string; onClick: () => void }) {
   const here = link.jump?.here ?? noJump;
   const at = useSyncExternalStore(here.subscribe, here.get);
-  const current = link.jump ? (at === undefined ? link.jump.first : at === link.id) : link.current;
+  const current = linkCurrent(link, at);
+  const painted = useSettledHighlight(!!link.jump, current, () => linkCurrent(link, here.get()));
   return (
-    <button className={[className, current && "on"].filter(Boolean).join(" ")} aria-current={current ? (link.jump ? "location" : "page") : undefined} onClick={onClick}>
+    <button className={[className, painted && "on"].filter(Boolean).join(" ")} aria-current={current ? (link.jump ? "location" : "page") : undefined} onClick={onClick}>
       {link.label}
     </button>
   );

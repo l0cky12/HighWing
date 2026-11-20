@@ -82,7 +82,7 @@ async function appearance() {
       scrollTop = v;
     }, configurable: true },
     clientHeight: { value: VIEW, configurable: true },
-    scrollHeight: { get: () => links().length * STEP + VIEW / 2, configurable: true },
+    scrollHeight: { get: () => document.querySelectorAll(".settings-main section.set-section > .set-head h2").length * STEP + VIEW / 2, configurable: true },
   });
   const scrollTo = (top: number) => act(() => void ((main.scrollTop = top), main.dispatchEvent(new Event("scroll"))));
   const wait = (ms: number) => act(() => void vi.advanceTimersByTime(ms));
@@ -90,44 +90,65 @@ async function appearance() {
   return { links, scrollTo, wait, current };
 }
 
-it("makes the heading at the top of the view current once the scroll rests, and the last one at the page's foot", async () => {
-  const { links, scrollTo, wait, current } = await appearance();
+it("makes the heading at the top of the view current as the page scrolls, and the last one at the page's foot", async () => {
+  const { links, scrollTo, current } = await appearance();
   const names = links().map((b) => b.textContent);
   expect(names.length).toBeGreaterThan(3);
   expect(current()).toEqual([names[0]]);
 
   scrollTo(STEP + 10);
-  wait(REST);
   expect(current()).toEqual([names[1]]);
   scrollTo(2 * STEP - 50);
-  wait(REST);
   expect(current()).toEqual([names[1]]);
   scrollTo(2 * STEP);
-  wait(REST);
   expect(current()).toEqual([names[2]]);
   scrollTo(0);
-  wait(REST);
   expect(current()).toEqual([names[0]]);
 
   scrollTo(names.length * STEP + VIEW / 2 - VIEW);
-  wait(REST);
   expect(current()).toEqual([names.at(-1)]);
 });
 
-it("keeps the current link while the scroll goes on, and moves it once the scroll rests", async () => {
+it("marks the heading under the scroll at once, and moves the highlight once that heading stays", async () => {
   const { links, scrollTo, wait, current } = await appearance();
   const names = links().map((b) => b.textContent);
+  const highlighted = () => links().filter((b) => b.classList.contains("on")).map((b) => b.textContent);
+  expect(current()).toEqual([names[0]]);
+  expect(highlighted()).toEqual([names[0]]);
 
   scrollTo(STEP + 10);
-  wait(REST - 50);
+  expect(current()).toEqual([names[1]]);
+  expect(highlighted()).toEqual([names[0]]);
   scrollTo(2 * STEP);
-  wait(REST - 50);
-  scrollTo(3 * STEP);
-  wait(REST - 1);
-  expect(current()).toEqual([names[0]]);
+  expect(current()).toEqual([names[2]]);
+  expect(highlighted()).toEqual([names[0]]);
 
-  wait(1);
-  expect(current()).toEqual([names[3]]);
+  wait(200);
+  expect(highlighted()).toEqual([names[2]]);
+});
+
+it("highlights the heading already in view when a jump page opens below the top", async () => {
+  scrollTop = STEP + 10;
+  const { links, scrollTo, wait, current } = await appearance();
+  const names = links().map((b) => b.textContent);
+  const highlighted = () => links().filter((b) => b.classList.contains("on")).map((b) => b.textContent);
+  expect(current()).toEqual([names[1]]);
+  expect(highlighted()).toEqual([names[1]]);
+
+  fireEvent.click(screen.getByRole("tab", { name: "Keyboard Shortcuts" }));
+  const keys = () => within(screen.getByRole("group", { name: "Keyboard Shortcuts: on this page" })).getAllByRole("button");
+  const keyNames = keys().map((b) => b.textContent);
+  const keyOn = () => keys().filter((b) => b.classList.contains("on")).map((b) => b.textContent);
+  const keyAt = () => keys().filter((b) => b.getAttribute("aria-current") === "location").map((b) => b.textContent);
+  expect(keyNames.length).toBeGreaterThan(2);
+  expect(keyAt()).toEqual([keyNames[1]]);
+  expect(keyOn()).toEqual([keyNames[1]]);
+
+  scrollTo(2 * STEP + 10);
+  expect(keyAt()).toEqual([keyNames[2]]);
+  expect(keyOn()).toEqual([keyNames[1]]);
+  wait(200);
+  expect(keyOn()).toEqual([keyNames[2]]);
 });
 
 it("keeps a clicked link current while its own scroll settles, then follows the scroll again", async () => {
@@ -141,13 +162,10 @@ it("keeps a clicked link current while its own scroll settles, then follows the 
   expect(current()).toEqual([names[3]]);
   wait(100);
   scrollTo(STEP + 5);
-  wait(REST - 1);
   expect(current()).toEqual([names[3]]);
 
-  wait(100);
-  scrollTo(STEP + 10);
-  expect(current()).toEqual([names[3]]);
   wait(REST);
+  scrollTo(STEP + 10);
   expect(current()).toEqual([names[1]]);
 });
 

@@ -515,7 +515,7 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
 .delivery [data-status="failed"], .delivery [data-status="ambiguous"], .delivery [data-line="unconfirmed"], .delivery [data-line="noWayBack"] { color: var(--bad); }
 .returned-body { margin-top: 6px; max-height: 420px; overflow: auto; }
 .returned-body.msg.assistant { clip-path: none; }
-/* An Asked card (AskCard.tsx, ADR 0232): the owner's words, then a line for each bot asked, its reply under it. */
+/* An Asked card (AskCard.tsx, ADR 0233): the owner's words, then a line for each bot asked, its reply under it. */
 .ask-words { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .msg.returned.ask .msg-files { margin-top: 6px; }
 .ask-target { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line-2); display: flex; flex-direction: column; gap: 6px; }

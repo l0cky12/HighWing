@@ -1,4 +1,4 @@
-// The owner's "@" in a Bot Chat (ADR 0232). A message that names other bots goes to each named bot's own Bot Chat as
+// The owner's "@" in a Bot Chat (ADR 0233). A message that names other bots goes to each named bot's own Bot Chat as
 // the owner's message, never the app relaying a bot's (ADR 0207), with the asking chat attached as a Referenced chat
 // (ADR 0165). The asking bot takes no turn. Hermes keeps nothing in the asking chat, so this computer keeps the asks of
 // each profile's Bot Chat: the words, the bots asked, where the card goes, and each reply once it has ended. The

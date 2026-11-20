@@ -1,4 +1,4 @@
-// The Asked card (ADR 0232): a message the owner sent from this Bot Chat to other bots with "@", with each bot's
+// The Asked card (ADR 0233): a message the owner sent from this Bot Chat to other bots with "@", with each bot's
 // reply under it, read from the asks this computer keeps (asks.ts).
 import { createContext, useContext } from "react";
 import { AtSign, CircleAlert, Link2, RotateCcw } from "lucide-react";

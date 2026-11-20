@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// The owner's "@" in a Bot Chat (ADR 0232): the message goes to each named bot's Bot Chat, the asking bot takes no turn,
+// The owner's "@" in a Bot Chat (ADR 0233): the message goes to each named bot's Bot Chat, the asking bot takes no turn,
 // and the asking chat keeps an Asked card with each reply, here and after a restart.
 import { afterEach, describe, expect, it } from "vitest";
 import { ASK_FIRST_RULE, SEND_FREELY_RULE } from "./askFirst";

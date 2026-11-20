@@ -39,7 +39,7 @@ export const BRANCH_PREFIX = "hermes-chat.branches.";
 export const REPLY_TIMES_PREFIX = "hermes-chat.reply-times.";
 /** The images this app sent, per connection and profile (sentImages.ts `SentHere`). */
 export const SENT_HERE_PREFIX = "hermes-chat.sent-images.";
-/** The asks made from each profile's Bot Chat, per connection and profile (asks.ts, ADR 0232). Clearing the cache keeps them. */
+/** The asks made from each profile's Bot Chat, per connection and profile (asks.ts, ADR 0233). Clearing the cache keeps them. */
 export const ASKS_PREFIX = "hermes-chat.asks.";
 /** Where drafts.ts kept a chat's sent messages Hermes didn't take, or may not have, before the outbox: moved into it. */
 export const HELD_PREFIX = "hermes-chat.undelivered.";

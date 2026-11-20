@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render } from "@testing-library/react";
-import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Chat, Item } from "../hermes/model";
 import { ChatPane } from "./ChatPane";
 import { AttachmentDesk } from "../hermes/attachmentDesk";
+import { setUIPrefs } from "../hermes/uiPrefs";
+import { resetAll } from "./keybindings";
+import type { AskHost } from "./AskCard";
 
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }));
@@ -61,19 +64,23 @@ beforeEach(() => {
   width = 800;
   content = 5000;
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  resetAll();
+});
 
-function chat(turns: number): Chat {
+function chat(turns: number, running = true): Chat {
   const items: Item[] = [];
   for (let t = 0; t < turns; t++)
     items.push({ kind: "user", id: `u-${t}`, text: `Question ${t}`, rowId: 2 * t }, { kind: "assistant", id: `a-${t}`, text: `Answer ${t}`, rowId: 2 * t + 1 });
-  return { id: "c", runtimeId: "rt", title: "Logs", source: "app", settled: false, updatedAt: 0, items, running: true };
+  return { id: "c", runtimeId: "rt", title: "Logs", source: "app", settled: false, updatedAt: 0, items, running };
 }
 
-function pane(turns: number) {
-  const view = (turns: number) => (
+function pane(turns: number, { running = true } = {}) {
+  const view = (turns: number, shown = chat(turns, running), ask?: AskHost) => (
     <ChatPane
-      chat={chat(turns)}
+      chat={shown}
+      ask={ask}
       status="connected"
       draft=""
       draftKey="draft"
@@ -96,6 +103,8 @@ function pane(turns: number) {
   frame();
   return {
     scroller,
+    /** Shows `next` as the chat, at the same height. */
+    show: (next: Chat, ask?: AskHost) => rerender(view(turns, next, ask)),
     frame,
     fromBottom: () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight,
     grow: (px: number) => {
@@ -301,4 +310,128 @@ it("stops following on Shift+Space from a link in the transcript, but not from a
   frame();
   grow(5);
   expect(fromBottom()).toBe(5);
+});
+
+describe("The button to the newest message", () => {
+  const button = () => document.querySelector<HTMLButtonElement>(".to-newest button");
+  const scrollUp = (scroller: HTMLElement, px: number) => {
+    fireEvent.wheel(scroller, { deltaY: -px });
+    scroller.scrollTop -= px;
+    frame();
+  };
+
+  it("says a new reply is below once the owner scrolled up during a running reply and the reply grew", () => {
+    const { scroller, grow } = pane(10);
+    expect(button()).toBeNull();
+
+    scrollUp(scroller, 300);
+    expect(button()).toBeNull();
+    grow(200);
+    expect(screen.getByRole("button", { name: "New reply below" })).toBeTruthy();
+  });
+
+  it("says a new reply is below as soon as the owner is more than a screen up during a running reply", () => {
+    const { scroller } = pane(10);
+    scrollUp(scroller, 700);
+    expect(button()?.textContent).toBe("New reply below");
+  });
+
+  it("lands on the newest message when clicked, follows the reply again, and hides", () => {
+    const { scroller, frame, fromBottom, grow } = pane(10);
+    scrollUp(scroller, 1500);
+    grow(300);
+    expect(fromBottom()).toBe(1800);
+
+    fireEvent.click(screen.getByRole("button", { name: "New reply below" }));
+    frame();
+    expect(fromBottom()).toBe(0);
+    expect(button()).toBeNull();
+    grow(300);
+    expect(fromBottom()).toBe(0);
+    expect(button()).toBeNull();
+  });
+
+  it("hides once the owner scrolls back to the bottom", () => {
+    const { scroller, frame, grow } = pane(10);
+    scrollUp(scroller, 800);
+    grow(100);
+    expect(button()).not.toBeNull();
+
+    scroller.scrollTop = content;
+    frame();
+    expect(button()).toBeNull();
+  });
+
+  it("says new messages are below when the chat moved on with no reply running", () => {
+    const { scroller, grow } = pane(10, { running: false });
+    scrollUp(scroller, 300);
+    grow(200);
+    expect(button()?.textContent).toBe("New messages below");
+  });
+
+  it("says something arrived when a side question is answered, though the chat's last item stays as it was", () => {
+    const asked: Chat = { ...chat(10), sideQuestions: [{ id: "sq-1", question: "Which port?", state: "asking" }] };
+    const { scroller, show } = pane(10);
+    show(asked);
+    frame();
+    scrollUp(scroller, 300);
+    expect(button()).toBeNull();
+    show({ ...asked, sideQuestions: [{ id: "sq-1", question: "Which port?", state: "answered", answer: "8080" }] });
+    expect(button()?.textContent).toBe("New reply below");
+  });
+
+  it("says something arrived when a tool call above the last item finishes", () => {
+    const base = chat(10, false);
+    const tool = (status: "running" | "done"): Item => ({ kind: "tool", id: "t-1", callId: "call-1", name: "terminal", status });
+    const withTool = (status: "running" | "done"): Chat => ({ ...base, items: [...base.items.slice(0, -1), tool(status), base.items[base.items.length - 1]] });
+    const { scroller, show } = pane(10, { running: false });
+    show(withTool("running"));
+    frame();
+    scrollUp(scroller, 300);
+    expect(button()).toBeNull();
+    show(withTool("done"));
+    expect(button()?.textContent).toBe("New messages below");
+  });
+
+  it("stays hidden when the asks are handed over again with nothing new in this chat, as when another chat's ask moves", () => {
+    const host = (): AskHost => ({ asks: [], bots: [], rule: "picked", connected: true, send: () => undefined, retry: () => {}, dismiss: () => {}, open: () => {} });
+    const base = chat(10, false);
+    const { scroller, show } = pane(10, { running: false });
+    show(base, host());
+    frame();
+    scrollUp(scroller, 300);
+    show(base, host());
+    expect(button()).toBeNull();
+  });
+
+  it("offers the newest message when the owner is more than a screen up in a finished chat, and not within one", () => {
+    const { scroller } = pane(10, { running: false });
+    scrollUp(scroller, 500);
+    expect(button()).toBeNull();
+    scrollUp(scroller, 200);
+    expect(button()?.textContent).toBe("Go to the newest message");
+  });
+
+  it("goes to the newest message on Alt+End, and on the chord the owner rebinds it to", () => {
+    const { scroller, frame, fromBottom } = pane(10);
+    expect(document.querySelector(".to-newest")).toBeNull();
+    scrollUp(scroller, 1000);
+    expect(button()?.title).toBe("Go to the newest message and follow the chat (Alt+End)");
+    expect(button()?.getAttribute("aria-keyshortcuts")).toBe("Alt+End");
+
+    fireEvent.keyDown(window, { key: "End", code: "End", altKey: true });
+    frame();
+    expect(fromBottom()).toBe(0);
+    expect(button()).toBeNull();
+
+    act(() => void setUIPrefs({ keybindings: { jumpToNewest: ["Ctrl+J"] } }));
+    scrollUp(scroller, 1000);
+    expect(button()?.title).toBe("Go to the newest message and follow the chat (Ctrl+J)");
+    fireEvent.keyDown(window, { key: "End", code: "End", altKey: true });
+    frame();
+    expect(fromBottom()).toBe(1000);
+    fireEvent.keyDown(window, { key: "j", code: "KeyJ", ctrlKey: true });
+    frame();
+    expect(fromBottom()).toBe(0);
+  });
 });

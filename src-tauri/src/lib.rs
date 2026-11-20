@@ -833,6 +833,13 @@ async fn hermes_get_limited(state: State<'_, AppState>, attempt: String, path: S
     dashboard.get_limited(&path, max_bytes).await.map_err(RelayError::from)
 }
 
+/// Settings → Approvals' read of `profile`'s `command_allowlist` (ADR 0242): only that list leaves Rust.
+#[tauri::command]
+async fn hermes_command_allowlist(state: State<'_, AppState>, attempt: String, profile: String) -> Result<transport::CommandAllowlist, RelayError> {
+    let dashboard = dashboard(&state, &attempt).await?;
+    dashboard.command_allowlist(&profile).await.map_err(RelayError::from)
+}
+
 #[tauri::command]
 async fn hermes_toolset_guards(state: State<'_, AppState>, attempt: String, profile: String) -> Result<transport::ToolsetGuards, RelayError> {
     let dashboard = dashboard(&state, &attempt).await?;
@@ -1997,6 +2004,7 @@ pub fn run(link: Option<String>, stop: bool) {
             hermes_speak,
             hermes_voice_setup,
             hermes_toolset_guards,
+            hermes_command_allowlist,
             hermes_mcp_edit,
             hermes_get_limited,
             hermes_disconnect,

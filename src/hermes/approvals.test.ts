@@ -123,6 +123,8 @@ describe("Approvals", () => {
     await hermes.answerApproval(chatId, id!, "always", true);
     expect(responded(server)).toEqual([{ session_id: runtime, choice: "always", request_id: requestId }]);
     expect(card()).toMatchObject({ answer: "always" });
+    // Hermes saves the pattern name in the profile's list, which Settings → Approvals shows (ADR 0242).
+    expect(await hermes.allowlist.list("default")).toEqual({ kind: "list", entries: ["recursive delete"] });
   });
 
   it("answers a card only once", async () => {

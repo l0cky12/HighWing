@@ -49,6 +49,7 @@ import { KanbanApi, KanbanWatch } from "./kanban";
 import { ModelSettingsApi } from "./modelSettings";
 import { WritingDesk, type WritingPick } from "./writingModel";
 import { ToolsetsApi, type Caution } from "./toolsets";
+import { AllowlistApi } from "./allowlist";
 import { VoiceSettingsApi } from "./voiceSettings";
 import { readBack, sendImport, type PlannedChat } from "./importTranscripts";
 import { memoryApi, type MemoryApi, type MemoryEntry } from "./memory";
@@ -1302,6 +1303,18 @@ export class Hermes {
     get: (pathAndQuery) => this.rest("GET", pathAndQuery),
     send: (method, pathAndQuery, body) => this.rest(method, pathAndQuery, body),
   });
+  /**
+   * Settings → Approvals' list of what Hermes always allows, and Remove (allowlist.ts, ADR 0242). Each call names its
+   * profile, and goes only over a connection that is up.
+   */
+  readonly allowlist = new AllowlistApi(
+    (profile) => {
+      const pipe = this.closing ? undefined : this.connectedPipe();
+      if (!pipe) return Promise.reject(new Error("Not connected to Hermes."));
+      return pipe.commandAllowlist(profile);
+    },
+    (method, pathAndQuery, body) => this.connectedRest(method, pathAndQuery, body),
+  );
   /**
    * Settings → Memory's external memory (memoryProviders.ts, ADR 0045). Each call names its profile, and goes only over a
    * connection that is up.

@@ -45,6 +45,8 @@ import { WritingModelSettings } from "./WritingModelSettings";
 import { checkReadiness } from "../hermes/computerUseReadiness";
 import type { ToolsetsApi } from "../hermes/toolsets";
 import { ToolsetSettings, type OpenChat } from "./ToolsetSettings";
+import { AllowlistSettings } from "./AllowlistSettings";
+import type { AllowlistApi } from "../hermes/allowlist";
 import type { MemoryApi } from "../hermes/memory";
 import { MemorySettings } from "./MemorySettings";
 import type { MemoryProvidersApi } from "../hermes/memoryProviders";
@@ -95,7 +97,7 @@ import { ExtensionsSettings } from "./ExtensionsSettings";
 import type { SkillCommands } from "../hermes/skillCommands";
 import { errorText, formatBytes } from "../hermes/values";
 
-type Tab = "general" | "appearance" | "keyboard" | "snapshots" | "model" | "providers" | "voice" | "toolsets" | "mcp" | "gateways" | "profiles" | "memory" | "skills" | "diagnostics" | "extensions";
+type Tab = "general" | "appearance" | "keyboard" | "snapshots" | "model" | "providers" | "voice" | "toolsets" | "approvals" | "mcp" | "gateways" | "profiles" | "memory" | "skills" | "diagnostics" | "extensions";
 type GenGroup = "connection" | "chats" | "launch" | "storage";
 /** A section of a page that shows its sections one at a time, picked under the page in the sidebar's tree. */
 type SectionItem = { id: string; label: string };
@@ -145,7 +147,7 @@ const memSelOf = (id: string): MemSel => (id.startsWith("file:") ? { kind: "file
 /** The sidebar's three groups (ADR 0160): this app, the agent (the profile's setup on Hermes), and the server. */
 const SIDEBAR_GROUPS: { id: "app" | "agent" | "server"; tabs: Tab[] }[] = [
   { id: "app", tabs: ["general", "appearance", "keyboard", "voice", "snapshots", "extensions"] },
-  { id: "agent", tabs: ["model", "providers", "toolsets", "mcp", "gateways", "memory", "skills"] },
+  { id: "agent", tabs: ["model", "providers", "toolsets", "approvals", "mcp", "gateways", "memory", "skills"] },
   { id: "server", tabs: ["profiles", "diagnostics"] },
 ];
 /** Pages that edit the profile in use name it in their header; Memory, Skills, MCP and Gateways pick theirs. */
@@ -161,6 +163,7 @@ const TABS = [
   { id: "model", Icon: Cpu },
   { id: "providers", Icon: KeyRound },
   { id: "toolsets", Icon: Wrench },
+  { id: "approvals", Icon: ShieldCheck },
   { id: "mcp", Icon: Server },
   { id: "gateways", Icon: RadioTower },
   { id: "memory", Icon: Brain },
@@ -176,6 +179,7 @@ const SEARCHED: readonly Tab[] = ["general", "appearance", "keyboard", "model", 
  * search rather than mounted beside the others with its unsaved edit.
  */
 const ABOUT: Partial<Record<Tab, string>> = {
+  approvals: "What Hermes always allows: the commands an Approval answered Always allow, in each profile's command_allowlist, each with Remove so Hermes asks again.",
   mcp: "Tools from other programs and services Hermes connects to (MCP servers): add, edit, remove, switch, test and sign in, for each profile.",
   gateways: "Reach Hermes from Telegram, Discord or Slack: each profile's bot tokens, on/off switch, allowed users and connection status, kept on the server.",
   memory: "What Hermes remembers about you and your work between chats, changed or removed entry by entry.",
@@ -227,6 +231,7 @@ export function SettingsScreen({
   showSnapshots,
   modelSettings,
   toolsets,
+  allowlist,
   mcp,
   gateways,
   gatewayRestart,
@@ -301,6 +306,8 @@ export function SettingsScreen({
   modelSettings: ModelSettingsApi;
   /** The profile's toolsets on Hermes; without it there is no Toolsets tab. */
   toolsets?: ToolsetsApi;
+  /** What Hermes always allows, per profile (ADR 0242); without it there is no Approvals tab. */
+  allowlist?: AllowlistApi;
   /** Each profile's MCP servers on Hermes (ADR 0121); without it there is no MCP servers tab. */
   mcp?: McpApi;
   /** Each profile's Telegram, Discord and Slack gateways on Hermes (ADR 0073, ADR 0238); without it there is no Gateways tab. */
@@ -456,9 +463,9 @@ export function SettingsScreen({
   // Which profile Skills and Memory each show (ADR 0118): the app's own until the owner picks another, and the app's own
   // again when the app switches profile. Picking one leaves an unsaved edit, so it asks first.
   const [profiles, setProfiles] = useState<string[]>();
-  const [shownIn, setShownIn] = useState({ skills: profile, memory: profile, mcp: profile, gateways: profile, of: profile });
-  const tabProfile = shownIn.of === profile ? shownIn : { skills: profile, memory: profile, mcp: profile, gateways: profile, of: profile };
-  useEffect(() => setShownIn({ skills: profile, memory: profile, mcp: profile, gateways: profile, of: profile }), [profile]);
+  const [shownIn, setShownIn] = useState({ skills: profile, memory: profile, mcp: profile, gateways: profile, approvals: profile, of: profile });
+  const tabProfile = shownIn.of === profile ? shownIn : { skills: profile, memory: profile, mcp: profile, gateways: profile, approvals: profile, of: profile };
+  useEffect(() => setShownIn({ skills: profile, memory: profile, mcp: profile, gateways: profile, approvals: profile, of: profile }), [profile]);
   const connected = status === "connected";
   useEffect(() => {
     if (!listProfiles || !connected) return;
@@ -471,13 +478,14 @@ export function SettingsScreen({
       live = false;
     };
   }, [listProfiles, connected]);
-  const pickProfile = (which: "skills" | "memory" | "mcp" | "gateways", p: string) =>
+  const pickProfile = (which: "skills" | "memory" | "mcp" | "gateways" | "approvals", p: string) =>
     p !== tabProfile[which] && guard(() => setShownIn((cur) => ({ ...(cur.of === profile ? cur : tabProfile), [which]: p })));
-  const picker = (which: "skills" | "memory" | "mcp" | "gateways", label: string) =>
+  const picker = (which: "skills" | "memory" | "mcp" | "gateways" | "approvals", label: string) =>
     listProfiles && <ProfilePicker value={tabProfile[which]} shown={profile} profiles={profiles} label={label} defaultName={defaultName} onPick={(p) => pickProfile(which, p)} />;
   const tabs = TABS.filter(
     (t) =>
       (t.id !== "toolsets" || toolsets) &&
+      (t.id !== "approvals" || allowlist) &&
       (t.id !== "snapshots" || snapshots) &&
       (t.id !== "mcp" || mcp) &&
       (t.id !== "gateways" || gateways) &&
@@ -996,6 +1004,20 @@ export function SettingsScreen({
         return (
           toolsets &&
           gated("toolsets", <ToolsetSettings key={profile} api={toolsets} profile={profile} connected={status === "connected"} runningReplies={runningReplies} chat={openChat} onGuide={() => openGuide(guideUrl("toolsetSwitches"))} />)
+        );
+      case "approvals":
+        // Read for one profile; picking another reads it afresh.
+        return (
+          allowlist && (
+            <AllowlistSettings
+              key={tabProfile.approvals}
+              api={allowlist}
+              profile={tabProfile.approvals}
+              connected={status === "connected"}
+              picker={picker("approvals", "Profile whose always-allowed commands are shown")}
+              inUse={profile}
+            />
+          )
         );
       case "mcp":
         // Read for one profile; picking another reads it afresh, and a dialog left open goes with it.

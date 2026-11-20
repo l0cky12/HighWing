@@ -3734,6 +3734,7 @@ export function Main({
             listFonts={systemFonts}
             modelSettings={hermes.modelSettings}
             toolsets={hermes.toolsets}
+            allowlist={hermes.allowlist}
             mcp={hermes.mcp}
             gateways={hermes.gateways}
             gatewayRestart={hermes.gatewayRestart}

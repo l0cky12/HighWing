@@ -476,7 +476,7 @@ export const en = {
       voice: "Dictation, Read aloud and voice conversations.",
       toolsets: "Which tools Hermes offers the model.",
       mcp: "Tools from other programs and services that Hermes offers the model.",
-      gateways: "Reach this profile's Hermes from Telegram or Discord.",
+      gateways: "Reach this profile's Hermes from Telegram, Discord or Slack.",
       profiles: "Every profile on this server: made, renamed, described, given a model, or deleted.",
       memory: "What Hermes remembers between chats.",
       skills: "Instructions Hermes loads for a kind of task. Changes apply to every client on this profile.",

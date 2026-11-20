@@ -954,6 +954,8 @@ async fn relays_no_other_voice_provider_write() {
 #[tokio::test]
 async fn relays_the_gateway_save_and_status_check() {
     let dashboard = signed_in().await;
+    // Built at run time: a literal in Slack's token shape trips GitHub's push protection.
+    let (slack_bot, slack_app) = (["xoxb", "1", "dummy"].join("-"), ["xapp", "1", "dummy"].join("-"));
     for (path, body) in [
         (
             "api/messaging/platforms/telegram?profile=work",
@@ -962,6 +964,11 @@ async fn relays_the_gateway_save_and_status_check() {
         ("api/messaging/platforms/telegram?profile=work", json!({"enabled": false, "clear_env": ["TELEGRAM_BOT_TOKEN", "TELEGRAM_ALLOWED_USERS"]})),
         ("api/messaging/platforms/discord?profile=bot", json!({"enabled": true, "env": {"DISCORD_ALLOWED_USERS": "1, 2"}, "clear_env": ["DISCORD_BOT_TOKEN"]})),
         ("api/messaging/platforms/discord", json!({"enabled": false})),
+        (
+            "api/messaging/platforms/slack?profile=bot",
+            json!({"enabled": true, "env": {"SLACK_BOT_TOKEN": slack_bot, "SLACK_APP_TOKEN": slack_app, "SLACK_ALLOWED_USERS": "U01ABC2DEF3"}}),
+        ),
+        ("api/messaging/platforms/slack?profile=bot", json!({"enabled": false, "clear_env": ["SLACK_APP_TOKEN", "SLACK_ALLOWED_USERS"]})),
     ] {
         let got: Value = serde_json::from_str(&dashboard.request("PUT", path, Some(body.to_string())).await.unwrap()).unwrap();
         assert_eq!(got, json!({"uri": format!("/{path}"), "content_type": "application/json", "body": body}));
@@ -969,6 +976,7 @@ async fn relays_the_gateway_save_and_status_check() {
     for path in [
         "api/messaging/platforms/telegram/test?profile=work",
         "api/messaging/platforms/discord/test",
+        "api/messaging/platforms/slack/test?profile=bot",
         "api/gateway/restart?profile=work",
         "api/gateway/restart",
     ] {
@@ -982,14 +990,17 @@ async fn relays_no_other_gateway_write() {
     let dashboard = signed_in().await;
     for (method, path, body) in [
         // Other platforms, other messaging routes, and the wrong method.
-        ("PUT", "api/messaging/platforms/slack", Some(r#"{"enabled":true}"#)),
+        ("PUT", "api/messaging/platforms/mattermost", Some(r#"{"enabled":true}"#)),
         ("PUT", "api/messaging/platforms/whatsapp", Some(r#"{"env":{"WHATSAPP_MODE":"bot"}}"#)),
+        ("PUT", "api/messaging/platforms/Slack", Some(r#"{"enabled":true}"#)),
+        ("POST", "api/messaging/platforms/slack", Some(r#"{"enabled":true}"#)),
+        ("POST", "api/messaging/platforms/slack/test", Some("{}")),
         ("PUT", "api/messaging/platforms/Telegram", Some(r#"{"enabled":true}"#)),
         ("PUT", "api/messaging/platforms/telegram/x", Some(r#"{"enabled":true}"#)),
         ("POST", "api/messaging/platforms/telegram", Some(r#"{"enabled":true}"#)),
         ("PUT", "api/messaging/platforms/telegram/test", None),
         ("POST", "api/messaging/platforms/telegram/test", Some("{}")),
-        ("POST", "api/messaging/platforms/slack/test", None),
+        ("POST", "api/messaging/platforms/mattermost/test", None),
         ("POST", "api/messaging/telegram/onboarding/start", Some("{}")),
         // The restart takes no body, and the gateway's other lifecycle routes aren't relayed.
         ("POST", "api/gateway/restart", Some("{}")),
@@ -1007,6 +1018,10 @@ async fn relays_no_other_gateway_write() {
         ("PUT", "api/messaging/platforms/telegram", Some(r#"{"env":{"DISCORD_BOT_TOKEN":"x"}}"#)),
         ("PUT", "api/messaging/platforms/discord", Some(r#"{"env":{"OPENAI_API_KEY":"x"}}"#)),
         ("PUT", "api/messaging/platforms/discord", Some(r#"{"clear_env":["LD_PRELOAD"]}"#)),
+        ("PUT", "api/messaging/platforms/slack", Some(r#"{"env":{"TELEGRAM_BOT_TOKEN":"x"}}"#)),
+        ("PUT", "api/messaging/platforms/telegram", Some(r#"{"env":{"SLACK_BOT_TOKEN":"x"}}"#)),
+        ("PUT", "api/messaging/platforms/slack", Some(r#"{"clear_env":["GATEWAY_ALLOW_ALL_USERS"]}"#)),
+        ("PUT", "api/messaging/platforms/slack", Some(r#"{"env":{"SLACK_ALLOWED_USERS":"U1\nLD_PRELOAD=x"}}"#)),
         ("PUT", "api/messaging/platforms/telegram", Some(r#"{"env":{"TELEGRAM_":"x"}}"#)),
         ("PUT", "api/messaging/platforms/telegram", Some(r#"{"env":{"telegram_bot_token":"x"}}"#)),
         ("PUT", "api/messaging/platforms/telegram", Some(r#"{"env":{"TELEGRAM_BOT_TOKEN":""}}"#)),

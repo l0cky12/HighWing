@@ -121,6 +121,7 @@ const MEM_GROUPS: SectionItem[] = [
 const GW_GROUPS: SectionItem[] = [
   { id: "telegram", label: "Telegram" },
   { id: "discord", label: "Discord" },
+  { id: "slack", label: "Slack" },
 ];
 /** What each section is for, under its title. */
 const SECTION_INTRO: Record<string, string> = {
@@ -133,6 +134,7 @@ const SECTION_INTRO: Record<string, string> = {
   external: "An external provider, such as Honcho, that keeps what the agent learns in its own store.",
   telegram: "Run Hermes from Telegram DMs, groups and topics.",
   discord: "Connect Hermes to Discord DMs, channels and threads.",
+  slack: "Use Hermes from Slack DMs and channels, through a Slack app in Socket Mode.",
   server: "What the connected Hermes says about itself, and which features it supports.",
   logs: "This app's diagnostics and the profile's Hermes logs.",
 };
@@ -175,7 +177,7 @@ const SEARCHED: readonly Tab[] = ["general", "appearance", "keyboard", "model", 
  */
 const ABOUT: Partial<Record<Tab, string>> = {
   mcp: "Tools from other programs and services Hermes connects to (MCP servers): add, edit, remove, switch, test and sign in, for each profile.",
-  gateways: "Reach Hermes from Telegram or Discord: each profile's bot tokens, on/off switch, allowed users and connection status, kept on the server.",
+  gateways: "Reach Hermes from Telegram, Discord or Slack: each profile's bot tokens, on/off switch, allowed users and connection status, kept on the server.",
   memory: "What Hermes remembers about you and your work between chats, changed or removed entry by entry.",
   skills: "Instructions Hermes can load for a kind of task: turn each skill on or off for the profile, and edit its SKILL.md.",
   snapshots:
@@ -301,7 +303,7 @@ export function SettingsScreen({
   toolsets?: ToolsetsApi;
   /** Each profile's MCP servers on Hermes (ADR 0121); without it there is no MCP servers tab. */
   mcp?: McpApi;
-  /** Each profile's Telegram and Discord gateways on Hermes (ADR 0073); without it there is no Gateways tab. */
+  /** Each profile's Telegram, Discord and Slack gateways on Hermes (ADR 0073, ADR 0238); without it there is no Gateways tab. */
   gateways?: GatewaysApi;
   /** Restarts a profile's gateway, beside a change it picks up only then (ADR 0205); without it there is no Restart gateway button. */
   gatewayRestart?: GatewayRestartApi;

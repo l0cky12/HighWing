@@ -1,6 +1,8 @@
 # Gateways are Telegram and Discord, saved after a read and read back
 
 > **Partly superseded by [ADR 0205](0205-restart-gateway-shows-beside-a-change-the-running-gateway-picks-up-only-on-restart.md).** The app now restarts the profile's gateway when the owner presses Restart gateway, shown under a platform's Status after a change the running gateway hasn't picked up, and the relay passes `POST api/gateway/restart`.
+>
+> **Extended by [ADR 0238](0238-slack-is-a-third-gateway-with-two-write-only-tokens-and-a-short-guide-to-its-app.md).** Slack is a third platform, with its two tokens write-only, its allowed member IDs, a read-only home channel, and a short guide to its Socket Mode app. The relay passes Slack's save under `SLACK_…` names and its status check.
 
 The owner wants to set up Hermes's Telegram and Discord gateways from the app: which are on, their bot tokens, who may talk to the bot, and whether it's connected (#104). The deployed Hermes (`f0d94882`, research checkout `~/.cache/hermes-src-168`, `hermes_cli/web_routers/messaging.py`) has three routes for this, each taking `?profile=`, so no Hermes change is needed:
 

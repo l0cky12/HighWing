@@ -1,13 +1,15 @@
-// Settings → Gateways (ADR 0073): a profile's Telegram and Discord gateways, read and changed through the dashboard's
-// messaging routes at the deployed `f0d94882` (`hermes_cli/web_routers/messaging.py`). Every route takes `?profile=`:
+// Settings → Gateways (ADR 0073, ADR 0238): a profile's Telegram, Discord and Slack gateways, read and changed through
+// the dashboard's messaging routes at the deployed `f0d94882`, and the same at `ae2a81c` (`hermes_cli/web_routers/messaging.py`).
+// Every route takes `?profile=`:
 //
 // - `GET /api/messaging/platforms` lists every platform Hermes knows, with its on/off state, whether its required
 //   settings are there, whether the gateway runs, and the runtime state and error the gateway last reported. A secret
 //   comes back only as Hermes's redacted preview (`«redacted:1234...abcd»`); an allowlist (`*_ALLOWED_USERS`) comes
-//   back as its value. Only Telegram and Discord are offered here.
+//   back as its value. Only Telegram, Discord and Slack are offered here. Each platform's home channel comes back as it
+//   is in config.yaml, which `/sethome` writes; no route here sets it.
 // - `PUT /api/messaging/platforms/{id}` `{enabled, env, clear_env}` writes the profile's `.env` and config.yaml. Hermes
 //   checks the whole request before it writes anything (unknown keys, a redacted preview sent back, Telegram's token
-//   shape), so a 4xx changed nothing.
+//   shape, Slack's `xoxb-` and `xapp-` prefixes and member IDs), so a 4xx changed nothing.
 // - `POST /api/messaging/platforms/{id}/test` reports the platform's state in words. It sends no message.
 //
 // Hermes has no revision to check a write against, so a save reads the platform first and stops if it isn't what the
@@ -18,7 +20,7 @@ import { failureOf, type Failure } from "./toolsets";
 import type { RestMethod } from "./pipe";
 import { errorText, textOrEmpty } from "./values";
 
-export const PLATFORMS = ["telegram", "discord"] as const;
+export const PLATFORMS = ["telegram", "discord", "slack"] as const;
 export type PlatformId = (typeof PLATFORMS)[number];
 
 /** One of a platform's settings, an env var in the profile's `.env`. */
@@ -53,6 +55,8 @@ export type Gateway = {
   state: string;
   /** What the gateway last reported going wrong, redacted. */
   error?: Problem;
+  /** Where Hermes posts scheduled jobs' results on this platform, as config.yaml has it (`/sethome` sets it). */
+  homeChannel?: { id: string; name?: string };
   fields: GatewayField[];
 };
 
@@ -105,7 +109,11 @@ const noRoute = (f: Failure) => f.status === 405 || (f.status === 404 && f.reaso
 /** `text` without the values in `typed` or any secret shape (secrets.ts). Hermes's own `«redacted:…»` previews stay. */
 export const redact = (text: string, typed: readonly string[] = []): string => redactSecrets(redactValues(text, typed).text).text;
 
-/** The gateway's runtime error codes this screen tells apart (the Telegram and Discord adapters' `_set_fatal_error`). */
+/**
+ * The gateway's runtime error codes this screen tells apart (the adapters' `_set_fatal_error`). Slack's adapter reports
+ * only `missing_dependency` (no slack-bolt) and `missing_slack_*_token`; a token Slack turns down is a plain failed
+ * connect, which the gateway retries with "failed to connect" and no code (`ae2a81c`).
+ */
 const RUNTIME_KIND: Record<string, ProblemKind> = {
   missing_dependency: "missing-dependency",
   telegram_auth_error: "invalid-token",
@@ -141,6 +149,16 @@ function fieldOf(v: unknown): GatewayField | undefined {
   };
 }
 
+/** `HomeChannel.to_dict()`: `{platform, chat_id, name}`. Hermes names one "Home" when nothing else names it. */
+function homeOf(v: unknown): Gateway["homeChannel"] {
+  const h = obj(v);
+  // config.yaml can hold a Telegram chat ID as a number.
+  const id = typeof h.chat_id === "number" ? String(h.chat_id) : textOrEmpty(h.chat_id).trim();
+  if (!id) return undefined;
+  const name = textOrEmpty(h.name);
+  return { id, name: name && name !== id ? name : undefined };
+}
+
 function gatewayOf(v: unknown, typed: readonly string[]): Gateway | undefined {
   const g = obj(v);
   const id = textOrEmpty(g.id);
@@ -157,6 +175,7 @@ function gatewayOf(v: unknown, typed: readonly string[]): Gateway | undefined {
     gatewayRunning: g.gateway_running === true,
     state: textOrEmpty(g.state) || "unknown",
     error: code || message ? { kind: runtimeKind(code, g.configured === true), text: redact(message || code, typed) } : undefined,
+    homeChannel: homeOf(g.home_channel),
     fields: (Array.isArray(g.env_vars) ? g.env_vars : []).flatMap((f) => fieldOf(f) ?? []),
   };
 }

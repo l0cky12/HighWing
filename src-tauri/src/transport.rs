@@ -1586,7 +1586,7 @@ impl Dashboard {
     /// Settings → Memory's external memory writes
     /// (`memory_provider_write`, ADR 0045), and Settings → Voice's provider pick and key save (`voice_provider_write`,
     /// ADR 0115), Settings → MCP servers' add, switch, test, sign-in and catalog install (`mcp::relayed`, ADR 0121), and
-    /// Settings → Gateways' Telegram and Discord save and status check, and the Restart gateway button's
+    /// Settings → Gateways' Telegram, Discord and Slack save and status check, and the Restart gateway button's
     /// `POST api/gateway/restart` with no body (`gateway_write`, ADR 0073, ADR 0205).
     /// Settings → Providers' two writes that carry nothing secret, starting a sign-in and activating an endpoint
     /// (`provider_account_write`, ADR 0133).
@@ -2536,8 +2536,8 @@ pub fn voice_provider_write(path: &str, body: Option<&str>) -> bool {
     }
 }
 
-/// Settings → Gateways' writes (ADR 0073, Hermes's `hermes_cli/web_routers/messaging.py`), for Telegram and Discord
-/// only: `PUT api/messaging/platforms/{id}` with a JSON object of at most `enabled` (a bool), `env` (one-line values
+/// Settings → Gateways' writes (ADR 0073, ADR 0238, Hermes's `hermes_cli/web_routers/messaging.py`), for Telegram,
+/// Discord and Slack only: `PUT api/messaging/platforms/{id}` with a JSON object of at most `enabled` (a bool), `env` (one-line values
 /// under that platform's own env var names) and `clear_env` (those names), and nothing else, a profile included; and
 /// `POST api/messaging/platforms/{id}/test` with no body, which only reports the state. A token goes from the webview
 /// to Hermes in the `env` value and is never kept or logged here. Also the Restart gateway button's
@@ -2555,6 +2555,7 @@ pub fn gateway_write(method: &str, path: &str, body: Option<&str>) -> bool {
     let prefix = match id {
         "telegram" => "TELEGRAM_",
         "discord" => "DISCORD_",
+        "slack" => "SLACK_",
         _ => return false,
     };
     if test {

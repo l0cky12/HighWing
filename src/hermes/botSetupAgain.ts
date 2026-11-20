@@ -63,6 +63,8 @@ export type FreshMissed = Partial<Record<FreshStepName, string>>;
 export type FreshIo = {
   /** The bot's Bot Chat, looked up by title and opened here so what runs in it is known; null when it has none. */
   find(): Promise<{ chatId: string; busy?: AgainBusy } | null>;
+  /** The old Bot Chat an earlier Start fresh of this bot archived and didn't name, while Hermes has it so; else null. */
+  unnamed(): Promise<string | null>;
   leave(chatId: string): Promise<void>;
   /** Rejects unless Hermes has the chat archived when read back. */
   archive(chatId: string): Promise<void>;
@@ -76,7 +78,8 @@ export type FreshIo = {
   start(): Promise<BotSetupStart>;
 };
 
-type FreshRun = { old: string | null; missed: FreshMissed; memoryLeft: number };
+/** `unnamed`: when the bot has no Bot Chat, the old one an earlier run archived and stopped before naming. */
+type FreshRun = { old: string | null; unnamed: string | null; missed: FreshMissed; memoryLeft: number };
 
 /**
  * One step before the new Bot Chat is made. `on: "old"`: it acts on the old Bot Chat, so a bot that has none, as after
@@ -96,10 +99,25 @@ export const FRESH_STEPS: readonly FreshStep[] = [
       const found = await io.find();
       if (found?.busy) return { kind: "refused", reason: found.busy };
       run.old = found?.chatId ?? null;
+      run.unnamed = found ? null : await io.unnamed();
     },
   },
   { name: "leave", on: "old", fail: "asItWas", run: (io, old) => io.leave(old) },
-  { name: "archive", on: "old", fail: "asItWas", run: (io, old) => io.archive(old) },
+  {
+    name: "archive",
+    on: "old",
+    fail: "archived",
+    // An archive whose read-back failed may have gone in, and freed the title with it, so only the lookup still
+    // finding the old chat says Hermes is as it was.
+    run: async (io, old) => {
+      try {
+        await io.archive(old);
+      } catch (e) {
+        if (await io.titleTaken().catch(() => false)) return { kind: "stopped", at: "archive", left: "asItWas", why: errorText(e) };
+        throw e;
+      }
+    },
+  },
   {
     name: "lookup",
     on: "old",
@@ -108,7 +126,15 @@ export const FRESH_STEPS: readonly FreshStep[] = [
       if (await io.titleTaken()) return { kind: "titleKept", restored: await io.unarchive(old).catch(() => false) };
     },
   },
-  { name: "retitle", on: "old", fail: "carryOn", run: (io, old) => io.retitle(old) },
+  {
+    name: "retitle",
+    on: "bot",
+    fail: "carryOn",
+    run: async (io, run) => {
+      const chatId = run.old ?? run.unnamed;
+      if (chatId) await io.retitle(chatId);
+    },
+  },
   {
     name: "memory",
     on: "bot",
@@ -121,7 +147,7 @@ export const FRESH_STEPS: readonly FreshStep[] = [
 
 /** Start fresh: `FRESH_STEPS` in order to the first that ends it, then the new Bot Chat, whose failure leaves the bot with none. */
 export async function runFresh(io: FreshIo): Promise<FreshEnd> {
-  const run: FreshRun = { old: null, missed: {}, memoryLeft: 0 };
+  const run: FreshRun = { old: null, unnamed: null, missed: {}, memoryLeft: 0 };
   const stopped = (at: FreshStepName, left: FreshLeft, e: unknown): FreshEnd => ({ kind: "stopped", at, left, why: errorText(e) });
   for (const step of FRESH_STEPS) {
     try {

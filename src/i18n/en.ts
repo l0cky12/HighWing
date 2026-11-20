@@ -654,7 +654,7 @@ export const en = {
       stopped: {
         asItWas: (bot: string, why: string) => `Start fresh stopped before anything changed for ${bot}: ${why}`,
         archived: (bot: string, why: string) => `${bot}'s old Bot Chat is archived, and Start fresh stopped there: ${why} No memory was deleted. Choose Start fresh again to carry on.`,
-        noChat: (bot: string, why: string) => `${bot}'s old Bot Chat is archived, but the new one didn't start: ${why} Open ${bot} to start one.`,
+        noChat: (bot: string, why: string) => `${bot}'s old Bot Chat is archived, but the new one didn't start: ${why} Choose Start fresh again to start it.`,
       },
       notRetitled: (why: string) => `The old Bot Chat is in Archived without a name: ${why}`,
       memoryLeft: (n: number) => `${n === 1 ? "1 memory entry wasn't" : `${n} memory entries weren't`} deleted. Settings → Memory shows what is left.`,

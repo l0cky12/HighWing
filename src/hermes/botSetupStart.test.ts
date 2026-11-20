@@ -3,7 +3,7 @@
 // botSetupStart.transport.test.ts.
 import { describe, expect, it } from "vitest";
 import { botSetupMarker } from "./botSetupBrief";
-import { BotSetupStarts, botSetupBegin, runStart, startState, startStep, withSetupLine, type SetupRow, type StartIo, type StartRead } from "./botSetupStart";
+import { BotSetupStarts, botSetupBegin, briefTurn, runStart, startState, startStep, withSetupLine, type SetupRow, type StartIo, type StartRead } from "./botSetupStart";
 import type { Item } from "./model";
 import { ConnectionLostError, PromptUnconfirmedError } from "./sessionProtocol";
 
@@ -77,18 +77,20 @@ describe("what the stored rows say, and what the app does", () => {
 
   it("takes neither the owner's words nor the bot's for a brief or a begin turn", () => {
     expect(startState(read(rows(["assistant", BRIEF])))).toMatchObject({ at: "noBrief" });
-    expect(startState(read(rows(["user", BRIEF, true], ["user", `About ${BEGIN}`])))).toMatchObject({ at: "briefed" });
-    expect(startState(read(rows(["user", BRIEF, true], ["assistant", BEGIN])))).toEqual({ at: "started", chatId: "bot-chat", id: ID, beganAt: 1 });
+    expect(startState(read(rows(["user", BRIEF, true], ["assistant", BEGIN], ["user", `About ${BEGIN}`])))).toMatchObject({ at: "briefed" });
+    expect(startState(read(rows(["user", `${BRIEF}\n\nAbout ${BEGIN}`, true])))).toMatchObject({ at: "briefed" });
   });
 
-  it("a brief sent as a turn, as Keep history sends it, is its own begin: running, then started, and no begin turn follows", () => {
-    const kept = rows(["user", "Rome to Florence?"], ["assistant", "The 09:10 is quickest."], ["user", BRIEF, true]);
+  it("a brief sent as a turn, as Keep history sends it, is its own begin: running, started, or no reply with Try again", () => {
+    const kept = rows(["user", "Rome to Florence?"], ["assistant", "The 09:10 is quickest."], ["user", briefTurn(BRIEF, ID), true]);
     expect(startState(read(kept, { running: true }))).toEqual({ at: "running", chatId: "bot-chat", id: ID, beganAt: 3 });
     expect(next(read(kept, { running: true }))).toEqual({ do: "end", with: { kind: "waiting", chatId: "bot-chat", id: ID } });
     const replied = read([...kept, { rowId: 4, role: "assistant", text: "Here's how I'm set up now. What should change?", hidden: false }]);
     expect(startState(replied)).toEqual({ at: "started", chatId: "bot-chat", id: ID, beganAt: 3 });
     expect(next(replied, "again")).toEqual({ do: "end", with: { kind: "started", chatId: "bot-chat", id: ID } });
-    expect(next(read(kept))).toEqual({ do: "begin", chatId: "bot-chat", id: ID });
+    expect(startState(read(kept))).toEqual({ at: "noReply", chatId: "bot-chat", id: ID, beganAt: 3 });
+    expect(next(read(kept))).toEqual({ do: "end", with: { kind: "noReply", chatId: "bot-chat", id: ID } });
+    expect(next(read(kept), "again")).toEqual({ do: "begin", chatId: "bot-chat", id: ID });
   });
 });
 

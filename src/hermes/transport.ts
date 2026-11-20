@@ -149,7 +149,7 @@ import { cannotResend, laterOf, replayBlocked, resendText, replayTarget, splitRe
 import { errorText, formatBytes, isObj, nonBlankText, nonEmptyText, optionalText } from "./values";
 import { displayMetadata, returnedItem } from "./returned";
 import { botSetupMarkerId, type BotSetupCurrent } from "./botSetupBrief";
-import { BotSetupStarts, botSetupBegin, lostAnswer, runStart, withSetupLine, type BotSetupRefusal, type BotSetupStart, type StartAsk, type StartIo } from "./botSetupStart";
+import { BotSetupStarts, botSetupBegin, briefTurn, lostAnswer, runStart, withSetupLine, type BotSetupRefusal, type BotSetupStart, type StartAsk, type StartIo } from "./botSetupStart";
 import { againBusy, currentSetup, runFresh, type AgainStart, type FreshEnd, type FreshIo } from "./botSetupAgain";
 import { acceptedRecord, fencedBlocks, parseSetup, readAcceptedRecord, type AcceptedRecord, type ListedItem, type ParseResult, type Plan } from "./botSetupCard";
 import { BOT_SETUP_FENCE } from "./botSetupBrief";
@@ -828,6 +828,11 @@ export class Hermes {
   private botSetups = new BotSetupStarts();
   /** The Bot Chats the latest roster named, by profile: registry rows and lineage tips, which search leaves out. */
   private botChatIds = new Map<string, Set<string>>();
+  /**
+   * By profile, the old Bot Chat Start fresh archived and hasn't named yet. Hermes cleared its title as it archived it,
+   * so nothing in Hermes says which archived chat it was, and only this app's run knows.
+   */
+  private freshUnnamed = new Map<string, string>();
   /** See `setVisitHome`. */
   private visitHome?: string;
   /** The roster read for the Bot Chats' ids on a connection (`knownBotChats`). */
@@ -2686,7 +2691,7 @@ export class Hermes {
   async botSetupCurrent(bot: Bot): Promise<BotSetupCurrent> {
     const profile = this.profile;
     if (bot.profile !== profile) throw new Error(`Switch to ${bot.profile} first.`);
-    return currentSetup((await readSetupNow(this.setupApis(profile), profile, { copy: [], mcp: [] })).now);
+    return currentSetup((await readSetupNow(this.setupApis(profile), profile, { again: true, block: { copy: [], mcp: [] } })).now);
   }
 
   /**
@@ -2707,7 +2712,7 @@ export class Hermes {
     const busy = againBusy(was);
     if (busy) return { kind: "refused", reason: busy };
     const id = crypto.randomUUID();
-    const text = brief(id);
+    const text = briefTurn(brief(id), id);
     if (botSetupMarkerId(text) !== id) throw new Error("The brief doesn't start with this setup's marker, so it wasn't sent.");
     const runtimeId = await this.resume(chatId);
     const isLine = (i: Item) => i.kind === "returned" && i.setup?.id === id;
@@ -2743,6 +2748,14 @@ export class Hermes {
         const busy = chatId ? againBusy(this.snapshot.chats.find((c) => c.id === chatId)) : undefined;
         return chatId ? { chatId, ...(busy && { busy }) } : null;
       },
+      unnamed: async () => {
+        const chatId = this.freshUnnamed.get(profile);
+        if (!chatId) return null;
+        const row = (await this.rest("GET", `${sessionPath(chatId)}?${new URLSearchParams({ profile })}`)) as SessionRow;
+        if (row.archived && !row.title) return chatId;
+        this.freshUnnamed.delete(profile);
+        return null;
+      },
       leave: async (chatId) => {
         const runtimeId = this.snapshot.chats.find((c) => c.id === chatId)?.runtimeId;
         if (!runtimeId) return;
@@ -2753,6 +2766,7 @@ export class Hermes {
         this.patchChat(chatId, (c) => ({ ...c, runtimeId: undefined, live: undefined }));
       },
       archive: async (chatId) => {
+        this.freshUnnamed.set(profile, chatId);
         if (!(await this.archive(chatId))) throw new Error(`Hermes doesn't have ${bot.name}'s Bot Chat archived.`);
       },
       titleTaken: async () => (await this.botChats.find(profile, bot.name, false)) !== null,
@@ -2767,6 +2781,7 @@ export class Hermes {
         this.botChatIds.delete(profile);
         if (this.profile === profile) this.patchChat(chatId, (c) => ({ ...c, bot: false, title: now }));
         if (refused) throw refused;
+        this.freshUnnamed.delete(profile);
       },
       clearMemory: async () => (await this.memory.removeMany(profile, entries)).outcomes.filter((o) => o.kind !== "removed").length,
       start: () => this.startBotSetup({ ...bot, botChat: null }, brief),
@@ -2808,7 +2823,7 @@ export class Hermes {
       if (accepted && JSON.stringify(accepted) === JSON.stringify(kept)) this.cache.saveSetupRecord(profile, chatId, null);
       else accepted = kept;
     }
-    const setup = await readSetupNow(this.setupApis(profile), profile, parse.card.block);
+    const setup = await readSetupNow(this.setupApis(profile), profile, parse.card);
     return {
       chatId,
       profile,

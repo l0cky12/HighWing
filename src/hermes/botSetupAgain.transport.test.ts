@@ -4,7 +4,8 @@
 // steps themselves are in botSetupAgain.test.ts.
 import { afterEach, describe, expect, it } from "vitest";
 import { BOT_CHAT_TITLE } from "./bots";
-import { botSetupBrief, botSetupMarkerId } from "./botSetupBrief";
+import { BOT_SETUP_BLOCK_VERSION, BOT_SETUP_FENCE, botSetupBrief, botSetupMarkerId, type BotSetupAgainBlock } from "./botSetupBrief";
+import { planCard } from "./botSetupCard";
 import { localChatCache } from "./chatCache";
 import { FakeHermes, row } from "./fakeHermes";
 import type { MemoryEntry } from "./memory";
@@ -106,6 +107,42 @@ describe("Keep history", () => {
     expect(await hermes.resumeBotSetup()).toEqual({ kind: "started", chatId: OLD, id: started.id });
     expect(rpc(server, "prompt.submit")).toHaveLength(1);
     expect(storedIn(server, OLD).map(([, , what]) => what)).not.toContain("begin");
+  });
+
+  it("a brief turn that got no reply is picked up as no reply, with no second begin until Try again", async () => {
+    const server = hermes0232();
+    const { hermes, keep } = await launch(server);
+    const started = await keep();
+    if (started.kind !== "waiting") throw new Error(started.kind);
+    const sid = String(server.last("prompt.submit")!.params.session_id);
+    server.event(sid, "message.start");
+    server.event(sid, "error", { message: "No API key for openrouter." });
+    await hermes.idle();
+    expect(await hermes.resumeBotSetup()).toMatchObject({ kind: "noReply", chatId: OLD, id: started.id });
+    expect(rpc(server, "prompt.submit")).toHaveLength(1);
+    expect(await hermes.resumeBotSetup("again")).toEqual({ kind: "waiting", chatId: OLD, id: started.id });
+    expect(rpc(server, "prompt.submit").map((r) => kindOf(String(r.params.text)))).toEqual(["brief", "begin"]);
+  });
+
+  it("tells the bot its own MCP servers, and the card folds them under what doesn't change", async () => {
+    const server = hermes0232((s) => {
+      s.mcp.servers[BOT] = { airbnb: { command: "npx", args: ["-y", "@openbnb/mcp-server-airbnb"] } };
+      s.mcp.catalogEntries = [{ name: "airbnb", description: "Stays", transport: "stdio", command: "npx", args: ["-y", "@openbnb/mcp-server-airbnb"] }];
+    });
+    const { hermes, me, keep } = await launch(server);
+    expect((await hermes.botSetupCurrent(await me())).mcp).toEqual(["airbnb"]);
+    const started = await keep();
+    if (started.kind !== "waiting") throw new Error(started.kind);
+    const block: BotSetupAgainBlock = { v: BOT_SETUP_BLOCK_VERSION, persona: null, description: "Plans trips by train.", model: null, color: null, callOwner: null, skills: [], toolsets: [], mcp: [], copy: [] };
+    const text = `Here's the change.\n\n\`\`\`${BOT_SETUP_FENCE}\n${JSON.stringify(block)}\n\`\`\``;
+    const sid = String(server.last("prompt.submit")!.params.session_id);
+    server.event(sid, "message.start");
+    server.storeMessage(OLD, { role: "assistant", text });
+    server.event(sid, "message.complete", { text, status: "complete" });
+    await hermes.idle();
+    const read = await hermes.readBotSetup(OLD);
+    if (read.parse.kind !== "card" || !("setup" in read)) throw new Error(read.parse.kind);
+    expect(planCard(read.parse.card, read.setup.now, read.accepted, []).items.find((i) => i.key === "mcp:airbnb")).toMatchObject({ status: "same" });
   });
 
   for (const busy of ["replying", "waiting"] as const)
@@ -268,6 +305,26 @@ describe("Start fresh", () => {
     expect(botChats(server)).toHaveLength(1);
   });
 
+  it("an archive Hermes took but whose read-back failed stops with the old chat archived and opens no chat; run again, it names it", async () => {
+    const server = hermes0232();
+    const { hermes, fresh } = await launch(server);
+    await hermes.idle();
+    let archived = false;
+    server.restTap = (r) => {
+      if (r.method === "PATCH" && r.path === `/api/sessions/${OLD}` && (r.body as { archived?: boolean }).archived) archived = true;
+      else if (archived && r.method === "GET" && r.path === `/api/sessions/${OLD}`) throw new Error("Hermes didn't answer.");
+    };
+    expect(await fresh()).toMatchObject({ kind: "stopped", at: "archive", left: "archived" });
+    expect(store(server).find((s) => s.id === OLD)).toMatchObject({ archived: true, title: null });
+    expect(rpc(server, "session.create")).toEqual([]);
+    expect(memoryOf(server)).toHaveLength(3);
+
+    server.restTap = undefined;
+    expect(await fresh()).toMatchObject({ kind: "fresh", missed: {}, memoryLeft: 0 });
+    expect(store(server).find((s) => s.id === OLD)).toMatchObject({ archived: true, title: EARLIER });
+    expect(botChats(server)).toHaveLength(1);
+  });
+
   it("run again after it stopped with the old chat archived: clears the memory and seeds the new Bot Chat", async () => {
     const server = hermes0232();
     const { hermes, fresh } = await launch(server);
@@ -283,7 +340,8 @@ describe("Start fresh", () => {
     server.beforeTitleLookup = undefined;
     server.titleLookupError = undefined;
     const end = await fresh();
-    expect(end).toMatchObject({ kind: "fresh", memoryLeft: 0 });
+    expect(end).toMatchObject({ kind: "fresh", missed: {}, memoryLeft: 0 });
+    expect(store(server).find((s) => s.id === OLD)).toMatchObject({ archived: true, title: EARLIER });
     expect(memoryOf(server)).toEqual([]);
     expect(botChats(server)).toHaveLength(1);
     expect(rpc(server, "session.create")).toHaveLength(1);

@@ -11,6 +11,7 @@ import { FakeHermes, row } from "../hermes/fakeHermes";
 import { memoryCache } from "../hermes/memoryCache";
 import { connect, type Hermes } from "../hermes/transport";
 import { en } from "../i18n/en";
+import { es } from "../i18n/es";
 import { Main } from "../App";
 import { freshNote, keptNote } from "./SetUpAgain";
 
@@ -247,7 +248,10 @@ describe("What the app says after Set up again", () => {
   it("says what Hermes holds when Start fresh stopped, and what a finished one left", () => {
     expect(freshNote(w, "Travel Buddy", { kind: "stopped", at: "archive", left: "asItWas", why: "Offline." })).toBe("Start fresh stopped before anything changed for Travel Buddy: Offline.");
     expect(freshNote(w, "Travel Buddy", { kind: "stopped", at: "lookup", left: "archived", why: "Offline." })).toContain("No memory was deleted.");
-    expect(freshNote(w, "Travel Buddy", { kind: "stopped", at: "start", left: "noChat", why: "Offline." })).toContain("the new one didn't start");
+    expect(freshNote(w, "Travel Buddy", { kind: "stopped", at: "start", left: "noChat", why: "Offline." })).toBe(
+      "Travel Buddy's old Bot Chat is archived, but the new one didn't start: Offline. Choose Start fresh again to start it.",
+    );
+    expect(freshNote(es.bots.again, "Travel Buddy", { kind: "stopped", at: "start", left: "noChat", why: "Offline." })).toContain("Elige Empezar de cero otra vez");
     expect(freshNote(w, "Travel Buddy", { kind: "titleKept", restored: false })).toContain("still archived");
     expect(freshNote(w, "Travel Buddy", { kind: "fresh", start: started, missed: { retitle: "Title in use." }, memoryLeft: 2 })).toBe(
       "The old Bot Chat is in Archived without a name: Title in use. 2 memory entries weren't deleted. Settings → Memory shows what is left.",

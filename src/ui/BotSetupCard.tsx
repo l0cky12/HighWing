@@ -86,15 +86,14 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
   const [start, setStart] = useState<BotSetupStart>();
   const [secrets, setSecrets] = useState<McpSecrets>({});
   const [mcpReload, setMcpReload] = useState<SetupHost["mcpReload"]>();
-  const shown = useRef({ chatId, reads: 0, started: false, readOnce: false, holds: false, afterSetUp: false });
+  const shown = useRef({ chatId, reads: 0, started: false, readOnce: false, holds: false, afterSetUp: false, setupId: null as string | null });
   // What the last Set it up ran on: a retry compares against what the card read then, not against a later reload.
   const ranOn = useRef<{ read: BotSetupCardRead; items: ReadonlyMap<string, ListedItem> }>(undefined);
   const mentions = chat.items.some((i) => i.kind === "assistant" && i.text.includes(BOT_SETUP_FENCE));
 
-  useEffect(() => {
-    shown.current = { chatId, reads: 0, started: false, readOnce: false, holds: false, afterSetUp: false };
+  // What a setup's card holds is that setup's alone: Set up again's Keep history starts another in the same Bot Chat.
+  const forgetSetup = useCallback(() => {
     ranOn.current = undefined;
-    setRead(undefined);
     setPending([]);
     setRuns({});
     setOutcome(undefined);
@@ -102,7 +101,12 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
     setStart(undefined);
     setSecrets({});
     setMcpReload(undefined);
-  }, [chatId]);
+  }, []);
+  useEffect(() => {
+    shown.current = { chatId, reads: 0, started: false, readOnce: false, holds: false, afterSetUp: false, setupId: null };
+    setRead(undefined);
+    forgetSetup();
+  }, [chatId, forgetSetup]);
 
   const here = (id: string) => shown.current.chatId === id;
   const load = useCallback(() => {
@@ -111,8 +115,12 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
     api.readBotSetup(chatId).then(
       (r) => {
         if (!here(chatId) || n !== shown.current.reads) return;
-        shown.current.readOnce = true;
-        shown.current.holds = setupIdOf(r) !== null;
+        const setupId = setupIdOf(r);
+        if (shown.current.readOnce && setupId !== shown.current.setupId) {
+          Object.assign(shown.current, { started: false, afterSetUp: false });
+          forgetSetup();
+        }
+        Object.assign(shown.current, { readOnce: true, holds: setupId !== null, setupId });
         setRead({ kind: "read", read: r });
         if (shown.current.afterSetUp) {
           shown.current.afterSetUp = false;
@@ -129,7 +137,7 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
       },
       (e: unknown) => here(chatId) && n === shown.current.reads && setRead({ kind: "failed", error: e }),
     );
-  }, [api, chatId]);
+  }, [api, chatId, forgetSetup]);
 
   useEffect(() => {
     if (!api || running || !connected) return;

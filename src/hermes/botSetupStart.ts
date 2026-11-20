@@ -11,6 +11,12 @@ import { ConnectionLostError, PromptUnconfirmedError } from "./sessionProtocol";
 /** The begin turn: the short hidden message that starts the bot's first reply to the brief with this id. */
 export const botSetupBegin = (id: string) => `[highwing:bot-setup begin id=${id}]`;
 
+/**
+ * A brief sent as a turn, as Keep history sends it. Its begin line comes last, so its stored row is the setup's begin
+ * turn too. A seeded brief has no begin line and gets a begin turn of its own.
+ */
+export const briefTurn = (brief: string, id: string) => `${brief}\n\n${botSetupBegin(id)}`;
+
 /** A stored row of a Bot Chat, as far as starting reads it. */
 export type SetupRow = { rowId: number; role: string; text: string; hidden: boolean };
 
@@ -22,8 +28,8 @@ export type StartRead = { chatId: string; rows: readonly SetupRow[]; running: bo
 
 /**
  * Where a start stands. `noBrief`: the profile has a Bot Chat this app didn't seed. `briefed`: `hidden` is whether
- * Hermes stored the brief hidden. `beganAt`: the stored row of the setup's first begin turn, or of the brief itself
- * when it was sent as a turn and no begin row follows it.
+ * Hermes stored the brief hidden. `beganAt`: the stored row of the setup's first begin turn, which is the brief's own
+ * row when it was sent as a turn (`briefTurn`).
  */
 export type StartState =
   | { at: "noChat" }
@@ -58,17 +64,13 @@ export function startState(read: StartRead | null): StartState {
   const briefAt = rows.map((r) => r.role === "user" && botSetupMarkerId(r.text) !== null).lastIndexOf(true);
   if (briefAt < 0) return { at: "noBrief", chatId };
   const id = botSetupMarkerId(rows[briefAt].text)!;
-  const after = rows.slice(briefAt + 1);
+  const fromBrief = rows.slice(briefAt);
   const begin = botSetupBegin(id);
-  const begins = after.flatMap((r, n) => (r.role === "user" && r.text.trim() === begin ? [n] : []));
-  const replied = (from: number) => after.slice(from).some((r) => r.role === "assistant" && r.text.trim());
-  if (!begins.length) {
-    const beganAt = rows[briefAt].rowId;
-    if (replied(0)) return { at: "started", chatId, id, beganAt };
-    return running ? { at: "running", chatId, id, beganAt } : { at: "briefed", chatId, id, hidden: rows[briefAt].hidden };
-  }
-  const beganAt = after[begins[0]].rowId;
-  if (replied(begins.at(-1)! + 1)) return { at: "started", chatId, id, beganAt };
+  const begun = (r: SetupRow, n: number) => r.role === "user" && (n === 0 ? r.text.trimEnd().endsWith(`\n${begin}`) : r.text.trim() === begin);
+  const begins = fromBrief.flatMap((r, n) => (begun(r, n) ? [n] : []));
+  if (!begins.length) return { at: "briefed", chatId, id, hidden: rows[briefAt].hidden };
+  const beganAt = fromBrief[begins[0]].rowId;
+  if (fromBrief.slice(begins.at(-1)! + 1).some((r) => r.role === "assistant" && r.text.trim())) return { at: "started", chatId, id, beganAt };
   return running ? { at: "running", chatId, id, beganAt } : { at: "noReply", chatId, id, beganAt, ...(error && { error }) };
 }
 

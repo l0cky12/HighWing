@@ -13,6 +13,7 @@ function scripted(over: Partial<FreshIo> = {}) {
   const said = <A extends unknown[], R>(name: string, fn: (...a: A) => Promise<R>) => (...a: A) => (calls.push(name), fn(...a));
   const io: FreshIo = {
     find: said("find", over.find ?? (async () => ({ chatId: "old-chat" }))),
+    unnamed: said("unnamed", over.unnamed ?? (async () => null)),
     leave: said("leave", over.leave ?? (async () => {})),
     archive: said("archive", over.archive ?? (async () => {})),
     titleTaken: said("titleTaken", over.titleTaken ?? (async () => false)),
@@ -51,7 +52,7 @@ describe("Start fresh's steps", () => {
   const stops: [FreshStepName, keyof FreshIo, string, string[]][] = [
     ["check", "find", "asItWas", ["find"]],
     ["leave", "leave", "asItWas", ["find", "leave"]],
-    ["archive", "archive", "asItWas", ["find", "leave", "archive"]],
+    ["archive", "archive", "archived", ["find", "leave", "archive", "titleTaken"]],
     ["lookup", "titleTaken", "archived", ["find", "leave", "archive", "titleTaken"]],
     ["start", "start", "noChat", ["find", "leave", "archive", "titleTaken", "retitle", "clearMemory", "start"]],
   ];
@@ -61,6 +62,15 @@ describe("Start fresh's steps", () => {
       expect(await runFresh(io)).toEqual({ kind: "stopped", at, left, why: "Hermes didn't answer." });
       expect(calls).toEqual(sent);
     });
+
+  it("stops at an archive Hermes didn't confirm as it was only while the title lookup still finds the old chat", async () => {
+    const kept = scripted({ archive: fails("Couldn't read the chat back."), titleTaken: async () => true });
+    expect(await runFresh(kept.io)).toEqual({ kind: "stopped", at: "archive", left: "asItWas", why: "Couldn't read the chat back." });
+    expect(kept.calls).toEqual(["find", "leave", "archive", "titleTaken"]);
+    const unsure = scripted({ archive: fails("Couldn't read the chat back."), titleTaken: fails("state.db is busy") });
+    expect(await runFresh(unsure.io)).toMatchObject({ kind: "stopped", at: "archive", left: "archived" });
+    expect(unsure.calls).not.toContain("start");
+  });
 
   it("carries on past a failed retitle and a failed memory clear, since the title is already freed, and says so", async () => {
     const { io, calls } = scripted({ retitle: fails("Title in use."), clearMemory: fails("Memory can't be read.") });
@@ -75,7 +85,15 @@ describe("Start fresh's steps", () => {
   it("a bot with no Bot Chat, as after a Start fresh that stopped: clears memory and starts, with nothing to archive", async () => {
     const { io, calls } = scripted({ find: async () => null });
     expect(await runFresh(io)).toMatchObject({ kind: "fresh" });
-    expect(calls).toEqual(["find", "clearMemory", "start"]);
+    expect(calls).toEqual(["find", "unnamed", "clearMemory", "start"]);
+  });
+
+  it("names the old chat an earlier run archived and stopped before naming, before it clears the memory", async () => {
+    const named: string[] = [];
+    const { io, calls } = scripted({ find: async () => null, unnamed: async () => "old-chat", retitle: async (id) => void named.push(id) });
+    expect(await runFresh(io)).toMatchObject({ kind: "fresh", missed: {} });
+    expect(calls).toEqual(["find", "unnamed", "retitle", "clearMemory", "start"]);
+    expect(named).toEqual(["old-chat"]);
   });
 });
 

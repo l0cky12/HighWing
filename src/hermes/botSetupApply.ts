@@ -37,7 +37,8 @@ export type SetupApis = CapabilityApis & {
  * The bot as the card was drawn against it. `soul`: SOUL.md as read, which the persona is saved over only while
  * Hermes still has it. `model`: the profile's model as `ProfilesApi.edit` compares it. `providers`: each listed
  * model's provider. `copyFrom`: the profile of each bot the block copies from, by its name. `labels`: each toolset's.
- * `mcp`: where the MCP servers the block names come from, read only when it names one and Hermes has the routes.
+ * `mcp`: where the MCP servers the block names come from, read for Set up again or when it names one, where Hermes
+ * has the routes.
  */
 export type SetupNow = {
   now: HermesNow;
@@ -52,10 +53,10 @@ export type SetupNow = {
 const named = <T extends { name: string }>(rows: readonly T[]) => rows.map((r) => r.name);
 
 /**
- * The bot `profile` as Hermes has it now, and what it lists, with the bots `asked.copy` copies from and, when `asked`
- * names any MCP server, the MCP servers. Rejects when a read fails.
+ * The bot `profile` as Hermes has it now, and what it lists, with the bots `asked.block.copy` copies from and the MCP
+ * servers when `asked` is Set up again's, whose "before" shows the bot's own, or names any. Rejects when a read fails.
  */
-export async function readSetupNow(apis: SetupApis, profile: string, asked: Pick<Card["block"], "copy" | "mcp">): Promise<SetupNow> {
+export async function readSetupNow(apis: SetupApis, profile: string, asked: { again: boolean; block: Pick<Card["block"], "copy" | "mcp"> }): Promise<SetupNow> {
   const [soul, rows, roster, skills, toolsets, catalog, memory] = await Promise.all([
     apis.persona.read(profile),
     apis.profiles.list(),
@@ -70,8 +71,8 @@ export async function readSetupNow(apis: SetupApis, profile: string, asked: Pick
   if (!row) throw new ProfileError({ kind: "gone", detail: `Hermes lists no profile named ${profile}.` });
   const providers: Record<string, string> = {};
   for (const p of catalog?.providers ?? []) for (const m of p.models) providers[m.model] ??= p.slug;
-  const sources = asked.copy.flatMap((c) => roster.filter((b) => b.name.trim() === c.from && b.profile !== profile));
-  const mcpNamed = asked.mcp.length > 0 || asked.copy.some((c) => c.mcp.length > 0);
+  const sources = asked.block.copy.flatMap((c) => roster.filter((b) => b.name.trim() === c.from && b.profile !== profile));
+  const mcpNamed = asked.block.mcp.length > 0 || asked.block.copy.some((c) => c.mcp.length > 0);
   const [bots, mcp] = await Promise.all([
     Promise.all(
       sources.map(async (b) => {
@@ -79,7 +80,7 @@ export async function readSetupNow(apis: SetupApis, profile: string, asked: Pick
         return { name: b.name, skills: named(theirSkills), toolsetsOn: named(theirToolsets.toolsets.filter((t) => t.enabled)) };
       }),
     ),
-    mcpNamed ? readMcp(apis.mcp, profile, sources, rows) : undefined,
+    asked.again || mcpNamed ? readMcp(apis.mcp, profile, sources, rows) : undefined,
   ]);
   const model = row.model?.trim() || null;
   return {

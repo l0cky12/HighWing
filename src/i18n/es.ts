@@ -623,7 +623,7 @@ export const es: Catalogue = {
       stopped: {
         asItWas: (bot, why) => `Empezar de cero se detuvo antes de cambiar nada de ${bot}: ${why}`,
         archived: (bot, why) => `El Bot Chat anterior de ${bot} está archivado, y Empezar de cero se detuvo ahí: ${why} No se borró nada de la memoria. Elige Empezar de cero otra vez para continuar.`,
-        noChat: (bot, why) => `El Bot Chat anterior de ${bot} está archivado, pero el nuevo no empezó: ${why} Abre ${bot} para empezar uno.`,
+        noChat: (bot, why) => `El Bot Chat anterior de ${bot} está archivado, pero el nuevo no empezó: ${why} Elige Empezar de cero otra vez para empezarlo.`,
       },
       notRetitled: (why) => `El Bot Chat anterior está en Archivados sin nombre: ${why}`,
       memoryLeft: (n) => `${n === 1 ? "1 entrada de la memoria no se borró" : `${n} entradas de la memoria no se borraron`}. Ajustes → Memoria muestra lo que queda.`,

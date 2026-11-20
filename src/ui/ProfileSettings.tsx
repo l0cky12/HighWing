@@ -10,7 +10,7 @@ import type { CatalogProvider } from "../hermes/modelSettings";
 import { asReadBack, type PersonaApi, type Soul } from "../hermes/persona";
 import type { ProfileCloneApi } from "../hermes/profileClone";
 import type { BotSetupRefusal } from "../hermes/botSetupStart";
-import type { NewBotHow } from "../hermes/newBot";
+import type { MakeStop, NewBotHow } from "../hermes/newBot";
 import type { PendingRename } from "../hermes/profileLocalData";
 import {
   DISPLAY_NAME_MAX,
@@ -21,7 +21,6 @@ import {
   profileFailure,
   profileFieldsOf,
   type ProfileAction,
-  type ProfileFailure,
   type ProfileFields,
   type ProfileRow,
   type ProfilesApi,
@@ -32,6 +31,7 @@ import { Spinner, composing } from "./bits";
 import { Menu } from "./ChatMenu";
 import { CloneProfileDialog } from "./CloneProfile";
 import { NewBot } from "./NewBot";
+import { failureText } from "./profileFailure";
 import { useModal } from "./modal";
 import { RephraseButton, RephrasePanel, usePersonaRephrase } from "./PersonaRephrase";
 import type { Writer } from "../hermes/writingModel";
@@ -96,9 +96,10 @@ export type ProfilesWiring = {
   /**
    * Makes a bot named `name` from New bot or New profile (ADR 0231) and opens it as a Bot visit, with Bot setup's
    * interview started unless `how` is blank or Hermes runs none. Resolves the new profile's id, and whether the app
-   * went to it. Rejects when the create failed.
+   * went to it. Rejects when the create failed, or with `MakeStopped` where `from` can carry it on without a second
+   * create.
    */
-  makeBot: (name: string, how: NewBotHow) => Promise<{ profile: string; visited: boolean }>;
+  makeBot: (name: string, how: NewBotHow, from?: MakeStop) => Promise<{ profile: string; visited: boolean }>;
   /** Why this Hermes runs no Bot setup (`Hermes.botSetupOff`), for the name dialog to say. */
   botSetupOff: () => BotSetupRefusal | undefined;
 };
@@ -116,29 +117,6 @@ type Dialog =
   | { kind: "clone"; source: string; name?: string };
 
 const NO_STORE = { subscribe: () => () => {}, getSnapshot: () => undefined };
-
-/** The words for a failed profile call. */
-export function failureText(l: Locale, f: ProfileFailure, name: string): string {
-  const w = l.profiles;
-  switch (f.kind) {
-    case "noRoute":
-      return w.noRoute(PROFILE_ROUTES[f.action]);
-    case "gone":
-      return w.form.gone(name);
-    case "refused":
-      return f.detail ? w.form.refused(f.detail) : w.form.refusedNoReason;
-    case "lost":
-      return w.form.lost(f.message);
-    case "unsent":
-      return f.message;
-    case "contended":
-      return w.form.contended;
-    case "noCheck":
-      return w.form.noCheck;
-    case "pictureUnconfirmed":
-      return w.form.pictureUnconfirmed;
-  }
-}
 
 /** Why `action` can't run now, or nothing: not connected, or the server lacks its route. */
 export function blocked(l: Locale, connected: boolean, lacks: (a: ProfileAction) => boolean, action: ProfileAction): string | undefined {
@@ -480,8 +458,8 @@ export function ProfileSettings({ wiring }: { wiring: ProfilesWiring }) {
           list={() => api.list()}
           off={wiring.botSetupOff()}
           returnTo={selectedRow}
-          make={async (name, how) => {
-            const made = await wiring.makeBot(name, how);
+          make={async (name, how, from) => {
+            const made = await wiring.makeBot(name, how, from);
             // Gone to the bot: Settings has closed. Otherwise the new row is selected here, with Open it now.
             if (made.visited) return;
             setNotice({ tone: "muted", text: l.bots.make.made(made.profile), open: made.profile });

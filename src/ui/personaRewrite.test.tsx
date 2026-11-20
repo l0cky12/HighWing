@@ -290,6 +290,12 @@ describe("Write with AI", () => {
 });
 
 describe("Elsewhere", () => {
+  it("leaves Skills, Tools and MCP servers out of Edit, and asks Hermes for neither skills nor toolsets", async () => {
+    const { server } = await open();
+    for (const name of ["Skills", "Tools", "MCP servers"]) expect(within(dialog()).queryByRole("group", { name })).toBeNull();
+    expect(server.restRequests.filter((r) => r.path === "/api/skills" || r.path === "/api/tools/toolsets")).toEqual([]);
+  });
+
   it("shows only catalogue words: the form, a rewrite and a failed one", async () => {
     const p = pseudoLocale();
     const { server, user } = await open({ locale: p });

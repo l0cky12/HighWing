@@ -2568,6 +2568,26 @@ export class Hermes {
   }
 
   /**
+   * `botSetupOff` once Hermes's version has been read, which the first check after connecting does a moment later, so
+   * a bot made before then isn't interviewed on a Hermes too old for it. A Hermes that names no version stays allowed.
+   */
+  async botSetupOffKnown(): Promise<BotSetupRefusal | undefined> {
+    const read = () => {
+      const f = this.capabilities.getSnapshot().facts;
+      return (f.version ?? f.build ?? f.commit ?? f.versionWhy) !== undefined;
+    };
+    if (!read())
+      await new Promise<void>((done) => {
+        const stop = this.capabilities.subscribe(() => {
+          if (!read()) return;
+          stop();
+          done();
+        });
+      });
+    return this.botSetupOff();
+  }
+
+  /**
    * Starts Bot setup's interview in the shown profile's Bot Chat for `bot` (ADR 0231), or picks it up where the Bot
    * Chat's stored rows say it stands: the chat is made with the brief seeded as a hidden row, then a hidden begin turn
    * starts the bot's first reply. Nothing about a start is kept, so one under way is safe to start again: on every

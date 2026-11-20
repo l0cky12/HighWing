@@ -17,7 +17,8 @@ import { Menu } from "./ChatMenu";
 import { CloneProfileDialog } from "./CloneProfile";
 import { pick } from "./keybindings";
 import { NewBot } from "./NewBot";
-import { DeleteProfile, MenuEntry, ProfileForm, blocked, failureText, useSwitchTo, type FormFocus, type ProfilesWiring } from "./ProfileSettings";
+import { DeleteProfile, MenuEntry, ProfileForm, blocked, useSwitchTo, type FormFocus, type ProfilesWiring } from "./ProfileSettings";
+import { failureText } from "./profileFailure";
 import { useLocale } from "../i18n/locale";
 
 /** How often the roster is read again while the bots show. Hermes's desktop polls every 5 seconds; this is enough. */
@@ -302,8 +303,8 @@ export function useBotActions({
           list={() => profiles.api.list()}
           off={profiles.botSetupOff()}
           returnTo={newBtn}
-          make={async (name, how) => {
-            const made = await profiles.makeBot(name, how);
+          make={async (name, how, from) => {
+            const made = await profiles.makeBot(name, how, from);
             reread(made.profile, !made.visited);
           }}
           onCopy={

@@ -635,6 +635,17 @@ describe("what the owner accepted", () => {
     expect(untick).toMatchObject({ over: ["You are A.", "You are C."], to: "You are B.", ticked: false });
   });
 
+  it("forgets an earlier accepted value once the owner chooses the bot's own value again", () => {
+    const start = now({ persona: "You are Z." });
+    const card = cardOf(rowsWith(block({ persona: "You are A." }))).card;
+    const plan = planCard(card, start, null, [choose(listedItem(planCard(card, start), "persona"), { to: "You are B." })]);
+    const record = acceptedRecord(plan);
+    const movedToA = { ...applied(start, plan, record), persona: "You are A." };
+    const back = choose(listedItem(planCard(card, movedToA, record), "persona"), { to: "You are A." });
+    const second = acceptedRecord(planCard(card, movedToA, record, [back]), record);
+    expect(listedItem(planCard(card, movedToA, second), "persona")).toMatchObject({ status: "same", after: "You are A." });
+  });
+
   it("uses the owner's latest choice on an item", () => {
     const { card } = cardOf(rowsWith(block()));
     const edit = choose(listedItem(planCard(card, now()), "persona"), { to: "You are B." });

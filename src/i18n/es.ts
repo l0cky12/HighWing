@@ -18,6 +18,12 @@ export const es: Catalogue = {
     workOn: (name) => `¿En qué debería trabajar ${name}?`,
     botChat: "Bot Chat",
     botChatTip: "La conversación continua de su bot",
+    newest: {
+      reply: "Respuesta nueva abajo",
+      messages: "Mensajes nuevos abajo",
+      go: "Ir al mensaje más reciente",
+      tip: (keys) => `Ir al mensaje más reciente y seguir el chat (${keys})`,
+    },
     at: {
       bots: "Bots",
       chats: "Chats",
@@ -752,6 +758,8 @@ export const es: Catalogue = {
       provider: "Proveedor",
       modelName: "Nombre del modelo",
       noProvider: "El de Hermes por defecto",
+      hiddenProvider: (name) => `${name} (oculto en Highwing)`,
+      hiddenProviderNote: (name) => `${name} está oculto en las listas de modelos de Highwing, así que sus modelos no se ofrecen para una nueva elección. Ajustes → Proveedores lo vuelve a mostrar.`,
       catalogFailed: (error) => `No se pudo leer la lista de modelos: ${error}`,
       persona: "Persona",
       personaEditHint: "El SOUL.md del perfil en Hermes: quién es y cómo habla. Si lo dejas vacío, Hermes usa su identidad incorporada.",

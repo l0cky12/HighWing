@@ -12,6 +12,7 @@ export function ModelCombobox({
   models,
   placeholder,
   disabled,
+  unlisted: unlistedNote = "Not listed now",
   onChange,
 }: {
   label: string;
@@ -21,6 +22,8 @@ export function ModelCombobox({
   /** Shown while no model is chosen. */
   placeholder: string;
   disabled?: boolean;
+  /** What the chosen model's row says when `models` doesn't have it. */
+  unlisted?: string;
   onChange?: (model: string) => void;
 }) {
   // `query` is what's typed; the field shows it while the list is open and the chosen model otherwise.
@@ -111,7 +114,7 @@ export function ModelCombobox({
                 onClick={() => pick(m)}
               >
                 <span className="model-name">{m}</span>
-                {unlisted && m === value && <span className="model-provider">Not listed now</span>}
+                {unlisted && m === value && <span className="model-provider">{unlistedNote}</span>}
                 <span className="model-check">{m === value && <Check size={14} aria-hidden />}</span>
               </div>
             ))}

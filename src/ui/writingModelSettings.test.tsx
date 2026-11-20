@@ -3,7 +3,8 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { FakeHermes, fakeModelConfig } from "../hermes/fakeHermes";
-import { getUIPrefs } from "../hermes/uiPrefs";
+import { getUIPrefs, setProviderHidden, setUIPrefs } from "../hermes/uiPrefs";
+import { ModelListScope } from "./modelLists";
 import { connect, type Hermes } from "../hermes/transport";
 import { appearanceStore } from "./appearance";
 import { SettingsScreen } from "./Settings";
@@ -20,6 +21,7 @@ function memoryStorage() {
 
 function Screen({ hermes, connected = true }: { hermes: Hermes; connected?: boolean }) {
   return (
+    <ModelListScope value={SCOPE}>
     <SettingsScreen
       status={connected ? "connected" : "offline"}
       unsecure={false}
@@ -38,6 +40,7 @@ function Screen({ hermes, connected = true }: { hermes: Hermes; connected?: bool
       onSignOut={async () => {}}
       onClose={() => {}}
     />
+    </ModelListScope>
   );
 }
 
@@ -109,5 +112,28 @@ describe("The Writing model setting", () => {
     await shown({ seed: (s) => (s.modelConfig.auxiliary.title_generation = { provider: "auto", model: "" }) });
     const card = await screen.findByRole("group", { name: "Project instructions model" });
     expect(card.textContent).toContain("Until you pick one, your Writing model writes them, hermes-5-70b.");
+  });
+});
+
+describe("The Writing model with a provider hidden in Highwing's model lists (ADR 0235)", () => {
+  const provider = () => within(section()).getByRole<HTMLSelectElement>("combobox", { name: "Writing model: provider" });
+
+  it("offers none of its models, keeps a pick already on it with a note, and keeps the pick until another is made", async () => {
+    setUIPrefs({ writingModels: { [SCOPE]: { provider: "openrouter", model: "deepseek/deepseek-v4-flash" } } });
+    setProviderHidden(SCOPE, "openrouter", true);
+    const { user } = await shown();
+    await waitFor(() => expect([...provider().options].map((o) => o.textContent)).toEqual(["OpenRouter (hidden in Highwing)", "Nous Portal", "ChatGPT or Codex Subscription"]));
+    expect(provider().value).toBe("openrouter");
+    expect(within(section()).getByText("OpenRouter is hidden in Highwing's model lists, so its models aren't offered for a new pick.")).toBeTruthy();
+    await user.click(within(section()).getByRole("combobox", { name: "Writing model: model" }));
+    expect(within(screen.getByRole("listbox", { name: "Writing model: model" })).getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "deepseek/deepseek-v4-flashProvider hidden in Highwing",
+    ]);
+    expect(getUIPrefs().writingModels).toEqual({ [SCOPE]: { provider: "openrouter", model: "deepseek/deepseek-v4-flash" } });
+  });
+
+  it("lists every provider when none is hidden", async () => {
+    await shown();
+    await waitFor(() => expect([...provider().options].map((o) => o.textContent)).toEqual(["Choose a provider…", "OpenRouter", "Nous Portal", "ChatGPT or Codex Subscription"]));
   });
 });

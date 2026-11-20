@@ -33,7 +33,7 @@ import { ProfileCloneApi } from "./profileClone";
 import { ProfilesApi, profileFailure, toProfileRows, type ProfileFailure } from "./profiles";
 import { FILTER_SEARCH_LIMIT } from "./chatFilter";
 import { APPROVAL_CHOICES, endedNote, isBroadGrant, isOutgoing, isQuestion, isStoredPrompt, isWaiting, offeredChoices, sameFields, sendNowRoute, turnFrom, turnStart, type ApprovalChoice, type ApprovalItem, type AttachCheck, type ClarifyQuestion, type QuestionAnswer, type QuestionItem, type QuestionKind, type Attachment, type Chat, type ChatQueue, type ConnectionStatus, type ContextUse, type Found, type Hit, type Item, type ListedChat, type LiveSession, type LiveSessions, type OtherProfiles, type Outgoing, type OutgoingItem, type Queued, type SavedSend, type SeenFailure, type SentImage, type SentImagePath, type SentReference, type SessionLive, type SideQuestion, type Source, QUEUE_LIMIT } from "./model";
-import { catalogFromServer, fallbackCatalog, isEffort, modelKey, pickFromInfo, type ModelCatalog, type ModelPick } from "./models";
+import { NO_HIDDEN, catalogFromServer, fallbackCatalog, isEffort, modelKey, offeredCatalog, pickFromInfo, type HiddenProviders, type ModelCatalog, type ModelPick } from "./models";
 import { approvalsOf, isApprovalMode, writesFor, type ApprovalPick } from "./approvals";
 import { CheckTimesStore, noOthers, OtherProfilesCheck } from "./otherProfiles";
 import { failureMark } from "./inbox";
@@ -795,6 +795,8 @@ export class Hermes {
   private listeners = new Set<() => void>();
   private sendListeners = new Set<(profile: string, chatId: string) => void>();
   private snapshot: Snapshot;
+  /** The providers hidden from Highwing's model lists on this connection (ADR 0235); Main sets it. Bot setup offers none of their models. */
+  hiddenProviders: () => HiddenProviders = () => NO_HIDDEN;
   /** Chats this app moved between Active and Settled that Hermes hasn't stored yet: the `pinned` flag each should
    * have (ADR 0002). While a chat is here, this flag beats the one the server lists. */
   private pinWanted = new PerProfile<boolean>();
@@ -2837,7 +2839,8 @@ export class Hermes {
       memory: this.memory,
       mcp: this.mcp,
       bots: () => this.bots(),
-      models: async () => (this.snapshot.models?.profile === profile ? this.snapshot.models : this.readModels(profile).catch(() => undefined)),
+      models: async () =>
+        offeredCatalog(this.snapshot.models?.profile === profile ? this.snapshot.models : await this.readModels(profile).catch(() => undefined), this.hiddenProviders()),
       editBot: (name, edits) => this.editBot(name, edits),
     };
   }

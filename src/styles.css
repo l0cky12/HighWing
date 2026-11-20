@@ -443,6 +443,14 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
 .transcript-inner { max-width: var(--chat-width); margin: 0 auto; padding: 28px 32px 56px; display: flex; flex-direction: column; gap: 22px; }
 .transcript-chunk { display: flex; flex-direction: column; gap: 22px; }
 .transcript-gap { flex: none; }
+/* The button to the newest message (#31): a line of no height kept at the bottom of the view, so showing it moves nothing. */
+.to-newest { position: sticky; bottom: 0; height: 0; display: flex; justify-content: center; pointer-events: none; }
+.to-newest button {
+  position: absolute; bottom: 14px; pointer-events: auto; display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px 0 10px;
+  border-radius: 999px; border: 1px solid var(--line-2); background: var(--raised-2); color: var(--text); font-size: calc(12.5rem / 14);
+  font-weight: 500; white-space: nowrap; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35); cursor: pointer;
+}
+.to-newest button:hover { border-color: var(--accent); color: var(--accent); }
 .imported-note {
   display: flex; align-items: center; gap: 6px; font-size: calc(12rem / 14); color: var(--faint); justify-content: center; padding-bottom: 6px;
 }
@@ -3913,6 +3921,7 @@ div.export-preview.export-page { height: auto; padding: 10px 12px; background: v
 .profile-conflict-picture { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; vertical-align: middle; }
 .profile-model select { flex: 0 1 200px; min-width: 0; background: var(--raised); border: 1px solid var(--line-2); border-radius: 9px; padding: 8px 10px; color: var(--text); }
 .profile-model input { flex: 1 1 220px; background: var(--raised); border: 1px solid var(--line-2); border-radius: 9px; padding: 9px 12px; outline: none; font-size: calc(13rem / 14); color: var(--text); }
+.profile-model-note { flex-basis: 100%; }
 .profile-soul { min-height: 90px; }
 .profile-dialog .confirm-actions { flex-wrap: wrap; align-items: center; }
 .profile-clone-link { align-self: flex-start; font-size: calc(12.5rem / 14); }

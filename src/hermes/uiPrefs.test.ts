@@ -10,8 +10,10 @@ import {
   chatToReopen,
   forgetOpenChat,
   getUIPrefs,
+  hiddenProvidersOf,
   migrateUIPrefs,
   rememberOpenChat,
+  setProviderHidden,
   setUIPrefs,
   subscribe,
   toggleModelFavorite,
@@ -42,7 +44,7 @@ afterEach(() => {
 
 describe("reading", () => {
   it("is the defaults when nothing is stored", () => {
-    expect(getUIPrefs()).toEqual({ theme: "system", reopenLastChat: false, checkUpdatesOnLaunch: true, lastOpenChat: {}, modelPicker: null, modelPicks: {}, modelFavorites: [], statusBar: ["context", "model", "status"], previewWidth: null, sidebarWidth: null, zoom: 1, templates: [], terminalKind: "server", followUp: "queue", idleCompact: { enabled: false, percent: 70, idleMinutes: 15 }, chatSectionsShown: ["pinned", "inbox", "snoozed", "working", "archived"], chatSectionsCollapsed: ["snoozed", "archived"], chatListMode: "chats", inboxAutoDismissDays: null, messageDetails: "time", spellCheck: true, summonSelection: true, followScreen: false, askFirst: true, jobRunNotices: true, keybindings: {}, writingModels: {} });
+    expect(getUIPrefs()).toEqual({ theme: "system", reopenLastChat: false, checkUpdatesOnLaunch: true, lastOpenChat: {}, modelPicker: null, modelPicks: {}, modelFavorites: [], statusBar: ["context", "model", "status"], previewWidth: null, sidebarWidth: null, zoom: 1, templates: [], terminalKind: "server", followUp: "queue", idleCompact: { enabled: false, percent: 70, idleMinutes: 15 }, chatSectionsShown: ["pinned", "inbox", "snoozed", "working", "archived"], chatSectionsCollapsed: ["snoozed", "archived"], chatListMode: "chats", inboxAutoDismissDays: null, messageDetails: "time", spellCheck: true, summonSelection: true, followScreen: false, askFirst: true, jobRunNotices: true, keybindings: {}, writingModels: {}, hiddenProviders: {} });
     expect(getUIPrefs()).toEqual(DEFAULT_UI_PREFS);
   });
 
@@ -79,6 +81,7 @@ describe("reading", () => {
         messageDetails: "everything",
         jobRunNotices: "off",
         keybindings: { search: ["Ctrl+J"], bad: [], worse: "Ctrl+K", nope: [7] },
+        hiddenProviders: { home: ["openrouter", "bad/slug", 7, "openrouter", "nous"], empty: [], gone: "openrouter" },
       }),
     );
     expect(getUIPrefs()).toEqual({
@@ -104,7 +107,23 @@ describe("reading", () => {
       jobRunNotices: true,
       keybindings: { search: ["Ctrl+J"] },
       writingModels: {},
+      hiddenProviders: { home: ["openrouter", "nous"] },
     });
+  });
+
+  it("hides a provider for one connection only, shows it again, and keeps nothing else", () => {
+    const favorites = ["openrouter/openai/gpt-5"];
+    setUIPrefs({ modelFavorites: favorites });
+    setProviderHidden("home", "openrouter", true);
+    expect(getUIPrefs().hiddenProviders).toEqual({ home: ["openrouter"] });
+    expect([...hiddenProvidersOf(getUIPrefs(), "home")]).toEqual(["openrouter"]);
+    expect(hiddenProvidersOf(getUIPrefs(), "work").size).toBe(0);
+    expect(hiddenProvidersOf(getUIPrefs(), undefined).size).toBe(0);
+    // Read back after a restart: the stored document holds it.
+    expect(JSON.parse(localStorage.getItem(UI_PREFS_KEY)!).hiddenProviders).toEqual({ home: ["openrouter"] });
+    setProviderHidden("home", "openrouter", false);
+    expect(getUIPrefs().hiddenProviders).toEqual({});
+    expect(getUIPrefs().modelFavorites).toEqual(favorites);
   });
 
   it("asks first by default, keeps a stored choice, and goes back to asking for anything that isn't a boolean", () => {

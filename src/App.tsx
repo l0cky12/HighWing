@@ -45,7 +45,8 @@ import { readMethods } from "./hermes/signInMethods";
 import { PreferredRoutes, type RouteHealth, routesOf, sshAddressOf } from "./hermes/routes";
 import { signInError, testSignIn, type SignInError, type TestOutcome } from "./hermes/setup";
 import { isOutgoing, isWaiting, type Attachment, type Chat, type ConnectionStatus, type Found, type Hit, type SentReference } from "./hermes/model";
-import { capabilitiesOf, describePick, effortsFor, isEffort, modelFromArg, shortName, type ModelCatalog, type ModelPick } from "./hermes/models";
+import { capabilitiesOf, describePick, effortsFor, isEffort, modelFromArg, offeredCatalog, shortName, type ModelCatalog, type ModelPick } from "./hermes/models";
+import { ModelListScope, useHiddenProviders } from "./ui/modelLists";
 import { ChatList, Rail, leavingNote } from "./ui/Sidebar";
 import { lookShown, type BotLookShown } from "./ui/BotFace";
 import { type ChatLink, type ConnectionRefs, checkConnection, connectionKey, connectionLabel, connectionRefs, formatChatLink, locateChat, parseChatLink } from "./hermes/chatLinks";
@@ -141,7 +142,7 @@ import { pathOpener } from "./hermes/paths";
 import type { Route } from "./hermes/pipe";
 import { tauriTray, type TrayWiring } from "./hermes/tauriTray";
 import { useWindowHidden } from "./ui/windowState";
-import { getUIPrefs, setUIPrefs, subscribe as subscribeUIPrefs, toggleModelFavorite, type ChatListMode, type StickyModelPick } from "./hermes/uiPrefs";
+import { getUIPrefs, hiddenProvidersOf, setUIPrefs, subscribe as subscribeUIPrefs, toggleModelFavorite, type ChatListMode, type StickyModelPick } from "./hermes/uiPrefs";
 import { errorText } from "./hermes/values";
 import { BrandMark } from "./ui/BrandMark";
 
@@ -1834,6 +1835,9 @@ export function Main({
   const restoreBusy = () => restoreBlocked({ working: workingRef.current, unsaved: unsaved.size, sending: sending.size });
   const writingScope = connectionScope(connection);
   const writing = useMemo(() => hermes.writingDesk(() => getUIPrefs().writingModels[writingScope]), [hermes, writingScope]);
+  useEffect(() => {
+    hermes.hiddenProviders = () => hiddenProvidersOf(getUIPrefs(), writingScope);
+  }, [hermes, writingScope]);
 
   const stillIn = (p: string) => hermes.profile === p;
 
@@ -2410,7 +2414,7 @@ export function Main({
     const models = async () => {
       await hermes.loadModels();
       const m = hermes.getSnapshot().models;
-      return m?.profile === bot.profile ? m : undefined;
+      return m?.profile === bot.profile ? offeredCatalog(m, hermes.hiddenProviders()) : undefined;
     };
     return newBotInventory({ models, skills: (p) => hermes.skills.rows(p), toolsets: (p) => hermes.toolsets.list(p), mcp: hermes.mcp }, bot.profile, hermes.getSnapshot().bots?.roster ?? []);
   };
@@ -3367,6 +3371,7 @@ export function Main({
 
   return (
     <LinksProvider preview={openPreview} path={openPath} web={webPages} onToast={(text) => setToast({ text, at: Date.now() })}>
+    <ModelListScope value={writingScope}>
     <ScreenDeskProvider value={screenDesk}>
     <TeammatesContext value={teammates}>
     <SentImageReader.Provider value={sentImages}>
@@ -4076,6 +4081,7 @@ export function Main({
     </SentImageReader.Provider>
     </TeammatesContext>
     </ScreenDeskProvider>
+    </ModelListScope>
     </LinksProvider>
   );
 }
@@ -4241,6 +4247,7 @@ function ChatView({
   useEffect(() => setApplying(false), [chatId]);
 
   const shownModel = (started && chat.model) || startSettings.model.value;
+  const hiddenProviders = useHiddenProviders();
   /** The model picker's switch, which `/model` and `/reasoning` use too. Rejects saying why Hermes didn't switch. */
   const switchModel = async (pick: ModelPick) => {
     setUIPrefs({ modelPicker: { ...pick, profile: prefScope(connection, profile) } });
@@ -4485,7 +4492,7 @@ function ChatView({
       : undefined;
   const commands: CommandHost = {
     commands: commandList,
-    models: { catalog, favorites, current: shownModel },
+    models: { catalog, favorites, current: shownModel, hidden: hiddenProviders },
     references: { chats: referable, bots: askHost && askHost.rule !== "none" && otherBots.length ? otherBots : undefined, reference: (c) => referenceDesk.add(shownDraft, { chatId: c.id, title: c.title }) },
     skills: status === "connected" ? skillCommands.skills : undefined,
     refreshSkills: skillCommands.refresh,
@@ -4495,7 +4502,7 @@ function ChatView({
       // The picker's own switches, which work before a chat starts too. What they'd switch to is checked before anything
       // goes to Hermes.
       if (def.name === "model" || def.name === "reasoning") {
-        const to = arg ? (def.name === "model" ? modelFromArg(catalog, arg, shownModel) : effortFor(arg)) : undefined;
+        const to = arg ? (def.name === "model" ? modelFromArg(catalog, arg, shownModel, hiddenProviders) : effortFor(arg)) : undefined;
         return to && "problem" in to ? to.problem : undefined;
       }
       if (def.name === "help" || (def.name === "new" && !policy.ofBot)) return undefined;
@@ -4574,7 +4581,7 @@ function ChatView({
           return undefined;
         }
         if (def.name === "model" || def.name === "reasoning") {
-          const to = def.name === "model" ? (arg ? modelFromArg(catalog, arg, shownModel) : undefined) : effortFor(arg);
+          const to = def.name === "model" ? (arg ? modelFromArg(catalog, arg, shownModel, hiddenProviders) : undefined) : effortFor(arg);
           if (!to) {
             if (here()) done();
             return `This chat uses ${describePick(shownModel, catalog)}.`;

@@ -7,6 +7,7 @@ import { BOT_LOOK_SAME, BOT_PICTURE_MAX_BYTES, type BotLook } from "../hermes/bo
 import type { CapabilityStore } from "../hermes/capabilities";
 import { allSaved, editsOf, rebase, type EditResult, type Edits, type FieldOutcome } from "../hermes/fieldMerge";
 import type { CatalogProvider } from "../hermes/modelSettings";
+import { offeredProviders } from "../hermes/models";
 import { asReadBack, type PersonaApi, type Soul } from "../hermes/persona";
 import type { ProfileCloneApi } from "../hermes/profileClone";
 import type { BotSetupRefusal } from "../hermes/botSetupStart";
@@ -28,6 +29,7 @@ import {
 import { errorText } from "../hermes/values";
 import { useLocale, type Locale } from "../i18n/locale";
 import { Spinner, composing } from "./bits";
+import { useHiddenProviders } from "./modelLists";
 import { Menu } from "./ChatMenu";
 import { CloneProfileDialog } from "./CloneProfile";
 import { NewBot } from "./NewBot";
@@ -746,19 +748,22 @@ function ModelPicker({
   const l = useLocale();
   const f = l.profiles.form;
   const listId = useId();
+  const hidden = useHiddenProviders();
   const providers = catalog ?? [];
-  const known = providers.some((p) => p.slug === provider);
-  const models = providers.find((p) => p.slug === provider)?.models ?? [];
+  const offered = offeredProviders(providers, hidden);
+  const known = offered.some((p) => p.slug === provider);
+  const hiddenName = hidden.has(provider) ? (providers.find((p) => p.slug === provider)?.name ?? provider) : undefined;
+  const models = hiddenName === undefined ? (providers.find((p) => p.slug === provider)?.models ?? []) : [];
   return (
     <div className="profile-model" role="group" aria-labelledby={labelId}>
       <select aria-label={f.provider} value={provider} disabled={disabled} onChange={(e) => onChange(e.target.value, "")}>
         {optional && <option value="">{f.noProvider}</option>}
         {provider && !known && (
           <option value={provider} translate="no">
-            {provider}
+            {hiddenName === undefined ? provider : f.hiddenProvider(hiddenName)}
           </option>
         )}
-        {providers.map((p) => (
+        {offered.map((p) => (
           <option key={p.slug} value={p.slug} translate="no">
             {p.name}
           </option>
@@ -770,6 +775,7 @@ function ModelPicker({
           <option key={m} value={m} />
         ))}
       </datalist>
+      {hiddenName !== undefined && <div className="small muted profile-model-note">{f.hiddenProviderNote(hiddenName)}</div>}
     </div>
   );
 }

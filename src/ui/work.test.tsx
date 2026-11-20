@@ -9,6 +9,8 @@ import { NoKanbanPlugin, type Board } from "../hermes/kanban";
 import { RestError } from "../hermes/pipe";
 import { connect, type Hermes } from "../hermes/transport";
 import { Main } from "../App";
+import { connectionScope } from "../hermes/connections";
+import { setProviderHidden } from "../hermes/uiPrefs";
 import { Work, type WorkApi } from "./Work";
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }));
@@ -385,6 +387,17 @@ describe("planning on the Work page (issue #604)", () => {
     await within(sheet).findByText("Comments");
     expect(within(sheet).queryByRole("region", { name: "Bot and model" })).toBeNull();
     expect(within(sheet).getByText("A running card can't be made to wait on another card.")).toBeTruthy();
+  });
+
+  it("offers no model of a provider hidden in Highwing's model lists (ADR 0235), keeping a card's model already on one", async () => {
+    setProviderHidden(connectionScope({ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }), "openrouter", true);
+    const { user, s, build } = await openPlanned();
+    Object.assign(s.kanban.find(build.id)!, { model_override: "qwen/qwen3-coder", provider_override: "openrouter" });
+    const picks = within(await sheetOf(user, "Build it")).getByRole("region", { name: "Bot and model" });
+    const model = within(picks).getByRole<HTMLSelectElement>("combobox", { name: "Model" });
+    await waitFor(() => expect([...model.options].map((o) => o.textContent)).toEqual(["Bot's default model", "qwen/qwen3-coder (OpenRouter, hidden in Highwing)", "claude-sonnet-5-5", "claude-opus-5-5"]));
+    expect([...model.querySelectorAll("optgroup")].map((g) => g.label)).toEqual(["Anthropic"]);
+    expect(s.kanban.writes).toEqual([]);
   });
 
   it("offers a typed model when Hermes has no model list", async () => {

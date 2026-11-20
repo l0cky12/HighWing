@@ -1,7 +1,7 @@
 import { type KeyboardEvent, type ReactNode, type RefObject, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Link2, X } from "lucide-react";
 import { argProblem, commandSet, completion, type CommandDef, type CommandSet } from "../hermes/commands";
-import { pickerRows, shortName, type ModelCatalog, type ModelPick } from "../hermes/models";
+import { pickerRows, shortName, type HiddenProviders, type ModelCatalog, type ModelPick } from "../hermes/models";
 import { dollarQuery, matchSkills, skillRun, type SkillCommand, type SkillCommands, type SkillRun } from "../hermes/skillCommands";
 import { atQuery, matchChats, type ReferableChat } from "../hermes/chatReferences";
 import { completeMention, matchBots, withoutPick } from "../hermes/mentionPicker";
@@ -23,8 +23,8 @@ export type CommandHost = {
   commands?: CommandSet;
   /** Why `def` can't run now (with `arg`, when the owner is running it), or undefined when it can. */
   why(def: CommandDef, arg?: string): string | undefined;
-  /** What `/model` suggests: the chat's models, the starred ones, and the one in use. */
-  models?: { catalog?: ModelCatalog; favorites: readonly string[]; current?: ModelPick };
+  /** What `/model` suggests: the chat's models, the starred ones, the one in use, and the providers hidden (ADR 0235). */
+  models?: { catalog?: ModelCatalog; favorites: readonly string[]; current?: ModelPick; hidden?: HiddenProviders };
   /** Opens the compatibility guide at Hermes's commands; set only while Hermes is known to lack them. */
   guide?: () => void;
   run(def: CommandDef, arg: string, still: () => boolean): Promise<string | undefined>;
@@ -83,7 +83,7 @@ const APP_COMMANDS = commandSet();
 /** What follows `def`'s name in the menu for `query`: its subcommands, or the models for `/model`. */
 function argRows(def: CommandDef, query: string, models: CommandHost["models"]): Row[] {
   if (def.suggests === "models")
-    return pickerRows(models?.catalog, [...(models?.favorites ?? [])], query)
+    return pickerRows(models?.catalog, [...(models?.favorites ?? [])], query, models?.hidden)
       .flatMap((s) => s.rows)
       .filter((r) => r.option.available)
       .map((r) => ({

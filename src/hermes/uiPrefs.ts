@@ -1,7 +1,7 @@
 // Display preferences for this computer: the theme, whether the last chat reopens at launch and which chat each profile
 // had open, whether reasoning shows, how much shows under each message, the model last picked and the starred models,
 // which items the status bar shows, the preview pane's and chat list's widths, the app's zoom, which computer the Terminal opens
-// on, what sending does while a reply runs, whether message boxes check spelling, Idle compaction, which of the chat
+// on, which providers the model lists hide, what sending does while a reply runs, whether message boxes check spelling, Idle compaction, which of the chat
 // list's sections show and which are collapsed, and the keyboard shortcuts the owner changed. All preferences live in one
 // versioned localStorage document.
 // it (chatCache.ts) and later settings add fields here rather than new keys. Nothing here goes to Hermes. Every
@@ -93,6 +93,11 @@ export type UIPrefs = {
    * entry: not set, so a bot with no model pinned on the server writes with its own main model (ADR 0209).
    */
   writingModels: Record<string, WritingPick>;
+  /**
+   * The providers hidden from Highwing's model lists, by slug, per connection, keyed by `connectionScope` (ADR 0235).
+   * No entry: every provider shows, so one Hermes lists for the first time shows too. Nothing here reaches Hermes.
+   */
+  hiddenProviders: Record<string, string[]>;
 };
 
 export type FollowUp = "queue" | "steer";
@@ -152,6 +157,7 @@ export const DEFAULT_UI_PREFS: Readonly<UIPrefs> = Object.freeze({
   jobRunNotices: true,
   keybindings: Object.freeze({}) as Record<string, string[]>,
   writingModels: Object.freeze({}) as Record<string, WritingPick>,
+  hiddenProviders: Object.freeze({}) as Record<string, string[]>,
 });
 
 /** A stored document as read, before its fields are checked. */
@@ -306,6 +312,22 @@ function toWritingModels(v: unknown): Record<string, WritingPick> | undefined {
   );
 }
 
+const HIDDEN_SCOPES_LIMIT = 50;
+const HIDDEN_PROVIDERS_LIMIT = 200;
+
+function toHiddenProviders(v: unknown): Record<string, string[]> | undefined {
+  if (!isDoc(v)) return undefined;
+  return Object.fromEntries(
+    Object.entries(v)
+      .slice(-HIDDEN_SCOPES_LIMIT)
+      .flatMap(([scope, raw]) => {
+        if (!nonEmptyText(scope, 400) || !Array.isArray(raw)) return [];
+        const slugs = [...new Set(raw.filter((s): s is string => nonEmptyText(s, 200) !== undefined && !s.includes("/")))].slice(0, HIDDEN_PROVIDERS_LIMIT);
+        return slugs.length ? [[scope, slugs]] : [];
+      }),
+  );
+}
+
 /** The prefs `doc` holds, each field that is missing or not a valid value taken from `d`: the defaults, unless given. */
 export function readUIPrefs(doc: UIPrefsDoc, d: Readonly<UIPrefs> = DEFAULT_UI_PREFS): UIPrefs {
   const pick = toModelPick(doc.modelPicker);
@@ -342,6 +364,7 @@ export function readUIPrefs(doc: UIPrefsDoc, d: Readonly<UIPrefs> = DEFAULT_UI_P
     jobRunNotices: typeof doc.jobRunNotices === "boolean" ? doc.jobRunNotices : d.jobRunNotices,
     keybindings: toKeybindings(doc.keybindings) ?? { ...d.keybindings },
     writingModels: toWritingModels(doc.writingModels) ?? { ...d.writingModels },
+    hiddenProviders: toHiddenProviders(doc.hiddenProviders) ?? { ...d.hiddenProviders },
   };
 }
 
@@ -449,6 +472,22 @@ export function setUIPrefs(patch: Partial<UIPrefs>): boolean {
 export function toggleModelFavorite(key: string): void {
   const favorites = getUIPrefs().modelFavorites;
   setUIPrefs({ modelFavorites: favorites.includes(key) ? favorites.filter((k) => k !== key) : [...favorites, key] });
+}
+
+/** The providers hidden from the model lists on the connection `scope`. */
+export function hiddenProvidersOf(prefs: Readonly<UIPrefs>, scope: string | undefined): ReadonlySet<string> {
+  return new Set(scope === undefined ? [] : prefs.hiddenProviders[scope]);
+}
+
+/** Hides `provider` from the model lists on the connection `scope`, or shows it again. Nothing else changes. */
+export function setProviderHidden(scope: string, provider: string, hide: boolean): boolean {
+  const all = getUIPrefs().hiddenProviders;
+  const now = all[scope] ?? [];
+  const next = hide ? [...new Set([...now, provider])] : now.filter((s) => s !== provider);
+  const rest = { ...all };
+  if (next.length) rest[scope] = next;
+  else delete rest[scope];
+  return setUIPrefs({ hiddenProviders: rest });
 }
 
 /** Another window changed the stored document. `key` null: that window cleared all of localStorage. */

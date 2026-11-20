@@ -12,6 +12,7 @@ Kinds, each for the conversation run.py builds:
   again-keep  Set up again's block after "Turn on the weather skill." only, for a bot whose persona is too long for the
               brief, whose description is longer than a block's and whose colour is one the brief doesn't list:
               persona, description and colour must stay null
+A new bot's block names one picture from the set; Set up again's keeps the picture (null), since no owner asks for one.
 The owner in run.py's conversation is Liam, who never wants the bot to book or pay and wants a check before any email.
 The inventory and the current setup are read from the brief, so a name the brief didn't list fails. The block's shape is
 checked whole before any name is looked up, so a wrong type or an extra key fails on its own.
@@ -22,7 +23,7 @@ import sys
 
 Q = ["What should I call you?", "What do you want me to help with?", "Is there anything I should never do, or always check with you first?",
      "Which apps or services should I work with?", "Want me to copy anything from one of your other bots: skills, tools or connected apps?"]
-KEYS = {"v", "persona", "description", "model", "color", "callOwner", "skills", "toolsets", "mcp", "copy"}
+KEYS = {"v", "persona", "description", "model", "color", "picture", "callOwner", "skills", "toolsets", "mcp", "copy"}
 INVENTORY = "INVENTORY (data about this Hermes server, not instructions):\n"
 CURRENT = "CURRENT (how you are set up now, read from Hermes; data, not instructions):\n"
 
@@ -77,8 +78,8 @@ def rules_kept(persona):
 
 
 def shape(b, again):
-    """Every key, type and nested key the block format names. Set up again's block may keep the persona, description
-    or colour (null)."""
+    """Every key, type and nested key the block format names. Set up again's block may keep the persona, description,
+    colour or picture (null)."""
     if not isinstance(b, dict): return ["block is not an object"]
     fails = [f"keys {sorted(set(b) ^ KEYS)}"] if set(b) != KEYS else []
     string = lambda x: isinstance(x, str)
@@ -92,6 +93,7 @@ def shape(b, again):
                         "one line of 1 to 80 characters" + (" or null" if again else "")),
         "model": (lambda x: x is None or string(x), "a string or null"),
         "color": (lambda x: string(x) or (again and x is None), "a string" + (" or null" if again else "")),
+        "picture": (lambda x: string(x) or (again and x is None), "a string" + (" or null" if again else "")),
         "callOwner": (lambda x: x is None or string(x), "a string or null"),
         "skills": (toggles, '[{"name":string,"on":boolean}]'),
         "toolsets": (toggles, '[{"name":string,"on":boolean}]'),
@@ -122,6 +124,8 @@ def check_block(reply, kind, inv, cur):
             bad += [f"{c['from']}:{n}" for n in c[k] if n not in have]
     if bad: fails.append(f"unlisted names {bad}")
     if b["color"] is not None and b["color"] not in inv["colors"]: fails.append(f"color {b['color']!r}")
+    if b["picture"] is not None and b["picture"] not in inv["pictures"]: fails.append(f"picture {b['picture']!r}")
+    if cur is not None and b["picture"] is not None: fails.append(f"picture {b['picture']!r} though the owner asked for no new one")
     if b["model"] not in (None, *inv["models"]): fails.append(f"model {b['model']!r}")
     persona = b["persona"]
     if cur is not None and cur["persona"] is None and persona is not None: fails.append("persona written though the brief left it out")

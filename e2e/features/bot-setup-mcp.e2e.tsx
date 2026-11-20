@@ -14,6 +14,7 @@ const BLOCK: BotSetupNewBlock = {
   description: "Plans trips: trains, places to stay and day plans.",
   model: null,
   color: "teal",
+  picture: null,
   callOwner: null,
   skills: [],
   toolsets: [],

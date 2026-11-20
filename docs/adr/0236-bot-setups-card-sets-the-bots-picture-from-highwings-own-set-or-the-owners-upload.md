@@ -1,0 +1,34 @@
+# Bot setup's card sets the bot's picture, from Highwing's own set or the owner's upload
+
+> **Accepted.** Issue #86. It adds the picture to [ADR 0231](0231-new-bot-asks-only-for-a-name-the-bot-interviews-the-owner-in-its-bot-chat-and-one-card-sets-it-up.md)'s card, and saves it through [ADR 0189](0189-a-bot-save-writes-a-field-only-where-hermes-still-has-what-the-owner-saw.md)'s `Hermes.editBot`. The set's names are `BOT_SETUP_PICTURES` in `src/hermes/botSetupBrief.ts`, and its bytes are `src/assets/bot-pictures/`, drawn by `scripts/bot-pictures/render.mjs` from the SVGs beside it. `src/hermes/botPictures.ts` holds the picture keys. The Picture row is in `src/hermes/botSetupCard.ts` (`planBlock`), `src/hermes/botSetupApply.ts` (`readSetupNow`, `applyItem`) and `src/ui/BotSetupCard.tsx` (`PictureStrip`). Edit bot and the card share `src/ui/pictureFile.ts`. Tested in `src/hermes/botPictures.test.ts`, `src/hermes/botSetupBrief.test.ts`, `src/hermes/botSetupCard.test.ts`, `src/hermes/botSetupApply.transport.test.ts`, `src/ui/botSetupCard.test.tsx` and `e2e/features/bot-setup-card.e2e.tsx`.
+
+Bot setup's card set a bot's persona, description, model, colour, skills, tools and connected apps, but not its picture. A new bot then needed a trip to Edit bot. The owner decided on 2026-11-19 that the card sets the picture too. The bot suggests one from a small set of pictures Highwing ships. The owner can pick another from the set or upload their own. The interview keeps its five questions.
+
+## Decisions
+
+- **The set is Highwing's own.** Twelve pictures made for this app: plane, moon, book, leaf, rocket, compass, music, chart, code, paw, pot and sun. Each is a 256×256 PNG under 11 KB, drawn as an SVG in `scripts/bot-pictures/` and rendered with no metadata, so a render gives the same bytes every time. The name is the picture's stable id. The set is not Hermes's desktop shape faces: Highwing doesn't draw those, and writing the block's `shape` key would edit a desktop key that ADR 0189 leaves alone.
+- **The bot only names one.** The brief lists the set under INVENTORY `pictures`. A new bot's block carries one name (`"picture": "plane"`), never image data or a URL. Set up again's block carries null to keep the picture, and CURRENT says which picture the bot has: a name from the set, `"own"` for any other picture, or null. A name the set doesn't have shows as not found and can't be ticked, as for skills and models. A value that isn't a string makes the block unreadable.
+- **A picture is compared by a key, never by its bytes in the plan.** `set:<name>` for a picture of the set and `photo:<hash>` for any other bytes. Both are made from the bytes alone, since Hermes labels a picture by the format it sniffs. So the plan, the accepted record and the hidden ready turn hold a key of at most 22 characters, and no image data reaches the bot. A picture read from Hermes whose bytes are one of the set's is that set picture.
+- **It is saved as a real picture.** Set it up stores the chosen picture's bytes as the profile's avatar through `Hermes.editBot`: `profiles.set_asset`, then `custom: true` and `imageKind: "photo"` in the Bot Mode block. The bytes are read back with `profiles.get_asset`, and the row reads applied once they match. Every Hermes client then shows the picture. A write that fails shows Hermes's reason with Try again (ADR 0197).
+- **The bytes come only from the app.** They are the set's own, or the owner's upload. An upload follows Edit bot's rules (PNG, JPEG or WebP, up to 2 MB) and is kept in the card's memory by its key until Set it up sends it, like a key Connect takes (ADR 0231 owner call 4). If the owner leaves the card before Set it up, the app drops the upload. The row then fails with "Upload it again", and nothing is sent.
+- **The row is unavailable where Hermes can't save a picture.** That is a Hermes that lacks `profiles.set_asset` or `profiles.configure`, or that reports no Bot Mode revisions. The row says why, can't be ticked, and the other items still apply. A picture Highwing can't read makes the row unavailable the same way.
+- **Set up again keeps the picture.** The bot is told to propose a new picture only when the owner asks for one. A kept picture is a row with nothing to change. It is unticked, and it is folded under "N more that don't change". A changed picture shows before → after, with "before" read from Hermes when the card is drawn.
+- **The strip is the row's editor.** Under the row, the set shows as a strip of radio buttons with the bot's pick marked. The picture Hermes has now and the owner's upload follow the set when they aren't part of it. The arrow keys move the pick. Choosing a picture ticks the row. Each picture's name and a short reason for it ("For travel and trips.") come from the catalogue (ADR 0100).
+- **No interview question.** The five questions stay as ADR 0231 fixes them. The bot picks from what the bot is for.
+- **A block drawn before the picture was added still reads.** It has no `picture` key, and it keeps the picture.
+
+## Considered options
+
+Mockups of the first three were shown to the owner on 2026-11-19.
+
+- **Upload on the card only.** The least to build. Rejected because most new bots would end up with no picture: the owner rarely has a file ready during setup. It survives as Upload your own….
+- **The bot makes one with Hermes's image tool (`image.generate`), after a sixth interview question.** Rejected for now. It needs an image service set up in Hermes and costs money on each try. It takes 40 to 60 s on a remote service. Its results differ every time, so tests would need a stand-in. Hermes may send up to 8 MB, against the picture's 2 MB limit. It also changes the fixed five questions. It could come back as a **Make one** button that shows only when Hermes reports an image tool.
+- **Hermes's desktop shape faces.** Rejected: Highwing doesn't draw them, and the `shape` key is the desktop's.
+- **Carry the picture's bytes in the plan as a data URL.** Rejected: the accepted record rides in the hidden ready turn, which the model reads, and a picture can be 2 MB.
+
+## Consequences
+
+- The app bundle carries the set as inlined data URLs, about 100 KB.
+- A bot made with Bot setup has a picture in every Hermes client, and its Bot Mode block gets `custom: true`, as an Edit bot picture save already does.
+- The brief's wording changed, so `tools/bot-setup-brief/` checks the new key: a new bot names one picture from the set, and Set up again keeps it. Its run against `gpt-6.1-sol` on 2026-11-20 scored 38 of 38. Every new-bot card picked `plane` for the travel bot, and every Set up again card kept the picture. As in ADR 0231, those runs went through Codex's agent prompt, not Hermes's.
+- An upload doesn't survive leaving the card, the same as Connect's keys.

@@ -8,6 +8,7 @@ import "../src/styles.css";
 import type { Chat, Item } from "../src/hermes/model";
 import { AttachmentDesk } from "../src/hermes/attachmentDesk";
 import { ChatPane } from "../src/ui/ChatPane";
+import { TableView } from "../src/ui/DocumentView";
 import { Split } from "../src/ui/Split";
 import { PaneDrop, TabStrip } from "../src/ui/Tabs";
 import { codeReply, makeChat, makeReply } from "./fixture";
@@ -398,4 +399,33 @@ const dragWatch = {
   },
 };
 
-Object.assign(window, { bench: { open, stream, streamCode, hostile, hostileOpen, hostileStream, find, scroll, splitOpen, splitStream, splitResize, dragWatch } });
+/**
+ * Opens a CSV of `rows` rows and `cols` columns in the Preview's table (ADR 0236), then selects every cell with Ctrl+A
+ * and grows the selection by a row with Shift+ArrowDown. Each time is until painted.
+ */
+async function table(rows: number, cols: number) {
+  root.render(<></>);
+  await painted();
+  const cells = Array.from({ length: rows + 1 }, (_, r) => Array.from({ length: cols }, (_, c) => (r === 0 ? `Column ${c}` : `r${r}c${c} value`)));
+  const t0 = performance.now();
+  flushSync(() =>
+    root.render(
+      <div style={{ height: 900, display: "flex", flexDirection: "column" }}>
+        <TableView key={++opened} table={{ delimiter: ",", rows: cells, width: cols, cut: false }} text="" size={0} truncated={false} />
+      </div>,
+    ),
+  );
+  const openMs = Math.round((await painted()) - t0);
+  const grid = document.querySelector<HTMLElement>("[role=grid]")!;
+  const key = async (init: KeyboardEventInit) => {
+    const t = performance.now();
+    flushSync(() => grid.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, ...init })));
+    return Math.round((await painted()) - t);
+  };
+  const selectAllMs = await key({ key: "a", ctrlKey: true });
+  await key({ key: "ArrowUp" });
+  const extendMs = await key({ key: "ArrowDown", shiftKey: true });
+  return { rows, cols, drawn: document.querySelectorAll("td, th").length, nodes: document.getElementsByTagName("*").length, openMs, selectAllMs, extendMs };
+}
+
+Object.assign(window, { bench: { table, open, stream, streamCode, hostile, hostileOpen, hostileStream, find, scroll, splitOpen, splitStream, splitResize, dragWatch } });

@@ -10,7 +10,7 @@ import { FakeHermes, row } from "../hermes/fakeHermes";
 import { fakeZip } from "../hermes/fakeZip";
 import { connect, type Hermes } from "../hermes/transport";
 import { getUIPrefs } from "../hermes/uiPrefs";
-import type { FileView, Framing, ViewUrl } from "../hermes/preview";
+import { readLocalFile, type FileView, type Framing, type ViewUrl } from "../hermes/preview";
 import type { Answer, Pick, Still } from "../hermes/annotations";
 import {
   ServerPageError,
@@ -57,6 +57,11 @@ const bombDocx = fakeZip([{ name: "word/document.xml", data: new Uint8Array(101 
   Buffer.from(zip).toString("latin1"),
 );
 
+/** A CSV whose quoted fields hold a comma, quotes and a line break. */
+const SALES = 'region,note,total\r\n"North, East","said ""hi""\nthen left",12\r\nSouth,,7\r\n';
+/** A CSV of 1,500 rows of 20 columns: 30,000 cells, past the 10,000 the table draws. */
+const WIDE = Array.from({ length: 1501 }, (_, r) => Array.from({ length: 20 }, (_, c) => (r ? `${r}.${c}` : `col${c}`)).join(",")).join("\n");
+
 /** A local disk the Open dialog picks from: `pick` is what the owner picks next (null cancels). */
 function localDisk(files: Record<string, FileView | Error>) {
   const local: LocalFiles & { next: { path: string; name: string } | null } = {
@@ -71,6 +76,13 @@ function localDisk(files: Record<string, FileView | Error>) {
   };
   return local;
 }
+
+/** Rust's reads of a picked file, as `readLocalFile` takes them, for a text file holding `text`. */
+const localText = (text: string) => ({
+  readText: async () => ({ size: text.length, truncated: false, binary: false, text }),
+  readImage: async () => Promise.reject(new Error("not an image")),
+  readDocument: async () => Promise.reject(new Error("not a document")),
+});
 
 function theWeb(answers: Record<string, Framing | Error | Promise<Framing>> = {}, openFails?: string) {
   const web: WebPages & {
@@ -222,6 +234,8 @@ async function signedIn({ local = localDisk({}), web = theWeb(), pages = theServ
     "/home/lena/app/notes.pdf": "<html>not a pdf",
     "/home/lena/app/bomb.docx": await bombDocx,
     "/home/lena/app/.env": "SECRET=1",
+    "/home/lena/app/sales.csv": SALES,
+    "/home/lena/app/wide.csv": WIDE,
   };
   const hermes = await connect(server.openPipe);
   const user = userEvent.setup();
@@ -440,6 +454,95 @@ describe("What the pane shows", () => {
     await user.click(within(pane()).getByRole("menuitem", { name: "Open a file on this computer…" }));
     expect((await within(pane()).findByRole("alert")).textContent).toContain("Permission denied (os error 13)");
     expect(button("Back").disabled).toBe(false);
+  });
+});
+
+describe("A CSV file as a table (issue #30)", () => {
+  async function openCsv(path: string) {
+    const s = await signedIn();
+    await s.user.click(screen.getByRole("button", { name: "Open the side panel" }));
+    await s.user.click(screen.getByRole("button", { name: "Preview" }));
+    await s.user.type(address(), `${path}{Enter}`);
+    return { ...s, grid: await within(pane()).findByRole("grid") };
+  }
+  const cell = (grid: HTMLElement, text: string) => within(grid).getByText((_, el) => /^T[DH]$/.test(el?.tagName ?? "") && el!.textContent === text);
+  const selected = (grid: HTMLElement) => [...grid.querySelectorAll("[aria-selected=true]")].map((c) => c.textContent);
+  /** What the table copies. After sign-in, since `userEvent.setup()` puts a clipboard of its own on `navigator`. */
+  function clipboard() {
+    const copied: string[] = [];
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (t: string) => void copied.push(t) } });
+    return copied;
+  }
+
+  it("shows the header row, and quoted commas, quotes and line breaks in their own cells", async () => {
+    const { grid } = await openCsv("/home/lena/app/sales.csv");
+    expect(within(grid).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["region", "note", "total"]);
+    const rows = within(grid).getAllByRole("row").slice(1);
+    expect(rows.map((r) => [...r.children].map((c) => c.textContent))).toEqual([
+      ["North, East", 'said "hi"\nthen left', "12"],
+      ["South", "", "7"],
+    ]);
+    expect(within(pane()).getByText("CSV · 71 B · 2 rows · 3 columns")).toBeTruthy();
+    expect(within(pane()).queryByText(/Showing the first/)).toBeNull();
+  });
+
+  it("says how many rows it shows of a file past the cap, and Open as text shows the file's text", async () => {
+    const { user, grid } = await openCsv("/home/lena/app/wide.csv");
+    expect(within(pane()).getByText("Showing the first 500 rows of 1,500.")).toBeTruthy();
+    expect(within(grid).getAllByRole("row")).toHaveLength(501);
+    expect(grid.querySelectorAll("td")).toHaveLength(10_000);
+
+    await user.click(button("Open as text"));
+    expect(within(pane()).queryByRole("grid")).toBeNull();
+    expect(pane().querySelector("pre")!.textContent).toBe(WIDE);
+    expect(button("Open as table").getAttribute("aria-pressed")).toBe("true");
+    await user.click(button("Open as table"));
+    expect(within(pane()).getByRole("grid")).toBeTruthy();
+  });
+
+  it("copies a range of cells dragged across as tab-separated text, quoting a cell with a quote or line break", async () => {
+    const { grid } = await openCsv("/home/lena/app/sales.csv");
+    const copied = clipboard();
+    fireEvent.mouseDown(cell(grid, "region"));
+    fireEvent.mouseOver(cell(grid, "12"), { buttons: 1 });
+    expect(selected(grid)).toEqual(["region", "note", "total", "North, East", 'said "hi"\nthen left', "12"]);
+    expect(document.activeElement).toBe(grid);
+    fireEvent.keyDown(grid, { key: "c", ctrlKey: true });
+    await waitFor(() => expect(copied).toEqual(['region\tnote\ttotal\nNorth, East\t"said ""hi""\nthen left"\t12']));
+  });
+
+  it("selects with Shift+click, the arrow keys and Ctrl+A, and copies what's selected", async () => {
+    const { grid } = await openCsv("/home/lena/app/sales.csv");
+    const copied = clipboard();
+    fireEvent.mouseDown(cell(grid, "South"));
+    fireEvent.mouseDown(cell(grid, "note"), { shiftKey: true });
+    expect(selected(grid)).toEqual(["region", "note", "North, East", 'said "hi"\nthen left', "South", ""]);
+
+    fireEvent.keyDown(grid, { key: "ArrowRight" });
+    fireEvent.keyDown(grid, { key: "ArrowDown", shiftKey: true });
+    fireEvent.keyDown(grid, { key: "ArrowRight", shiftKey: true });
+    expect(selected(grid)).toEqual(["total", "12"]);
+    fireEvent.keyDown(grid, { key: "c", metaKey: true });
+    await waitFor(() => expect(copied).toEqual(["total\n12"]));
+
+    fireEvent.keyDown(grid, { key: "a", ctrlKey: true });
+    expect(selected(grid)).toHaveLength(9);
+    fireEvent.keyDown(grid, { key: "c", ctrlKey: true });
+    await waitFor(() => expect(copied[1]).toBe('region\tnote\ttotal\nNorth, East\t"said ""hi""\nthen left"\t12\nSouth\t\t7'));
+    fireEvent.keyDown(grid, { key: "Escape" });
+    expect(selected(grid)).toEqual([]);
+  });
+
+  it("shows a CSV picked on this computer as a table", async () => {
+    const local = localDisk({ "/home/me/scores.tsv": await readLocalFile({ path: "", name: "scores.tsv" }, localText("name\tscore\nJo\t7\n")) });
+    const { user } = await signedIn({ local });
+    await user.click(screen.getByRole("button", { name: "Open the side panel" }));
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    local.next = { path: "/home/me/scores.tsv", name: "scores.tsv" };
+    await user.click(button("Open a file on this computer…"));
+    const grid = await within(pane()).findByRole("grid");
+    expect(within(grid).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["name", "score"]);
+    expect(within(pane()).getByText("Tab-separated · 16 B · 1 row · 2 columns")).toBeTruthy();
   });
 });
 

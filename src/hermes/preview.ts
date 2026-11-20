@@ -9,7 +9,7 @@ import { RestError, sessionNotFound } from "./pipe";
 import { IMAGE_DATA_URL, SANDBOX_MISSING, SANDBOX_NOT_FOUND_PREFIX, type RemotePreview } from "./remoteFiles";
 import type { ArtifactRef } from "./artifacts";
 import { errorText } from "./values";
-import { dataUrlBytes, documentFormatOf, looksLike, notA, type DocumentFormat } from "./documents";
+import { dataUrlBytes, documentFormatOf, looksLike, notA, parseTable, type DocumentFormat, type Table } from "./documents";
 
 export type PreviewTarget =
   /**
@@ -38,12 +38,14 @@ export type PreviewTarget =
 /**
  * A file as the pane shows it. `text`: its first part when `truncated`; `format` picks the view: Markdown and HTML
  * have a rendered view beside the source. `image`: a `data:` or `blob:` URL of an image. `document`: a PDF or Word
- * file's bytes, whose first bytes say it is one (documents.ts). `unsupported`: why the pane can't show it.
+ * file's bytes, whose first bytes say it is one (documents.ts). `table`: a CSV or TSV file, parsed from `text`, which
+ * is its first part when `truncated`. `unsupported`: why the pane can't show it.
  */
 export type FileView =
   | { kind: "text"; text: string; language: string; format: "markdown" | "html" | "code"; size: number; truncated: boolean }
   | { kind: "image"; src: string; size?: number }
   | { kind: "document"; format: DocumentFormat; bytes: Uint8Array; size: number }
+  | { kind: "table"; table: Table; text: string; size: number; truncated: boolean }
   | { kind: "unsupported"; reason: string; size?: number };
 
 /**
@@ -335,6 +337,7 @@ const LANGUAGES: Record<string, string> = {
   // Plain text, named here so `previewKnows` takes them for files.
   txt: "",
   csv: "",
+  tsv: "",
 };
 /** Hermes's own `language` names (`_FS_PREVIEW_LANGUAGE_BY_EXT`) that highlight.js calls something else. */
 const SERVER_LANGUAGES: Record<string, string> = { html: "xml", jsx: "javascript", tsx: "typescript", shell: "bash", toml: "ini", text: "", csv: "" };
@@ -345,6 +348,13 @@ export const languageOf = (name: string) => LANGUAGES[extOf(name)] ?? "";
 export const previewKnows = (name: string) =>
   Object.hasOwn(LANGUAGES, extOf(name)) || IMAGE_NAME.test(name) || MARKDOWN_NAME.test(name) || HTML_NAME.test(name) || !!documentFormatOf(name);
 const formatOf = (name: string): "markdown" | "html" | "code" => (MARKDOWN_NAME.test(name) ? "markdown" : HTML_NAME.test(name) ? "html" : "code");
+const TABLE_NAME = /\.(csv|tsv)$/i;
+
+/** A file's text as the pane shows it: a CSV or TSV file as a table, anything else as text in `language`. */
+function textView(name: string, text: string, language: string, size: number, truncated: boolean): FileView {
+  if (TABLE_NAME.test(name)) return { kind: "table", table: parseTable(name, text, truncated), text, size, truncated };
+  return { kind: "text", text, language, format: formatOf(name), size, truncated };
+}
 
 /** Why a file that isn't text, an image or a document can't be shown. */
 function unsupported(mime: string | undefined, size?: number): FileView {
@@ -423,14 +433,7 @@ export async function readServerFile(get: (pathAndQuery: string) => Promise<unkn
   if (res.binary) return res.mimeType?.startsWith("image/") ? image(size) : unsupported(res.mimeType, size);
   const text = typeof res.text === "string" ? res.text : "";
   const lang = res.language ?? "";
-  return {
-    kind: "text",
-    text,
-    language: lang in SERVER_LANGUAGES ? SERVER_LANGUAGES[lang] : lang || languageOf(path),
-    format: formatOf(path),
-    size: size ?? text.length,
-    truncated: !!res.truncated,
-  };
+  return textView(path, text, lang in SERVER_LANGUAGES ? SERVER_LANGUAGES[lang] : lang || languageOf(path), size ?? text.length, !!res.truncated);
 }
 
 /** A file the managed files routes read (remoteFiles.ts `preview`), as the pane shows it. */
@@ -438,7 +441,7 @@ export function hostFileView(p: RemotePreview): FileView {
   if (p.kind === "image") return { kind: "image", src: p.dataUrl, size: p.size };
   if (p.kind === "document") return { kind: "document", format: p.format, bytes: p.bytes, size: p.size };
   if (p.kind === "binary") return unsupported(p.mime, p.size);
-  return { kind: "text", text: p.text, language: languageOf(p.name), format: formatOf(p.name), size: p.size, truncated: false };
+  return textView(p.name, p.text, languageOf(p.name), p.size, false);
 }
 
 /** A Local file's text as Rust reads it: its first 512 KB, and whether it looks binary. */
@@ -462,7 +465,7 @@ export async function readLocalFile(
   if (format) return documentView(format, await io.readDocument(file.path, format));
   const t = await io.readText(file.path);
   if (t.binary) return unsupported(undefined, t.size);
-  return { kind: "text", text: t.text, language: languageOf(file.name), format: formatOf(file.name), size: t.size, truncated: t.truncated };
+  return textView(file.name, t.text, languageOf(file.name), t.size, t.truncated);
 }
 
 /**

@@ -2268,6 +2268,17 @@ button.settings-search-tab:hover { color: var(--text); }
 .preview-foot { font-size: calc(12rem / 14); color: var(--faint); }
 .preview-pdf { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 14px; background: var(--raised); }
 .preview-pdf canvas { display: block; width: 100%; height: auto; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.25); }
+.preview-table { flex: 1; min-height: 0; overflow: auto; }
+.preview-table table { width: max-content; border-collapse: separate; border-spacing: 0; font-size: calc(var(--mono-size) - 0.5px); color: var(--text-2); user-select: none; }
+.preview-table table:focus { outline: none; }
+.preview-table th, .preview-table td {
+  padding: 3px 10px; max-width: 360px; text-align: left; vertical-align: top; white-space: pre-wrap; overflow-wrap: break-word;
+  border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
+}
+.preview-table th { position: sticky; top: 0; z-index: 1; background: var(--raised-2); color: var(--text); font-weight: 600; }
+.preview-table .selected { background: var(--accent-soft); }
+.preview-table th.selected { background: color-mix(in srgb, var(--accent) 22%, var(--raised-2)); }
+.preview-table-switch { margin-left: auto; font-size: calc(12rem / 14); }
 .preview-empty { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 64px 24px 20px; text-align: center; overflow-y: auto; }
 .preview-empty-icon {
   width: 54px; height: 46px; flex: none; border-radius: 12px; border: 1px solid var(--line-2); display: grid; place-items: center; color: var(--muted);

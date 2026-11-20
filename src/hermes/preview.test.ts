@@ -8,10 +8,12 @@ import {
   checkWebUrl,
   fenced,
   fromView,
+  hostFileView,
   linkTarget,
   loopbackOf,
   pageOn,
   parseAddress,
+  previewKnows,
   readLocalFile,
   sandboxedHtml,
   toolTargets,
@@ -325,6 +327,29 @@ describe("Reading a Server file", () => {
     expect(s.restRequests.filter((r) => r.path.startsWith("/api/fs"))).toEqual([]);
   });
 
+  it("reads a CSV file as a table with its header row (issue #30)", async () => {
+    const { s, hermes } = await server({ "/home/lena/out/sales.csv": 'region,total\n"North, East",12\n' });
+    expect(await hermes.readServerFile("/home/lena/out/sales.csv")).toEqual({
+      kind: "table",
+      table: { delimiter: ",", rows: [["region", "total"], ["North, East", "12"]], width: 2, cut: false },
+      text: 'region,total\n"North, East",12\n',
+      size: 30,
+      truncated: false,
+    });
+    expect(s.restRequests.at(-1)!.path).toBe("/api/fs/read-text");
+  });
+
+  it("reads a CSV past 512 KB as the rows in its first part, without the one cut short", async () => {
+    const big = "id,word\n" + Array.from({ length: 60_000 }, (_, i) => `${i},row${i}`).join("\n");
+    const { hermes } = await server({ "/home/lena/big.csv": big });
+    const v = await hermes.readServerFile("/home/lena/big.csv");
+    if (v.kind !== "table") throw new Error(`not a table: ${v.kind}`);
+    expect([v.truncated, v.table.cut, v.size, v.text.length]).toEqual([true, true, big.length, 512 * 1024]);
+    const whole = big.slice(0, 512 * 1024).split("\n").length - 1;
+    expect(v.table.rows.length).toBe(whole);
+    expect(v.table.rows.at(-1)).toEqual([String(whole - 2), `row${whole - 2}`]);
+  });
+
   it("doesn't show a data URL that isn't an image", async () => {
     const { s, hermes } = await server({ "/home/lena/fake.svg": "x" });
     s.rest["GET /api/fs/read-data-url"] = () => ({ dataUrl: "data:text/html;base64,PHNjcmlwdD4=" });
@@ -360,12 +385,33 @@ describe("Reading a Local file", () => {
     });
   });
 
+  it("reads a CSV or TSV file as a table", async () => {
+    expect(await readLocalFile({ path: "/home/lena/a.tsv", name: "a.tsv" }, io({ text: "a\tb\n1\t2\n", size: 8 }))).toMatchObject({
+      kind: "table",
+      table: { delimiter: "\t", rows: [["a", "b"], ["1", "2"]] },
+      truncated: false,
+    });
+    const cut = await readLocalFile({ path: "/home/lena/b.CSV", name: "b.CSV" }, io({ text: "a;b\n1;2\n3;", size: 9000, truncated: true }));
+    expect(cut).toMatchObject({ kind: "table", table: { delimiter: ";", rows: [["a", "b"], ["1", "2"]], cut: true }, size: 9000, truncated: true });
+  });
+
   it("won't show a binary file", async () => {
     expect(await readLocalFile({ path: "/home/lena/disk.img", name: "disk.img" }, io({ binary: true, size: 4096 }))).toEqual({
       kind: "unsupported",
       reason: "The preview can't show binary files.",
       size: 4096,
     });
+  });
+});
+
+describe("A file on the dashboard's machine (issue #30)", () => {
+  it("shows a CSV file as a table, and takes a .tsv name as one the Preview knows", () => {
+    expect(hostFileView({ kind: "text", path: "/srv/a.csv", name: "a.csv", size: 4, text: "a,b\n" })).toMatchObject({
+      kind: "table",
+      table: { rows: [["a", "b"]] },
+    });
+    expect(previewKnows("report.tsv")).toBe(true);
+    expect(previewKnows("report.csv")).toBe(true);
   });
 });
 

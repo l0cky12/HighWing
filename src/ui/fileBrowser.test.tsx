@@ -299,6 +299,22 @@ describe("Server files", () => {
   });
 });
 
+describe("Server files: a CSV file (issue #30)", () => {
+  it("previews a CSV file as a table with its header row, and Open as text shows its text", async () => {
+    const s = server();
+    s.managedFiles.nodes["/home/lena/sales.csv"] = { text: 'region;total\n"North; East";12\n' };
+    const { user } = await launch(s);
+    await openFiles(user);
+    await user.click(row_("sales.csv"));
+    const pane = await screen.findByRole("complementary", { name: "Preview of sales.csv" });
+    const grid = await within(pane).findByRole("grid");
+    expect(within(grid).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["region", "total"]);
+    expect([...within(grid).getAllByRole("row")[1].children].map((c) => c.textContent)).toEqual(["North; East", "12"]);
+    await user.click(within(pane).getByRole("button", { name: "Open as text" }));
+    expect(pane.querySelector(".preview-pre")?.textContent).toBe('region;total\n"North; East";12\n');
+  });
+});
+
 describe("Server files: Download", () => {
   const transfer = () => within(screen.getByRole("region", { name: "Transfers" }));
 

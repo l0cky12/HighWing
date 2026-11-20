@@ -90,3 +90,103 @@ export function dataUrlBytes(url: string): Uint8Array | undefined {
     return undefined;
   }
 }
+
+/** What separates the fields of a table file: a comma, a tab, or a semicolon, as Excel writes CSV where the decimal mark is a comma. */
+export type Delimiter = "," | "\t" | ";";
+
+/**
+ * A CSV or TSV file as rows of fields, the first its header. `width`: the most fields any row has. `cut`: the read
+ * stopped part way through the file, so its last row, likely incomplete, was dropped.
+ */
+export type Table = { delimiter: Delimiter; rows: string[][]; width: number; cut: boolean };
+
+/**
+ * The rows of delimited text, read as RFC 4180 says: a field in double quotes holds delimiters, line breaks and quotes
+ * written twice. It is lenient where a bot's file breaks the rules: a quote inside an unquoted field is kept as it is,
+ * text after a closing quote joins the field, and a quote never closed runs to the end. A blank line is no row, and a
+ * leading byte-order mark is no text. `ended`: the text stops at the end of a row, not part way through one.
+ */
+export function parseDelimited(text: string, delimiter: Delimiter, maxRows = Infinity): { rows: string[][]; ended: boolean } {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let at = text.charCodeAt(0) === 0xfeff ? 1 : 0;
+  const endRow = () => {
+    row.push(field);
+    if (row.length > 1 || row[0] !== "") rows.push(row);
+    row = [];
+    field = "";
+  };
+  while (at < text.length && rows.length < maxRows) {
+    if (text[at] === '"' && field === "") {
+      for (at++; ; ) {
+        const close = text.indexOf('"', at);
+        if (close < 0) {
+          field += text.slice(at);
+          at = text.length;
+          break;
+        }
+        field += text.slice(at, close);
+        at = close + 1;
+        if (text[at] !== '"') break;
+        field += '"';
+        at++;
+      }
+      continue;
+    }
+    let stop = at;
+    while (stop < text.length && text[stop] !== delimiter && text[stop] !== "\n" && text[stop] !== "\r") stop++;
+    field += text.slice(at, stop);
+    at = stop;
+    if (at === text.length) break;
+    if (text[at] === delimiter) {
+      row.push(field);
+      field = "";
+      at++;
+      continue;
+    }
+    at += text[at] === "\r" && text[at + 1] === "\n" ? 2 : 1;
+    endRow();
+  }
+  const ended = row.length === 0 && field === "";
+  if (!ended && rows.length < maxRows) endRow();
+  return { rows, ended };
+}
+
+/** The rows sampled to tell a file's delimiter. */
+const SAMPLE_ROWS = 20;
+
+/**
+ * The delimiter a table file uses: a tab for a `.tsv`, and otherwise whichever of comma, tab and semicolon splits its
+ * first rows into the same number of fields, more than one. When none does, the one that splits the header into the
+ * most fields, and a comma when nothing splits it.
+ */
+export function delimiterOf(name: string, text: string): Delimiter {
+  if (/\.tsv$/i.test(name)) return "\t";
+  let best: Delimiter = ",";
+  let bestScore = 0;
+  for (const d of [",", "\t", ";"] as const) {
+    const { rows, ended } = parseDelimited(text.slice(0, 64 * 1024), d, SAMPLE_ROWS);
+    // The sample can stop part way through its last row.
+    if (!ended && rows.length > 1) rows.pop();
+    const width = rows[0]?.length ?? 0;
+    const score = width < 2 ? 0 : width + (rows.every((r) => r.length === width) ? 1e6 : 0);
+    if (score > bestScore) [best, bestScore] = [d, score];
+  }
+  return best;
+}
+
+/** A CSV or TSV file's text as a table. `cut`: the text is only the file's first part. */
+export function parseTable(name: string, text: string, cut: boolean): Table {
+  const delimiter = delimiterOf(name, text);
+  const { rows, ended } = parseDelimited(text, delimiter);
+  if (cut && !ended) rows.pop();
+  return { delimiter, rows, width: rows.reduce((w, r) => Math.max(w, r.length), 0), cut };
+}
+
+/**
+ * Cells as tab-separated text, the way a spreadsheet copies them, so they paste back into one cell for cell. A cell
+ * holding a tab, a line break or a quote goes in quotes, with its quotes written twice.
+ */
+export const asTsv = (cells: string[][]) =>
+  cells.map((r) => r.map((c) => (/[\t\n\r"]/.test(c) ? `"${c.replace(/"/g, '""')}"` : c)).join("\t")).join("\n");

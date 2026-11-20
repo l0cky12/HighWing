@@ -24,8 +24,8 @@ Preconditions:
 - Chat `vpn` ("Why is the VPN slow", Archived) holds the text `MTU 1500 on a 1420 tunnel`.
 
 - **Open with Ctrl+K.** Run `$S/wd.mjs press Control+k`, then `$S/wd.mjs wait '[role=dialog][aria-label="Search chats"]'`. The input `Words to search for` (placeholder "Search all chats, including Archived") has focus.
-- **Body match.** Run `$S/wd.mjs keys MTU`, then `$S/wd.mjs wait .hit-row "Why is the VPN slow"`, then `$S/wd.mjs shot 08-search`. The hit reads "Why is the VPN slow · Archived · 2d · MTU 1500 on a 1420 tunnel…", and it is the only `.hit-row`.
-- **Open the hit.** Run `$S/wd.mjs press Enter`, then `$S/wd.mjs gone '[role=dialog][aria-label="Search chats"]'`, then `$S/wd.mjs wait .msg.assistant "MTU = 1380"`. The selected tab `button.tab-open[aria-selected=true]` reads "Why is the VPN slow".
+- **Body match.** Run `$S/wd.mjs keys MTU`, then `$S/wd.mjs wait .hit-row "Why is the VPN slow"`, then `$S/wd.mjs shot 08-search`. The hit reads "Why is the VPN slow · Archived · 2d · MTU 1500 on a 1420 tunnel: packets fragment. Set `MTU = 1380`.", and it is the only `.hit-row`.
+- **Open the hit.** Run `$S/wd.mjs press Enter`, then `$S/wd.mjs gone '[role=dialog][aria-label="Search chats"]'`, then `$S/wd.mjs wait .msg.assistant "MTU = 1380"`. The selected tab `button.tab-open[aria-selected=true]` reads "Why is the VPN slow", and Find in chat is open on "MTU" with its first match `mark.current`.
 - **Miss.** Run `$S/wd.mjs press Control+k`, `$S/wd.mjs keys volcano` and `$S/wd.mjs wait '[role=dialog][aria-label="Search chats"]' "No matches"`.
 - **Close.** Run `$S/wd.mjs press Escape`, then `$S/wd.mjs gone '[role=dialog][aria-label="Search chats"]'`.
 - **Rail and list entries.** Run `$S/wd.mjs click button "Search all chats (Ctrl+K)"` and, after Escape, `$S/wd.mjs click button "Search chatsCtrl K"`. Each opens the same dialog.

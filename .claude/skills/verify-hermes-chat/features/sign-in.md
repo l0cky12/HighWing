@@ -25,14 +25,14 @@ Preconditions:
 
 - **Welcome.** Run `$S/wd.mjs wait button "Get started"`, then `$S/wd.mjs shot 00-welcome`, then `$S/wd.mjs click button "Get started"`. The Server step shows `input "Name"`, `select "Connect through"` and `button "Next"` (disabled).
 - **Pick Web address.** Run `$S/wd.mjs select select "Connect through" -- "Web address"`. A `Dashboard URL` input replaces `SSH target`.
-- **Test the route.** Run `$S/wd.mjs fill input "Dashboard URL" -- $DASHBOARD_URL`, then `$S/wd.mjs click button "Test the route"`, then `$S/wd.mjs wait '[role=status]' "Reached Hermes 0.17.0"`. The Name fills in as `127.0.0.1:<port>` and **Next** is enabled.
+- **Test the route.** Run `$S/wd.mjs fill input "Dashboard URL" -- $DASHBOARD_URL`, then `$S/wd.mjs click button "Test the route"`, then `$S/wd.mjs wait '[role=status]' "Reached Hermes 0.17.0"`. **Next** is enabled. `input "Name"` stays empty, with `127.0.0.1:<port>` as its placeholder, which the saved connection takes.
 - **Next.** Run `$S/wd.mjs click button Next`. The step shows `input "Dashboard username"`, `input "Dashboard password"` and a disabled **Test connection**.
 - **Wrong password.** Run `$S/wd.mjs fill input "Dashboard username" -- verify`, `$S/wd.mjs fill input "Dashboard password" -- wrong-pass` and `$S/wd.mjs click button "Test connection"`. Then run `$S/wd.mjs wait '[role=alert]' "turned down the username or password"`. The button reads **Try again**, and `$S/hv state` shows no new session.
 - **Right password.** Run `$S/wd.mjs fill input "Dashboard password" -- verify-pass` (the button goes back to **Test connection**), then `$S/wd.mjs click button "Test connection"`, then `$S/wd.mjs wait '[role=status]' "At least one route works"`. **Save and connect** appears.
 - **Save.** Run `$S/wd.mjs click button "Save and connect"`, then `$S/wd.mjs wait '[role=dialog]' "Model providers"`. The main window is visible behind the dialog.
 - **Skip providers.** Run `$S/wd.mjs wait .setup-ok "You're ready to chat"` (the stand-in reports Anthropic and OpenAI as ready), then `$S/wd.mjs click button Skip`, then `$S/wd.mjs gone '[role=dialog]'`, then `$S/wd.mjs shot 04-signed-in`. The rail button `Connected · http://127.0.0.1:<port>` and the list's `Archived4` are visible.
 - **Sign in again.** Run `$S/wd.mjs close`, then `$S/wd.mjs open`, then `$S/wd.mjs wait button Connect`. `$S/wd.mjs value input "Dashboard username"` prints `verify`. Run `$S/wd.mjs fill input "Dashboard password" -- verify-pass`, `$S/wd.mjs click button Connect` and `$S/wd.mjs wait button "Search all chats (Ctrl+K)" 20000`.
-- **Proof.** Keep the shots of the alert, the passed test, and the signed-in window. `bridge.log` shows a 401 `POST /auth/password-login` followed by a 200 one.
+- **Proof.** Keep the shots of the alert, the passed test, and the signed-in window. `bridge.log` logs no status codes: the wrong password is a `POST /auth/password-login` with no `POST /api/auth/ws-ticket` after it, and the right one is followed by a ws-ticket.
 
 ## Gotchas
 

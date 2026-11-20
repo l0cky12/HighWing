@@ -30,7 +30,7 @@ Preconditions:
 - **Type.** Run `$S/wd.mjs fill 'textarea[data-composer]' -- "Did the re-run finish?"`, then `$S/wd.mjs shot 06-typed`. The hint "Enter to send · Shift+Enter for a new line" shows.
 - **Send with Enter.** Run `$S/wd.mjs press Enter`, then `$S/wd.mjs wait .msg.user "Did the re-run finish?"`. The composer is empty (`$S/wd.mjs value 'textarea[data-composer]'` prints an empty line).
 - **Reply streams.** Run `$S/wd.mjs wait .msg.assistant "Stand-in reply to: Did the re-run finish?" 20000`, then `$S/wd.mjs shot 07-replied`. `$S/wd.mjs count .msg` prints `4`.
-- **Unarchived.** "Nightly backup failing" is now above the Archived header, and the header reads `Archived3`.
+- **Unarchived.** "Nightly backup failing" is now in the Inbox: `$S/wd.mjs text '[data-section-head=inbox]'` reads `Inbox1` and `[data-section-head=archived]` reads `Archived3`. `$S/hv state` shows `backup` with `"pinned": true`.
 - **Send button.** Run `$S/wd.mjs fill 'textarea[data-composer]' -- "And the next one?"`, then `$S/wd.mjs click button.send`, then `$S/wd.mjs wait .msg.assistant "Stand-in reply to: And the next one?"`.
 - **Proof on the server.** Run `$S/hv state | python3 -c 'import json,sys; print(json.load(sys.stdin)["transcripts"]["backup"][-2:])'`. The last two rows are the user text and its `Stand-in reply to:` reply.
 

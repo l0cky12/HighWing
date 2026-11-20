@@ -8,6 +8,7 @@ import { BOT_SETUP_FENCE, botSetupBrief, type BotSetupNewBlock } from "./botSetu
 import { ACCEPTED_FENCE, choose, fencedBlocks, planCard, tickable, tickedCount, type ListedItem, type Plan } from "./botSetupCard";
 import { SETUP_RECORD_PREFIX, localChatCache } from "./chatCache";
 import { FakeHermes, row, type RestRequest } from "./fakeHermes";
+import { RestError } from "./pipe";
 import { renameProfileLocally } from "./profileLocalData";
 import { connect, type BotSetupCardRead, type BotSetupRead, type Hermes } from "./transport";
 import { unsaved } from "./unsaved";
@@ -221,6 +222,23 @@ describe("Set it up", () => {
     expect(sent.log).toEqual([]);
     expect(sent.submits()).toEqual([]);
     expect(out).toEqual({ states: {} });
+  });
+
+  it("sends the ready turn again when a second Set it up applies what the first couldn't", async () => {
+    const server = hermes0232((s) => (s.soulWriteError = new RestError(400, JSON.stringify({ detail: "Hermes refused the persona." }))));
+    const { hermes, chatId } = await withCard(server);
+    const read = cardOf(await hermes.readBotSetup(chatId));
+    const first = await hermes.applyBotSetup(read, planOf(read), () => {});
+    expect(first.states.persona).toMatchObject({ kind: "failed" });
+    expect(first.readyAt).toEqual(expect.any(Number));
+
+    server.soulWriteError = undefined;
+    const again = cardOf(await hermes.readBotSetup(chatId));
+    const sent = writes(server);
+    const out = await hermes.applyBotSetup(again, planOf(again), () => {});
+    expect(out.states.persona).toEqual({ kind: "applied" });
+    expect(out.readyAt).toEqual(expect.any(Number));
+    expect(sent.submits()).toHaveLength(1);
   });
 
   it("says so when the bot's profile isn't the one shown, without writing anything", async () => {

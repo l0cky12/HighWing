@@ -369,7 +369,7 @@ Hermes asking the owner before it runs a command it counts as dangerous. It show
 _Avoid_: permission, confirmation, prompt
 
 **Question** (from Hermes):
-Hermes stopping in a reply to ask the owner something, and waiting for the answer. It shows as a card in its chat, and Hermes waits until the owner answers it, Hermes stops waiting (its deadline, or the reply is stopped), or another Hermes app answers it first. Four kinds show here: an **Approval**, a **Clarify**, a **Sudo password** and a **Secret**. Whatever ends one closes its card, and the card says how. Nothing else closes it: a question from a background task or a plugin command can outlive the reply that was running when it came. Hermes asks other kinds too (a password manager's master password, a login to save, one-time codes, and requests only the official app's own window answers). The app doesn't show those, and on a Hermes that shares chats it leaves them for another app to answer (ADR 0146).
+Hermes stopping in a reply to ask the owner something, and waiting for the answer. It shows as a card in its chat, and Hermes waits until the owner answers it, Hermes stops waiting (its deadline, or the reply is stopped), or another Hermes app answers it first. Seven kinds show here: an **Approval**, a **Clarify**, a **Sudo password**, a **Secret**, a **Master password**, a **Save login** and a **One-time code**. Whatever ends one closes its card, and the card says how. Nothing else closes it: a question from a background task or a plugin command can outlive the reply that was running when it came. Hermes asks other kinds too, such as requests only the official app's own window answers. The app doesn't show those, and on a Hermes that shares chats it leaves them for another app to answer (ADR 0146).
 _Avoid_: prompt, request (Hermes's word for the message that carries it), dialog
 
 **Clarify**:
@@ -383,6 +383,18 @@ _Avoid_: root password, admin password
 **Secret**:
 A Question for a value Hermes saves in the profile's settings on the server under a name (an env var), such as an API key a skill needs. The card shows what Hermes asks and takes the value in a masked field. Highwing never keeps it.
 _Avoid_: provider key (a Secret can be one, but Settings → Providers is where the app sets those), credential, token
+
+**Master password**:
+A Question for the master password of a password manager on the server, such as Bitwarden or 1Password, so Hermes can sign in to a site with a login saved there. The card names the password manager and takes the password in a masked field. It goes to the password manager, which stays unlocked for the chat. Skip keeps it locked. Highwing never keeps it (ADR 0244).
+_Avoid_: vault password, unlock prompt
+
+**Save login**:
+A Question Hermes asks when a bot reaches a sign-in page it has no login for. The card shows the site and takes a user name and a masked password. Hermes saves the login encrypted on the server and fills it into the page. Skip doesn't save one. Highwing never keeps either value (ADR 0244).
+_Avoid_: credential, save password
+
+**One-time code**:
+A Question for a code a site asks for at sign-in, from a text message, an email, an authenticator app or a security device. The card shows the site and Hermes's hint when it gives them, and takes the code in a plain field. Hermes types it into the page. Highwing never keeps it (ADR 0244).
+_Avoid_: 2FA code, OTP, verification code
 
 **Approval mode**:
 How Hermes decides, in a chat, whether to ask for an Approval before a command it counts as dangerous, as Hermes reports it for the chat. The pill in the composer shows it and changes it. **Smart**: Hermes's checker lets safe-looking commands run and asks about the rest. **Manual**: Hermes asks before every command it flags as dangerous. Smart and Manual are the profile's setting, so a change reaches every chat on the profile, CLI and messaging ones too, from Hermes's next command. **YOLO**, shown "YOLO · this chat": Hermes runs every command in the chat without asking. It is the chat's own, other chats still ask, and the app warns every time it is turned on. Writes to AGENTS.md, CLAUDE.md and SOUL.md still ask, and Hermes's blocklist still blocks. Picking Smart or Manual in a YOLO chat turns its YOLO off. **YOLO · all chats**: the profile's mode is off, set outside this app, so no chat on it asks; the app shows it but doesn't offer it. A Hermes launched with `--yolo` reads as YOLO in every chat (ADR 0091).

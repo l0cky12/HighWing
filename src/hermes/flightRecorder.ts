@@ -105,8 +105,8 @@ export class FlightRecorder {
   }
 
   /**
-   * Adds to the chat's running turn, if one is open. Text deltas merge into the one before. A Clarify, Sudo password or
-   * Secret question outlives the turn that asked it, so one already heard in any of the chat's turns, which Hermes lists
+   * Adds to the chat's running turn, if one is open. Text deltas merge into the one before. A Question other than an
+   * Approval outlives the turn that asked it, so one already heard in any of the chat's turns, which Hermes lists
    * again once the app is back after a drop, keeps the turn and time it was first heard, and how one that names its
    * Questions ended goes to the turn that asked them (`settled`).
    */
@@ -251,7 +251,15 @@ export function judgeFailure(result: string | undefined): string | undefined {
   return undefined;
 }
 
-const QUESTION_NAME: Record<QuestionKind, string> = { approval: "Approval", clarify: "Question", sudo: "Sudo password", secret: "Secret" };
+const QUESTION_NAME: Record<QuestionKind, string> = {
+  approval: "Approval",
+  clarify: "Question",
+  sudo: "Sudo password",
+  secret: "Secret",
+  "vault.unlock_prompt": "Master password",
+  "vault.save_login": "Save login",
+  "vault.code": "One-time code",
+};
 export const questionName = (k: QuestionKind) => QUESTION_NAME[k];
 
 /** The cost of a watched turn: the change in the chat's cost between the reads before and after it. */

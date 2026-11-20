@@ -42,6 +42,18 @@ describe("Desktop notifications", () => {
     expect(JSON.stringify(shown)).not.toMatch(/secret|rm -rf|recursive/);
   });
 
+  it.each([
+    ["a master password", (s: FakeHermes, sid: string) => s.askVaultUnlock(sid, { display_name: "Acme Vault" })],
+    ["a login to save", (s: FakeHermes, sid: string) => s.askVaultSaveLogin(sid, { origin: "https://acme.example", site: "acme.example" })],
+    ["a one-time code", (s: FakeHermes, sid: string) => s.askVaultCode(sid, { site: "acme.example", hint: "Acme authenticator" })],
+  ])("tells the owner a password manager asks for %s, without the site or the password manager", async (_, ask) => {
+    const { server, hermes, runtime, shown } = await replying();
+    ask(server, runtime);
+    await hermes.idle();
+    expect(shown).toEqual([NOTICES.vault]);
+    expect(JSON.stringify(shown)).not.toMatch(/acme/i);
+  });
+
   it("stays quiet while the window has focus", async () => {
     const { server, hermes, runtime, shown } = await replying({ focused: true });
     server.askApproval(runtime);

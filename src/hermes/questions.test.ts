@@ -201,6 +201,118 @@ describe("A sudo or secret question", () => {
   });
 });
 
+describe("A password manager's question", () => {
+  it("shows a master password, a login to save and a one-time code as cards with what Hermes says they are for", async () => {
+    const { server, runtime, chat, card } = await replying();
+    const unlock = server.askVaultUnlock(runtime);
+    const save = server.askVaultSaveLogin(runtime);
+    const code = server.askVaultCode(runtime, { hint: "From your authenticator app" });
+    const bare = server.askVaultCode(runtime, { site: null, hint: "" });
+
+    expect(card("vault.unlock_prompt")).toEqual({ kind: "vault.unlock_prompt", id: unlock, backend: "bitwarden", displayName: "Bitwarden" });
+    expect(card("vault.save_login")).toEqual({ kind: "vault.save_login", id: save, origin: "https://github.com", site: "github.com" });
+    expect(chat().items.filter((i) => i.kind === "vault.code")).toEqual([
+      { kind: "vault.code", id: code, site: "github.com", hint: "From your authenticator app" },
+      { kind: "vault.code", id: bare },
+    ]);
+    expect(chat().running).toBe(true);
+  });
+
+  it("names the password manager by its backend, and a site by its origin, when Hermes leaves the name out", async () => {
+    const { server, runtime, card } = await replying();
+    server.askVaultUnlock(runtime, { display_name: "" });
+    server.askVaultSaveLogin(runtime, { site: "" });
+    expect(card("vault.unlock_prompt")).toMatchObject({ displayName: "bitwarden" });
+    expect(card("vault.save_login")).toMatchObject({ site: "https://github.com" });
+  });
+
+  it.each([
+    ["master password", (s: FakeHermes, sid: string) => s.askVaultUnlock(sid), "vault.unlock_prompt", "correct horse battery"],
+    ["one-time code", (s: FakeHermes, sid: string) => s.askVaultCode(sid), "vault.code", "482913"],
+  ])("sends a %s to Hermes as `ValueResult`, and the card keeps only that it was answered", async (_, ask, method, value) => {
+    const { server, hermes, id: chatId, runtime, chat, card } = await replying();
+    const id = ask(server, runtime)!;
+    await hermes.answerQuestion(chatId, id, { kind: "value", value });
+
+    expect(server.settled).toEqual([{ id, method, result: { value }, via: "request.answer" }]);
+    expect(card(method)).toMatchObject({ answer: "answered" });
+    expect(JSON.stringify(chat())).not.toContain(value);
+  });
+
+  it("sends a login to save as the JSON Hermes reads, `{identifier, password}`, and keeps neither", async () => {
+    const { server, hermes, id: chatId, runtime, chat, card } = await replying();
+    const id = server.askVaultSaveLogin(runtime)!;
+    await hermes.answerQuestion(chatId, id, { kind: "login", identifier: "  lena@example.com ", password: "Tr0ub4dor&3" });
+
+    expect(server.settled).toEqual([{ id, method: "vault.save_login", result: { value: '{"identifier":"lena@example.com","password":"Tr0ub4dor&3"}' }, via: "request.answer" }]);
+    expect(card("vault.save_login")).toEqual({ kind: "vault.save_login", id, origin: "https://github.com", site: "github.com", answer: "answered" });
+    expect(JSON.stringify(chat())).not.toMatch(/lena@example\.com|Tr0ub4dor/);
+  });
+
+  it("sends no login without both a user name and a password, and no login or value to a question that doesn't take it", async () => {
+    const { server, hermes, id: chatId, runtime, card } = await replying();
+    const save = server.askVaultSaveLogin(runtime)!;
+    const unlock = server.askVaultUnlock(runtime)!;
+    await hermes.answerQuestion(chatId, save, { kind: "login", identifier: " ", password: "pw" });
+    await hermes.answerQuestion(chatId, save, { kind: "login", identifier: "lena", password: "" });
+    await hermes.answerQuestion(chatId, save, { kind: "value", value: '{"identifier":"lena","password":"pw"}' });
+    await hermes.answerQuestion(chatId, unlock, { kind: "login", identifier: "lena", password: "pw" });
+
+    expect(server.settled).toEqual([]);
+    expect(answerOf(card("vault.save_login"))).toBeUndefined();
+    expect(answerOf(card("vault.unlock_prompt"))).toBeUndefined();
+  });
+
+  it.each([
+    ["master password", (s: FakeHermes, sid: string) => s.askVaultUnlock(sid), "vault.unlock_prompt"],
+    ["login to save", (s: FakeHermes, sid: string) => s.askVaultSaveLogin(sid), "vault.save_login"],
+    ["one-time code", (s: FakeHermes, sid: string) => s.askVaultCode(sid), "vault.code"],
+  ])("skips a %s with an empty value, which Hermes reads as declined", async (_, ask, method) => {
+    const { server, hermes, id: chatId, runtime, card } = await replying();
+    const id = ask(server, runtime)!;
+    await hermes.answerQuestion(chatId, id, { kind: "skip" });
+    expect(server.settled).toEqual([{ id, method, result: { value: "" }, via: "request.answer" }]);
+    expect(card(method)).toMatchObject({ answer: "skipped" });
+  });
+
+  it("closes with Hermes's reason when Hermes stops waiting, and when another Hermes app answered", async () => {
+    const { server, hermes, runtime, card } = await replying();
+    const unlock = server.askVaultUnlock(runtime)!;
+    server.cancelRequest(unlock, "timeout");
+    expect(card("vault.unlock_prompt")).toMatchObject({ ended: "timeout" });
+
+    const code = server.askVaultCode(runtime)!;
+    server.answerElsewhere(code, "response");
+    server.event(runtime, "tool.complete", { tool_id: "t1" });
+    await hermes.idle();
+    expect(card("vault.code")).toMatchObject({ ended: "resolved" });
+  });
+
+  it("keeps a master password and a login out of everything this computer saves: the chat, its Saved copy, the list, and errors", async () => {
+    const MASTER = "master-7f3a9c2e";
+    const LOGIN = { identifier: "lena.private@example.com", password: "login-9b8d7c6e" };
+    const { server, hermes, id: chatId, runtime, chat } = await replying();
+    await hermes.answerQuestion(chatId, server.askVaultUnlock(runtime)!, { kind: "value", value: MASTER });
+    await hermes.answerQuestion(chatId, server.askVaultSaveLogin(runtime)!, { kind: "login", ...LOGIN });
+    // A code whose answer can't go: the error says why without quoting it.
+    const code = server.askVaultCode(runtime)!;
+    server.failSend = "rejected";
+    await hermes.answerQuestion(chatId, code, { kind: "value", value: "code-55512" });
+    server.failSend = undefined;
+    server.storeMessage(chatId, { role: "user", text: "Set up the weather skill" });
+    server.storeMessage(chatId, { role: "assistant", text: "Done." });
+    server.event(runtime, "message.complete", { status: "complete", text: "Done." });
+    await hermes.sync();
+    await hermes.idle();
+
+    expect(server.settled).toHaveLength(2);
+    expect(chat().items.some((i) => i.kind === "error")).toBe(true);
+    const kept = [JSON.stringify(hermes.getSnapshot()), ...Object.keys(localStorage).map((k) => localStorage.getItem(k) ?? "")];
+    expect(localChatCache(nas).loadTranscript("default", chatId)?.items.length).toBeGreaterThan(0);
+    for (const value of [MASTER, LOGIN.identifier, LOGIN.password, "code-55512"]) expect(kept.filter((k) => k.includes(value))).toEqual([]);
+  });
+});
+
 describe("Questions after a reconnect", () => {
   it("brings back a clarify still waiting, with the answers Hermes has locked", async () => {
     vi.useFakeTimers();
@@ -447,15 +559,17 @@ describe("Questions on a chat another Hermes app also has open", () => {
 });
 
 describe("Questions this app shows only once Hermes's request parses", () => {
-  it("leaves a clarify without questions, or a secret without its env var, as an unshown question", async () => {
+  it("leaves a clarify without questions, a secret without its env var, or a password manager's question that names nothing, as an unshown question", async () => {
     const server = new FakeHermes();
     server.sessions = [row("x", 1)];
     const { runtime, chat } = await replying(server);
     const clarify = server.ask(runtime, "clarify", { questions: [] })!;
     const secret = server.ask(runtime, "secret", { prompt: "A key" })!;
-    expect(chat().items.some((i) => i.kind === "clarify" || i.kind === "secret")).toBe(false);
+    const unlock = server.ask(runtime, "vault.unlock_prompt", { backend: "", display_name: "" })!;
+    const save = server.ask(runtime, "vault.save_login", { origin: 5 })!;
+    expect(chat().items.some((i) => i.kind !== "user")).toBe(false);
     // Hermes 0.21.6 shares chats, so another app may still show them (#313).
-    expect([...server.openRequests.keys()]).toEqual([clarify, secret]);
+    expect([...server.openRequests.keys()]).toEqual([clarify, secret, unlock, save]);
     expect(server.responses).toEqual([]);
   });
 });

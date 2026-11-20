@@ -144,6 +144,15 @@ export type Item =
   | { kind: "sudo"; id: string; command: string; answer?: Answered; ended?: string }
   /** A Secret question: Hermes asks for a value it saves as `envVar` in the profile, for `skill` when it says. */
   | { kind: "secret"; id: string; envVar: string; prompt: string; skill?: string; answer?: Answered; ended?: string }
+  /**
+   * A Master password question: a password manager's (`displayName`, Hermes's `backend`) that Hermes unlocks for the
+   * session, to sign in to a site with a login saved there (ADR 0244).
+   */
+  | { kind: "vault.unlock_prompt"; id: string; backend: string; displayName: string; answer?: Answered; ended?: string }
+  /** A Save login question: Hermes reached a sign-in page at `origin` (`site`, as Hermes names it) with no login saved for it. */
+  | { kind: "vault.save_login"; id: string; origin: string; site: string; answer?: Answered; ended?: string }
+  /** A One-time code question: a code `site` asks for, from the owner's phone or security device, with Hermes's `hint`. */
+  | { kind: "vault.code"; id: string; site?: string; hint?: string; answer?: Answered; ended?: string }
   /** `usage`: the tokens a failed turn took before it failed, as for a reply. */
   | { kind: "error"; id: string; text: string; usage?: ReplyUsage };
 
@@ -160,7 +169,7 @@ export type ApprovalItem = Extract<Item, { kind: "approval" }>;
  * `turn ended`, `expired` when Hermes had stopped waiting before the owner's answer reached it, or `lost` when Hermes
  * let go of the session while the connection was down, or the chat couldn't be loaded again.
  */
-export const QUESTION_KINDS = ["approval", "clarify", "sudo", "secret"] as const;
+export const QUESTION_KINDS = ["approval", "clarify", "sudo", "secret", "vault.unlock_prompt", "vault.save_login", "vault.code"] as const;
 export type QuestionKind = (typeof QUESTION_KINDS)[number];
 export type QuestionItem = Extract<Item, { kind: QuestionKind }>;
 export const isQuestion = (i: Item): i is QuestionItem => (QUESTION_KINDS as readonly string[]).includes(i.kind);
@@ -176,17 +185,22 @@ export function endedNote(reason: string): string {
   return "Hermes stopped waiting for an answer";
 }
 
-/** How the owner closed a Clarify, Sudo password or Secret question from here: answered, or skipped. */
+/** How the owner closed any Question but an Approval from here: answered, or skipped. */
 export type Answered = "answered" | "skipped";
 
 /** One question of a Clarify. `choices`: what Hermes offers, best first; none for an open question. */
 export type ClarifyQuestion = { qid: string; question: string; choices: string[]; multiSelect: boolean };
 
 /**
- * What the owner gives a waiting Clarify, Sudo password or Secret question: one Clarify answer to lock, a password or
- * secret `value`, or Skip. The value is never kept: it goes to Hermes and is dropped (ADR 0146).
+ * What the owner gives a waiting Question other than an Approval: one Clarify answer to lock, a password, secret or
+ * code `value`, a `login` to save, or Skip. A value or login is never kept: it goes to Hermes and is dropped (ADR 0146,
+ * ADR 0244).
  */
-export type QuestionAnswer = { kind: "lock"; qid: string; answer: string } | { kind: "value"; value: string } | { kind: "skip" };
+export type QuestionAnswer =
+  | { kind: "lock"; qid: string; answer: string }
+  | { kind: "value"; value: string }
+  | { kind: "login"; identifier: string; password: string }
+  | { kind: "skip" };
 
 /** A message sent from here that Hermes hasn't confirmed (`Outgoing`). */
 export type OutgoingItem = Extract<Item, { kind: "user" }> & { outgoing: Outgoing };

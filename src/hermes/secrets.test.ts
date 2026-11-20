@@ -148,6 +148,7 @@ describe("Redacting secrets", () => {
     ["google AIzaSyA-0123456789abcdefghijklmnopqrstu", "AIzaSyA-0123456789abcdefghijklmnopqrstu"],
     ["telegram 123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw0 bot", "AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw0"],
     ["slack xoxb-1234567890-abcdefghij", "xoxb-1234567890-abcdefghij"],
+    ["slack app xapp-1-A0123456789-abcdefghij", "xapp-1-A0123456789-abcdefghij"],
     ["hf hf_abcdefghijklmnopqrstuvwxyz", "hf_abcdefghijklmnopqrstuvwxyz"],
     ["GET https://user:hunter2@example.com/x", "hunter2"],
     ["GET https://sk_abcdef123456@example.com/x", "sk_abcdef123456"],

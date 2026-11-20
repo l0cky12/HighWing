@@ -1,5 +1,5 @@
-// Settings → Gateways (ADR 0073): a profile's Telegram and Discord gateways on the server, one platform at a time,
-// picked in Settings' tree (ADR 0160). Each shows its state as Hermes reports it, its on/off switch, and its settings. A token is write-only: the
+// Settings → Gateways (ADR 0073, ADR 0238): a profile's Telegram, Discord and Slack gateways on the server, one platform
+// at a time, picked in Settings' tree (ADR 0160). Each shows its state as Hermes reports it, its on/off switch, and its settings. A token is write-only: the
 // row shows Hermes's redacted preview, and Replace or Remove changes it only on Save; a row left alone keeps what Hermes
 // has. Save reads the platform first and sends nothing if it changed on the server, then reads it again to confirm.
 // Check status asks Hermes how the connection is; it sends no message (gateways.ts). When the running gateway hasn't
@@ -33,11 +33,60 @@ type Note = { tone: "ok" | "warn" | "bad"; text: string; problem?: Problem };
 
 const fresh = (g: Gateway): Draft => ({ enabled: g.enabled, edits: {} });
 
-/** Where each platform's token comes from, and the Hermes extra that installs its library. */
-const ABOUT: Record<PlatformId, { tokenFrom: string; extra: string }> = {
-  telegram: { tokenFrom: "Telegram's @BotFather", extra: "telegram" },
-  discord: { tokenFrom: "the Discord Developer Portal (your application → Bot → Reset Token)", extra: "discord" },
+/** Hermes's guide to setting up a Slack app for it, from its docs site (`website/docs/user-guide/messaging/slack.md`). */
+export const SLACK_GUIDE = "https://hermes-agent.nousresearch.com/docs/user-guide/messaging/slack";
+
+/** Where each platform's tokens come from, the Hermes extra that installs its library, and who may talk to its bot. */
+const ABOUT: Record<PlatformId, { tokenFrom: string; extra: string; setup: string }> = {
+  telegram: {
+    tokenFrom: "Telegram's @BotFather",
+    extra: "telegram",
+    setup: "The bot token comes from Telegram's @BotFather. Allowed user IDs are the Telegram accounts that may talk to Hermes; left empty, Hermes asks new users to pair first.",
+  },
+  discord: {
+    tokenFrom: "the Discord Developer Portal (your application → Bot → Reset Token)",
+    extra: "discord",
+    setup:
+      "The bot token comes from the Discord Developer Portal (your application → Bot → Reset Token). Allowed user IDs are the Discord accounts that may talk to Hermes; left empty, Hermes asks new users to pair first.",
+  },
+  slack: {
+    tokenFrom: "your Slack app at api.slack.com/apps: the Bot Token (xoxb-) under OAuth & Permissions, the App Token (xapp-) under Basic Information → App-Level Tokens",
+    extra: "slack",
+    setup:
+      "The Bot Token (xoxb-) and the App Token (xapp-) come from your Slack app at api.slack.com/apps. Allowed Slack member IDs are the Slack accounts that may talk to Hermes; left empty, Slack may connect but Hermes turns their messages away until someone is added or a pairing is approved.",
+  },
 };
+
+/**
+ * Slack's app is made by hand in Slack, so its card has a row with a short guide to it (ADR 0238): Socket Mode, the two
+ * tokens, and who may talk to the bot, with Hermes's own guide, which lists the scopes and events, a click away.
+ */
+function SlackAppRow({ open }: { open: (url: string) => void }) {
+  return (
+    <SettingRow
+      name="Slack app"
+      hint="Make a Slack app with Socket Mode on, then paste its two tokens below. Socket Mode needs no public address for the server."
+      more={
+        <>
+          <p>You make the Slack app yourself, at api.slack.com/apps:</p>
+          <ol className="gw-steps">
+            <li>
+              Create New App, from scratch or from the manifest that <span className="mono">hermes slack manifest --agent-view --write</span> makes on the server.
+            </li>
+            <li>Turn on Socket Mode, and make an app-level token with the connections:write scope. That is the App Token (xapp-).</li>
+            <li>Add the bot scopes and events Hermes's guide lists, install the app to the workspace, and copy the Bot User OAuth Token (xoxb-) from OAuth &amp; Permissions.</li>
+            <li>Add your member ID (your Slack profile → ⋯ → Copy member ID) to Allowed Slack member IDs, save, and invite the bot to a channel with /invite.</li>
+          </ol>
+        </>
+      }
+      control={
+        <button className="btn" onClick={() => open(SLACK_GUIDE)}>
+          <ExternalLink size={13} aria-hidden /> Hermes's Slack guide
+        </button>
+      }
+    />
+  );
+}
 
 /** Hermes's state for a platform, as a badge and a line under it. */
 function stateOf(g: Gateway): { tone: "ok" | "warn" | "bad" | "off"; badge: string; text: string } {
@@ -211,7 +260,7 @@ export function GatewaySettings({
   const status = !list ? (
     <SettingNote role="status">{connected ? "Reading the gateways from Hermes…" : "Not connected to Hermes. The gateways show once it's connected."}</SettingNote>
   ) : !gateways.length ? (
-    <SettingNote role="status">This Hermes offers neither Telegram nor Discord.</SettingNote>
+    <SettingNote role="status">This Hermes offers none of Telegram, Discord and Slack.</SettingNote>
   ) : (
     !connected && (
       <SettingNote tone="warn" role="status">
@@ -239,7 +288,7 @@ export function GatewaySettings({
     <SettingsSection
       title="Gateways"
       titleId="gw-heading"
-      intro="Reach this profile's Hermes from Telegram or Discord. The gateway runs on the server, and Hermes keeps the tokens there."
+      intro="Reach this profile's Hermes from Telegram, Discord or Slack. The gateway runs on the server, and Hermes keeps the tokens there."
       more={about}
       action={reload}
     >
@@ -247,7 +296,7 @@ export function GatewaySettings({
       {!list ? (
         <SettingNote role="status">{connected ? "Reading the gateways from Hermes…" : "Not connected to Hermes. The gateways show once it's connected."}</SettingNote>
       ) : !gateways.length ? (
-        <SettingNote role="status">This Hermes offers neither Telegram nor Discord.</SettingNote>
+        <SettingNote role="status">This Hermes offers none of Telegram, Discord and Slack.</SettingNote>
       ) : (
         !connected && (
           <SettingNote tone="warn" role="status">
@@ -271,6 +320,8 @@ export function GatewaySettings({
   const note = notes[g.id];
   const check = checks[g.id];
   const st = stateOf(g);
+  const open = (url: string) => void Promise.resolve(openUrl(url)).catch(() => undefined);
+  const setup = <p>{ABOUT[g.id].setup}</p>;
 
   const save = async () => {
     const p = profile;
@@ -377,29 +428,22 @@ export function GatewaySettings({
             titleId={`gw-${g.id}-heading`}
             intro={g.description}
             more={
-              <p>
-                The bot token comes from {ABOUT[g.id].tokenFrom}. Allowed user IDs are the {g.name} accounts that may talk to Hermes; left empty, Hermes asks new users to pair first.
+              <>
+                {setup}
                 {g.docsUrl && (
-                  <>
-                    {" "}
-                    <button className="link" onClick={() => void Promise.resolve(openUrl(g.docsUrl!)).catch(() => undefined)}>
-                      {g.name}'s guide <ExternalLink size={12} aria-hidden />
+                  <p>
+                    <button className="link" onClick={() => open(g.docsUrl!)}>
+                      {g.id === "slack" ? "Your Slack apps" : `${g.name}'s guide`} <ExternalLink size={12} aria-hidden />
                     </button>
-                  </>
+                  </p>
                 )}
-              </p>
+              </>
             }
           >
             <SettingRow
               name="Status"
               hint={st.text}
-              more={
-                inPage && (
-                  <p>
-                    The bot token comes from {ABOUT[g.id].tokenFrom}. Allowed user IDs are the {g.name} accounts that may talk to Hermes; left empty, Hermes asks new users to pair first.
-                  </p>
-                )
-              }
+              more={inPage && setup}
               control={
                 <span className={`badge ${st.tone === "off" ? "off" : st.tone}`} role="status">
                   {st.badge}
@@ -441,7 +485,27 @@ export function GatewaySettings({
                 </button>
               }
             />
+            {g.id === "slack" && <SlackAppRow open={open} />}
             {g.fields.map(fieldRow)}
+            <SettingRow
+              name="Home channel"
+              hint={
+                g.homeChannel
+                  ? `Where Hermes posts scheduled jobs' results on ${g.name}. To move it, send /sethome in another chat or channel.`
+                  : `Where Hermes posts scheduled jobs' results on ${g.name}. Send /sethome in the chat or channel to make it the home.`
+              }
+              more={<p>Hermes sets the home channel when /sethome is sent on {g.name}; this screen shows what the profile's config.yaml has. One set only in the server's .env doesn't show here.</p>}
+              control={
+                g.homeChannel ? (
+                  <span className="set-value">
+                    {g.homeChannel.name && <>{g.homeChannel.name} </>}
+                    <span className="mono">{g.homeChannel.id}</span>
+                  </span>
+                ) : (
+                  <span className="set-value muted">Not set</span>
+                )
+              }
+            />
             <SettingRow
               name="Check status"
               hint="Asks Hermes how the connection is. It sends no message."

@@ -399,6 +399,68 @@ const dragWatch = {
   },
 };
 
+/** The chat `profileOpen` opens, with one kind of item taken out or made plain, to see what each costs. */
+const SHAPES: Record<string, (items: Item[]) => Item[]> = {
+  all: (items) => items,
+  noTools: (items) => items.filter((i) => i.kind !== "tool"),
+  noThinking: (items) => items.filter((i) => i.kind !== "thinking"),
+  noAssistant: (items) => items.filter((i) => i.kind !== "assistant"),
+  userOnly: (items) => items.filter((i) => i.kind === "user"),
+  plainAssistant: (items) => items.map((i) => (i.kind === "assistant" ? { ...i, text: i.text.replace(/[`#|*_-]/g, " ").replace(/\n+/g, " ") } : i)),
+};
+
+/**
+ * `open` with the chat reshaped by a `SHAPES` entry (#124). `layoutMs`: the part of `commitMs` spent in the layout
+ * that reading sizes forces; `msgsInPage` and `chunksInPage`: what the transcript window rendered.
+ */
+async function profileOpen(turns: number, shape = "all") {
+  root.render(<></>);
+  await painted();
+  const chat = makeChat(turns);
+  const items = SHAPES[shape](chat.items);
+  current = { ...chat, items };
+  let layoutMs = 0;
+  const patched: [object, string, PropertyDescriptor][] = [];
+  const wrap = (proto: object, name: string) => {
+    const d = Object.getOwnPropertyDescriptor(proto, name)!;
+    patched.push([proto, name, d]);
+    const timed = (f: (...a: unknown[]) => unknown) =>
+      function (this: unknown, ...a: unknown[]) {
+        const s = performance.now();
+        try {
+          return f.apply(this, a);
+        } finally {
+          layoutMs += performance.now() - s;
+        }
+      };
+    Object.defineProperty(proto, name, d.get ? { ...d, get: timed(d.get) } : { ...d, value: timed(d.value) });
+  };
+  for (const n of ["clientHeight", "clientWidth", "scrollHeight", "scrollTop"]) wrap(Element.prototype, n);
+  wrap(Element.prototype, "getBoundingClientRect");
+  wrap(HTMLElement.prototype, "offsetHeight");
+  const t0 = performance.now();
+  try {
+    flushSync(() => root.render(<Host key={++opened} initial={current} />));
+  } finally {
+    for (const [proto, name, d] of patched) Object.defineProperty(proto, name, d);
+  }
+  const t1 = performance.now();
+  const t2 = await painted();
+  const t = transcript();
+  return {
+    turns,
+    shape,
+    items: items.length,
+    chunksInPage: document.querySelectorAll(".transcript-chunk").length,
+    msgsInPage: document.querySelectorAll(".msg").length,
+    nodes: document.getElementsByTagName("*").length,
+    commitMs: Math.round(t1 - t0),
+    layoutMs: Math.round(layoutMs),
+    paintMs: Math.round(t2 - t0),
+    atBottom: t.scrollHeight - t.scrollTop - t.clientHeight < 2,
+  };
+}
+
 /**
  * Opens a CSV of `rows` rows and `cols` columns in the Preview's table (ADR 0243), then selects every cell with Ctrl+A
  * and grows the selection by a row with Shift+ArrowDown. Each time is until painted.
@@ -428,4 +490,4 @@ async function table(rows: number, cols: number) {
   return { rows, cols, drawn: document.querySelectorAll("td, th").length, nodes: document.getElementsByTagName("*").length, openMs, selectAllMs, extendMs };
 }
 
-Object.assign(window, { bench: { table, open, stream, streamCode, hostile, hostileOpen, hostileStream, find, scroll, splitOpen, splitStream, splitResize, dragWatch } });
+Object.assign(window, { bench: { table, open, profileOpen, stream, streamCode, hostile, hostileOpen, hostileStream, find, scroll, splitOpen, splitStream, splitResize, dragWatch } });

@@ -445,6 +445,18 @@ export class CronApi {
   }
 
   /**
+   * The job's newest run that isn't still running, from a short page of its runs; undefined when there is none. For a
+   * job the profile's list was just read to hold, so it doesn't read the list again. Runs another profile's copy
+   * answers with are refused.
+   */
+  async latestRun(profile: string, id: string): Promise<JobRun | undefined> {
+    const res = await this.call("GET", `${jobPath(id)}/runs?${q(profile)}&limit=5`);
+    const rows = isObj(res) && Array.isArray(res.runs) ? res.runs : [];
+    if (rows.some((r) => isObj(r) && typeof r.profile === "string" && r.profile !== profile)) return undefined;
+    return rows.map(toRun).find((r): r is JobRun => !!r && r.state !== "running");
+  }
+
+  /**
    * The other profiles that have a job with this id: Hermes copies a profile's jobs into a profile made from it. Hermes
    * acts on such a copy if this profile's job is gone when a change arrives (`_job_owner_profile`), so the screen says
    * so. Profiles whose jobs can't be read are left out; it never throws.

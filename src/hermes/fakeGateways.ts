@@ -1,7 +1,7 @@
-// A fake Hermes's messaging gateways, for tests of Settings → Gateways (ADR 0073): the `/api/messaging/platforms` routes
-// as the deployed `f0d94882` answers them (`hermes_cli/web_routers/messaging.py`): the list with redacted previews and
-// the state ladder of `_messaging_platform_payload`, the write that checks the whole request before touching `.env` or
-// config.yaml, and the status check that sends no message. Each profile keeps its own `.env`, switches and gateway.
+// A fake Hermes's messaging gateways, for tests of Settings → Gateways (ADR 0073, ADR 0238): the `/api/messaging/platforms`
+// routes as the deployed `f0d94882` answers them (`hermes_cli/web_routers/messaging.py`), with Slack's card as `ae2a81c`
+// has it: the list with redacted previews and the state ladder of `_messaging_platform_payload`, the write that checks
+// the whole request before touching `.env` or config.yaml, and the status check that sends no message. Each profile keeps its own `.env`, switches and gateway.
 // Also the Restart gateway button's routes at `da9c2bd` (ADR 0205): `POST /api/gateway/restart`, its shared action
 // record `GET /api/actions/gateway-restart/status`, and the gateway fields of `GET /api/status` (`statusOf`).
 import type { RestRequest } from "./fakeHermes";
@@ -10,7 +10,7 @@ import { RestError } from "./pipe";
 const answered = (status: number, detail: string) => new RestError(status, JSON.stringify({ detail }));
 
 type FieldSpec = { key: string; prompt: string; description: string; required?: boolean; password?: boolean; list?: boolean };
-type PlatformSpec = { id: string; name: string; description: string; fields: FieldSpec[]; rules?: Record<string, [RegExp, string]> };
+type PlatformSpec = { id: string; name: string; description: string; docsUrl?: string; fields: FieldSpec[]; rules?: Record<string, [RegExp, string]> };
 
 const CATALOG: PlatformSpec[] = [
   {
@@ -36,7 +36,25 @@ const CATALOG: PlatformSpec[] = [
       { key: "DISCORD_ALLOWED_USERS", prompt: "Allowed Discord user IDs (comma-separated)", description: "Comma-separated Discord user IDs allowed to use the bot", list: true },
     ],
   },
-  { id: "slack", name: "Slack", description: "Run Hermes from Slack.", fields: [{ key: "SLACK_BOT_TOKEN", prompt: "Slack bot token", description: "", required: true, password: true }] },
+  // As `ae2a81c` lists it (`plugins/platforms/slack/dashboard_card.py`): no home channel among its settings.
+  {
+    id: "slack",
+    name: "Slack",
+    description: "Use Hermes from Slack via Socket Mode. Add allowed Slack member IDs so connected bots can respond.",
+    docsUrl: "https://api.slack.com/apps",
+    fields: [
+      { key: "SLACK_BOT_TOKEN", prompt: "Slack Bot Token (xoxb-...)", description: "Slack bot token (xoxb-). Get from OAuth & Permissions after installing your app.", required: true, password: true },
+      { key: "SLACK_APP_TOKEN", prompt: "Slack App Token (xapp-...)", description: "Slack app-level token (xapp-) for Socket Mode. Get from Basic Information → App-Level Tokens.", required: true, password: true },
+      { key: "SLACK_ALLOWED_USERS", prompt: "Allowed Slack member IDs", description: "Comma-separated Slack member IDs allowed to use Hermes, e.g. U01ABC2DEF3.", list: true },
+    ],
+    rules: {
+      SLACK_BOT_TOKEN: [/^xoxb-/, "Slack Bot Token must start with xoxb-. Paste the bot token from OAuth & Permissions."],
+      SLACK_APP_TOKEN: [/^xapp-/, "Slack App Token must start with xapp-. Paste the app-level token from Basic Information > App-Level Tokens."],
+      SLACK_ALLOWED_USERS: [/^(\s*(\*|[UW][A-Z0-9]{2,})?\s*)(,\s*(\*|[UW][A-Z0-9]{2,})?\s*)*$/, "Slack allowed user IDs must be comma-separated member IDs like U01ABC2DEF3."],
+    },
+  },
+  // One of the platforms the screen doesn't offer.
+  { id: "mattermost", name: "Mattermost", description: "Connect Hermes to Mattermost.", fields: [{ key: "MATTERMOST_TOKEN", prompt: "Mattermost bot token", description: "", required: true, password: true }] },
 ];
 
 /** `«redacted:…»` around `agent.redact.mask_secret`, near enough: a short value is all stars, a longer one keeps its ends. */
@@ -86,6 +104,8 @@ export class FakeGateways {
   env: Record<string, Record<string, string>> = {};
   /** Each profile's `platforms.<id>.enabled` in config.yaml; unset means never written. */
   enabled: Record<string, Record<string, boolean>> = {};
+  /** Each profile's `platforms.<id>.home_channel` in config.yaml, as `/sethome` writes it. */
+  home: Record<string, Record<string, { chat_id: string | number; name: string }>> = {};
   /** Whether each profile's gateway runs, and what it reports per platform. */
   gateway: Record<string, GatewayRuntime> = {};
   /** How many times each profile's gateway was restarted through the dashboard. */
@@ -143,7 +163,7 @@ export class FakeGateways {
       id: spec.id,
       name: spec.name,
       description: spec.description,
-      docs_url: `https://docs.example/${spec.id}`,
+      docs_url: spec.docsUrl ?? `https://docs.example/${spec.id}`,
       enabled,
       configured,
       gateway_running: gw.running,
@@ -151,7 +171,7 @@ export class FakeGateways {
       error_code: rt?.error_code ?? null,
       error_message: rt?.error_message ?? null,
       updated_at: null,
-      home_channel: null,
+      home_channel: this.home[profile]?.[spec.id] ? { platform: spec.id, ...this.home[profile][spec.id] } : null,
       env_vars: spec.fields.map((f) => ({
         key: f.key,
         required: !!f.required,

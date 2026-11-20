@@ -85,6 +85,20 @@ describe("Opening a chat link", () => {
     expect(prompts(server)).toBe(0);
   });
 
+  // A finished job run's notification on a background connection opens the run through its link (#28, ADR 0184).
+  it("opens a job run in another profile read-only, starting no session", async () => {
+    const { server, hermes, linkTo, open } = await launch();
+    server.otherProfiles.work.push(row("local-run", 0.1, { source: "cron", title: "Disk check · Nov 20 08:00" }));
+    server.transcripts["local-run"] = [{ role: "user", text: "Check the disk usage.", row_id: 1 }, { role: "assistant", text: "Nothing needs cleaning tonight.", row_id: 2 }];
+    await open(linkTo("work", "local-run"));
+    await waitFor(() => expect(hermes.getSnapshot().profile).toBe("work"));
+    expect(await screen.findByText("Nothing needs cleaning tonight.")).toBeTruthy();
+    expect(document.querySelector(".chat-title")!.textContent).toContain("Disk check · Nov 20 08:00");
+    expect(screen.getByRole("note").textContent).toMatch(/This chat is a run of a scheduled job, so it's read-only here\./);
+    expect(screen.queryByPlaceholderText("Message Hermes")).toBeNull();
+    expect(server.requests.filter((r) => r.method === "session.resume")).toEqual([]);
+  });
+
   it("switches to the link's profile and opens a chat the month's list doesn't hold", async () => {
     const { server, hermes, linkTo, open } = await launch();
     await open(linkTo("work", "old"));

@@ -6,14 +6,12 @@ import { flushSync } from "react-dom";
 const GAP = 22;
 /** A block's height before any chunk has been measured. */
 const BLOCK_HEIGHT = 120;
-/** A chat of this many chunks or fewer renders whole. */
-const FEW_CHUNKS = 4;
 
 /** The chunks rendered, `from` to `to`, and the heights of the spacers standing in for the ones before and after. */
 export type Shown = { from: number; to: number; before: number; after: number };
 
 /**
- * `tail`: the last chunks, before the scroller has been measured. `all`: the scroller has no height (a test without
+ * `tail`: the last chunk, before the scroller has been measured. `all`: the scroller has no height (a test without
  * layout, a pane mounted hidden), so nothing says what is near the view.
  */
 type Window = Shown | "tail" | "all";
@@ -176,8 +174,8 @@ export function useTranscriptWindow({
   }, [heights]);
 
   const last = chunks.length - 1;
-  if (all || chunks.length <= FEW_CHUNKS || win === "all") return { from: 0, to: last, before: 0, after: 0, reveal };
-  if (win === "tail") return { ...shown(heights(chunks), Math.max(0, last - 1), last), reveal };
+  if (all || win === "all") return { from: 0, to: last, before: 0, after: 0, reveal };
+  if (win === "tail") return { ...shown(heights(chunks), last, last), reveal };
   // The chunks may have changed since the window was placed; it is placed again in this commit.
   const to = Math.min(win.to, last);
   return { ...win, from: Math.min(win.from, to), to, reveal };

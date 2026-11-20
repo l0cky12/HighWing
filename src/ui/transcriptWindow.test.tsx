@@ -7,7 +7,6 @@ import type { Chat, Item } from "../hermes/model";
 import { ChatPane, type FindTarget, type JumpTarget } from "./ChatPane";
 import { AttachmentDesk } from "../hermes/attachmentDesk";
 import { useShowInChat } from "./showInChat";
-import { chunkBlocks } from "./transcriptChunks";
 
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }));
@@ -173,7 +172,8 @@ describe("A long transcript's window", { timeout: 30_000 }, () => {
       mounted = messages().length;
     }
     expect(windows).toBeGreaterThan(1);
-    expect(item("u-329")).not.toBeNull();
+    // The view went up into the messages that are taller than they were taken for.
+    expect(messages().some((m) => inView(m) && Number(m.dataset.item!.slice(2)) < 330)).toBe(true);
   });
 
   it("goes to a message far from the view, without reporting it missing", async () => {
@@ -289,12 +289,13 @@ describe("A long transcript's window", { timeout: 30_000 }, () => {
     }
   });
 
-  it("renders a chat of a few chunks whole, however tall", () => {
-    const items = longChat(60);
-    expect(chunkBlocks(items).length).toBeGreaterThan(1);
-    expect(chunkBlocks(items).length).toBeLessThanOrEqual(4);
-    pane(chatOf(items));
-    expect(messages()).toHaveLength(120);
-    expect(gaps()).toHaveLength(0);
+  it("opens a chat of a few hundred messages at the bottom with only the chunks near it, and renders the top on the way up", async () => {
+    const { scroller } = pane(chatOf(longChat(90)));
+    expect(inView(item("a-89")!)).toBe(true);
+    expect(scroller.scrollTop).toBe(scroller.scrollHeight - VIEW);
+    expect(item("u-0")).toBeNull();
+    expect(messages().length).toBeLessThan(60);
+    await scrollTo(scroller, 0);
+    expect(inView(item("u-0")!)).toBe(true);
   });
 });

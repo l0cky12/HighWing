@@ -69,7 +69,7 @@ wait_for() { local i; for ((i = 0; i < $2 * 5; i++)); do eval "$1" >/dev/null 2>
 # that group. Another run's server on the same number fails this, so a lost race is never taken for our own start.
 xvfb_ours() {
   local lock_pid
-  lock_pid=$(tr -d ' \n' <"/tmp/.X$1-lock" 2>/dev/null) && [ -n "$lock_pid" ] && [ -S "/tmp/.X11-unix/X$1" ] &&
+  lock_pid=$(tr -d ' \n' 2>/dev/null <"/tmp/.X$1-lock") && [ -n "$lock_pid" ] && [ -S "/tmp/.X11-unix/X$1" ] &&
     [ "$(ps -o pgid= -p "$lock_pid" 2>/dev/null | tr -d ' ')" = "$2" ]
 }
 # The processes `hv up` started for run $1, found by the HV_STARTED_BY each one carries, recorded in state.env or not.
@@ -378,7 +378,7 @@ cmd_down() {
   strays=$(started_by "$RUN")
   # The display's lock, kept only if it names this run's X server. Read now: once that server is dead, nothing tells
   # whose lock it was.
-  [ -z "$n" ] || lock_pid=$(tr -d ' \n' <"/tmp/.X$n-lock" 2>/dev/null) || true
+  [ -z "$n" ] || lock_pid=$(tr -d ' \n' 2>/dev/null <"/tmp/.X$n-lock") || true
   { [ -n "$XVFB_PID" ] && xvfb_ours "$n" "$XVFB_PID"; } || grep -qx -- "$lock_pid" <<<"$strays" || lock_pid=""
   # One pgrep for all the groups: a pgrep per group per tick made the wait take twice as long as it says.
   local group_list; group_list=$(printf '%s\n' "${groups[@]}" | grep . | paste -sd, || true)
@@ -401,7 +401,7 @@ cmd_down() {
   done
   # A server that died by KILL leaves its lock and socket, and later runs would skip the display for good. Removed
   # only while the lock still names this run's server.
-  if [ -n "$lock_pid" ] && wait_for "! alive $lock_pid" 2 && [ "$(tr -d ' \n' <"/tmp/.X$n-lock" 2>/dev/null)" = "$lock_pid" ]; then
+  if [ -n "$lock_pid" ] && wait_for "! alive $lock_pid" 2 && [ "$(tr -d ' \n' 2>/dev/null <"/tmp/.X$n-lock")" = "$lock_pid" ]; then
     rm -f "/tmp/.X11-unix/X$n" "/tmp/.X$n-lock"
   fi
   # Kept with the evidence: the display, ports and PIDs this run had.

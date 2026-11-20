@@ -16,8 +16,11 @@ import { en } from "../i18n/en";
 import { LocaleContext, type Locale } from "../i18n/locale";
 import { pseudoLocale, untranslated } from "../i18n/pseudo";
 import { Main } from "../App";
+import { FAKE_PICTURE, fakeCrop } from "./fakePictureCanvas";
+import { CENTERED, CROP_FRAME_PX, sourceRect } from "./pictureCrop";
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }));
+vi.mock("./pictureCanvas", () => import("./fakePictureCanvas"));
 
 beforeAll(() => {
   Element.prototype.scrollIntoView = () => {};
@@ -563,8 +566,12 @@ describe("the Picture row", { timeout: 30_000 }, () => {
   const pictureRow = () => within(liveCard()!).getByText(t.picture, { selector: ".bot-setup-label" }).closest("li")!;
   const strip = () => within(pictureRow()).getByRole("radiogroup", { name: t.pictureSet });
   const radio = (name: string | RegExp) => within(strip()).getByRole("radio", { name }) as HTMLInputElement;
-  const uploadInput = () => within(pictureRow()).getByLabelText(t.pictureUpload, { selector: "input" }) as HTMLInputElement;
-  const file = (bytes: string, name: string, type: string) => new File([Uint8Array.from(bytes, (c) => c.charCodeAt(0))], name, { type });
+  const pk = en.profiles.form.picker;
+  const picker = () => within(pictureRow()).getByRole("dialog", { name: pk.title });
+  const browse = () => within(picker()).getByLabelText(pk.browse, { selector: "input" });
+  /** The PNG the crop step makes of an upload left as it opens: the middle square (`fakePictureCanvas.ts`). */
+  const CROPPED = fakeCrop(sourceRect(FAKE_PICTURE, CROP_FRAME_PX, CENTERED));
+  const setAssets = (server: FakeHermes) => server.requests.filter((r) => r.method === "profiles.set_asset").map((r) => r.params);
 
   it("shows the bot's pick ticked with why, the set as a strip with the pick marked, and a pick by keyboard is what Set it up saves", async () => {
     const { server, user } = await inBotChat(named());
@@ -587,28 +594,51 @@ describe("the Picture row", { timeout: 30_000 }, () => {
     await waitFor(() => expect(within(pictureRow()).getByText(t.applied)).toBeTruthy());
   });
 
-  it("takes the owner's own picture under Edit bot's rules, and Set it up saves those bytes", async () => {
+  it("Upload your own… opens the picture picker on its Upload tab, and Set it up saves the PNG that Use picture made", async () => {
     const { server, user } = await inBotChat(named());
     await waitCard();
+    expect(within(pictureRow()).queryByRole("dialog")).toBeNull();
+    await user.click(within(pictureRow()).getByRole("button", { name: t.pictureUpload }));
+    expect(within(picker()).getAllByRole("tab").map((tab) => [tab.textContent, tab.getAttribute("aria-selected")])).toEqual([
+      [pk.pictures, "false"],
+      [pk.upload, "true"],
+    ]);
     // The file dialog offers only the accepted types; a file dropped past it is still refused.
-    await userEvent.setup({ applyAccept: false }).upload(uploadInput(), file("GIF89a", "face.gif", "image/gif"));
-    await waitFor(() => expect(within(pictureRow()).getByRole("alert").textContent).toBe(en.profiles.form.pictureFormat));
-    const big = new File([new Uint8Array(2_000_001)], "big.png", { type: "image/png" });
-    await user.upload(uploadInput(), big);
-    await waitFor(() => expect(within(pictureRow()).getByRole("alert").textContent).toBe(en.profiles.form.pictureTooBig));
+    await userEvent.setup({ applyAccept: false }).upload(browse(), new File(["GIF89a"], "face.gif", { type: "image/gif" }));
+    expect((await within(picker()).findByRole("alert")).textContent).toBe(en.profiles.form.pictureFormat);
+    expect(radio(t.botsPick(t.pictures.plane, "Hermes")).checked).toBe(true);
 
-    const webp = "RIFF\x16\x00\x00\x00WEBPVP8 owner's own";
-    await user.upload(uploadInput(), file(webp, "face.webp", "image/webp"));
+    // Over the 2 MB Hermes stores: the crop step makes it a small PNG.
+    await user.upload(browse(), new File([new Uint8Array(2_000_001)], "me.png", { type: "image/png" }));
+    await user.click(await within(pictureRow()).findByRole("button", { name: pk.use }));
     await waitFor(() => expect(radio(t.pictureYours).checked).toBe(true));
-    expect(within(pictureRow()).queryByRole("alert")).toBeNull();
+    expect(within(pictureRow()).queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(within(pictureRow()).getByRole("button", { name: t.pictureUpload }));
     expect(pictureRow().querySelector(".bot-setup-value")?.textContent).toBe(" · " + t.pictureYours);
+    expect(pictureRow().querySelector<HTMLImageElement>(".bot-setup-value img")!.getAttribute("src")).toBe(CROPPED);
+    expect((box(t.picture) as HTMLInputElement).checked).toBe(true);
 
     await user.click(within(liveCard()!).getByRole("button", { name: t.setUp }));
-    const sent = `data:image/webp;base64,${btoa(webp)}`;
-    await waitFor(() => expect(server.botAvatars.default).toBe(sent));
+    await waitFor(() => expect(server.botAvatars.default).toBe(CROPPED));
+    expect(setAssets(server)).toEqual([{ name: "default", asset: "avatar", data: CROPPED }]);
     const ready = server.requests.find((r) => r.method === "prompt.submit" && String(r.params.text).startsWith("[highwing:bot-setup ready"));
-    expect(String(ready?.params.text)).toContain(pictureKey(sent)!);
+    expect(pictureKey(CROPPED)).toMatch(/^photo:/);
+    expect(String(ready?.params.text)).toContain(pictureKey(CROPPED));
     expect(String(ready?.params.text)).not.toContain("base64");
+  });
+
+  it("a picture chosen on the picker's Pictures tab is the set's, as one pressed on the strip", async () => {
+    const { server, user } = await inBotChat(named());
+    await waitCard();
+    await user.click(within(pictureRow()).getByRole("button", { name: t.pictureUpload }));
+    await user.click(within(picker()).getByRole("tab", { name: pk.pictures }));
+    expect(within(picker()).getAllByRole("radio").filter((r) => r.getAttribute("aria-checked") === "true").map((r) => r.getAttribute("aria-label"))).toEqual([t.pictures.plane]);
+    await user.click(within(picker()).getByRole("radio", { name: t.pictures.sun }));
+    expect(radio(t.pictures.sun).checked).toBe(true);
+    expect(within(strip()).getAllByRole("radio")).toHaveLength(12);
+    await user.click(within(liveCard()!).getByRole("button", { name: t.setUp }));
+    await waitFor(() => expect(server.botAvatars.default).toBe(BOT_PICTURE_DATA.sun));
+    expect(setAssets(server)).toEqual([{ name: "default", asset: "avatar", data: BOT_PICTURE_DATA.sun }]);
   });
 
   it("shows a name the set doesn't have as not found, unticked, with no strip", async () => {
@@ -654,10 +684,16 @@ describe("the Picture row", { timeout: 30_000 }, () => {
 
   it("uses only catalogue words", async () => {
     const p = pseudoLocale();
-    await inBotChat(named(), () => {}, p);
+    const { user } = await inBotChat(named(), () => {}, p);
     await waitCard();
     const row = within(liveCard()!).getByRole("checkbox", { name: p.chat.botSetup.picture }).closest("li")!;
     expect(within(row).getAllByRole("radio")).toHaveLength(12);
+    expect(untranslated(row)).toEqual([]);
+    await user.click(within(row).getByRole("button", { name: p.chat.botSetup.pictureUpload }));
+    expect(untranslated(row)).toEqual([]);
+    await user.upload(within(row).getByLabelText(p.profiles.form.picker.browse, { selector: "input" }), new File(["\x89PNG"], "me.png", { type: "image/png" }));
+    await user.click(await within(row).findByRole("button", { name: p.profiles.form.picker.use }));
+    await waitFor(() => expect(row.textContent).toContain(p.chat.botSetup.pictureYours));
     expect(untranslated(row)).toEqual([]);
   });
 });

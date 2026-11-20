@@ -22,7 +22,7 @@ import type { Caution } from "../hermes/toolsets";
 import { errorText } from "../hermes/values";
 import { useLocale, type Locale } from "../i18n/locale";
 import { composing, Spinner } from "./bits";
-import { PICTURE_TYPES, readPictureFile } from "./pictureFile";
+import { PicturePicker } from "./PicturePicker";
 import { failureText } from "./profileFailure";
 import { cautionText } from "./ToolsetSettings";
 import { TurnCard } from "./TurnCard";
@@ -753,22 +753,14 @@ function valueOf(l: Locale["chat"]["botSetup"], item: ListedItem, beforeAfter: b
 
 /**
  * The set as a strip of radio buttons, the bot's pick marked, then the picture Hermes has now and the owner's upload
- * when they aren't of the set. Choosing one ticks the row. Upload your own… takes a file under Edit bot's rules.
+ * when they aren't of the set. Choosing one ticks the row. Upload your own… opens the picture picker (ADR 0243) on
+ * its Upload tab.
  */
 function PictureStrip({ host, item, src }: { host: SetupHost; item: Extract<ListedItem, { kind: "picture" }>; src: (key: string) => string | undefined }) {
-  const loc = useLocale();
-  const l = loc.chat.botSetup;
-  const f = loc.profiles.form;
+  const l = useLocale().chat.botSetup;
   const group = useId();
-  const input = useRef<HTMLInputElement>(null);
-  const [note, setNote] = useState<string>();
-  const live = useRef(true);
-  useEffect(
-    () => () => {
-      live.current = false;
-    },
-    [],
-  );
+  const anchor = useRef<HTMLSpanElement>(null);
+  const [uploading, setUploading] = useState(false);
   const pick = (to: string) => host.choose(choose(item, { to: to as typeof item.after, ticked: true }));
   const others = [...new Set([item.before, item.after].flatMap((k) => (k !== null && !setPicture(k) ? [k] : [])))];
   const options = [
@@ -778,14 +770,8 @@ function PictureStrip({ host, item, src }: { host: SetupHost; item: Extract<List
     const shown = src(o.key);
     return shown ? [{ ...o, src: shown }] : [];
   });
-  const upload = async (file: File | undefined) => {
-    if (!file) return;
-    const read = await readPictureFile(file);
-    if (!live.current) return;
-    if (read.kind !== "read") return setNote(read.kind === "format" ? f.pictureFormat : read.kind === "tooBig" ? f.pictureTooBig : f.pictureUnread);
-    setNote(undefined);
-    pick(host.upload(read.dataUrl));
-  };
+  // The set's bytes are the app's own; only the owner's upload has to be kept until Set it up sends it.
+  const use = (dataUrl: string) => pick(setPicture(pictureKey(dataUrl)) ? pictureKey(dataUrl) : host.upload(dataUrl));
   return (
     <div className="bot-setup-pictures">
       <div className="bot-setup-strip" role="radiogroup" aria-label={l.pictureSet}>
@@ -802,27 +788,13 @@ function PictureStrip({ host, item, src }: { host: SetupHost; item: Extract<List
         })}
       </div>
       <div className="bot-setup-run">
-        <input
-          ref={input}
-          type="file"
-          hidden
-          accept={PICTURE_TYPES.join(",")}
-          aria-label={l.pictureUpload}
-          onChange={(e) => {
-            void upload(e.target.files?.[0]);
-            e.target.value = "";
-          }}
-        />
-        <button className="btn" disabled={host.busy} onClick={() => input.current?.click()}>
-          <ImagePlus size={13} aria-hidden /> {l.pictureUpload}
-        </button>
-        <span className="bot-setup-sub">{f.pictureHint}</span>
+        <span ref={anchor} className="picture-anchor">
+          <button className="btn" aria-haspopup="dialog" aria-expanded={uploading} disabled={host.busy} onClick={() => setUploading(true)}>
+            <ImagePlus size={13} aria-hidden /> {l.pictureUpload}
+          </button>
+          {uploading && !host.busy && <PicturePicker anchor={anchor} picked={item.after} tab="upload" onUse={use} onClose={() => setUploading(false)} />}
+        </span>
       </div>
-      {note && (
-        <div className="bot-setup-sub bot-setup-bad" role="alert">
-          {note}
-        </div>
-      )}
     </div>
   );
 }

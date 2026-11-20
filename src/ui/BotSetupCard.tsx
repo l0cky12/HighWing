@@ -3,7 +3,8 @@
 // read on open and after each reply (`useBotSetup`); what the card offers and what a choice does, from botSetupCard.ts;
 // what Set it up writes, from botSetupApply.ts. The pane keeps the pending edits above the transcript, so a card
 // scrolled out of the rendered window keeps them. What Connect takes for an MCP server is kept there too, in memory
-// only, until Set it up sends it; leaving the Bot Chat drops it (#85 owner call 4).
+// only, until Set it up sends it; leaving the Bot Chat drops it (#85 owner call 4). Set up again's card shows each
+// change as before → after, and folds what stays as it is under one line per group.
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Check, ChevronRight, CircleAlert, FileText, Hourglass, Pencil, Plug, RotateCcw, Sparkles, TriangleAlert } from "lucide-react";
 import { BOT_SETUP_COLORS, BOT_SETUP_DESCRIPTION_MAX, BOT_SETUP_FENCE } from "../hermes/botSetupBrief";
@@ -85,15 +86,14 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
   const [start, setStart] = useState<BotSetupStart>();
   const [secrets, setSecrets] = useState<McpSecrets>({});
   const [mcpReload, setMcpReload] = useState<SetupHost["mcpReload"]>();
-  const shown = useRef({ chatId, reads: 0, started: false, readOnce: false, holds: false, afterSetUp: false });
+  const shown = useRef({ chatId, reads: 0, started: false, readOnce: false, holds: false, afterSetUp: false, setupId: null as string | null });
   // What the last Set it up ran on: a retry compares against what the card read then, not against a later reload.
   const ranOn = useRef<{ read: BotSetupCardRead; items: ReadonlyMap<string, ListedItem> }>(undefined);
   const mentions = chat.items.some((i) => i.kind === "assistant" && i.text.includes(BOT_SETUP_FENCE));
 
-  useEffect(() => {
-    shown.current = { chatId, reads: 0, started: false, readOnce: false, holds: false, afterSetUp: false };
+  // What a setup's card holds is that setup's alone: Set up again's Keep history starts another in the same Bot Chat.
+  const forgetSetup = useCallback(() => {
     ranOn.current = undefined;
-    setRead(undefined);
     setPending([]);
     setRuns({});
     setOutcome(undefined);
@@ -101,17 +101,28 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
     setStart(undefined);
     setSecrets({});
     setMcpReload(undefined);
-  }, [chatId]);
+  }, []);
+  useEffect(() => {
+    shown.current = { chatId, reads: 0, started: false, readOnce: false, holds: false, afterSetUp: false, setupId: null };
+    setRead(undefined);
+    forgetSetup();
+  }, [chatId, forgetSetup]);
 
   const here = (id: string) => shown.current.chatId === id;
+  // What a Set it up or Retry hears belongs to the setup it ran on: Keep history may start another here meanwhile.
+  const ours = (setupId: string) => here(chatId) && shown.current.setupId === setupId;
   const load = useCallback(() => {
     if (!api) return;
     const n = ++shown.current.reads;
     api.readBotSetup(chatId).then(
       (r) => {
         if (!here(chatId) || n !== shown.current.reads) return;
-        shown.current.readOnce = true;
-        shown.current.holds = setupIdOf(r) !== null;
+        const setupId = setupIdOf(r);
+        if (shown.current.readOnce && setupId !== shown.current.setupId) {
+          Object.assign(shown.current, { started: false, afterSetUp: false });
+          forgetSetup();
+        }
+        Object.assign(shown.current, { readOnce: true, holds: setupId !== null, setupId });
         setRead({ kind: "read", read: r });
         if (shown.current.afterSetUp) {
           shown.current.afterSetUp = false;
@@ -128,7 +139,7 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
       },
       (e: unknown) => here(chatId) && n === shown.current.reads && setRead({ kind: "failed", error: e }),
     );
-  }, [api, chatId]);
+  }, [api, chatId, forgetSetup]);
 
   useEffect(() => {
     if (!api || running || !connected) return;
@@ -163,17 +174,19 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
   }, [restart?.state, running, checkRestart]);
 
   if (!api) return undefined;
-  const hear = (key: string, state: ItemRun) => here(chatId) && setRuns((p) => ({ ...p, [key]: state }));
+  const hearFor = (setupId: string) => (key: string, state: ItemRun) => ours(setupId) && setRuns((p) => ({ ...p, [key]: state }));
   const dropSecretsOfAdded = (states: Readonly<Record<string, ItemRun>>) =>
     setSecrets((was) => Object.fromEntries(Object.entries(was).filter(([k]) => states[k]?.kind !== "reload" && states[k]?.kind !== "applied")));
   const retry = (item: ListedItem, cautions: Caution[], using: McpSecrets) => {
     const on = ranOn.current;
     if (!on) return;
+    const setupId = on.read.parse.card.setupId;
+    const hear = hearFor(setupId);
     hear(item.key, { kind: "working" });
     api.retryBotSetupItem(on.read, on.items.get(item.key) ?? item, cautions, using).then(
       (state) => {
         hear(item.key, state);
-        if (here(chatId)) dropSecretsOfAdded({ [item.key]: state });
+        if (ours(setupId)) dropSecretsOfAdded({ [item.key]: state });
       },
       (e: unknown) => hear(item.key, { kind: "failed", miss: { kind: "said", text: errorText(e) } }),
     );
@@ -207,11 +220,12 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
       setMcpReload(undefined);
       const items = setupItems(plan, r.parse.accepted);
       ranOn.current = { read: r, items: new Map(items.map((i) => [i.key, i])) };
-      api.applyBotSetup(r, plan, hear, secrets).then(
+      const setupId = r.parse.card.setupId;
+      api.applyBotSetup(r, plan, hearFor(setupId), secrets).then(
         (out) => {
-          if (!here(chatId)) return;
-          setOutcome(out);
           setBusy(false);
+          if (!ours(setupId)) return;
+          setOutcome(out);
           dropSecretsOfAdded(out.states);
           shown.current.afterSetUp = true;
           const applied = items.filter((i) => out.states[i.key]?.kind === "applied");
@@ -220,9 +234,9 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
           if (out.readyAt === undefined) load();
         },
         (e: unknown) => {
-          if (!here(chatId)) return;
-          setOutcome({ states: {}, readyFailed: { kind: "said", text: errorText(e) } });
           setBusy(false);
+          if (!ours(setupId)) return;
+          setOutcome({ states: {}, readyFailed: { kind: "said", text: errorText(e) } });
         },
       );
     },
@@ -353,14 +367,17 @@ function Card({ host, read, plan }: { host: SetupHost; read: BotSetupCardRead; p
   // Try again and Apply anyway change an item after Set it up, so the count is read from each item's state now.
   const judged = Object.values(host.runs).filter((s) => s.kind !== "waiting");
   const canSetUp = !host.busy && !host.blocked && host.mcpReload !== "working" && (count > 0 || owed);
+  const again = read.parse.card.again;
+  const folded = (i: PlanItem) => again && i.status === "same" && !host.runs[i.key];
+  const row = (item: PlanItem) => <Row key={item.key} host={host} read={read} item={item} />;
   return (
-    <TurnCard kind="bot-setup" icon={<Sparkles size={14} aria-hidden />} heading={l.title(host.bot)} tips={{ hide: l.hide, show: l.show }} data-card={plan.cardId}>
+    <TurnCard kind="bot-setup" icon={<Sparkles size={14} aria-hidden />} heading={again ? l.againTitle(host.bot) : l.title(host.bot)} tips={{ hide: l.hide, show: l.show }} data-card={plan.cardId}>
       {judged.length > 0 ? (
         <p className="bot-setup-note" role="status">
           {l.appliedOf(judged.filter((s) => s.kind === "applied").length, judged.length)}
         </p>
       ) : (
-        <p className="bot-setup-note">{l.intro(host.bot)}</p>
+        <p className="bot-setup-note">{again ? l.againIntro(host.bot) : l.intro(host.bot)}</p>
       )}
       {GROUPS.map((g) => {
         const items = plan.items.filter((i) => (g.kinds as readonly string[]).includes(i.kind));
@@ -373,9 +390,8 @@ function Card({ host, read, plan }: { host: SetupHost; read: BotSetupCardRead; p
               {!ran && offered.length > 0 && <span>{l.ticked(offered.filter((i) => i.ticked).length, offered.length)}</span>}
             </h4>
             <ul className="bot-setup-items">
-              {items.map((item) => (
-                <Row key={item.key} host={host} read={read} item={item} />
-              ))}
+              {items.filter((i) => !folded(i)).map(row)}
+              {items.some(folded) && <Unchanged>{items.filter(folded).map(row)}</Unchanged>}
             </ul>
           </section>
         );
@@ -408,6 +424,19 @@ function Card({ host, read, plan }: { host: SetupHost; read: BotSetupCardRead; p
   );
 }
 
+function Unchanged({ children }: { children: ReactNode[] }) {
+  const l = useLocale().chat.botSetup;
+  const [open, setOpen] = useState(false);
+  return (
+    <li className="bot-setup-unchanged">
+      <button className="link-btn small" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <ChevronRight size={13} className={`chev ${open ? "open" : ""}`} aria-hidden /> {l.unchanged(children.length)}
+      </button>
+      {open && <ul className="bot-setup-items">{children}</ul>}
+    </li>
+  );
+}
+
 const colorName = (l: Locale["chat"]["botSetup"], hex: string | null) => {
   const named = BOT_SETUP_COLORS.find((c) => BOT_SETUP_COLOR_HEX[c] === hex);
   return named ? l.colors[named] : (hex ?? l.hermesColor);
@@ -426,6 +455,7 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
   const [editing, setEditing] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [whole, setWhole] = useState(false);
+  const [showNow, setShowNow] = useState(false);
   const editButton = useRef<HTMLButtonElement>(null);
   const refocus = useRef(false);
   useEffect(() => {
@@ -452,7 +482,8 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
         : (run ?? (rememberAsked(read.parse.accepted, item) ? { kind: "waiting" } : undefined));
   const offer = listed?.kind === "mcp" && read.setup.mcp && listed.name !== undefined ? mcpOffer(read.setup.mcp, listed.name, listed.from) : undefined;
   const label = labelOf(l, read, item);
-  const value = listed && valueOf(l, listed);
+  const beforeAfter = read.parse.card.again && tickable(item);
+  const value = listed && valueOf(l, listed, beforeAfter);
   const edited = listed && listed.over.length > 0 && listed.after !== listed.proposed;
   const refused = item.status === "notFound" ? item.why : undefined;
   const badge = refused ? l.mcpCantAdd : item.status === "notFound" ? l.notFound : item.from !== undefined ? l.from(item.from) : (item.kind === "skill" || item.kind === "toolset") && item.status === "change" ? l.suggested : undefined;
@@ -476,9 +507,11 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
           : !shownRun && item.kind === "remember"
             ? l.rememberWhere(host.bot)
             : !shownRun && (item.kind === "skill" || item.kind === "toolset")
-              ? item.after === "on"
-                ? l.turnOn
-                : l.turnOff
+              ? beforeAfter
+                ? l.fromTo(l.state[item.before], l.state[item.after])
+                : item.after === "on"
+                  ? l.turnOn
+                  : l.turnOff
               : undefined;
   const dim = item.status === "notFound" || (item.status === "same" && !done && !addedAwaitingReload);
   return (
@@ -520,6 +553,16 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
               <button className="link-btn small" onClick={() => setWhole((w) => !w)}>
                 {whole ? l.showLess : l.showAll}
               </button>
+            )}
+            {beforeAfter && (
+              <button className="link-btn small" aria-expanded={showNow} onClick={() => setShowNow((n) => !n)}>
+                {showNow ? l.hideNow : l.showNow}
+              </button>
+            )}
+            {beforeAfter && showNow && (
+              <div className="bot-setup-persona was" role="group" aria-label={l.personaNow} translate="no">
+                {listed.before.trim() || l.none}
+              </div>
             )}
           </>
         )}
@@ -574,24 +617,47 @@ function labelOf(l: Locale["chat"]["botSetup"], read: BotSetupCardRead, item: Pl
   }
 }
 
-function valueOf(l: Locale["chat"]["botSetup"], item: ListedItem): ReactNode {
+function valueOf(l: Locale["chat"]["botSetup"], item: ListedItem, beforeAfter: boolean): ReactNode {
+  const was = (now: ReactNode) =>
+    beforeAfter && (
+      <>
+        <span className="bot-setup-was">{now}</span>
+        {" → "}
+      </>
+    );
+  const model = (m: string | null) => (
+    <span className="mono" translate="no">
+      {m ?? "—"}
+    </span>
+  );
+  const color = (hex: string | null) => (
+    <>
+      {hex && <span className="bot-setup-swatch" style={{ background: hex }} aria-hidden />} {colorName(l, hex)}
+    </>
+  );
   switch (item.kind) {
     case "description":
-      return <span className="bot-setup-value"> · {item.after}</span>;
+      return (
+        <span className="bot-setup-value">
+          {" · "}
+          {was(item.before.trim() || l.none)}
+          {item.after}
+        </span>
+      );
     case "model":
       return (
         <span className="bot-setup-value">
           {" · "}
-          <span className="mono" translate="no">
-            {item.after ?? "—"}
-          </span>
+          {was(model(item.before))}
+          {model(item.after)}
         </span>
       );
     case "color":
       return (
         <span className="bot-setup-value">
           {" · "}
-          {item.after && <span className="bot-setup-swatch" style={{ background: item.after }} aria-hidden />} {colorName(l, item.after)}
+          {was(color(item.before))}
+          {color(item.after)}
         </span>
       );
     case "toolset":

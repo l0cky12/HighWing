@@ -102,7 +102,10 @@ export type NotFoundItem = { kind: "model" | "skill" | "toolset" | "mcp"; key: s
 
 export type PlanItem = ListedItem | NotFoundItem;
 
-/** The card's items in the card's order: about the bot, then skills, toolsets and MCP servers. */
+/**
+ * The card's items in the card's order: about the bot, then skills, toolsets and MCP servers. Set up again's plan also
+ * holds every skill, toolset and MCP server the bot has on that the block leaves as it is, each with nothing to do.
+ */
 export type Plan = { cardId: string; items: PlanItem[] };
 
 /**
@@ -139,6 +142,18 @@ export type AcceptedRecord = { v: 1; card: string; items: AcceptedItem[] };
 
 /** The fenced block that carries an accepted record in the ready-turn row. */
 export const ACCEPTED_FENCE = "highwing-bot-setup-accepted";
+
+/**
+ * A message preview up to Bot setup's block (`ACCEPTED_FENCE` starts the same), or "" when the block comes first.
+ * Hermes cuts a preview at 80 characters and adds "...", which can fall inside the fence's name.
+ */
+export function previewWithoutSetup(preview: string): string {
+  for (const fence of preview.matchAll(/`{3,}|~{3,}/g)) {
+    const rest = preview.slice(fence.index + fence[0].length);
+    if (rest.startsWith(BOT_SETUP_FENCE) || (rest.endsWith("...") && BOT_SETUP_FENCE.startsWith(rest.slice(0, -3)))) return preview.slice(0, fence.index).trimEnd();
+  }
+  return preview;
+}
 
 /** What each block colour is stored as in the Bot Mode block. Edit bot's colour box writes hex, and the roster shows only hex. */
 export const BOT_SETUP_COLOR_HEX: Readonly<Record<BotSetupColor, string>> = {
@@ -432,6 +447,11 @@ function planBlock(card: Card, now: HermesNow): (Proposal<ItemKind> | NotFoundIt
   for (const { c, bot } of copies) for (const n of c.toolsets) bot ? toolset(n, true, bot) : add(notFound("toolset", n, c.from));
   for (const m of b.mcp) mcp(m.catalog, now.mcp?.catalog);
   for (const { c, bot } of copies) for (const n of c.mcp) mcp(n, bot?.mcp, bot?.name ?? c.from);
+  if (card.again) {
+    for (const s of now.skills) if (s.enabled) add(listed("skill", `skill:${s.name}`, "on", "on", { name: s.name }));
+    for (const t of now.toolsets) if (t.enabled) add(listed("toolset", `toolset:${t.name}`, "on", "on", { name: t.name }));
+    for (const name of now.mcp?.servers ?? []) add(listed("mcp", `mcp:${name}`, "added", "added", { name }));
+  }
   return items;
 }
 

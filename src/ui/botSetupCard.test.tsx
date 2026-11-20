@@ -5,8 +5,8 @@
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { BOT_SETUP_FENCE, botSetupBrief, type BotSetupNewBlock } from "../hermes/botSetupBrief";
-import { botSetupBegin } from "../hermes/botSetupStart";
+import { BOT_SETUP_FENCE, botSetupBrief, type BotSetupAgainBlock, type BotSetupNewBlock } from "../hermes/botSetupBrief";
+import { botSetupBegin, briefTurn } from "../hermes/botSetupStart";
 import { BOT_CHAT_TITLE } from "../hermes/bots";
 import { FakeHermes, row, type TranscriptMessage } from "../hermes/fakeHermes";
 import { memoryCache } from "../hermes/memoryCache";
@@ -406,6 +406,123 @@ describe("MCP servers on the card", { timeout: 30_000 }, () => {
     open();
     await waitFor(() => expect(within(row("weather")).getByText(t.mcpReloaded)).toBeTruthy(), { timeout: 5000 });
     expect(server.requests.filter((r) => r.method === "reload.mcp")).toHaveLength(1);
+  });
+});
+
+describe("Set up again's card", { timeout: 30_000 }, () => {
+  const AGAIN: BotSetupAgainBlock = { ...BLOCK, persona: null, description: "Plans trips by train.", color: null, callOwner: null, skills: [{ name: "recipes", on: true }], toolsets: [] };
+  const current = { persona: "You are Hermes.", description: "Helps with anything.", model: "claude-sonnet-4-5", color: null, skillsOn: ["notes"], toolsetsOn: ["web"] };
+  const again = (block: BotSetupAgainBlock = AGAIN): TranscriptMessage[] => [
+    { role: "user", text: "Rome to Florence?" },
+    { role: "assistant", text: "The 09:10 Frecciarossa is quickest." },
+    { role: "user", text: briefTurn(botSetupBrief({ id: ID, name: "Hermes", inventory: { models: [], skills: ["notes", "recipes"], toolsets: [], bots: [] }, current }), ID), display_kind: "hidden" },
+    { role: "assistant", text: "Here's how I'm set up now. What would you like to change?" },
+    { role: "user", text: "Plan by train, and turn recipes on." },
+    { role: "assistant", text: `Here's the change. Everything else stays as it is.\n\n${fenced(JSON.stringify(block))}` },
+  ];
+  const more = (name: string) => within(group(name)).getByRole("button", { name: /more that do(es)?n't change/ });
+  /** The bot's reply `text` to the turn last sent into the Bot Chat. */
+  const reply = async (server: FakeHermes, hermes: Hermes, text: string) => {
+    const sid = String(server.last("prompt.submit")!.params.session_id);
+    server.event(sid, "message.start");
+    server.storeMessage("hermes-bot", { role: "assistant", text });
+    server.event(sid, "message.complete", { text, status: "complete" });
+    await act(async () => void (await hermes.idle()));
+  };
+
+  it("shows what changes as before → after, read from Hermes, and folds what stays under a line that counts it", async () => {
+    const { server, user } = await inBotChat(again());
+    await waitCard();
+    expect(within(liveCard()!).getByText(t.againTitle("Hermes"))).toBeTruthy();
+    expect(within(liveCard()!).getByText(t.againIntro("Hermes"))).toBeTruthy();
+    expect(screen.getByText(t.started)).toBeTruthy();
+    expect(document.querySelector(".msg.user")?.textContent).not.toContain("highwing:bot-setup");
+
+    const about = group(t.about("Hermes"));
+    expect(about.querySelector(".bot-setup-value")?.textContent).toBe(" · Helps with anything. → Plans trips by train.");
+    expect(within(about).getByText("Helps with anything.").className).toBe("bot-setup-was");
+    expect(within(group(t.skills)).getByText(t.fromTo(t.state.off, t.state.on))).toBeTruthy();
+    expect(within(liveCard()!).getByText(t.changes(2))).toBeTruthy();
+
+    expect(more(t.about("Hermes")).textContent).toContain(t.unchanged(3));
+    expect(more(t.skills).textContent).toContain(t.unchanged(1));
+    expect(within(about).queryByText(t.persona)).toBeNull();
+    expect(within(liveCard()!).queryAllByRole("checkbox")).toHaveLength(2);
+    await user.click(more(t.about("Hermes")));
+    expect(more(t.about("Hermes")).getAttribute("aria-expanded")).toBe("true");
+    expect((box(t.persona) as HTMLInputElement).disabled).toBe(true);
+    await user.click(more(t.skills));
+    expect((box("notes") as HTMLInputElement).disabled).toBe(true);
+
+    await user.click(within(liveCard()!).getByRole("button", { name: t.setUp }));
+    await waitFor(() => expect(server.profileMeta.default.description).toBe("Plans trips by train."));
+    await waitFor(() => expect(server.skills.disabled.default?.has("recipes")).toBe(false));
+    expect(server.souls.default).toBe("You are Hermes.");
+    expect(server.restRequests.filter((r) => r.method !== "GET" && /soul|toolsets/.test(r.path))).toEqual([]);
+  });
+
+  it("shows the persona Hermes has now beside the new one, on asking", async () => {
+    const { user } = await inBotChat(again({ ...AGAIN, persona: "You are Hermes. Prefer trains to flights under six hours." }));
+    await waitCard();
+    const about = group(t.about("Hermes"));
+    expect(within(about).getByText("You are Hermes. Prefer trains to flights under six hours.")).toBeTruthy();
+    expect(within(about).queryByRole("group", { name: t.personaNow })).toBeNull();
+    await user.click(within(about).getByRole("button", { name: t.showNow }));
+    expect(within(about).getByRole("group", { name: t.personaNow }).textContent).toBe("You are Hermes.");
+    expect(more(t.about("Hermes")).textContent).toContain(t.unchanged(2));
+  });
+
+  it("starts clean when Keep history runs a new setup in a Bot Chat whose first card was set up, which kept its results", async () => {
+    const { server, hermes, user } = await inBotChat(interview(card()));
+    await waitCard();
+    await user.click(within(liveCard()!).getByRole("button", { name: t.setUp }));
+    const foot = () => liveCard()!.querySelector(".bot-setup-foot-note")!.textContent;
+    await waitFor(() => expect(within(liveCard()!).getAllByText(t.applied).length).toBeGreaterThan(0), { timeout: 5000 });
+    const answer = (text: string) => reply(server, hermes, text);
+    await answer("Thanks, I'm set up.");
+    await waitFor(() => expect(within(liveCard()!).getAllByText(t.applied).length).toBeGreaterThan(0));
+
+    const me = (await hermes.bots()).find((b) => b.profile === "default")!;
+    await act(async () => void (await hermes.setUpBotAgain(me, (id) => botSetupBrief({ id, name: "Hermes", inventory: { models: [], skills: ["notes", "recipes"], toolsets: [], bots: [] }, current }))));
+    await answer(`Here's the change.\n\n${fenced(JSON.stringify(AGAIN))}`);
+    await waitFor(() => expect(within(liveCard()!).getByText(t.againTitle("Hermes"))).toBeTruthy(), { timeout: 5000 });
+    await waitFor(() => expect(foot()).toBe(t.changes(1)));
+    expect(within(liveCard()!).queryAllByText(t.applied)).toEqual([]);
+    expect(within(group(t.about("Hermes"))).getByRole("checkbox", { name: t.description })).toHaveProperty("checked", true);
+  });
+
+  it("leaves the new setup's card alone when Keep history starts one while Set it up still writes, and ends no interview", async () => {
+    const { server, hermes, user } = await inBotChat(interview(card({ ...BLOCK, toolsets: [{ name: "web", on: false }] })));
+    await waitCard();
+    let release!: () => void;
+    server.toolsetGate = new Promise((r) => (release = r));
+    await user.click(within(liveCard()!).getByRole("button", { name: t.setUp }));
+    await waitFor(() => expect(within(liveCard()!).getAllByText(t.applied).length).toBeGreaterThan(0), { timeout: 5000 });
+
+    const me = (await hermes.bots()).find((b) => b.profile === "default")!;
+    await act(async () => void (await hermes.setUpBotAgain(me, (id) => botSetupBrief({ id, name: "Hermes", inventory: { models: [], skills: ["notes", "recipes"], toolsets: [], bots: [] }, current }))));
+    const answer = (text: string) => reply(server, hermes, text);
+    await answer(`Here's the change.\n\n${fenced(JSON.stringify(AGAIN))}`);
+    await waitFor(() => expect(within(liveCard()!).getByText(t.againTitle("Hermes"))).toBeTruthy(), { timeout: 5000 });
+    const setUp = () => liveCard()!.querySelector<HTMLButtonElement>(".bot-setup-foot .btn.primary")!;
+    expect(setUp().disabled).toBe(true);
+
+    const submits = server.requests.filter((r) => r.method === "prompt.submit").length;
+    release();
+    await waitFor(() => expect(setUp().disabled).toBe(false), { timeout: 5000 });
+    await user.click(within(group(t.about("Hermes"))).getByRole("checkbox", { name: t.description }));
+    await act(async () => void (await hermes.idle()));
+    expect(server.requests.filter((r) => r.method === "prompt.submit")).toHaveLength(submits);
+    expect(within(group(t.about("Hermes"))).getByRole("checkbox", { name: t.description })).toHaveProperty("checked", false);
+    expect(within(liveCard()!).queryAllByText(t.applied)).toEqual([]);
+  });
+
+  it("leaves a new bot's card whole: nothing folded, no before", async () => {
+    await inBotChat(interview(card()));
+    await waitCard();
+    expect(within(liveCard()!).queryByRole("button", { name: /more that do(es)?n't change/ })).toBeNull();
+    expect(liveCard()!.querySelector(".bot-setup-was")).toBeNull();
+    expect(within(group(t.about("Hermes"))).getByText(t.inUse)).toBeTruthy();
   });
 });
 

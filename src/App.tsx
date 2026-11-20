@@ -53,6 +53,8 @@ import { desktopLinks, type LinkInbox } from "./hermes/tauriLinks";
 import { ChatLinkNotice, type LinkNoticeView } from "./ui/ChatLinkNotice";
 import { Inbox } from "./ui/Inbox";
 import { BotList, useBotActions, type BotEditWiring } from "./ui/Bots";
+import { freshNote, keptNote } from "./ui/SetUpAgain";
+import type { AgainAsk } from "./hermes/botSetupAgain";
 import { CHAT_POLICY, askRule, chatKind, policyOf } from "./hermes/chatKind";
 import { jobRunTitle } from "./hermes/cronJobs";
 import { botActivity, botsWaiting, newInBotChatNote, teammateOf, type Bot } from "./hermes/bots";
@@ -1099,7 +1101,7 @@ type BotVisit = { home: string; before: string | null };
  * starts instead of opening it plain (ADR 0231).
  */
 type Arrival = { profile: string; nav: number } & (
-  | { open: "bot"; bot: Bot; opening?: boolean; shown?: string | null; setup?: string }
+  | { open: "bot"; bot: Bot; opening?: boolean; shown?: string | null; setup?: string | AgainAsk }
   | { open: "new" }
   | { open: "chat"; chatId: string }
 );
@@ -2344,9 +2346,9 @@ export function Main({
   const onBotChat = !!shownChat && chatKind(shownChat) === "bot";
   /**
    * `visiting`: what becomes of a bot visit (ADR 0203); none ends it, here or with the switch to the bot's profile.
-   * `setup`: the name the bot was just made with, to start Bot setup in its Bot Chat.
+   * `setup`: the name the bot was just made with, to start Bot setup in its Bot Chat, or what Set up again asks of it.
    */
-  const openBot = (b: Bot, then: "open" | "new", visiting?: BotVisit, setup?: string) => {
+  const openBot = (b: Bot, then: "open" | "new", visiting?: BotVisit, setup?: string | AgainAsk) => {
     guard(() => {
       if (then === "open" && b.profile === profile && !(shownChat && policyOf(shownChat).ofBot)) beforeBotChat.current = active.chatId;
       if (b.profile !== profile) void switchProfileNow(b.profile, { visit: visiting });
@@ -2380,7 +2382,7 @@ export function Main({
     const opening = { ...go, opening: true };
     setArrival(opening);
     const still = () => navGen.current === go.nav && hermes.profile === go.profile;
-    (go.setup === undefined ? hermes.openBotChat(go.bot) : startBotSetup(go.bot, go.setup))
+    (go.setup === undefined ? hermes.openBotChat(go.bot) : typeof go.setup === "string" ? startBotSetup(go.bot, go.setup) : setUpAgain(go.bot, go.setup))
       .then((id) => {
         if (!still() || id === go.shown) return;
         openChat(id, { remember: false });
@@ -2396,22 +2398,45 @@ export function Main({
    * resolves the chat to show. Where the start is refused, the Bot Chat opens as it is.
    */
   const startBotSetup = async (bot: Bot, name: string): Promise<string> => {
+    const brief = async (id: string) => botSetupBrief({ id, name, inventory: await botInventory(bot) });
+    const started = await hermes.startBotSetup(bot, brief);
+    return started.kind === "refused" ? hermes.openBotChat(bot) : started.chatId;
+  };
+
+  const botInventory = (bot: Bot) => {
     const models = async () => {
       await hermes.loadModels();
       const m = hermes.getSnapshot().models;
       return m?.profile === bot.profile ? m : undefined;
     };
-    const others = hermes.getSnapshot().bots?.roster ?? [];
-    const brief = async (id: string) =>
-      botSetupBrief({ id, name, inventory: await newBotInventory({ models, skills: (p) => hermes.skills.rows(p), toolsets: (p) => hermes.toolsets.list(p), mcp: hermes.mcp }, bot.profile, others) });
-    const started = await hermes.startBotSetup(bot, brief);
-    return started.kind === "refused" ? hermes.openBotChat(bot) : started.chatId;
+    return newBotInventory({ models, skills: (p) => hermes.skills.rows(p), toolsets: (p) => hermes.toolsets.list(p), mcp: hermes.mcp }, bot.profile, hermes.getSnapshot().bots?.roster ?? []);
+  };
+
+  const setUpAgain = async (bot: Bot, ask: AgainAsk): Promise<string> => {
+    const w = words.bots.again;
+    const [inventory, current] = await Promise.all([botInventory(bot), hermes.botSetupCurrent(bot)]);
+    const brief = (id: string) => botSetupBrief({ id, name: bot.name, inventory, current });
+    const say = (text: string | undefined) => {
+      if (text) setToast({ text, lasting: true, at: Date.now() });
+    };
+    if (ask.how === "keep") {
+      const started = await hermes.setUpBotAgain(bot, brief);
+      say(keptNote(w, bot.name, started));
+      return started.kind === "refused" ? hermes.openBotChat(bot) : started.chatId;
+    }
+    const end = await hermes.startBotFresh(bot, brief, ask.entries, w.earlierTitle(bot.name, words.fmt.dateTime(Date.now())));
+    const note = freshNote(w, bot.name, end);
+    // The old Bot Chat is archived and no new one started, so there is no Bot Chat to open.
+    if (end.kind === "stopped" && end.left !== "asItWas") throw new Error(note);
+    say(note);
+    if (end.kind === "fresh") return end.start.kind === "refused" ? hermes.openBotChat({ ...bot, botChat: null }) : end.start.chatId;
+    return hermes.openBotChat(bot);
   };
 
   // A bot visit (ADR 0203). A bot row in Bots mode whose profile isn't shown starts one, or carries one on, and the
   // owner's own bot ends it there. Chats and New chat go back to `home`; an ordinary chat of the bot's profile on screen
   // makes that profile the owner's. The next launch opens on `home` while a visit lasts. `setup`: as `openBot`'s.
-  const visitBot = (b: Bot, setup?: string) =>
+  const visitBot = (b: Bot, setup?: string | AgainAsk) =>
     openBot(b, "open", b.profile === profile ? visit : b.profile === visit?.home ? undefined : (visit ?? { home: profile, before: active.chatId }), setup);
   const visitBotRef = useRef(visitBot);
   visitBotRef.current = visitBot;
@@ -3305,6 +3330,14 @@ export function Main({
   const botActions = useBotActions({
     profiles: profilesWiring,
     botEdit,
+    again: {
+      entries: async (p) => Object.values((await hermes.memory.load(p)).resources).flatMap((r) => r.entries),
+      busy: (b) => {
+        const doing = activityOf(b, bots?.roster ?? []);
+        return doing === "needs-you" ? "waiting" : doing;
+      },
+      run: (b, ask) => visitBotRef.current(b, ask),
+    },
     roster: bots?.roster,
     load: loadBots,
     shown: botsInList,

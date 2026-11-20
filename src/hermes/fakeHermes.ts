@@ -779,6 +779,11 @@ export class FakeHermes {
    * `MemoryStore._parse_entries` reads them (stripped, none empty). A profile not here has none.
    */
   memory: Record<string, { memory: string[]; profile: string[] }> = {};
+  /**
+   * True: a Hermes before v0.23.1 (`aa432bc55b`), where an archived Bot Chat keeps its title and the title lookup still
+   * finds it, so no new Bot Chat can be made.
+   */
+  archiveKeepsBotChatTitle = false;
   /** The profile the dashboard process runs as (`GET /api/profiles/active` → `current`), whose memory `learning.*` reach. */
   servedProfile = "default";
   /** Each memory file's limit in characters (`memory_char_limit`, `user_char_limit` defaults at `bf0203a`). */
@@ -874,7 +879,7 @@ export class FakeHermes {
       if (title && this.titleLookupError) return this.fail(r.id, this.titleLookupError.code, this.titleLookupError.message);
       const active = (s: SessionRow) => s.listedAs?.last_active ?? s.last_active ?? s.started_at;
       const rows = store
-        .filter((s) => !s.archived && !s.unlisted && (r.params.include_hidden === true || !s.hidden) && (title === undefined || s.title === title))
+        .filter((s) => (!s.archived || (title !== undefined && this.archiveKeepsBotChatTitle)) && !s.unlisted && (r.params.include_hidden === true || !s.hidden) && (title === undefined || s.title === title))
         .sort((a, b) => active(b) - active(a))
         .slice(0, typeof r.params.limit === "number" ? r.params.limit : 200);
       const common = (s: SessionRow) => ({ preview: s.listedAs?.preview ?? s.preview, started_at: s.started_at, message_count: s.listedAs?.message_count ?? s.message_count, source: s.source });
@@ -3845,7 +3850,7 @@ export class FakeHermes {
     if (typeof body.archived === "boolean") s.archived = body.archived;
     // Archiving the Bot Chat retires its name: the title is cleared and the row unhidden, so a new Bot Chat can take
     // it, and unarchiving doesn't give it back (`_retire_canonical_bot_chat_in_transaction` at ae2a81cc; spikes/s3.out).
-    if (body.archived === true && s.title === "Bot Chat") Object.assign(s, { title: null, hidden: false });
+    if (body.archived === true && s.title === "Bot Chat" && !this.archiveKeepsBotChatTitle) Object.assign(s, { title: null, hidden: false });
     if (typeof body.hidden === "boolean") s.hidden = body.hidden;
     if (typeof body.unread === "boolean") s.last_read_at = body.unread ? 0 : now();
     if (typeof body.title === "string") {

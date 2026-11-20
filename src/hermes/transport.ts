@@ -50,7 +50,7 @@ import { WritingDesk, type WritingPick } from "./writingModel";
 import { ToolsetsApi, type Caution } from "./toolsets";
 import { VoiceSettingsApi } from "./voiceSettings";
 import { readBack, sendImport, type PlannedChat } from "./importTranscripts";
-import { memoryApi, type MemoryApi } from "./memory";
+import { memoryApi, type MemoryApi, type MemoryEntry } from "./memory";
 import { MemoryProvidersApi } from "./memoryProviders";
 import { SkillsApi } from "./skills";
 import {
@@ -148,8 +148,9 @@ import {
 import { cannotResend, laterOf, replayBlocked, resendText, replayTarget, splitRefs, turnAt, variantRoot, withRefs, withoutMarkers, type ReplayKind, type ReplayPreview } from "./replay";
 import { errorText, formatBytes, isObj, nonBlankText, nonEmptyText, optionalText } from "./values";
 import { displayMetadata, returnedItem } from "./returned";
-import { botSetupMarkerId } from "./botSetupBrief";
-import { BotSetupStarts, botSetupBegin, lostAnswer, runStart, withSetupLine, type BotSetupRefusal, type BotSetupStart, type StartAsk, type StartIo } from "./botSetupStart";
+import { botSetupMarkerId, type BotSetupCurrent } from "./botSetupBrief";
+import { BotSetupStarts, botSetupBegin, briefTurn, lostAnswer, runStart, withSetupLine, type BotSetupRefusal, type BotSetupStart, type StartAsk, type StartIo } from "./botSetupStart";
+import { againBusy, currentSetup, runFresh, type AgainStart, type FreshEnd, type FreshIo } from "./botSetupAgain";
 import { acceptedRecord, fencedBlocks, parseSetup, readAcceptedRecord, type AcceptedRecord, type ListedItem, type ParseResult, type Plan } from "./botSetupCard";
 import { BOT_SETUP_FENCE } from "./botSetupBrief";
 import { applyItem, readSetupNow, readyTurn, runSetup, setupItems, type BotSetupRestart, type CardState, type SetupApis, type SetupNow } from "./botSetupApply";
@@ -827,6 +828,11 @@ export class Hermes {
   private botSetups = new BotSetupStarts();
   /** The Bot Chats the latest roster named, by profile: registry rows and lineage tips, which search leaves out. */
   private botChatIds = new Map<string, Set<string>>();
+  /**
+   * By profile, the old Bot Chat Start fresh archived and hasn't named yet. Hermes cleared its title as it archived it,
+   * so nothing in Hermes says which archived chat it was, and only this app's run knows.
+   */
+  private freshUnnamed = new Map<string, string>();
   /** See `setVisitHome`. */
   private visitHome?: string;
   /** The roster read for the Bot Chats' ids on a connection (`knownBotChats`). */
@@ -2622,11 +2628,8 @@ export class Hermes {
     const isLine = (i: Item, id: string) => i.kind === "returned" && i.setup?.id === id;
     const io: StartIo = {
       read: async () => {
-        const found = await this.botChats.find(profile, bot.name, !!bot.botChat);
-        if (!found) return null;
-        const chatId = found.resolvedId;
-        this.listBotChat(profile, bot, found.id, chatId);
-        await this.resume(chatId);
+        const chatId = await this.foundBotChat(profile, bot);
+        if (!chatId) return null;
         const chat = this.snapshot.chats.find((c) => c.id === chatId);
         const runningBeforeRows = !!chat?.running;
         const last = chat?.items.at(-1);
@@ -2674,6 +2677,116 @@ export class Hermes {
       if (e instanceof BotModeUnsupportedError) return { kind: "refused", reason: "noBotMode" };
       throw e;
     }
+  }
+
+  private async foundBotChat(profile: string, bot: Bot): Promise<string | null> {
+    const found = await this.botChats.find(profile, bot.name, !!bot.botChat);
+    if (!found) return null;
+    this.listBotChat(profile, bot, found.id, found.resolvedId);
+    await this.resume(found.resolvedId);
+    return found.resolvedId;
+  }
+
+  /** How the shown profile's bot is set up now, for Set up again's brief (ADR 0231): the reads the card's "before" comes from. */
+  async botSetupCurrent(bot: Bot): Promise<BotSetupCurrent> {
+    const profile = this.profile;
+    if (bot.profile !== profile) throw new Error(`Switch to ${bot.profile} first.`);
+    return currentSetup((await readSetupNow(this.setupApis(profile), profile, { again: true, block: { copy: [], mcp: [] } })).now);
+  }
+
+  /**
+   * Set up again with Keep history (ADR 0231): sends `brief`, under a new setup id, into the shown profile's Bot Chat
+   * for `bot` as one hidden turn. Nothing is seeded, archived or cleared, and nothing is written to the profile. A bot
+   * with no Bot Chat yet gets one with the brief seeded, as a new bot does. Resolves `refused`, with nothing sent,
+   * where `botSetupOff` says why, or while a reply runs or a Question waits there. A send whose answer was lost is
+   * settled by the stored rows, never by a second send.
+   */
+  async setUpBotAgain(bot: Bot, brief: (id: string) => string): Promise<AgainStart> {
+    const profile = this.profile;
+    if (bot.profile !== profile) throw new Error(`Switch to ${bot.profile} first.`);
+    const off = this.botSetupOff();
+    if (off) return { kind: "refused", reason: off };
+    const chatId = await this.foundBotChat(profile, bot);
+    if (!chatId) return this.startBotSetup(bot, brief);
+    const was = this.snapshot.chats.find((c) => c.id === chatId);
+    const busy = againBusy(was);
+    if (busy) return { kind: "refused", reason: busy };
+    const id = crypto.randomUUID();
+    const text = briefTurn(brief(id), id);
+    if (botSetupMarkerId(text) !== id) throw new Error("The brief doesn't start with this setup's marker, so it wasn't sent.");
+    const runtimeId = await this.resume(chatId);
+    const isLine = (i: Item) => i.kind === "returned" && i.setup?.id === id;
+    this.patchChat(chatId, (c) => ({ ...c, running: true, updatedAt: Date.now(), items: withSetupLine(c.items, { id }, nextId(c.items, "w")) }));
+    try {
+      this.noteRows(profile, chatId, [(await this.protocol.submitHidden(runtimeId, profile, text)).userRowId]);
+    } catch (e) {
+      const stored = async () => (await this.storedRows(chatId, profile)).some((r) => r.role === "user" && botSetupMarkerId(storedText(r.content)) === id);
+      if (lostAnswer(e) && (await stored().catch(() => false))) return { kind: "waiting", chatId, id };
+      if (this.profile === profile) this.patchChat(chatId, (c) => ({ ...c, running: !!was?.running && !!c.running, items: c.items.filter((i) => !isLine(i)) }));
+      throw e;
+    }
+    return { kind: "waiting", chatId, id };
+  }
+
+  /**
+   * Set up again with Start fresh (ADR 0231), through `botSetupAgain.ts`'s steps: leaves the Bot Chat's live session,
+   * archives the chat in Hermes, checks the title lookup no longer finds it, names it `title` so it can be found in
+   * Archived, removes `entries`, the memory entries the owner was shown, one at a time under Hermes's lock, and makes a
+   * new Bot Chat with `brief` seeded. Never on `default`. Resolves `refused`, with nothing sent, where `botSetupOff`
+   * says why, or while a reply runs or a Question waits in the Bot Chat. When the lookup still finds the old chat, it
+   * is unarchived and no memory is cleared.
+   */
+  async startBotFresh(bot: Bot, brief: (id: string) => string, entries: readonly MemoryEntry[], title: string): Promise<FreshEnd> {
+    const profile = this.profile;
+    if (bot.profile !== profile) throw new Error(`Switch to ${bot.profile} first.`);
+    const off = this.botSetupOff();
+    if (off) return { kind: "refused", reason: off };
+    if (bot.isDefault || profile === "default") return { kind: "refused", reason: "default" };
+    const io: FreshIo = {
+      find: async () => {
+        const chatId = await this.foundBotChat(profile, bot);
+        const busy = chatId ? againBusy(this.snapshot.chats.find((c) => c.id === chatId)) : undefined;
+        return chatId ? { chatId, ...(busy && { busy }) } : null;
+      },
+      unnamed: async () => {
+        const chatId = this.freshUnnamed.get(profile);
+        if (!chatId) return null;
+        const row = (await this.rest("GET", `${sessionPath(chatId)}?${new URLSearchParams({ profile })}`)) as SessionRow;
+        if (row.archived && !row.title) return chatId;
+        this.freshUnnamed.delete(profile);
+        return null;
+      },
+      leave: async (chatId) => {
+        const runtimeId = this.snapshot.chats.find((c) => c.id === chatId)?.runtimeId;
+        if (!runtimeId) return;
+        await this.protocol.leave(runtimeId);
+        this.runtimeOwners.delete(runtimeId);
+        if (this.profile !== profile) return;
+        this.staleItems.set(chatId, this.snapshot.chats.find((c) => c.id === chatId)?.items.length ?? 0);
+        this.patchChat(chatId, (c) => ({ ...c, runtimeId: undefined, live: undefined }));
+      },
+      archive: async (chatId) => {
+        this.freshUnnamed.set(profile, chatId);
+        if (!(await this.archive(chatId))) throw new Error(`Hermes doesn't have ${bot.name}'s Bot Chat archived.`);
+      },
+      titleTaken: async () => (await this.botChats.find(profile, bot.name, false)) !== null,
+      unarchive: (chatId) => this.restore(chatId),
+      retitle: async (chatId) => {
+        const refused = await this.fencedPatch(chatId, profile, { title }, await this.revision(chatId, profile)).then(
+          () => undefined,
+          (e: unknown) => e,
+        );
+        // Hermes cleared the title as it archived the chat, so it is an ordinary archived chat now, under the title it has.
+        const now = await this.readTitle(chatId, profile).catch(() => title);
+        this.botChatIds.delete(profile);
+        if (this.profile === profile) this.patchChat(chatId, (c) => ({ ...c, bot: false, title: now }));
+        if (refused) throw refused;
+        this.freshUnnamed.delete(profile);
+      },
+      clearMemory: async () => (await this.memory.removeMany(profile, entries)).outcomes.filter((o) => o.kind !== "removed").length,
+      start: () => this.startBotSetup({ ...bot, botChat: null }, brief),
+    };
+    return runFresh(io);
   }
 
   private setupApis(profile: string): SetupApis {
@@ -2750,8 +2863,10 @@ export class Hermes {
       // A ready turn already stored with this record has told the bot all this one would, unless this run applied
       // something that one couldn't: the bot must rebuild for it.
       const appliedNow = Object.values(run.states).some((s) => s.kind === "applied");
-      const stored = appliedNow ? undefined : parseSetup(await this.storedRows(chatId, profile));
-      if (stored?.kind === "card" && JSON.stringify(stored.accepted) === JSON.stringify(record)) return run;
+      const stored = parseSetup(await this.storedRows(chatId, profile));
+      // Set up again may have started another setup in this Bot Chat meanwhile, whose interview this turn would end.
+      if ((stored.kind === "card" ? stored.card.setupId : stored.setupId) !== read.parse.card.setupId) return run;
+      if (!appliedNow && stored.kind === "card" && JSON.stringify(stored.accepted) === JSON.stringify(record)) return run;
       const runtimeId = await this.resume(chatId);
       const was = this.snapshot.chats.find((c) => c.id === chatId)?.running;
       this.patchChat(chatId, (c) => ({ ...c, running: true, updatedAt: readyAt }));

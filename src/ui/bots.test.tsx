@@ -977,6 +977,20 @@ describe("Bots mode", () => {
     expect(within(scribe).getByRole("button", { name: "New chat with Scribe" })).toBeTruthy();
     expect(scribe.querySelector(".bots-more")).toBeNull();
   });
+
+  it("previews a card reply by its words before the block, or by the card's title when the block comes first", async () => {
+    const block = `\`\`\`highwing-bot-setup\n${JSON.stringify({ v: 1, persona: "You are Scribe, who writes release notes." })}\n\`\`\``;
+    const preview = async (reply: string) => {
+      const { user } = await launch((s) => s.transcripts["scribe-bot"].push({ role: "assistant", text: reply }));
+      await user.click(within(panel()).getByRole("tab", { name: /^Bots/ }));
+      await waitFor(() => expect(panel().querySelector('.bots-row[data-profile="scribe"]')).toBeTruthy());
+      const text = panel().querySelector('.bots-row[data-profile="scribe"] .bots-preview')!.textContent;
+      cleanup();
+      return text;
+    };
+    expect(await preview(`Here's how I'd set myself up.\n\n${block}`)).toBe("Here's how I'd set myself up.");
+    expect(await preview(block)).toBe("Set up Scribe");
+  });
 });
 
 describe("Chats mode", () => {

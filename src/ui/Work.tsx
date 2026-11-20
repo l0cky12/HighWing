@@ -73,6 +73,7 @@ export function Work({
   pollMs = 10_000,
   watchMs = 5_000,
   lacks = NONE,
+  openTask,
 }: {
   api: WorkApi;
   connected: boolean;
@@ -80,6 +81,8 @@ export function Work({
   pollMs?: number;
   watchMs?: number;
   lacks?: ReadonlySet<WorkFeature>;
+  /** A task to open the sheet of, as a task card in a chat asks (ADR 0248). A new object opens it again. */
+  openTask?: { id: string };
 }) {
   const [board, setBoard] = useState<Board>();
   const [view, setView] = useState<"board" | "graph">("board");
@@ -97,7 +100,10 @@ export function Work({
   const [notice, setNotice] = useState<string>();
   const [dragging, setDragging] = useState<BoardTask>();
   const [over, setOver] = useState<string>();
-  const [openId, setOpenId] = useState<string>();
+  const [openId, setOpenId] = useState<string | undefined>(openTask?.id);
+  useEffect(() => {
+    if (openTask) setOpenId(openTask.id);
+  }, [openTask]);
   const [ask, setAsk] = useState<Ask>();
   const [draft, setDraft] = useState<Draft>();
   const locked = saving || !!pending;

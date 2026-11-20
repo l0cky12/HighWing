@@ -46,6 +46,7 @@ import { CronApi, jobRunTitle, statusLabel } from "./cronJobs";
 import { JobRunWatch, type FinishedJob } from "./jobRunWatch";
 import { followsSession, nextRoster, parseKanbanCreate, sameTask, type DispatchedTask } from "./dispatched";
 import { KanbanApi, KanbanWatch } from "./kanban";
+import { TaskReads } from "./taskReads";
 import { ModelSettingsApi } from "./modelSettings";
 import { WritingDesk, type WritingPick } from "./writingModel";
 import { ToolsetsApi, type Caution } from "./toolsets";
@@ -485,8 +486,8 @@ const NO_SUCH_METHOD = -32601;
 const BOT_SAVE_ATTEMPTS = 3;
 /** The most pages of 100 stored rows the Run view reads back to find where a reply's turn began. */
 const RUN_PAGES = 5;
-/** The tools whose stored result `fillStoredResults` reads back after a resume, because their card reads it (ADR 0228). */
-const RESULT_READ_FOR: ReadonlySet<string> = new Set(["message_agent"]);
+/** The tools whose stored result `fillStoredResults` reads back after a resume, because their card reads it (ADRs 0228, 0248). */
+const RESULT_READ_FOR: ReadonlySet<string> = new Set(["message_agent", "kanban_create"]);
 /** "No window here shows this chat" (`NOT_SHOWN_CODE`, `tui_gateway/server_requests.py`): one client declining. */
 const NOT_SHOWN = 4404;
 /** Requests only the window showing the chat answers (the official app's `WINDOW_OWNED_REQUESTS` at `bf0203a`). */
@@ -1235,7 +1236,10 @@ export class Hermes {
     api: this.kanban,
     sessions: () => new Set(this.snapshot.chats.flatMap((c) => [c.id, ...(c.lineage ?? [])])),
     publish: (by) => this.placeTasks(by),
+    boardRead: (current) => this.taskReads.setCurrentBoard(current),
   });
+  /** The latest read of each task a shown task card names (taskReads.ts, ADR 0248), in memory only. */
+  readonly taskReads = new TaskReads({ read: (id, board) => this.kanban.loadTask(id, board) });
 
   /**
    * Settings → Providers' subscription sign-ins and custom endpoints (accounts.ts, ADR 0133). Their changes queue with
@@ -1549,6 +1553,7 @@ export class Hermes {
     this.update({ status: "connected", closedReason: undefined, route: pipe.route, unsecure: isUnsecure(pipe.route) });
     this.askWire.connected();
     this.kanbanWatch.start();
+    this.taskReads.start();
     // Without this, Hermes never sends this connection an Approval (research doc §6). Its answer lists the requests
     // Hermes may send, which is how diagnostics knows Approvals are there.
     const told = this.request("client.capabilities", { server_requests: true });
@@ -2019,6 +2024,7 @@ export class Hermes {
     this.settleEarlyBotChats();
     this.earlyBotChats.clear();
     this.kanbanWatch.reset();
+    this.taskReads.reset();
     this.update({
       profile: name,
       chats: withOutbox(this.cache.load(name), loadOutbox(this.cache, name)),
@@ -4972,10 +4978,10 @@ export class Hermes {
   }
 
   /**
-   * Puts back the results `session.resume` leaves out of the calls whose card reads them (ADR 0228): a
-   * `message_agent` call's ack. Hermes keeps each in the call's stored tool row, read here by `tool_call_id` from the
-   * newest page back. A result read once is kept for the connection, so a later resume puts it back without a read.
-   * A call whose row isn't found keeps no result, and its card shows the message alone, as before.
+   * Puts back the results `session.resume` leaves out of the calls whose card reads them (ADRs 0228, 0248): a
+   * `message_agent` or `kanban_create` call's answer. Hermes keeps each in the call's stored tool row, read here by
+   * `tool_call_id` from the newest page back. A result read once is kept for the connection, so a later resume puts it
+   * back without a read. A call whose row isn't found keeps no result, and its card shows the call alone.
    */
   private async fillStoredResults(chatId: string): Promise<void> {
     const [gen, profile] = [this.generation, this.profile];
@@ -5198,6 +5204,7 @@ export class Hermes {
     this.generation++;
     this.capabilities.disconnected();
     this.kanbanWatch.stop();
+    this.taskReads.stop();
     clearTimeout(this.rosterTimer);
     clearTimeout(this.retryTimer);
     clearInterval(this.heartbeat);
@@ -5258,7 +5265,10 @@ export class Hermes {
       return;
     }
     if (type === "status.update") {
-      if (payload.kind === "process" && typeof payload.text === "string") this.kanbanWatch.nudge(payload.text);
+      if (payload.kind === "process" && typeof payload.text === "string") {
+        this.kanbanWatch.nudge(payload.text);
+        this.taskReads.nudge(payload.text);
+      }
       const shown = session_id ? this.snapshot.chats.find((c) => c.runtimeId === session_id) : undefined;
       if (shown && typeof payload.kind === "string" && typeof payload.text === "string")
         this.recorder.hear(this.profile, shown.id, { kind: "status", at: Date.now(), status: payload.kind, text: payload.text });
@@ -5724,6 +5734,7 @@ export class Hermes {
     this.generation++;
     this.capabilities.disconnected();
     this.kanbanWatch.stop();
+    this.taskReads.stop();
     clearTimeout(this.rosterTimer);
     clearInterval(this.heartbeat);
     this.abandonListSync();

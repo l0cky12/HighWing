@@ -4705,6 +4705,14 @@ export class FakeKanban {
     return Object.values(this.boards).flatMap((b) => b.tasks).find((t) => t.id === id);
   }
 
+  /** A comment on the task by `author`, as a worker leaves one with `kanban_comment` (the author is its profile). */
+  comment(id: string, author: string, body: string) {
+    const t = this.find(id);
+    if (!t) return;
+    (t.comments ??= []).push({ id: ++this.commentSeq, author, body, created_at: Math.floor(now()) });
+    this.emit(t, "commented", t.current_run_id);
+  }
+
   /** Deletes the task, as the owner would on the board. */
   remove(id: string) {
     for (const b of Object.values(this.boards)) b.tasks = b.tasks.filter((t) => t.id !== id);
@@ -4712,11 +4720,16 @@ export class FakeKanban {
 
   /**
    * Moves the task to `status`, with a run when a worker picks it up, and wakes its chat as Hermes's poller does.
-   * A block leaves that run's bot at work, as Hermes does.
+   * A block leaves that run's bot at work, as Hermes does. `summary`: what the run handed off, a block's reason or a
+   * completion's summary, which Hermes keeps as the task's latest summary (and result, for done).
    */
-  move(id: string, status: string): boolean {
+  move(id: string, status: string, summary?: string): boolean {
     const t = this.find(id);
     if (!t) return false;
+    if (summary !== undefined) {
+      t.latest_summary = summary;
+      if (status === "done") t.result = summary;
+    }
     const open = this.openRun(t);
     if (status === "running") {
       if (!open) this.claim(id);
@@ -4768,6 +4781,9 @@ export class FakeKanban {
     this.server.event(runtimeId, "tool.start", { tool_id, name: "kanban_create", args, preview: title });
     const result = { ok: true, task_id: task.id, status: task.status, workspace_kind: "project", workspace_path: "/srv/work", project_id: "p_1", gated: false, subscribed: true };
     this.server.event(runtimeId, "tool.complete", { tool_id, name: "kanban_create", duration_s: 0.1, result: JSON.stringify(result) });
+    // Hermes stores the call and its result as rows of their own, which `session.resume` leaves the result out of.
+    this.server.storeMessage(stored, { role: "assistant", text: "", tool_calls: [{ id: tool_id, type: "function", function: { name: "kanban_create", arguments: JSON.stringify(args) } }] });
+    this.server.storeMessage(stored, { role: "tool", tool_call_id: tool_id, name: "kanban_create", args, result: JSON.stringify(result) });
     const text = `Research task dispatched (${task.id}). I'll synthesize the findings when it returns.`;
     this.server.event(runtimeId, "message.delta", { text });
     this.server.storeMessage(stored, { role: "assistant", text });
@@ -4810,7 +4826,7 @@ export class FakeKanban {
           now: now(),
         };
       const task = board.tasks.find((t) => t.id === decodeURIComponent(rawId ?? ""));
-      if (!task) this.refuse(404, `task '${rawId}' does not exist`);
+      if (!task) this.refuse(404, `task ${decodeURIComponent(rawId ?? "")} not found`);
       const links = this.linksOf(task.id);
       // `_link_tasks`: a linked task Hermes no longer has is left out.
       const link_tasks = [...new Set([...links.parents, ...links.children])].flatMap((id) => {

@@ -20,6 +20,7 @@ import { foldRuns, screenUse, type CuRun } from "../hermes/computerUse";
 import { QuestionCard } from "./QuestionCard";
 import { Menu, PinItem, type ChatPin } from "./ChatMenu";
 import { agentSend, deliveryLines, type AgentSend, type DeliveryLine } from "../hermes/agentMessages";
+import { taskCall, type TaskCall } from "../hermes/taskCard";
 import { CHAT_POLICY, chatKind, policyOf } from "../hermes/chatKind";
 import { DeleteChatDialog } from "./DeleteChat";
 import { ExportChatDialog, type ExportMode } from "./ExportChat";
@@ -34,6 +35,7 @@ import { ErrorBoundary } from "./ErrorBoundary";
 import { chunkBlocks } from "./transcriptChunks";
 import { useTranscriptWindow } from "./transcriptWindow";
 import { SourceIcon, Spinner, StoredTime, Ticking, composing, escapeRe, highlight } from "./bits";
+import { TaskCard } from "./TaskCard";
 import { caretAfter, editStep, inputKind, type EditStep } from "./editKeys";
 import { ariaKeys, chordLabel, chordParts, pick as pickCommand, pickApp, typeNewLine, useBindings, type Chord } from "./keybindings";
 import type { EditKind } from "../hermes/editHistory";
@@ -104,8 +106,10 @@ type ToolItem = Extract<Item, { kind: "tool" }>;
 type ThinkingItem = Extract<Item, { kind: "thinking" }>;
 /** A message this bot sent a teammate (ADR 0207), and its card's lines from what came after it (ADR 0228). */
 type SentBlock = { kind: "sent"; id: string; tool: ToolItem; send: AgentSend; lines: DeliveryLine[] };
-type Block = { kind: "tools"; id: string; tools: ToolItem[] } | SentBlock | CuRun | Exclude<Item, ToolItem>;
-const isItem = (b: Block): b is Exclude<Item, ToolItem> => b.kind !== "tools" && b.kind !== "sent" && b.kind !== "cu-run";
+/** A Kanban task this chat created (ADR 0248): its card reads the task from Hermes itself. */
+type TaskBlock = { kind: "task"; id: string; tool: ToolItem; call: TaskCall };
+type Block = { kind: "tools"; id: string; tools: ToolItem[] } | SentBlock | TaskBlock | CuRun | Exclude<Item, ToolItem>;
+const isItem = (b: Block): b is Exclude<Item, ToolItem> => b.kind !== "tools" && b.kind !== "sent" && b.kind !== "task" && b.kind !== "cu-run";
 /** A block with a Question still waiting in it: a Question's card, or a computer-use run with an Approval under a step. */
 const waitsIn = (b: Block) => (isItem(b) && isWaiting(b)) || (b.kind === "cu-run" && b.state === "asking");
 /** What goes between the chat's own items: a side question (ADR 0070), or a message asked of other bots (ADR 0233). */
@@ -139,7 +143,9 @@ function toBlocks(items: Item[], side: SideQuestion[] = [], asks: readonly Ask[]
     }
     if (it.kind === "tool") {
       const send = agentSend(it);
+      const task = send ? undefined : taskCall(it);
       if (send) out.push({ kind: "sent", id: it.id, tool: it, send, lines: deliveryLines(send, items.slice(items.indexOf(it) + 1), it.at) });
+      else if (task) out.push({ kind: "task", id: it.id, tool: it, call: task });
       else if (last?.kind === "tools") last.tools.push(it);
       else out.push({ kind: "tools", id: `g-${it.id}`, tools: [it] });
     } else out.push(it);
@@ -159,6 +165,7 @@ function mayMatch(block: Block, finds: RegExp) {
     return finds.test(block.text) || finds.test(decodeString(block.text)) || block.text.includes("[^");
   if (block.kind === "returned") return finds.test(`${block.title ?? ""}\n${block.body}`) || finds.test(decodeString(block.body));
   if (block.kind === "sent") return finds.test(block.send.text) || finds.test(decodeString(block.send.text));
+  if (block.kind === "task") return finds.test(block.call.title);
   if (block.kind === "cu-run") return block.lines.some((l) => l.kind === "step" && finds.test(l.step.action.line));
   return (block.kind === "user" || block.kind === "thinking") && finds.test(block.text);
 }
@@ -170,6 +177,7 @@ const sameBlock = (a: Block, b: Block) =>
   a === b ||
   (a.kind === "tools" && b.kind === "tools" && a.tools.length === b.tools.length && a.tools.every((t, i) => t === b.tools[i])) ||
   (a.kind === "sent" && b.kind === "sent" && a.tool === b.tool && JSON.stringify(a.lines) === JSON.stringify(b.lines)) ||
+  (a.kind === "task" && b.kind === "task" && a.tool === b.tool) ||
   (a.kind === "cu-run" && b.kind === "cu-run" && a.state === b.state && a.items.length === b.items.length && a.items.every((x, i) => x === b.items[i]));
 // A side question's block is rebuilt too, so it counts as unchanged when it holds the same question.
 const sameChunkBlock = (a: Block | SideBlock, b: Block | SideBlock) =>
@@ -941,7 +949,7 @@ export function ChatPane({
       const callId = jumping.callId;
       has = (b) =>
         (b.kind === "tools" && b.tools.some((t) => t.callId === callId)) ||
-        (b.kind === "sent" && b.tool.callId === callId) ||
+        ((b.kind === "sent" || b.kind === "task") && b.tool.callId === callId) ||
         (b.kind === "cu-run" && b.items.some((i) => i.kind === "tool" && i.callId === callId));
     } else if (jumping.itemId !== undefined) {
       const id = jumping.itemId;
@@ -1506,6 +1514,7 @@ const BlockView = memo(
     )
       return <QuestionCard item={block} offline={offline} movedAt={movedAt} onAnswer={(a) => onQuestion(block.id, a)} />;
     if (block.kind === "sent") return <SentCard block={block} query={query} />;
+    if (block.kind === "task") return <TaskCard tool={block.tool} call={block.call} />;
     if (block.kind === "cu-run") return <ComputerUseCard run={block} offline={offline} movedAt={movedAt} onAnswer={onAnswer} />;
     return <ToolGroup tools={block.tools} />;
   },

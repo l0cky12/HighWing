@@ -278,10 +278,10 @@ export class KanbanApi {
 
   /**
    * The full task (the board cuts its summary short), its comments, oldest first, and its links. The task itself has
-   * no link counts here, so they are counted from its links.
+   * no link counts here, so they are counted from its links. `board`: the board it is on, when not the current one.
    */
-  async loadTask(id: string): Promise<TaskDetail> {
-    const res = await this.rest("GET", taskPath(id));
+  async loadTask(id: string, board?: string): Promise<TaskDetail> {
+    const res = await this.rest("GET", board ? `${taskPath(id)}?${new URLSearchParams({ board })}` : taskPath(id));
     const read = isObj(res) ? parseBoardTask(res.task, "")[0] : undefined;
     if (!read || !isObj(res)) throw new Error(`Hermes answered task ${id} with something this app doesn't read.`);
     const comments = (Array.isArray(res.comments) ? res.comments : []).flatMap(parseComment).sort((a, b) => a.at - b.at || a.id - b.id);
@@ -493,6 +493,8 @@ export type KanbanWatchDeps = {
   sessions: () => ReadonlySet<string>;
   /** Each session's tasks, every time they change. */
   publish: (bySession: ReadonlyMap<string, readonly DispatchedTask[]>) => void;
+  /** The current board as last read, every time it changes. */
+  boardRead?: (current: string | undefined) => void;
   now?: () => number;
 };
 
@@ -545,7 +547,7 @@ export class KanbanWatch {
   reset() {
     this.stop();
     this.tracked.clear();
-    this.current = undefined;
+    this.setCurrent(undefined);
     this.publish();
   }
 
@@ -554,6 +556,12 @@ export class KanbanWatch {
     if (!this.running) return;
     if (!this.scanned) void this.scan();
     else this.publish();
+  }
+
+  private setCurrent(current: string | undefined) {
+    if (current === this.current) return;
+    this.current = current;
+    this.deps.boardRead?.(current);
   }
 
   /** A `kanban_create` in `sessionId`'s chat made `task`: tracked from now, before any read. */
@@ -608,7 +616,7 @@ export class KanbanWatch {
       const read = await this.deps.api.boards();
       if (epoch !== this.epoch) return;
       boards = read.boards.filter((b) => !b.archived);
-      this.current = read.current;
+      this.setCurrent(read.current);
     } catch {
       return;
     }

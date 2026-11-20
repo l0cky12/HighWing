@@ -4,6 +4,7 @@
 # `hermes dashboard` from the venv the SKILL names. See ../SKILL.md.
 #   real-hermes up <dir>     make <dir> fresh, start the stub and the dashboard, print `export RH_DIR=<dir>` and the URL
 #   real-hermes down         stop what `up` started in $RH_DIR (by PID); the dir and its logs stay
+# RH_MODEL_HOST and RH_DASH_HOST pick other loopback addresses (127.0.0.2 or higher) when another run uses .12 and .13.
 # RH_PYTHONPATH=<dir> puts extra packages on the dashboard's path, such as the `mcp` SDK a venv without it lacks.
 set -euo pipefail
 
@@ -21,7 +22,7 @@ up() {
   rm -rf "${RH_DIR:?}"
   mkdir -p "$RH_DIR/home/.hermes" "$RH_DIR/web"
   echo '<!doctype html><title>stub</title>' >"$RH_DIR/web/index.html"
-  local model_host=127.0.0.12 dash_host=127.0.0.13 model_port dash_port
+  local model_host=${RH_MODEL_HOST:-127.0.0.12} dash_host=${RH_DASH_HOST:-127.0.0.13} model_port dash_port
   model_port=$(free_port $model_host)
   dash_port=$(free_port $dash_host)
   cat >"$RH_DIR/home/.hermes/config.yaml" <<EOF

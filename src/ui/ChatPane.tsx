@@ -1,7 +1,7 @@
 // Transcript, thinking, tool-call groups, Approval cards, find bar and composer, ported from the prototype.
 // Dictation and Read aloud come from Voice.tsx.
 import { createContext, Fragment, memo, type ReactNode, type RefObject, useCallback, startTransition, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
-import { Archive, ArchiveRestore, ArrowUp, AtSign, Bot, Brain, CalendarClock, PackageCheck, Reply, Send, SquareTerminal, ChevronDown, ChevronRight, ChevronUp, CircleAlert, CloudOff, Columns2, CornerDownRight, FileDown, FileInput, Globe, HardDrive, Link2, ListPlus, Ellipsis, Paperclip, RotateCcw, Search, Server, Share2, Square, Trash2, Wrench, X } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowDown, ArrowUp, AtSign, Bot, Brain, CalendarClock, PackageCheck, Reply, Send, SquareTerminal, ChevronDown, ChevronRight, ChevronUp, CircleAlert, CloudOff, Columns2, CornerDownRight, FileDown, FileInput, Globe, HardDrive, Link2, ListPlus, Ellipsis, Paperclip, RotateCcw, Search, Server, Share2, Square, Trash2, Wrench, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { decodeString } from "micromark-util-decode-string";
@@ -213,6 +213,9 @@ const sizeOf = (el: HTMLElement) => `${el.clientWidth}x${el.clientHeight}`;
 /** Where the transcript's view was at its last scroll event or pin, and the furthest down it could go then. */
 type View = { top: number; max: number };
 const viewOf = (el: HTMLElement): View => ({ top: el.scrollTop, max: el.scrollHeight - el.clientHeight });
+/** A view this close to the end of the transcript is at the bottom. */
+const AT_BOTTOM = 40;
+const fromBottom = (el: HTMLElement) => el.scrollHeight - el.scrollTop - el.clientHeight;
 const pinToBottom = (el: HTMLElement, seen: { current: View }) => {
   el.scrollTop = el.scrollHeight;
   seen.current = viewOf(el);
@@ -740,6 +743,21 @@ export function ChatPane({
   const seen = useRef<View>({ top: 0, max: 0 });
   const itemsRef = useRef(chat.items);
   itemsRef.current = chat.items;
+  // The button to the newest message shows while the view doesn't follow the chat and is away from its end: "new"
+  // once the transcript changed since the view was last at the end, "far" while more than a view's height of it is
+  // below.
+  const [below, setBelow] = useState<"new" | "far">();
+  const blocksRef = useRef<unknown>(undefined);
+  const blocksSeen = useRef<unknown>(undefined);
+  const checkBelow = useCallback(() => {
+    const el = scrollRef.current;
+    const gap = el ? fromBottom(el) : 0;
+    if (!el || stickToBottom.current || gap < AT_BOTTOM) {
+      blocksSeen.current = blocksRef.current;
+      setBelow(undefined);
+    } else setBelow(blocksRef.current !== blocksSeen.current ? "new" : gap > el.clientHeight ? "far" : undefined);
+  }, []);
+  const toNewestRef = useRef(() => {});
   /** Renders the chunk of the first block `has` picks, when it is far from the view, so a lookup in the DOM finds it. */
   const revealRef = useRef<(has: (b: Block | SideBlock) => boolean) => void>(() => {});
   // For the status bar's context inspector: a stored time to the message there, marked as a jump to a tool call is.
@@ -787,9 +805,12 @@ export function ChatPane({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (pickApp(e) !== "find" || e.defaultPrevented || !activeRef.current) return;
+      if (e.defaultPrevented || !activeRef.current) return;
+      const command = pickApp(e);
+      if (command !== "find" && command !== "jumpToNewest") return;
       e.preventDefault();
-      openFind();
+      if (command === "find") openFind();
+      else toNewestRef.current();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -912,6 +933,7 @@ export function ChatPane({
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (el && stickToBottom.current && !q) pinToBottom(el, seen);
+    checkBelow();
   });
 
   // Resizing the pane rewraps the transcript without a render; one at the bottom stays there.
@@ -925,11 +947,12 @@ export function ChatPane({
     const ro = new ResizeObserver(() => {
       observedSize.current = sizeOf(el);
       if (stickToBottom.current && !qRef.current) pinToBottom(el, seen);
+      checkBelow();
     });
     ro.observe(el);
     ro.observe(inner);
     return () => ro.disconnect();
-  }, []);
+  }, [checkBelow]);
 
   const step = (d: number) => {
     if (!count || finding) return;
@@ -946,6 +969,8 @@ export function ChatPane({
   const asks = ask?.asks ?? NO_ASKS;
   const blocks = useMemo(() => toBlocks(chat.items, chat.sideQuestions, asks), [chat.items, chat.sideQuestions, asks]);
   const chunks = useMemo(() => chunkBlocks(blocks), [blocks]);
+  // Blocks rebuilt with nothing changed in this chat, as when another chat's ask moves, are no arrival.
+  blocksRef.current = useStable(blocks, (a, b) => a.length === b.length && a.every((x, i) => sameChunkBlock(x, b[i])));
   // The message or tool call being gone to is found in the chat, not the DOM: its chunk may be far from the view.
   const jumpChunk = useMemo(() => {
     if (!jumping) return undefined;
@@ -979,6 +1004,16 @@ export function ChatPane({
   // Find marks and counts its matches in the DOM, so it renders the whole chat.
   const shown = useTranscriptWindow({ scroller: scrollRef, chunks, all: !!q, stuck: stickToBottom, target: jumpChunk ?? revealChunk });
   revealRef.current = (has) => shown.reveal(chunks.findIndex((c) => c.some(has)));
+  // The last chunk is rendered first, so a long chat's bottom is its real end, not the spacer standing in for it.
+  toNewestRef.current = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottom.current = true;
+    setJumping(undefined);
+    shown.reveal(chunks.length - 1);
+    pinToBottom(el, seen);
+    checkBelow();
+  };
   // Cards ignore clicks for a moment after the transcript changes, since it may have moved them under the pointer.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- a timestamp of the transcript's last change: `chat.items` and `chat.sideQuestions` are the trigger, not inputs
   const movedAt = useMemo(() => performance.now(), [chat.items, chat.sideQuestions]);
@@ -1106,7 +1141,8 @@ export function ChatPane({
           // Smooth scrolling moves the view a few pixels a frame, so any move up stops following (#544), except to a new
           // bottom, when the transcript got shorter or the view taller.
           const up = el.scrollTop < was.top && seen.current.max >= was.max;
-          stickToBottom.current = !up && el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          stickToBottom.current = !up && fromBottom(el) < AT_BOTTOM;
+          checkBelow();
         }}
       >
         <GoToItemContext.Provider value={goToItem}>
@@ -1210,6 +1246,23 @@ export function ChatPane({
             </div>
           )}
         </div>
+        {below && (
+          <div className="to-newest">
+            <button
+              type="button"
+              title={words.newest.tip(labels(keys.jumpToNewest))}
+              aria-keyshortcuts={ariaKeys(keys.jumpToNewest)}
+              onClick={(e) => {
+                const focused = e.currentTarget === document.activeElement;
+                toNewestRef.current();
+                if (focused) rootRef.current?.querySelector<HTMLElement>(".composer-wrap textarea")?.focus();
+              }}
+            >
+              <ArrowDown size={14} aria-hidden />
+              {chat.running ? words.newest.reply : below === "new" ? words.newest.messages : words.newest.go}
+            </button>
+          </div>
+        )}
         </FenceContext>
         </SetupContext>
         </AskContext.Provider>

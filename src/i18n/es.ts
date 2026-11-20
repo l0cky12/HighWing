@@ -18,6 +18,12 @@ export const es: Catalogue = {
     workOn: (name) => `¿En qué debería trabajar ${name}?`,
     botChat: "Bot Chat",
     botChatTip: "La conversación continua de su bot",
+    newest: {
+      reply: "Respuesta nueva abajo",
+      messages: "Mensajes nuevos abajo",
+      go: "Ir al mensaje más reciente",
+      tip: (keys) => `Ir al mensaje más reciente y seguir el chat (${keys})`,
+    },
     at: {
       bots: "Bots",
       chats: "Chats",

@@ -20,6 +20,13 @@ export const en = {
     workOn: (name: string) => `What should ${name} work on?`,
     botChat: "Bot Chat",
     botChatTip: "Its bot's one continuous chat",
+    /** The button over the transcript once the owner has scrolled away from the end (#31). */
+    newest: {
+      reply: "New reply below",
+      messages: "New messages below",
+      go: "Go to the newest message",
+      tip: (keys: string) => `Go to the newest message and follow the chat (${keys})`,
+    },
     at: {
       bots: "Bots",
       chats: "Chats",

@@ -9,7 +9,8 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { FakeHermes } from "../hermes/fakeHermes";
 import type { Attachment } from "../hermes/model";
 import { connect } from "../hermes/transport";
-import { ChatPane, pasteAttaches, pastedName, refuseStrayFileDrops } from "./ChatPane";
+import { ChatPane, pastedName, refuseStrayFileDrops } from "./ChatPane";
+import { pasteAttaches } from "./pasted";
 import { stagedFiles } from "../hermes/unsaved";
 import { AttachmentDesk } from "../hermes/attachmentDesk";
 

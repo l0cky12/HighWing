@@ -15,7 +15,7 @@ free_port() { python3 -c 'import socket,sys; s=socket.socket(); s.bind((sys.argv
 hermes_env() { env -i PATH=/usr/bin:/bin HOME="$RH_DIR/home" HERMES_HOME="$RH_DIR/home/.hermes" "$@"; }
 # 127.0.0.1 would turn Hermes's password gate off, and any other address leaves this computer.
 loopback() {
-  [[ $2 =~ ^127\.0\.0\.([0-9]{1,3})$ ]] && ((BASH_REMATCH[1] >= 2 && BASH_REMATCH[1] <= 255)) ||
+  [[ $2 =~ ^127\.0\.0\.([1-9][0-9]{0,2})$ ]] && ((10#${BASH_REMATCH[1]} >= 2 && 10#${BASH_REMATCH[1]} <= 255)) ||
     die "$1 must be 127.0.0.N with N from 2 to 255, not '$2'"
 }
 

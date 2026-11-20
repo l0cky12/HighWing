@@ -782,6 +782,8 @@ export const en = {
       provider: "Provider",
       modelName: "Model name",
       noProvider: "Hermes's default",
+      hiddenProvider: (name: string) => `${name} (hidden in Highwing)`,
+      hiddenProviderNote: (name: string) => `${name} is hidden in Highwing's model lists, so its models aren't offered for a new pick. Settings → Providers shows it again.`,
       catalogFailed: (error: string) => `Couldn't read the model list: ${error}`,
       persona: "Persona",
       personaEditHint: "The profile's SOUL.md on Hermes: who it is and how it speaks. Left empty, Hermes uses its built-in identity.",

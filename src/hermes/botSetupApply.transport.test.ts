@@ -601,3 +601,19 @@ describe("MCP servers at Set it up", () => {
     expect(server.mcp.writes.map((w) => w.what)).toEqual(["add echo"]);
   });
 });
+
+describe("A provider hidden in Highwing's model lists (ADR 0235)", () => {
+  it("offers none of its models to the card, which can't set one, while the bot's own model stays listed", async () => {
+    const server = hermes0232();
+    const { hermes, chatId } = await withCard(server, cardText({ ...BLOCK, model: "gpt-5" }));
+    const shown = cardOf(await hermes.readBotSetup(chatId));
+    expect(shown.setup.now.models).toContain("gpt-5");
+    expect(planOf(shown).items.find((i) => i.key === "model")?.status).toBe("change");
+
+    hermes.hiddenProviders = () => new Set(["openai"]);
+    const hidden = cardOf(await hermes.readBotSetup(chatId));
+    expect(hidden.setup.now.models).toEqual(["z-ai/glm-5.3-flash", "claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-4-5"]);
+    expect(planOf(hidden).items.map((i) => i.key)).not.toContain("model");
+    expect(hidden.setup.now.model).toBe("z-ai/glm-5.3-flash");
+  });
+});

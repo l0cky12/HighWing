@@ -2,20 +2,25 @@
 // Set it up on Bot setup's card through the real transport against FakeHermes as Hermes 0.23.2 (ADR 0231, "Set it
 // up"): what goes to Hermes and in what order, each write read back, nothing sent after a lost answer, a change made
 // elsewhere kept, the hidden ready turn, and the card after a reload. What the card offers is botSetupCard.test.ts's.
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { botSetupReady } from "./botSetupApply";
 import { BOT_SETUP_FENCE, botSetupBrief, type BotSetupNewBlock } from "./botSetupBrief";
 import { ACCEPTED_FENCE, choose, fencedBlocks, planCard, tickable, tickedCount, type ListedItem, type Plan } from "./botSetupCard";
-import { localChatCache } from "./chatCache";
+import { SETUP_RECORD_PREFIX, localChatCache } from "./chatCache";
 import { FakeHermes, row, type RestRequest } from "./fakeHermes";
+import { renameProfileLocally } from "./profileLocalData";
 import { connect, type BotSetupCardRead, type BotSetupRead, type Hermes } from "./transport";
+import { unsaved } from "./unsaved";
+import { snapshotDrafts } from "./updates";
 
 const nas = { mode: "ssh" as const, sshTarget: "lena@nas", url: "", username: "lena" };
 
 const running: Hermes[] = [];
 afterEach(async () => {
   await Promise.all(running.splice(0).map((h) => h.close()));
+  vi.restoreAllMocks();
   localStorage.clear();
+  unsaved.clear();
 });
 
 const brief = (id: string) => botSetupBrief({ id, name: "Hermes", inventory: { models: ["z-ai/glm-5.3-flash"], skills: ["notes", "recipes"], toolsets: ["web", "computer_use"], bots: [] } });
@@ -172,10 +177,61 @@ describe("Set it up", () => {
     expect(sent.submits()).toEqual([]);
     expect(out.unanswered).toEqual(expect.stringContaining("The connection dropped."));
     expect(out.states.persona).toEqual({ kind: "applied" });
-    expect(out.states.description).toMatchObject({ kind: "failed", miss: { kind: "said" } });
+    expect(out.states.description).toMatchObject({ kind: "failed", miss: { kind: "profile", failure: { kind: "lost" } } });
     for (const key of ["color", "skill:recipes", "toolset:terminal"]) expect(out.states[key]).toMatchObject({ kind: "failed", miss: { kind: "unsent" } });
     expect(out.states.remember).toEqual({ kind: "waiting" });
     expect(out.readyAt).toBeUndefined();
+  });
+
+  it("doesn't count a write whose read-back got no answer, and sends nothing after it", async () => {
+    const server = hermes0232();
+    const { hermes, chatId } = await withCard(server);
+    const read = cardOf(await hermes.readBotSetup(chatId));
+    // The description's write lands, and the read after it is never answered.
+    let written = false;
+    const sent = writes(server, (r) => {
+      if (r.method === "PUT" && r.path.endsWith("/description")) written = true;
+      else if (written && r.method === "GET" && r.path === "/api/profiles") throw new Error("The connection dropped.");
+    });
+    const out = await hermes.applyBotSetup(read, planOf(read), () => {});
+
+    expect(server.profileMeta.default?.description).toBe("Plans trips.");
+    expect(sent.log).toEqual(["PUT /api/profiles/default/soul", "PUT /api/profiles/default/description"]);
+    expect(sent.submits()).toEqual([]);
+    expect(out.states.description).toMatchObject({ kind: "failed", miss: { kind: "profile", failure: { kind: "lost" } } });
+    expect(out.unanswered).toEqual(expect.stringContaining("The connection dropped."));
+    expect(out.states.color).toMatchObject({ kind: "failed", miss: { kind: "unsent" } });
+  });
+
+  it("sends the ready turn once: a second Set it up with only Remember waiting asks the bot nothing more", async () => {
+    const server = hermes0232();
+    const { hermes, chatId } = await withCard(server);
+    const read = cardOf(await hermes.readBotSetup(chatId));
+    const first = await hermes.applyBotSetup(read, planOf(read), () => {});
+    expect(first.readyAt).toEqual(expect.any(Number));
+
+    // The ready turn's row is stored; the bot hasn't saved the name to its memory yet.
+    const again = cardOf(await hermes.readBotSetup(chatId));
+    expect(again.readyOwed).toBe(false);
+    const plan = planOf(again);
+    expect(item(plan, "remember")).toMatchObject({ status: "change", ticked: true });
+    const sent = writes(server);
+    const out = await hermes.applyBotSetup(again, plan, () => {});
+
+    expect(sent.log).toEqual([]);
+    expect(sent.submits()).toEqual([]);
+    expect(out).toEqual({ states: {} });
+  });
+
+  it("says so when the bot's profile isn't the one shown, without writing anything", async () => {
+    const server = hermes0232((s) => (s.otherProfiles = { work: [] }));
+    const { hermes, chatId } = await withCard(server);
+    const read = cardOf(await hermes.readBotSetup(chatId));
+    await hermes.switchProfile("work");
+    const sent = writes(server);
+    expect(await hermes.applyBotSetup(read, planOf(read), () => {})).toEqual({ states: {}, readyFailed: { kind: "notShown", profile: "default" } });
+    expect(await hermes.retryBotSetupItem(read, item(planOf(read), "description"))).toEqual({ kind: "failed", miss: { kind: "notShown", profile: "default" } });
+    expect(sent.log).toEqual([]);
   });
 
   it("keeps a description edited elsewhere after the card was drawn, and the item says so", async () => {
@@ -254,6 +310,32 @@ describe("After Set it up", () => {
     const after = planOf(again);
     expect(item(after, "persona")).toMatchObject({ status: "same", after: mine });
     expect(after.items.filter((i) => tickable(i) && i.ticked).map((i) => i.key)).toEqual(["remember"]);
+  });
+
+  it("keeps the record in memory when storage refuses it, through an update's restart and a profile rename", async () => {
+    const server = hermes0232();
+    const { hermes, chatId } = await withCard(server);
+    const read = cardOf(await hermes.readBotSetup(chatId));
+    const setItem = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, k: string, v: string) {
+      if (k.startsWith(SETUP_RECORD_PREFIX)) throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+      setItem.call(this, k, v);
+    });
+    await hermes.applyBotSetup(read, planOf(read), () => {});
+    server.transcripts[chatId] = server.transcripts[chatId].filter((m) => !m.text?.startsWith("[highwing:bot-setup ready"));
+
+    const again = cardOf(await hermes.readBotSetup(chatId));
+    expect(again.readyOwed).toBe(true);
+    expect(item(planOf(again), "persona")).toMatchObject({ status: "same" });
+    const snapshot: Record<string, string> = JSON.parse(snapshotDrafts(localStorage));
+    expect(Object.entries(snapshot).filter(([k]) => k.startsWith(SETUP_RECORD_PREFIX)).map(([, v]) => JSON.parse(v).card)).toEqual([read.parse.card.id]);
+
+    await renameProfileLocally(nas, "default", "home");
+    const cache = localChatCache(nas);
+    expect(cache.loadSetupRecord("home", chatId)).toMatchObject({ card: read.parse.card.id });
+    expect(cache.loadSetupRecord("default", chatId)).toBeNull();
+    vi.restoreAllMocks();
+    cache.saveSetupRecord("home", chatId, null);
   });
 
   it("reads the record from the ready turn's row once it is stored, and lets go of the copy kept here", async () => {

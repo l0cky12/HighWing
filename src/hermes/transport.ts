@@ -152,7 +152,7 @@ import { botSetupMarkerId } from "./botSetupBrief";
 import { BotSetupStarts, botSetupBegin, lostAnswer, runStart, withSetupLine, type BotSetupRefusal, type BotSetupStart, type StartAsk, type StartIo } from "./botSetupStart";
 import { acceptedRecord, fencedBlocks, parseSetup, readAcceptedRecord, type AcceptedRecord, type ListedItem, type ParseResult, type Plan } from "./botSetupCard";
 import { BOT_SETUP_FENCE } from "./botSetupBrief";
-import { applyItem, readSetupNow, readyTurn, runSetup, tickedItems, type BotSetupRestart, type CardState, type SetupApis, type SetupNow } from "./botSetupApply";
+import { applyItem, readSetupNow, readyTurn, runSetup, setupItems, type BotSetupRestart, type CardState, type SetupApis, type SetupNow } from "./botSetupApply";
 
 /**
  * The `source` this app stamps on chats it starts. Legacy `session.create` stores any string as-is, but the gateway
@@ -2470,7 +2470,8 @@ export class Hermes {
     const asks = this.pictureAsks?.asks;
     if (pictureWritten) asks?.set(profile, {});
     const gen = this.generation;
-    const back = await read(!!pictureEdit).catch(() => undefined);
+    let unread: ProfileFailure | undefined;
+    const back = await read(!!pictureEdit).catch((e: unknown) => void (unread = profileFailure(e, "botLook")));
     if (back?.picture !== undefined && gen === this.generation) {
       const { [profile]: _, ...others } = this.snapshot.botPictures;
       this.update({ botPictures: back.picture === null ? others : { ...others, [profile]: back.picture } });
@@ -2484,7 +2485,7 @@ export class Hermes {
     const keysMissing = wanted && (back ? lacksPictureKeys(back.block, wanted) : !!pictureKeysFailure);
     if (wanted && keysMissing && fields.picture?.kind === "saved")
       fields.picture = failed(pictureKeysFailure ?? { kind: "pictureUnconfirmed" });
-    return { fields, ...(now && { now }) };
+    return { fields, ...(now && { now }), ...(unread && { unread }) };
   }
 
   /**
@@ -2637,7 +2638,6 @@ export class Hermes {
     }
   }
 
-  /** What Set it up reads and writes the shown profile's bot through (botSetupApply.ts). */
   private setupApis(profile: string): SetupApis {
     return {
       skills: this.skills,
@@ -2693,16 +2693,19 @@ export class Hermes {
    */
   async applyBotSetup(read: BotSetupCardRead, plan: Plan, hear: (key: string, state: CardState | { kind: "working" }) => void): Promise<BotSetupRun> {
     const { chatId, profile, setup } = read;
-    if (this.profile !== profile) throw new Error(`Switch to ${profile} first.`);
-    const items = tickedItems(plan);
+    if (this.profile !== profile) return { states: {}, readyFailed: { kind: "notShown", profile } };
+    const items = setupItems(plan, read.parse.accepted);
     const record = acceptedRecord(plan, read.accepted);
     this.cache.saveSetupRecord(profile, chatId, record);
     const apis = this.setupApis(profile);
     const run = await runSetup(items, (item) => applyItem(apis, profile, setup, item), hear);
     if (run.unanswered !== undefined) return run;
-    if (this.profile !== profile) return { ...run, readyFailed: `Switched to the ${this.profile} profile before the bot heard it was set up.` };
+    if (this.profile !== profile) return { ...run, readyFailed: { kind: "notShown", profile } };
     const readyAt = Date.now();
     try {
+      // A ready turn already stored with this record has told the bot all this one would.
+      const stored = parseSetup(await this.storedRows(chatId, profile));
+      if (stored.kind === "card" && JSON.stringify(stored.accepted) === JSON.stringify(record)) return run;
       const runtimeId = await this.resume(chatId);
       const was = this.snapshot.chats.find((c) => c.id === chatId)?.running;
       this.patchChat(chatId, (c) => ({ ...c, running: true, updatedAt: readyAt }));
@@ -2713,14 +2716,14 @@ export class Hermes {
         throw e;
       }
     } catch (e) {
-      return { ...run, readyFailed: errorText(e) };
+      return { ...run, readyFailed: { kind: "said", text: errorText(e) } };
     }
     return { ...run, readyAt };
   }
 
-  /** Writes one item of a Bot Chat's card again and reads it back. `accepted`: the cautions the owner confirmed with Apply anyway. */
+  /** `accepted`: the cautions the owner confirmed with Apply anyway. */
   async retryBotSetupItem(read: BotSetupCardRead, item: ListedItem, accepted: Caution[] = []): Promise<CardState> {
-    if (this.profile !== read.profile) throw new Error(`Switch to ${read.profile} first.`);
+    if (this.profile !== read.profile) return { kind: "failed", miss: { kind: "notShown", profile: read.profile } };
     return (await applyItem(this.setupApis(read.profile), read.profile, read.setup, item, accepted)).state;
   }
 
@@ -7149,5 +7152,8 @@ export type BotSetupCardRead = {
   setup: SetupNow;
 };
 
-/** How Set it up ended: each ticked item's state, and the ready turn's: sent at `readyAt`, failed, or not sent after a call got no answer. */
-export type BotSetupRun = { states: Record<string, CardState>; unanswered?: string; readyAt?: number; readyFailed?: string };
+/**
+ * How Set it up ended: each ticked item's state, and the ready turn's: sent at `readyAt`, failed, or not sent after a
+ * call got no answer or because a stored one already says it all. `notShown`: the bot's profile isn't the one shown.
+ */
+export type BotSetupRun = { states: Record<string, CardState>; unanswered?: string; readyAt?: number; readyFailed?: { kind: "notShown"; profile: string } | { kind: "said"; text: string } };

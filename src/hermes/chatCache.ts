@@ -10,6 +10,7 @@
 import { type ScopeSource, connectionScope } from "./connections";
 import { SOURCE_LABEL, type Attachment, type Chat, type ChatQueue, type Item, type Outgoing, type OutgoingItem, type Queued, type SentReference, type Source } from "./model";
 import type { ChatCache, SavedTranscript } from "./transport";
+import type { AcceptedRecord } from "./botSetupCard";
 import { UI_PREFS_KEY } from "./uiPrefs";
 import { replyUsageOf } from "./usage";
 import { replyTimesOf, withReplyTime, type ReplyTime } from "./replyTimes";
@@ -49,6 +50,7 @@ const outboxListeners = new Set<() => void>();
 // Include writes the store couldn't keep: those outboxes and queues still exist in the running transport.
 const liveOutboxes = new Map<string, OutgoingItem[]>();
 const liveQueues = new Map<string, ChatQueue>();
+const liveSetupRecords = new Map<string, AcceptedRecord | null>();
 export function subscribeOutbox(fn: () => void): () => void {
   outboxListeners.add(fn);
   return () => void outboxListeners.delete(fn);
@@ -59,7 +61,7 @@ export function subscribeOutbox(fn: () => void): () => void {
  * drop it, or undefined to keep it (profileLocalData.ts, a profile renamed or deleted).
  */
 export function moveLiveChatData(move: (key: string) => string | null | undefined) {
-  for (const rows of [liveOutboxes, liveQueues] as Map<string, unknown>[]) {
+  for (const rows of [liveOutboxes, liveQueues, liveSetupRecords] as Map<string, unknown>[]) {
     for (const [key, value] of [...rows]) {
       const to = move(key);
       if (to === undefined) continue;
@@ -568,14 +570,21 @@ export function localChatCache(connection: ScopeSource): ChatCache {
       return persist(() => localStorage, asksKey(profile), asks.length ? JSON.stringify(asks) : null);
     },
     loadSetupRecord(profile, chatId) {
+      const key = setupRecordKey(profile, chatId);
+      if (liveSetupRecords.has(key)) return liveSetupRecords.get(key);
       try {
-        return JSON.parse(localStorage.getItem(setupRecordKey(profile, chatId)) ?? "null");
+        return JSON.parse(localStorage.getItem(key) ?? "null");
       } catch {
         return null;
       }
     },
     saveSetupRecord(profile, chatId, record) {
-      return persist(() => localStorage, setupRecordKey(profile, chatId), record ? JSON.stringify(record) : null);
+      // A failed write keeps the record in memory, here and for an update's restart (unsaved.ts), as for a queue.
+      const key = setupRecordKey(profile, chatId);
+      liveSetupRecords.set(key, record);
+      const ok = persist(() => localStorage, key, record ? JSON.stringify(record) : null);
+      if (ok) liveSetupRecords.delete(key);
+      return ok;
     },
     loadSentHere,
     saveSentHere(profile, chat, images) {

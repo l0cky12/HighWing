@@ -771,7 +771,7 @@ function PictureStrip({ host, item, src }: { host: SetupHost; item: Extract<List
     return shown ? [{ ...o, src: shown }] : [];
   });
   // The set's bytes are the app's own; only the owner's upload has to be kept until Set it up sends it.
-  const use = (dataUrl: string) => pick(setPicture(pictureKey(dataUrl)) ? pictureKey(dataUrl) : host.upload(dataUrl));
+  const take = (dataUrl: string) => pick(setPicture(pictureKey(dataUrl)) ? pictureKey(dataUrl) : host.upload(dataUrl));
   return (
     <div className="bot-setup-pictures">
       <div className="bot-setup-strip" role="radiogroup" aria-label={l.pictureSet}>
@@ -792,7 +792,7 @@ function PictureStrip({ host, item, src }: { host: SetupHost; item: Extract<List
           <button className="btn" aria-haspopup="dialog" aria-expanded={uploading} disabled={host.busy} onClick={() => setUploading(true)}>
             <ImagePlus size={13} aria-hidden /> {l.pictureUpload}
           </button>
-          {uploading && !host.busy && <PicturePicker anchor={anchor} picked={item.after} tab="upload" onUse={use} onClose={() => setUploading(false)} />}
+          {uploading && !host.busy && <PicturePicker anchor={anchor} picked={item.after} tab="upload" onUse={take} onClose={() => setUploading(false)} />}
         </span>
       </div>
     </div>

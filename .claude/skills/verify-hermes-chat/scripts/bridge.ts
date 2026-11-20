@@ -70,6 +70,8 @@
 //   (a test's control). `/__state` lists each profile's SOUL.md under `souls` and every call's params under `oneshots`.
 // HV_BOTS=1 adds three bots, the profiles `ada`, `bram` and `cleo`, each with a Bot Chat and a one-line description, and
 //   gives `ada` the ordinary chat `ada-notes`, "Release notes draft", with two messages.
+//   With HV_BOT_TURNS=<n>, ada's Bot Chat holds the bench's long chat of n turns (bench/fixture.ts), with tool calls and
+//   thinking, to time opening a long Bot Chat (bench/bot-switch/open.sh).
 // HV_SEAT=1 stores a room seat's session in `default`: source `bot_room`, hidden, titled "Group: r1", holding the word
 //   "quokka", and listed as working in `session.active_list`. Real Hermes keeps a seat in the seated bot's own profile,
 //   titled `Group: <room id>` or from its prompt, such as `[Discussion: "Ada and Bram"] You are @bram, one…`.
@@ -184,21 +186,25 @@ const disk = (dir: string) => {
 };
 if (process.env.HV_DISK) disk(process.env.HV_DISK.replace(/\/+$/, ""));
 
+/** Stores the bench's long chat of `turns` turns (bench/fixture.ts) as the history of `id`. */
+const storeBenchChat = (id: string, turns: number, seed: number) => {
+  let reasoning: string | undefined;
+  for (const item of makeChat(turns, seed).items) {
+    if (item.kind === "user") server.storeMessage(id, { role: "user", text: item.text });
+    else if (item.kind === "thinking") reasoning = item.text;
+    else if (item.kind === "tool") server.storeMessage(id, { role: "tool", name: item.name, context: item.preview, args: item.args, result: item.result });
+    else if (item.kind === "assistant") {
+      server.storeMessage(id, { role: "assistant", text: item.text, ...(reasoning && { reasoning }) });
+      reasoning = undefined;
+    }
+  }
+};
 const benchTurns = Number(process.env.HV_TURNS ?? 0);
 if (benchTurns > 0)
   for (const seed of [1, 2]) {
     const id = `long${seed}`;
     server.sessions.push(row(id, seed / 24, { title: `Bench ${seed}, ${benchTurns} turns`, pinned: true, message_count: benchTurns * 2 }));
-    let reasoning: string | undefined;
-    for (const item of makeChat(benchTurns, seed).items) {
-      if (item.kind === "user") server.storeMessage(id, { role: "user", text: item.text });
-      else if (item.kind === "thinking") reasoning = item.text;
-      else if (item.kind === "tool") server.storeMessage(id, { role: "tool", name: item.name, context: item.preview, args: item.args, result: item.result });
-      else if (item.kind === "assistant") {
-        server.storeMessage(id, { role: "assistant", text: item.text, ...(reasoning && { reasoning }) });
-        reasoning = undefined;
-      }
-    }
+    storeBenchChat(id, benchTurns, seed);
   }
 
 for (const id of (process.env.HV_FAIL_PATCH ?? "").split(",").filter(Boolean))
@@ -235,6 +241,8 @@ if (process.env.HV_BOTS === "1") {
     { role: "user", text: "Draft the release notes for 0.3.", row_id: 1 },
     { role: "assistant", text: "Bots can now be named with @ in a Bot Chat.", row_id: 2 },
   ];
+  const botTurns = Number(process.env.HV_BOT_TURNS ?? 0);
+  if (botTurns > 0) storeBenchChat("ada-bot", botTurns, 1);
 }
 if (process.env.HV_SEAT === "1") server.seatSession("default", "r1", "The quokka census is done.");
 server.mcp.servers.default = {

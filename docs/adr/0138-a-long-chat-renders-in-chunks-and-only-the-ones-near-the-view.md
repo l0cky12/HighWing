@@ -1,5 +1,7 @@
 # A long chat renders in chunks, and only the ones near the view
 
+> **Amended by [ADR 0241](0241-every-chat-is-windowed-in-chunks-of-about-16-blocks-and-opens-on-its-last-chunk.md)** (#124). No chat renders whole for having four chunks or fewer, a chunk holds about 16 blocks, not 64, and a chat opens on its last chunk. The rest of this ADR stands.
+
 Issues #453 and #454. A long chat was slow and heavy because every message was in the page. In a 1000-turn chat (4,968 blocks) each streamed delta took a frame of about 40 ms in WebKitGTK 2.54, since the browser laid out every block again. The web process used about 190 MB signed in, 670 to 765 MB with that chat open, and still 410 to 458 MB after switching to another chat.
 
 Grouping the blocks into memoized chunks (#453) brought the frame to 25 to 29 ms. Memory did not move, because every message was still in the page.

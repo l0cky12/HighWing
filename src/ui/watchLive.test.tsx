@@ -185,6 +185,32 @@ describe("Watch live on a bot's Bot Desktop", () => {
     await waitFor(() => expect(asked(server, "display.observe").length).toBeGreaterThan(observed));
   });
 
+  it("starts nothing when Start's own read is overtaken by one that finds the agent started the screen", async () => {
+    const { server, hermes, user, say, begin, end, openScreen } = await botChat();
+    await openScreen();
+    await waitFor(() => expect(startButton()).toBeTruthy());
+
+    const real = server.handlers["display.status"];
+    const held: (() => void)[] = [];
+    server.handlers["display.status"] = (r) => {
+      if (held.length) return real(r);
+      const stopped = { ...server.display!.status, lease: server.display!.lease, profile_key: "/home/lena/.hermes" };
+      held.push(() => server.respond(r.id, stopped));
+    };
+    await user.click(startButton()!);
+    await waitFor(() => expect(held).toHaveLength(1));
+
+    await say("message.start");
+    await begin("c1");
+    await end("c1", true);
+    await waitFor(() => expect(panelText()).toContain(WATCHING));
+    act(() => held.splice(0).forEach((answer) => answer()));
+    await settle(hermes);
+    await waitFor(() => expect(asked(server, "display.status").length).toBeGreaterThan(2));
+    expect(asked(server, "display.start")).toEqual([]);
+    expect(panelText()).toContain(WATCHING);
+  });
+
   it("keeps the newer answer when an older read of a stopped screen comes back after it", async () => {
     const { server, hermes, user, say, begin, end, openScreen } = await botChat();
     await openScreen();

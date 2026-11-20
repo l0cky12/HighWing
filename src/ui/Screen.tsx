@@ -319,7 +319,13 @@ export function ScreenTab({
   /** Starts the screen, unless Hermes says it runs now: a running screen is watched, never started again. */
   const start = () =>
     act(async () => {
-      const now = await api.status();
+      // The latest read decides: one overtaken by another (say, after the agent started the screen) is read again.
+      let now: DisplayStatus;
+      for (;;) {
+        const read = ++reads.current;
+        now = await api.status();
+        if (read === reads.current) break;
+      }
       settle(now);
       if (!now.running) {
         try {

@@ -28,7 +28,6 @@ describe("Hermes transport", () => {
       queues: {},
       branches: { links: {}, attempts: [] },
       botPictures: {},
-      threads: {},
       status: "connected",
       route: { kind: "ssh", target: "lena@hermes" },
       unsecure: false,

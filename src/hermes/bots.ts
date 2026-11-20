@@ -1,3 +1,4 @@
+import { typedPreview } from "./branch";
 import { errorText, isObj } from "./values";
 import type { PlainMethod, SessionProtocol } from "./sessionProtocol";
 import type { Same } from "./fieldMerge";
@@ -111,7 +112,7 @@ function botChatOf(v: unknown): BotChatRow | null {
   return {
     id,
     resolvedId: trimmedOrEmpty(v.resolved_id) || id,
-    preview: trimmedOrEmpty(v.preview).replace(/\s+/g, " "),
+    preview: typedPreview(trimmedOrEmpty(v.preview).replace(/\s+/g, " ")),
     lastActive: num(v.last_active || v.started_at) * 1000,
     messageCount: num(typeof v.live_message_count === "number" ? v.live_message_count : v.message_count),
   };
@@ -426,3 +427,6 @@ export function newInBotChatNote(res: { kind: string; message?: string }): strin
   if (res.kind === "nothing") return `${lead} There was nothing to compact yet.`;
   return `${lead} ${res.message ?? ""}`.trim();
 }
+
+/** Pure. The bot on this connection that `@handle` names, other than the shown profile's own; none for a peer or relay target. */
+export const teammateOf = (roster: readonly Bot[], handle: string, shown: string): Bot | undefined => roster.find((b) => b.handle === handle && b.profile !== shown);

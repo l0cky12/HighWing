@@ -154,6 +154,13 @@ describe("The archived view", () => {
     expect(hermes.getSnapshot().archivedListed).toBe(true);
   });
 
+  it("leaves out a hidden session that only the archived view lists, so it can't be restored and then lost (#89)", async () => {
+    const { hermes, archived } = await listed(row("x", 3, { archived: true }), row("seat", 3, { archived: true, hidden: true, title: "Backups" }));
+    await hermes.listArchived(true);
+    expect(archived()).toEqual(["x"]);
+    expect((await hermes.browse({ archived: "only" })).found.map((f) => f.chatId)).toEqual(["x"]);
+  });
+
   it("stops reading archived chats when it closes", async () => {
     const { server, hermes, archived } = await listed(row("a", 1), row("x", 3, { archived: true }));
     await hermes.listArchived(true);

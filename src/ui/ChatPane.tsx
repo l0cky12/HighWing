@@ -1,6 +1,6 @@
 // Transcript, thinking, tool-call groups, Approval cards, find bar and composer, ported from the prototype.
 // Dictation and Read aloud come from Voice.tsx.
-import { createContext, Fragment, memo, type HTMLAttributes, type ReactNode, type RefObject, useCallback, startTransition, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
+import { createContext, Fragment, memo, type ReactNode, type RefObject, useCallback, startTransition, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { Archive, ArchiveRestore, ArrowUp, AtSign, Bot, Brain, CalendarClock, PackageCheck, Reply, Send, SquareTerminal, ChevronDown, ChevronRight, ChevronUp, CircleAlert, CloudOff, Columns2, CornerDownRight, FileDown, FileInput, Globe, HardDrive, Link2, ListPlus, Ellipsis, Paperclip, RotateCcw, Search, Server, Share2, Square, Trash2, Wrench, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -10,37 +10,42 @@ import { SOURCE_LABEL, archiveAction, inArchived, isOutgoing, isWaiting } from "
 import { useLocale } from "../i18n/locale";
 import type { SkillCall } from "../hermes/skillCommands";
 import { BotFace, type BotLookShown } from "./BotFace";
-import { STEER, typedCommand } from "../hermes/commands";
+
 import type { AttachmentDesk } from "../hermes/attachmentDesk";
 import type { Reference, ReferenceDesk } from "../hermes/chatReferences";
 import { ReferenceChips } from "./ReferenceChips";
 import { ApprovalCard } from "./ApprovalCard";
-import { ComputerUseCard, HumanHasControlBanner, RunStopProvider } from "./ComputerUseCard";
+import { ComputerUseCard, DesktopOffNotice, HumanHasControlBanner, RunStopProvider } from "./ComputerUseCard";
 import { foldRuns, screenUse, type CuRun } from "../hermes/computerUse";
 import { QuestionCard } from "./QuestionCard";
 import { Menu, PinItem, type ChatPin } from "./ChatMenu";
-import { agentSend, type AgentSend } from "../hermes/agentMessages";
+import { agentSend, deliveryLines, type AgentSend, type DeliveryLine } from "../hermes/agentMessages";
 import { CHAT_POLICY, chatKind, policyOf } from "../hermes/chatKind";
-import { threadTopic } from "../hermes/threads";
 import { DeleteChatDialog } from "./DeleteChat";
 import { ExportChatDialog, type ExportMode } from "./ExportChat";
 import { QueuePanel, type QueueApi } from "./Queue";
 import { SubagentsPanel, type SubagentsApi } from "./Subagents";
 import { SideQuestionPair } from "./SideQuestions";
+import { TurnCard } from "./TurnCard";
+import { AskCard, AskContext, type AskHost } from "./AskCard";
 import { Markdown } from "./Markdown";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { chunkBlocks } from "./transcriptChunks";
 import { useTranscriptWindow } from "./transcriptWindow";
-import { SourceIcon, Spinner, StoredTime, composing, escapeRe, highlight } from "./bits";
+import { SourceIcon, Spinner, StoredTime, Ticking, composing, escapeRe, highlight } from "./bits";
 import { caretAfter, editStep, inputKind, type EditStep } from "./editKeys";
 import { ariaKeys, chordLabel, chordParts, pick as pickCommand, pickApp, typeNewLine, useBindings, type Chord } from "./keybindings";
 import type { EditKind } from "../hermes/editHistory";
 import { wakeFull } from "../hermes/snooze";
 import { AttachmentChip, InlineSentImage, Previews, SentImages, readPreview } from "./previews";
+import { MarkUpDialog } from "./MarkUp";
+import { markedName, markupWords, type Marked } from "../hermes/markup";
+import { createPortal } from "react-dom";
 import { InlineMarks, type ComposerMark } from "./inlineMarks";
 import { sentWith } from "../hermes/sentImages";
 import { carried, highestMark, marksIn, markText, placeImages, sentText, withMarks, withoutMarks } from "../hermes/inlineImages";
 import { mentionsIn } from "../hermes/mentionPicker";
+import { askTargets, placeAsks, type Ask } from "../hermes/asks";
 import { Speaker } from "./speaker";
 import { DictationNoteView, DictationStrip, ListenButton, MicButton, type VoiceApi, listenBlocked, micBlocked, useDictation, useVoiceSetup } from "./Voice";
 import { withTranscript } from "../hermes/voice";
@@ -57,7 +62,7 @@ import { replyFiles } from "../hermes/fileChanges";
 import { ShowInChatContext, type ShowInChat } from "./showInChat";
 import { linkTarget, previewName, toolTargets, withoutBidi } from "../hermes/preview";
 import { type CommandHost, useSlashCommands } from "./SlashCommands";
-import { BranchButton, ThreadButton } from "./Branch";
+import { BranchButton } from "./Branch";
 import { useWindowHidden } from "./windowState";
 import { EditButton, RegenerateButton, VariantNav } from "./Replay";
 import { RunButton } from "./RunView";
@@ -84,6 +89,7 @@ export type FollowUpHost = {
 const FILES_CANT_STEER = "A steer carries only words, so a message with files goes after the reply.";
 const REFERENCES_CANT_STEER = "A message that references a chat can't steer the reply. Send it once the reply ends.";
 const NO_REFERENCES: readonly Reference[] = [];
+const NO_ASKS: readonly Ask[] = [];
 
 /** Where a composer keeps the chats its message references, and the way to the fix for a failed summary. */
 export type ComposerReferences = { desk: ReferenceDesk; onTextModelSettings?: () => void };
@@ -93,26 +99,35 @@ const toldWhy = new Set<string>();
 
 type ToolItem = Extract<Item, { kind: "tool" }>;
 type ThinkingItem = Extract<Item, { kind: "thinking" }>;
-type SentBlock = { kind: "sent"; id: string; tool: ToolItem; send: AgentSend };
+/** A message this bot sent a teammate (ADR 0207), and its card's lines from what came after it (ADR 0228). */
+type SentBlock = { kind: "sent"; id: string; tool: ToolItem; send: AgentSend; lines: DeliveryLine[] };
 type Block = { kind: "tools"; id: string; tools: ToolItem[] } | SentBlock | CuRun | Exclude<Item, ToolItem>;
 const isItem = (b: Block): b is Exclude<Item, ToolItem> => b.kind !== "tools" && b.kind !== "sent" && b.kind !== "cu-run";
 /** A block with a Question still waiting in it: a Question's card, or a computer-use run with an Approval under a step. */
 const waitsIn = (b: Block) => (isItem(b) && isWaiting(b)) || (b.kind === "cu-run" && b.state === "asking");
-type SideBlock = { kind: "side"; id: string; question: SideQuestion };
+/** What goes between the chat's own items: a side question (ADR 0070), or a message asked of other bots (ADR 0233). */
+type SideBlock = { kind: "side"; id: string; question: SideQuestion } | { kind: "ask"; id: string; ask: Ask };
+const isSide = (b: Block | SideBlock): b is SideBlock => b.kind === "side" || b.kind === "ask";
 /** Whether the item `id` shows in this block: as the block itself, in a group of tool calls, or in a computer-use run. */
 const holds = (b: Block | SideBlock, id: string | undefined) =>
   b.id === id || (b.kind === "tools" && b.tools.some((t) => t.id === id)) || (b.kind === "cu-run" && b.items.some((i) => i.id === id));
 
 // Consecutive tool calls collapse into one group so a long run doesn't dominate the transcript, and a computer-use run
 // is one card (ADR 0216). Each side question goes after the item it was asked after (ADR 0086), so one asked during a
-// run of tool calls splits it; one asked during a computer-use run goes after its card.
-function toBlocks(items: Item[], side: SideQuestion[] = []): (Block | SideBlock)[] {
+// run of tool calls splits it; one asked during a computer-use run goes after its card. An Asked card goes before the
+// first message stored after it was asked (`placeAsks`).
+function toBlocks(items: Item[], side: SideQuestion[] = [], asks: readonly Ask[] = NO_ASKS): (Block | SideBlock)[] {
   const out: (Block | SideBlock)[] = [];
   const sideAfter = (id?: string) => {
     for (const q of side) if (q.after === id) out.push({ kind: "side", id: q.id, question: q });
   };
+  const placed = asks.length ? placeAsks(items, asks) : undefined;
+  const asksBefore = (id: string | null) => {
+    for (const ask of placed?.get(id) ?? []) out.push({ kind: "ask", id: `ask-${ask.id}`, ask });
+  };
   sideAfter(undefined);
   for (const it of foldRuns(items)) {
+    if (placed) for (const src of it.kind === "cu-run" ? it.items : [it]) asksBefore(src.id);
     const last = out[out.length - 1];
     if (it.kind === "cu-run") {
       out.push(it);
@@ -121,12 +136,13 @@ function toBlocks(items: Item[], side: SideQuestion[] = []): (Block | SideBlock)
     }
     if (it.kind === "tool") {
       const send = agentSend(it);
-      if (send) out.push({ kind: "sent", id: it.id, tool: it, send });
+      if (send) out.push({ kind: "sent", id: it.id, tool: it, send, lines: deliveryLines(send, items.slice(items.indexOf(it) + 1), it.at) });
       else if (last?.kind === "tools") last.tools.push(it);
       else out.push({ kind: "tools", id: `g-${it.id}`, tools: [it] });
     } else out.push(it);
     sideAfter(it.id);
   }
+  asksBefore(null);
   return out;
 }
 
@@ -145,15 +161,16 @@ function mayMatch(block: Block, finds: RegExp) {
 }
 
 // A group is rebuilt on every render, so it counts as unchanged when it holds the same tool calls. A run's state also
-// reads the reply after it, so a run with the same calls changes when that reply is stopped.
+// reads the reply after it, so a run with the same calls changes when that reply is stopped. A sent message's lines
+// read the items after it (ADR 0228), so the same call changes when its lines do; they are small plain data.
 const sameBlock = (a: Block, b: Block) =>
   a === b ||
   (a.kind === "tools" && b.kind === "tools" && a.tools.length === b.tools.length && a.tools.every((t, i) => t === b.tools[i])) ||
-  (a.kind === "sent" && b.kind === "sent" && a.tool === b.tool) ||
+  (a.kind === "sent" && b.kind === "sent" && a.tool === b.tool && JSON.stringify(a.lines) === JSON.stringify(b.lines)) ||
   (a.kind === "cu-run" && b.kind === "cu-run" && a.state === b.state && a.items.length === b.items.length && a.items.every((x, i) => x === b.items[i]));
 // A side question's block is rebuilt too, so it counts as unchanged when it holds the same question.
 const sameChunkBlock = (a: Block | SideBlock, b: Block | SideBlock) =>
-  a.kind === "side" ? b.kind === "side" && a.question === b.question : b.kind !== "side" && sameBlock(a, b);
+  a.kind === "side" ? b.kind === "side" && a.question === b.question : a.kind === "ask" ? b.kind === "ask" && a.ask === b.ask : !isSide(b) && sameBlock(a, b);
 
 /**
  * Each turn's owner's message (`ofUser`), the replies Regenerate is offered on, where each turn's versions show, and the
@@ -211,12 +228,20 @@ const movesUp = (el: HTMLElement, node: Element | null) => {
  * branch's link back does. `at` tells one request from the next.
  */
 export type JumpTarget =
-  | { callId: string; rowId?: undefined; turn?: undefined; at: number }
-  | { rowId: number; callId?: undefined; turn?: undefined; at: number }
+  | { callId: string; rowId?: undefined; turn?: undefined; itemId?: undefined; at: number }
+  | { rowId: number; callId?: undefined; turn?: undefined; itemId?: undefined; at: number }
   /** The owner's message that starts turn `turn` (from 0), and its reply: where a version of that turn is opened. */
-  | { turn: number; callId?: undefined; rowId?: undefined; at: number };
+  | { turn: number; callId?: undefined; rowId?: undefined; itemId?: undefined; at: number }
+  /** An item of this chat by its id, as a sent message's card goes to its answer (ADR 0228). */
+  | { itemId: string; callId?: undefined; rowId?: undefined; turn?: undefined; at: number };
 /** The tool call being gone to, for the tool rows and groups that hold it to open themselves. */
 const JumpContext = createContext<JumpTarget | undefined>(undefined);
+/** Goes to an item of this chat by its id, rendering its part of the transcript first when it is far from the view. */
+const GoToItemContext = createContext<(itemId: string) => void>(() => {});
+
+/** What a Messaged card's Open chip does for `handle`: nothing when it isn't a bot on this connection. App provides it; Replay and export don't. */
+export type Teammates = { open: (handle: string) => (() => void) | undefined };
+export const TeammatesContext = createContext<Teammates | undefined>(undefined);
 
 const STATUS_NOTE: Record<ConnectionStatus, string | undefined> = {
   connected: undefined,
@@ -262,6 +287,10 @@ export type PasteAttaches =
   /** No text the page can see: WebKitGTK hides a clipboard image, and the text beside it, from the paste event. */
   | { kind: "clipboard images" }
   | { kind: "nothing" };
+
+/** Stages bytes with no file of their own (a paste, a Windows drop, a marked-up image) in Rust's private folder. */
+const stageBytes = (bytes: ArrayBuffer, name: string) =>
+  invoke<string>("stage_clipboard_file", bytes, { headers: { "x-name": encodeURIComponent(name) } });
 
 export function pasteAttaches(data: { types: readonly string[]; files: ArrayLike<File>; getData(type: string): string }): PasteAttaches {
   const files = Array.from(data.files);
@@ -485,6 +514,7 @@ export function ChatPane({
   replay,
   variants,
   onCheckpoints,
+  ask,
 }: {
   chat: Chat;
   notLoaded?: boolean;
@@ -560,7 +590,7 @@ export function ChatPane({
   /** What sending does while the reply runs: queue or steer (ADR 0057). Without it, it queues. */
   followUp?: FollowUpHost;
   compare?: Comparing;
-  branch?: { blocked?: string; onBranch: (itemId: string) => void; onThread?: (itemId: string) => void };
+  branch?: { blocked?: string; onBranch: (itemId: string) => void };
   /** Opens a reply's Run view (ADR 0178). */
   onRun?: (itemId: string) => void;
   branchedFrom?: ReactNode;
@@ -571,13 +601,14 @@ export function ChatPane({
    * a Hermes without the checkpoint methods.
    */
   onCheckpoints?: () => void;
+  /** A Bot Chat's asks of other bots (ADR 0233): its Asked cards, and the composer's route for a message naming a bot. */
+  ask?: AskHost;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const l = useLocale();
   const words = l.chat;
   const kind = chatKind(chat);
   const botOfChat = CHAT_POLICY[kind].ofBot ? bot : undefined;
-  const topic = botOfChat && kind === "thread" ? threadTopic(chat.title) : undefined;
   const keys = useBindings();
   const labels = (chords: readonly Chord[]) => chords.map(chordLabel).join(" or ");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -634,9 +665,6 @@ export function ChatPane({
   const branchRef = useRef(branch?.onBranch);
   branchRef.current = branch?.onBranch;
   const onBranch = useCallback((itemId: string) => branchRef.current?.(itemId), []);
-  const threadRef = useRef(branch?.onThread);
-  threadRef.current = branch?.onThread;
-  const onThread = useCallback((itemId: string) => threadRef.current?.(itemId), []);
   const runRef = useRef(onRun);
   runRef.current = onRun;
   const openRun = useCallback((itemId: string) => runRef.current?.(itemId), []);
@@ -806,6 +834,10 @@ export function ChatPane({
   // Going to a tool call: once its row is on screen, scroll it to the middle, mark it and move focus to it. A history
   // that loaded without it says so; one still loading, or a Saved copy while offline without it, waits.
   const [jumping, setJumping] = useState<JumpTarget>();
+  const goToItem = useCallback((itemId: string) => {
+    stickToBottom.current = false;
+    setJumping({ itemId, at: Date.now() });
+  }, []);
   useEffect(() => {
     if (!jumpTo) return;
     stickToBottom.current = false;
@@ -816,7 +848,9 @@ export function ChatPane({
   useLayoutEffect(() => {
     if (!jumping) return;
     let el: HTMLElement | null | undefined;
-    if (jumping.rowId !== undefined) {
+    if (jumping.itemId !== undefined) {
+      el = scrollRef.current?.querySelector<HTMLElement>(`[data-item="${CSS.escape(jumping.itemId)}"]`);
+    } else if (jumping.rowId !== undefined) {
       const rowId = jumping.rowId;
       const item = chat.items.find((i) => (i.kind === "user" || i.kind === "returned" || i.kind === "assistant") && i.rowId === rowId);
       el = item && scrollRef.current?.querySelector<HTMLElement>(`[data-item="${CSS.escape(item.id)}"]`);
@@ -905,7 +939,8 @@ export function ChatPane({
   };
 
   // Rebuilt only when the chat changes, so a reply streaming in the other pane costs this one little.
-  const blocks = useMemo(() => toBlocks(chat.items, chat.sideQuestions), [chat.items, chat.sideQuestions]);
+  const asks = ask?.asks ?? NO_ASKS;
+  const blocks = useMemo(() => toBlocks(chat.items, chat.sideQuestions, asks), [chat.items, chat.sideQuestions, asks]);
   const chunks = useMemo(() => chunkBlocks(blocks), [blocks]);
   // The message or tool call being gone to is found in the chat, not the DOM: its chunk may be far from the view.
   const jumpChunk = useMemo(() => {
@@ -917,6 +952,9 @@ export function ChatPane({
         (b.kind === "tools" && b.tools.some((t) => t.callId === callId)) ||
         (b.kind === "sent" && b.tool.callId === callId) ||
         (b.kind === "cu-run" && b.items.some((i) => i.kind === "tool" && i.callId === callId));
+    } else if (jumping.itemId !== undefined) {
+      const id = jumping.itemId;
+      has = (b) => b.id === id;
     } else {
       const { rowId, turn } = jumping;
       const id =
@@ -946,7 +984,7 @@ export function ChatPane({
   const { jobId } = chat;
   // The streaming block is the chat's last item, so it is in the last chunk that holds more than side questions.
   let liveChunk = chunks.length - 1;
-  while (liveChunk > 0 && chunks[liveChunk].every((b) => b.kind === "side")) liveChunk--;
+  while (liveChunk > 0 && chunks[liveChunk].every(isSide)) liveChunk--;
   const live = chat.running && chunks[liveChunk]?.some((b) => b === last) ? last.id : undefined;
   // Enter queues while a reply runs, while Hermes isn't connected, and while messages are queued already, so a new one
   // never jumps the queue. The composer's hint says which Enter does.
@@ -959,21 +997,7 @@ export function ChatPane({
           {chat.source !== "app" && <SourceIcon source={chat.source} size={13} />}
           {botOfChat && <BotFace bot={botOfChat} size="sm" />}
           <span translate={botOfChat ? "no" : undefined}>{botOfChat?.name ?? chat.title}</span>
-          {topic !== undefined && (
-            <>
-              <span className="chat-title-sep" aria-hidden>
-                /
-              </span>
-              <span className="chat-title-topic" translate="no">
-                {topic}
-              </span>
-            </>
-          )}
-          {topic !== undefined ? (
-            <span className="badge" title={l.threads.badgeTip}>
-              {l.threads.badge}
-            </span>
-          ) : kind === "bot" ? (
+          {kind === "bot" ? (
             <span className="badge" title={words.botChatTip}>
               {words.botChat}
             </span>
@@ -1081,9 +1105,11 @@ export function ChatPane({
           stickToBottom.current = !up && el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
       >
+        <GoToItemContext.Provider value={goToItem}>
         <JumpContext.Provider value={jumpTo}>
         <PathsIn folder={chat.folder} session={chat.id}>
         <RunStopProvider value={runStop}>
+        <AskContext.Provider value={ask}>
         <div className="transcript-inner">
           {policy.readOnly === "jobRun" ? (
             <div className="imported-note">
@@ -1103,14 +1129,14 @@ export function ChatPane({
           {branchedFrom}
           {chat.savedAt !== undefined && (
             <div className="saved-note" role="note">
-              {status === "connected" ? <HardDrive size={13} /> : <CloudOff size={13} />}
+              {status === "offline" ? <CloudOff size={13} /> : <HardDrive size={13} />}
               <span>
                 <b>Saved copy</b> from {savedWhen(chat.savedAt)}.{" "}
                 {status === "connected"
                   ? chat.loading
                     ? "Loading the latest from Hermes…"
                     : "It may be out of date."
-                  : status === "connecting"
+                  : status !== "offline"
                     ? "Connecting to Hermes, so newer messages may be missing until it loads."
                     : "You're offline, so newer messages may be missing."}
               </span>
@@ -1148,14 +1174,13 @@ export function ChatPane({
               q={q}
               finds={finds}
               offline={status !== "connected" || !!chat.loading}
-              movedAt={waiting && c.some((b) => b.kind !== "side" && waitsIn(b)) ? movedAt : 0}
+              movedAt={waiting && c.some((b) => !isSide(b) && waitsIn(b)) ? movedAt : 0}
               onAnswer={answer}
               onQuestion={question}
               listen={listen}
               canRetry={canRetry}
               onOutgoing={onOutgoing}
               onBranch={branch && onBranch}
-              onThread={branch?.onThread && onThread}
               branchBlocked={branch?.blocked}
               onRun={onRun && openRun}
               onReplay={replay && onReplay}
@@ -1179,9 +1204,11 @@ export function ChatPane({
             </div>
           )}
         </div>
+        </AskContext.Provider>
         </RunStopProvider>
         </PathsIn>
         </JumpContext.Provider>
+        </GoToItemContext.Provider>
       </div>
 
       <SubagentsPanel
@@ -1200,6 +1227,7 @@ export function ChatPane({
       {goalBar}
       {queueApi && <QueuePanel chat={chat} queue={queue} status={status} api={queueApi} />}
       <HumanHasControlBanner chat={chat} />
+      {kind === "bot" && <DesktopOffNotice key={chat.id} />}
       {policy.readOnly === "imported" ? (
         // ADR 0031: an imported transcript is a record, not a session Hermes can carry on as it was.
         <div className="composer-wrap read-only-note" role="note">
@@ -1260,6 +1288,7 @@ export function ChatPane({
         references={references}
         followUp={compare ? undefined : followUp}
         compare={compare}
+        ask={ask}
       />
       )}
       <ShowInChatContext.Provider value={showInChat}>{footer}</ShowInChatContext.Provider>
@@ -1305,7 +1334,6 @@ const BlockView = memo(
     canRetry,
     onOutgoing,
     onBranch,
-    onThread,
     branchBlocked,
     onRun,
     onReplay,
@@ -1328,7 +1356,6 @@ const BlockView = memo(
     canRetry: boolean;
     onOutgoing: (itemId: string, action: OutgoingAction) => void;
     onBranch?: (itemId: string) => void;
-    onThread?: (itemId: string) => void;
     branchBlocked?: string;
     onRun?: (itemId: string) => void;
     onReplay?: (itemId: string, kind: ReplayKind) => void;
@@ -1395,7 +1422,6 @@ const BlockView = memo(
               <CopyButton words={() => block.text} what="message" />
               {onReplay && <EditButton blocked={replayBlocked} onEdit={() => onReplay(block.id, "edit")} />}
               {onBranch && <BranchButton blocked={branchBlocked} onBranch={() => onBranch(block.id)} />}
-              {onThread && <ThreadButton blocked={branchBlocked} onThread={() => onThread(block.id)} />}
             </div>
           )}
           {nav}
@@ -1416,7 +1442,6 @@ const BlockView = memo(
                 <CopyButton words={() => replyMarkdown(block.text)} what="reply" />
                 {onReplay && <RegenerateButton blocked={replayBlocked} onRegenerate={() => onReplay(block.id, "regenerate")} />}
                 {onBranch && <BranchButton blocked={branchBlocked} onBranch={() => onBranch(block.id)} />}
-                {onThread && <ThreadButton blocked={branchBlocked} onThread={() => onThread(block.id)} />}
                 {run && <RunButton onOpen={run} />}
               </div>
             </div>
@@ -1465,7 +1490,6 @@ const BlockView = memo(
     a.canRetry === b.canRetry &&
     a.onOutgoing === b.onOutgoing &&
     a.onBranch === b.onBranch &&
-    a.onThread === b.onThread &&
     a.branchBlocked === b.branchBlocked &&
     a.onRun === b.onRun &&
     a.onReplay === b.onReplay &&
@@ -1497,7 +1521,6 @@ const TranscriptChunk = memo(
     canRetry,
     onOutgoing,
     onBranch,
-    onThread,
     branchBlocked,
     onRun,
     onReplay,
@@ -1522,7 +1545,6 @@ const TranscriptChunk = memo(
     canRetry: boolean;
     onOutgoing: (itemId: string, action: OutgoingAction) => void;
     onBranch?: (itemId: string) => void;
-    onThread?: (itemId: string) => void;
     branchBlocked?: string;
     onRun?: (itemId: string) => void;
     onReplay?: (itemId: string, kind: ReplayKind) => void;
@@ -1543,6 +1565,8 @@ const TranscriptChunk = memo(
             <ErrorBoundary key={b.id} fallback={(error) => <UndrawnMessage id={b.id} error={error} />}>
               {b.kind === "side" ? (
                 <SideQuestionPair question={b.question} onDismiss={onDismissSideQuestion} />
+              ) : b.kind === "ask" ? (
+                <AskCard ask={b.ask} />
               ) : (
                 <BlockView
                   block={b}
@@ -1556,7 +1580,6 @@ const TranscriptChunk = memo(
                   canRetry={b.kind === "user" && !!b.outgoing && canRetry}
                   onOutgoing={onOutgoing}
                   onBranch={message ? onBranch : undefined}
-                  onThread={message ? onThread : undefined}
                   branchBlocked={onBranch && message ? branchBlocked : undefined}
                   onRun={b.kind === "assistant" || turns.failedOnly.has(b.id) ? onRun : undefined}
                   onReplay={(b.kind === "user" && turns.ofUser.has(b.id)) || (b.kind === "assistant" && turns.regenerable.has(b.id)) ? onReplay : undefined}
@@ -1590,7 +1613,6 @@ const TranscriptChunk = memo(
     a.canRetry === b.canRetry &&
     a.onOutgoing === b.onOutgoing &&
     a.onBranch === b.onBranch &&
-    a.onThread === b.onThread &&
     a.branchBlocked === b.branchBlocked &&
     a.onRun === b.onRun &&
     a.onReplay === b.onReplay &&
@@ -1670,29 +1692,6 @@ function Thought({ item, live, query }: { item: ThinkingItem; live: boolean; que
   );
 }
 
-function TurnCard({
-  kind = "",
-  icon,
-  heading,
-  tips,
-  foot,
-  children,
-  ...rest
-}: { kind?: string; icon: ReactNode; heading: ReactNode; tips: { hide: string; show: string }; foot?: ReactNode; children: ReactNode } & HTMLAttributes<HTMLDivElement>) {
-  const [open, setOpen] = useState(true);
-  return (
-    <div className={`msg returned ${kind}`.trimEnd()} {...rest}>
-      <button className="returned-head" aria-expanded={open} title={open ? tips.hide : tips.show} onClick={() => setOpen((o) => !o)}>
-        {icon}
-        <span className="returned-title">{heading}</span>
-        <ChevronRight size={13} className={`chev ${open ? "open" : ""}`} aria-hidden />
-      </button>
-      {open && children}
-      {foot}
-    </div>
-  );
-}
-
 function ReturnedCard({ item, query, date }: { item: Extract<Item, { kind: "returned" }>; query: string; date: boolean }) {
   const l = useLocale().chat;
   const { agent } = item;
@@ -1707,6 +1706,7 @@ function ReturnedCard({ item, query, date }: { item: Extract<Item, { kind: "retu
       tips={agent?.kind === "from" ? l.agent : l.returned}
       data-item={item.id}
       data-at={item.at}
+      tabIndex={agent?.kind === "answer" ? -1 : undefined}
       foot={date && <StoredTime at={item.at} />}
     >
       {item.process ? (
@@ -1722,10 +1722,15 @@ function ReturnedCard({ item, query, date }: { item: Extract<Item, { kind: "retu
 
 function SentCard({ block, query }: { block: SentBlock; query: string }) {
   const l = useLocale().chat.agent;
-  const { tool, send } = block;
+  const { tool, send, lines } = block;
   const refused = send.ack?.kind === "refused" ? send.ack.why : undefined;
   const why = refused ?? (send.ack?.kind === "queued" ? send.ack.failed : undefined);
   const running = tool.status === "running";
+  const teammates = useContext(TeammatesContext);
+  const links = send.handles.flatMap((h) => {
+    const open = teammates?.open(h);
+    return open ? [{ h, open }] : [];
+  });
   return (
     <TurnCard
       kind="sent"
@@ -1735,6 +1740,17 @@ function SentCard({ block, query }: { block: SentBlock; query: string }) {
       data-item={tool.id}
       data-call={tool.callId}
       tabIndex={tool.callId ? -1 : undefined}
+      foot={
+        links.length > 0 && (
+          <div className="sent-open">
+            {links.map(({ h, open }) => (
+              <button key={h} className="preview-chip" title={l.openTip(`@${h}`)} onClick={open}>
+                <Bot size={12} aria-hidden /> {l.open(`@${h}`)}
+              </button>
+            ))}
+          </div>
+        )
+      }
     >
       {why && (
         <p className="returned-why" translate="no">
@@ -1744,8 +1760,64 @@ function SentCard({ block, query }: { block: SentBlock; query: string }) {
       <div className="returned-body msg assistant" translate="no">
         <Markdown text={send.text} query={query} />
       </div>
+      {lines.length > 0 && (
+        <ul className="delivery">
+          {lines.map((line, i) => (
+            <DeliveryLineRow key={i} line={line} />
+          ))}
+        </ul>
+      )}
     </TurnCard>
   );
+}
+
+/** One line under a sent message: Hermes's own words (a reason) are data, the rest is the catalogue's. */
+function DeliveryLineRow({ line }: { line: DeliveryLine }) {
+  const locale = useLocale();
+  const goTo = useContext(GoToItemContext);
+  const d = locale.chat.agent.delivery;
+  switch (line.kind) {
+    case "queued":
+      return (
+        <li data-line={line.kind}>
+          {line.claimed ? d.claimed(line.to) : d.queued(line.to)}
+          {line.targetState && <> {d.was[line.targetState](line.to)}</>}
+        </li>
+      );
+    case "notifyOnly":
+      return <li data-line={line.kind}>{d.notifyOnly(line.to)}</li>;
+    case "poll":
+      return <li data-line={line.kind}>{d.poll}</li>;
+    case "noWayBack":
+      return <li data-line={line.kind}>{d.noWayBack(line.why)}</li>;
+    case "unconfirmed":
+      return <li data-line={line.kind}>{d.unconfirmed(line.why, line.to)}</li>;
+    case "withdrawAsked":
+      return <li data-line={line.kind}>{line.refused ? d.withdrawRefused(line.refused) : d.withdrawAsked}</li>;
+    case "silent": {
+      const since = line.since;
+      return (
+        <li data-line={line.kind}>
+          {d.silent(line.to)}
+          {since !== undefined && (
+            <>
+              {" "}
+              <Ticking>{() => (locale.fmt.age(since) === locale.time.now ? d.sentNow : d.sentAgo(locale.fmt.age(since)))}</Ticking>
+            </>
+          )}
+        </li>
+      );
+    }
+    case "ended":
+      return (
+        <li data-line={line.kind} data-status={line.status}>
+          {line.several && line.status !== "settled" ? d.endedSeveral : d.ended[line.status]}{" "}
+          <button type="button" className="link" onClick={() => goTo(line.itemId)}>
+            {d.goToAnswer}
+          </button>
+        </li>
+      );
+  }
 }
 
 function ToolRow({ t }: { t: ToolItem }) {
@@ -1890,6 +1962,7 @@ function Composer({
   references,
   followUp,
   compare,
+  ask,
 }: {
   placeholder: string;
   offline: boolean;
@@ -1931,9 +2004,12 @@ function Composer({
   /** While a reply runs, Enter queues or steers by its `mode`, and Ctrl+Enter does the other. */
   followUp?: FollowUpHost;
   compare?: Comparing;
+  /** In a Bot Chat: a message whose pills name bots goes to them instead (ADR 0233). */
+  ask?: AskHost;
 }) {
   const keys = useBindings();
   const atWords = useLocale().chat.at;
+  const askWords = useLocale().chat.ask;
   // The chat's staged attachments, kept by the desk under its Draft key so they outlive this composer (ADR 0145).
   const attachments = useSyncExternalStore(desk.subscribe, () => desk.stagedIn(draftKey));
   // Each staged image's number, which its mark in the words gives (inlineImages.ts, ADR 0200).
@@ -2190,9 +2266,7 @@ function Composer({
       const saved = await Promise.allSettled(
         files
           .filter((f) => !tooBig.includes(f))
-          .map(async (f) =>
-            invoke<string>("stage_clipboard_file", await f.arrayBuffer(), { headers: { "x-name": encodeURIComponent(nameOf(f)) } }),
-          ),
+          .map(async (f) => stageBytes(await f.arrayBuffer(), nameOf(f))),
       );
       const paths = saved.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
       desk.own(paths);
@@ -2226,6 +2300,52 @@ function Composer({
   });
   const stageRef = useRef(stageFiles);
   stageRef.current = stageFiles;
+
+  // Mark up (ADR 0227): the image being marked, and what confirming does. The marked copy is staged as a pasted file
+  // is, so the original, maybe the owner's own file, is only read; the copy takes the original's place in the strip
+  // and its number, and the original is let go only if the app made it. A string is why it couldn't, for the dialog.
+  // `marking` is one open dialog: a copy staged after it closed (the chat changed, its image went) is let go unused.
+  const [marking, setMarking] = useState<{ file: Attachment }>();
+  const markingRef = useRef(marking);
+  markingRef.current = marking;
+  useEffect(
+    () => () => {
+      markingRef.current = undefined;
+    },
+    [],
+  );
+  const markUp = (open: { file: Attachment }, m: Marked) =>
+    busy(async (): Promise<string | void> => {
+      const key = draftKey;
+      const from = open.file;
+      let path: string;
+      try {
+        path = await stageBytes(await m.bytes.arrayBuffer(), markedName(from.name, m.type));
+      } catch (e) {
+        return `Couldn't add the marked image: ${errorText(e)}`;
+      }
+      desk.own([path]);
+      const [to] = await check([path]);
+      if (!to || markingRef.current !== open || draftKeyRef.current !== key) {
+        desk.release([path]);
+        return to ? undefined : "Hermes can't take the marked image.";
+      }
+      previews.current?.put(to.path, m.bytes);
+      desk.change({ kind: "replaced", key, from: from.path, to });
+      if (!desk.stagedIn(key).some((a) => a.path === to.path)) return "The image was removed while you marked it up.";
+      endMarking();
+      insertWords(markupWords(to.name, m.n, m.note));
+    });
+  // The dialog goes with the image it marks, and with the chat.
+  useEffect(() => {
+    if (marking && !attachments.some((a) => a.path === marking.file.path)) setMarking(undefined);
+  }, [attachments, marking]);
+  useEffect(() => setMarking(undefined), [draftKey]);
+  const markingSrc = marking && previews.current?.get(marking.file.path);
+  const endMarking = () => {
+    setMarking(undefined);
+    requestAnimationFrame(() => taRef.current?.focus());
+  };
 
   // On Windows the native drop handler is off (tauri.windows.conf.json), because there it takes every drag and a chat
   // dragged onto a tab strip never reached the page. Files dropped there come as HTML5 drops, with bytes but no path.
@@ -2301,6 +2421,14 @@ function Composer({
   // The "@" word the menu is open on stays words until it is picked, so typing "@bram" in full doesn't flash a pill.
   const bots = commands?.references?.bots;
   const atButton = bots ? atWords.button : "Reference a chat";
+  // The first bot named brings this chat along as a Referenced chat, which the owner can remove (ADR 0233).
+  const self = ask?.self;
+  const naming = !!self && !!bots && askTargets(text, bots).length > 0;
+  useEffect(() => {
+    if (!self || !references) return;
+    if (naming) references.desk.offer(draftKey, self);
+    else references.desk.withdraw(draftKey);
+  }, [naming, self, references, draftKey]);
   const pills = useMemo<ComposerMark[]>(() => {
     const named = mentionsIn(text, bots ?? []).filter((m) => m.start !== slash.typingAt && !marks.some((k) => m.start < k.end && m.end > k.start));
     return named.length ? [...marks, ...named.map((m) => ({ ...m, kind: "bot" as const }))].sort((a, b) => a.start - b.start) : marks;
@@ -2345,12 +2473,30 @@ function Composer({
   };
   /** `other`: Ctrl+Enter, which does the other of queue and steer while a reply runs. */
   const send = (other = false) => {
-    if (refs.length && typedCommand(text.trim())?.def === STEER) return setRefused([REFERENCES_CANT_STEER]);
+    if (refs.length && slash.typed?.kind === "command" && slash.typed.def.name === "steer") return setRefused([REFERENCES_CANT_STEER]);
     if (slash.run()) return;
     if (!sendable || steering) return;
     // Each mark numbered by its image's place among those sent, as Hermes stores them after the words.
     const words = sentText(text.trim(), attachments, numbers).trim();
     if (!words && !attachments.length) return;
+    // A message that names bots goes to them, and this chat takes no turn, so whether its reply runs or its queue holds
+    // anything doesn't matter (ADR 0233). It goes once, from this pane, even while comparing.
+    const asked = ask && bots ? askTargets(words, bots) : [];
+    if (ask && asked.length) {
+      if (attachments.length) return setRefused([askWords.noFiles]);
+      if (slash.skill) return setRefused([askWords.noSkill]);
+      if (unready) {
+        setRefused([]);
+        return setRefsHeld(true);
+      }
+      const taken = references ? references.desk.take(draftKey) : [];
+      const why = ask.send(asked, words, taken);
+      if (why) {
+        references?.desk.putBack(draftKey, taken);
+        return setRefused([askWords[why]]);
+      }
+      return setRefused([]);
+    }
     if (compare?.refuse) return setRefused([compare.refuse]);
     // A summary goes with the message it was written with, so the message waits for every summary to be ready.
     if (unready) {
@@ -2461,6 +2607,22 @@ function Composer({
         </div>
       )}
       {slash.view}
+      {marking &&
+        markingSrc &&
+        "url" in markingSrc &&
+        dropZone.current &&
+        // Over the chat pane only, so a pane split beside it stays usable.
+        createPortal(
+          <MarkUpDialog
+            key={marking.file.path}
+            file={marking.file}
+            src={markingSrc.url}
+            n={desk.boxesOn(marking.file.path) + 1}
+            onConfirm={(m) => markUp(marking, m)}
+            onCancel={endMarking}
+          />,
+          dropZone.current,
+        )}
       <div className={`composer ${dragging ? "dragging" : ""}`}>
         {dragging && <div className="drop-overlay">Drop files to attach</div>}
         {refs.length > 0 && (
@@ -2483,6 +2645,7 @@ function Composer({
                 preview={previews.current?.get(f.path)}
                 annotation={annotations.get(f.path)}
                 onRemove={() => removeFile(f.path)}
+                onMarkUp={() => setMarking({ file: f })}
               />
             ))}
           </div>

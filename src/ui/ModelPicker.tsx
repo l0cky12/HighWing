@@ -8,15 +8,13 @@ import {
   capabilitiesOf,
   carryOptions,
   effortsFor,
-  findOption,
-  fromKey,
-  guessCapabilities,
   modelKey,
   shortName,
   type Effort,
   type ModelCatalog,
   type ModelOption,
   type ModelPick,
+  pickerRows,
 } from "../hermes/models";
 import { useDismiss, useReturnFocus } from "./bits";
 
@@ -60,40 +58,6 @@ export function ModelControls(props: ModelControlsProps) {
 }
 
 const COMPARE_TITLE = "Pick a model to compare with";
-
-/** One row of the list. `favorite`: it sits under Favorites. */
-type Row = { key: string; option: ModelOption; favorite: boolean };
-
-/** A starred model Hermes doesn't list (its provider signed out, say): still shown, but it can't be picked. */
-function missingOption(key: string): ModelOption | undefined {
-  const p = fromKey(key);
-  return p && { ...p, providerName: p.provider, available: false, ...guessCapabilities(p.model) };
-}
-
-/** A model search's words. Every model search matches the same way: the text holds each word, in any order or case. */
-export const searchWords = (query: string) => query.toLowerCase().split(/\s+/).filter(Boolean);
-export const hasWords = (text: string, words: string[]) => {
-  const lower = text.toLowerCase();
-  return words.every((w) => lower.includes(w));
-};
-
-const matches = (o: ModelOption, words: string[]) => hasWords(`${o.model} ${o.provider} ${o.providerName}`, words);
-
-/** The rows the picker lists for `query`: Favorites first, then each provider's other models. */
-export function pickerRows(catalog: ModelCatalog | undefined, favorites: string[], query: string): { title: string; rows: Row[] }[] {
-  const words = searchWords(query);
-  const starred = new Set(favorites);
-  const favRows = favorites
-    .map((key) => ({ key, option: findOption(catalog, fromKey(key)) ?? missingOption(key) }))
-    .filter((r): r is { key: string; option: ModelOption } => !!r.option && matches(r.option, words))
-    .map((r) => ({ ...r, favorite: true }));
-  const sections = favRows.length ? [{ title: "Favorites", rows: favRows }] : [];
-  for (const p of catalog?.providers ?? []) {
-    const rows = p.models.filter((m) => !starred.has(modelKey(m)) && matches(m, words)).map((option) => ({ key: modelKey(option), option, favorite: false }));
-    if (rows.length) sections.push({ title: p.name, rows });
-  }
-  return sections;
-}
 
 function ModelPicker({ catalog, current, defaultEffort, favorites, onPick, onToggleFavorite, onCompare }: ModelControlsProps) {
   const [open, setOpen] = useState(false);

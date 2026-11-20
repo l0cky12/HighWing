@@ -39,7 +39,7 @@ export type SkillRun = { keys: string[]; instruction: string; call: SkillCall; p
 export const MAX_SKILLS = 5;
 
 /** This app's command names, which win over a skill's at the start of a message. Read when used: the modules import each other. */
-const isCommandName = (name: string) => COMMANDS.some((c) => c.name === name);
+const isCommandName = (name: string) => COMMANDS.some((c) => c.name === name || c.aliases?.includes(name));
 
 /**
  * A skill name as Hermes makes it a command (`slugify_skill_name`): lower case, spaces and `_` as `-`, then only word

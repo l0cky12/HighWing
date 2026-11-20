@@ -101,8 +101,8 @@
 // asks before cutting them off.
 // HV_TURNS=<n> adds the bench's two long chats to `default`'s Inbox, `long1` and `long2`, n turns each (bench/fixture.ts
 // makeChat(n, 1) and (n, 2)), so the app can be timed on the chats `bench/run.mjs` renders (bench/app-split).
-// HV_COMPRESS=rotate makes `session.compress` (Compact now, `/new` in a Bot Chat or a thread) move the chat to a new
-// session, as Hermes does when it compacts by rotation, so a bot's threads can be shown to survive it (ADR 0211).
+// HV_COMPRESS=rotate makes `session.compress` (Compact now, `/new` in a Bot Chat) move the chat to a new session, as
+// Hermes does when it compacts by rotation.
 // Read-only check of what the server holds (the side-effect proof): `GET /__state` returns sessions, transcripts, and
 // the app's answers to what the stand-in asked it, and each profile's SOUL.md, skills turned off and toolsets on, with
 // the profile creates and one-off calls it received, and each profile's gateway restarts (`gatewayRestarts`).
@@ -113,6 +113,7 @@ import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createServer } from "node:http";
 import type { Socket } from "node:net";
+import { typedText } from "../../../../src/hermes/branch";
 import { CU } from "../../../../src/hermes/fakeComputerUse";
 import { DOCTOR_NO_DISPLAY, FakeHermes, row } from "../../../../src/hermes/fakeHermes";
 import { HONCHO, RETAINDB } from "../../../../src/hermes/fakeMemoryProviders";
@@ -126,6 +127,10 @@ const PASSWORD = "verify-pass";
 const server = new FakeHermes();
 const delayMs = Number(process.env.HV_DELAY_MS ?? 0);
 server.checkpoints.on = process.env.HV_CHECKPOINTS !== "off";
+// Hermes's own commands, as `commands.catalog` lists them at `bf0203a` (ADR 0226), and what two of them answer here.
+server.builtinCommands = true;
+server.slashAnswers.kanban = { output: "No tasks on the default board.\n\nkanban create \"<title>\" adds one." };
+server.slashAnswers.usage = { output: "Session tokens: 12,480 in / 3,210 out\nRate limit: 41 of 50 requests left this minute" };
 if (process.env.HV_COMPRESS === "rotate") server.compress = "rotate";
 
 // Synthetic seed data. Feature recipes in ../features/ name these titles; change both together.
@@ -691,7 +696,8 @@ http.on("upgrade", async (req, sock: Socket) => {
       if (msg.method && msg.method !== "gateway.ping") console.log(new Date().toISOString(), "WS", msg.method, msg.params?.session_id ?? "", answer);
       if (msg.method === "prompt.submit" && msg.params?.session_id) {
         const { session_id, text } = msg.params;
-        const prompt = String(text ?? "");
+        // By the words typed: a Referenced chat's summary or an ask's note after them picks no scripted turn.
+        const prompt = typedText(String(text ?? ""));
         setTimeout(() => {
           save();
           if (/^computer use/i.test(prompt)) computerUse(session_id, prompt);

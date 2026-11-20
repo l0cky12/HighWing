@@ -93,8 +93,8 @@ export type OpenRequest =
 
 /**
  * A session attached on this connection, by `open` or `resume`. `runtimeId`: what this connection's frames call it.
- * `storedId`: the chat's id. `inflight`: a running turn's reply as streamed so far. `asking`: what it still waits on,
- * oldest first.
+ * `storedId`: the chat's id. `inflight`: a running turn's reply as streamed so far, and `inflightUser` the message it
+ * answers, as sent. `asking`: what it still waits on, oldest first.
  */
 export type Attached = {
   runtimeId: string;
@@ -102,6 +102,7 @@ export type Attached = {
   messages: unknown;
   running: boolean;
   inflight?: string;
+  inflightUser?: string;
   asking: ServerRequest[];
   info: unknown;
   usage: unknown;
@@ -172,7 +173,7 @@ export function negotiate(ready: Record<string, unknown>, port: Port): SessionPr
 
 const obj = (v: unknown) => (isObj(v) ? v : undefined);
 
-type LegacySession = { session_id: string; stored_session_id: string; messages?: unknown; running?: boolean; inflight?: { assistant?: unknown }; open_requests?: ServerRequest[]; info?: unknown; usage?: unknown };
+type LegacySession = { session_id: string; stored_session_id: string; messages?: unknown; running?: boolean; inflight?: { assistant?: unknown; user?: unknown }; open_requests?: ServerRequest[]; info?: unknown; usage?: unknown };
 
 const attached = (res: LegacySession): Attached => ({
   runtimeId: res.session_id,
@@ -180,6 +181,7 @@ const attached = (res: LegacySession): Attached => ({
   messages: res.messages,
   running: !!res.running,
   ...(typeof res.inflight?.assistant === "string" && { inflight: res.inflight.assistant }),
+  ...(typeof res.inflight?.user === "string" && { inflightUser: res.inflight.user }),
   asking: res.open_requests ?? [],
   info: res.info,
   usage: res.usage,
@@ -383,3 +385,14 @@ const LEGACY_EDITS: EditTable = {
       },
     ),
 };
+
+/**
+ * Whether a delta is the end of a resume's in-flight text, by its stamp: the turn's first segment, ending where the
+ * text ends. The in-flight text joins every segment with no bounds, and a delta without stamps can't be told from a
+ * repeated word, so either is kept.
+ */
+export function echoesInflight(inflight: string, p: Record<string, unknown>): boolean {
+  const { text, segment, offset } = p;
+  if (typeof text !== "string" || !text || segment !== 0 || typeof offset !== "number" || !Number.isInteger(offset)) return false;
+  return offset + text.length === inflight.length && inflight.endsWith(text);
+}

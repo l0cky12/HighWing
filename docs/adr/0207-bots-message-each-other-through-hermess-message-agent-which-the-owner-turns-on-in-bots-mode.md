@@ -1,5 +1,7 @@
 # Bots message each other through Hermes's message_agent, which the owner turns on in Bots mode
 
+> **Amended by [ADR 0228](0228-handed-off-work-shows-on-the-card-of-the-call-that-sent-it-from-hermess-records-only.md)** (#93). The answer is joined to the message that asked for it, by delivery id, and the "Messaged" card keeps Hermes's ack after a reload: it is read back from the call's stored row. The card also says what the ack says, and that Hermes reports nothing more until the answer. The rest of this ADR stands.
+
 > **Accepted.** It changes one line of ADR 0066, "Bots talking to each other … needs nothing from this app": on a Hermes with no desktop app it needs a switch, and its rows need reading. It adds a third control to the row ADR 0203 put above the bots. It widens ADR 0175's Returned result to two more rows, and ADR 0189's `configureParams` to a delete. The parsers are `src/hermes/agentMessages.ts`. `agentMessaging` and `messagingStep` in `src/hermes/bots.ts` read and plan the switch, and `Hermes.setAgentMessaging` in `src/hermes/transport.ts` writes it. `returnedItem` in `src/hermes/returned.ts` reads the rows, `SentCard` and `ReturnedCard` in `src/ui/ChatPane.tsx` draw them, and `MessagingSwitch` in `src/ui/Bots.tsx` is the switch. Tested in `src/hermes/agentMessages.test.ts`, `src/hermes/agentMessages.transport.test.ts`, `src/hermes/bots.test.ts`, `src/hermes/botsTransport.test.ts`, `src/hermes/returned.test.ts` and `src/ui/botMessaging.test.tsx`.
 
 The owner runs two bots on a headless Hermes gateway, with no official Hermes desktop app. They wanted one bot to message the other, and both Bot Chats to show the message in Highwing.
@@ -35,7 +37,7 @@ Two things stood in the way:
 - **Off deletes every block.** Rejected: it would erase names, colours, pins and what Hermes's desktop keeps there, which ADR 0189 forbids.
 - **Turn on by writing a block on the sender, or on every profile.** Rejected: Hermes's gate holds for the whole install, so a per-bot write buys nothing, and writing every profile leaves Off unable to tell its own blocks from the owner's.
 - **The switch in each bot's menu, or in Settings → Profiles.** Rejected: a per-bot entry suggests a per-bot effect, and Settings is far from the bots.
-- **This app relays the message.** Rejected by the owner: Hermes delivers durably with no client attached, and a relay would stop when the app closes.
+- **This app relays the message.** Rejected by the owner: Hermes delivers durably with no client attached, and a relay would stop when the app closes. An @ in a Bot Chat ([ADR 0233](0233-group-rooms-are-removed-and-an-at-in-a-bot-chat-asks-the-named-bot.md)) isn't one: it is the owner's own message to the named bot, sent to its Bot Chat whether this switch is on or off.
 
 ## Consequences
 

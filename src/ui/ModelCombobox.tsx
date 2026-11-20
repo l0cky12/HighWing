@@ -4,7 +4,7 @@
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import { composing } from "./bits";
-import { hasWords, searchWords } from "./ModelPicker";
+import { hasWords, searchWords } from "../hermes/models";
 
 export function ModelCombobox({
   label,

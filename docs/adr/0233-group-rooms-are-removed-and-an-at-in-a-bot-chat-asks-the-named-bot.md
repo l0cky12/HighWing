@@ -1,0 +1,46 @@
+# Group rooms are removed, and an @ in a Bot Chat asks the named bot in its own Bot Chat
+
+> **Accepted.** It supersedes ADR 0210 and ADR 0219, changes ADR 0165 (the chip a message naming a bot brings) and adds a sentence to ADR 0207. The asks are `src/hermes/asks.ts`, wired into `src/hermes/transport.ts` (`Hermes.asks`, and four lines that hand it what no shown chat holds). The card is `src/ui/AskCard.tsx`; the composer's route and the card's place are in `src/ui/ChatPane.tsx`. The stand-in holds a `queued: true` message behind a running turn (`FakeHermes.busyTurn`). Tested in `src/hermes/asks.test.ts`, `src/hermes/asks.transport.test.ts` and `src/ui/asks.test.tsx`. Issue #75.
+
+The owner wanted one way for bots to talk, not two. Group rooms (ADR 0210) were a second, heavier one, with a floor, rounds, room approvals and a goes-to line. Bot messaging (ADR 0207) already covers bots messaging each other from their own Bot Chats. What the owner was missing is bringing a bot in from the chat they are in, the way they tag @grok in a thread on X to get its answer there.
+
+The rooms went first (#82, #80, #84): no code calls `groups.*`, rooms already on the server stay there hidden, and their `Group: <room_id>` sessions are left out of every list by the source Hermes stores. The picker learned to list the other bots in a Bot Chat (#87, ADR 0165). This ADR records both halves and decides what a message that names a bot does.
+
+Four facts shaped it, read in Hermes's source at `ae2a81cc`, the build the owner runs:
+
+- **Each RPC on the legacy `/api/ws` picks its store from its own `profile`** (docs/research/hermes-gateway-api.md), so one socket can find, resume and send to another profile's Bot Chat.
+- **`session.resume` moves a live session's events to the socket that resumed it** (`_rebind_live_transport`, `tui_gateway/methods_session.py`). The asking chat's socket hears the named bot's reply.
+- **`prompt.submit {queued: true}` never interrupts.** A plain one to a busy session redirects, steers or interrupts its turn (`busy_input_mode`). The held message is stored at accept, and its answer carries no `user_row_id`. Text held while other text waits is merged into it, row and all, as one message with one turn (`_enqueue_prompt`). When its turn starts, the row moves to the end of the transcript. A resume says what the running turn answers (`inflight.user`).
+- **Hermes keeps nothing of the ask in the asking chat.** The asking bot takes no turn, and nothing adds a row to a session without one.
+
+## Decisions
+
+- **A message in a Bot Chat whose pills name bots goes to them, not to this chat's bot.** The pills decide, so the bots asked are the bots the owner saw (`askTargets` over `mentionsIn`), each once. The composer takes this route before Compare, skill, steer and the queue, so whether this chat's reply runs or its queue holds anything doesn't matter, and the asking bot takes no turn. Outside a Bot Chat nothing changes.
+- **It goes to each named bot's Bot Chat as the owner's own message.** The Bot Chat is found by title (ADR 0066), and made only when the bot has none. It is attached to this socket with `session.resume` under its profile and never shown here. The message goes with `prompt.submit {queued: true}`, so a bot that is replying gets it next. The "Bots message each other" switch is never read or written: this isn't the app relaying a bot's message, which ADR 0207 rejected. Like any message the owner sends in a Bot Chat, it carries Ask first's hidden rule after the stamp and the reference, in the setting's current form ([ADR 0229](0229-a-bot-asks-before-it-messages-another-bot-unless-the-owner-lets-it-and-the-messaged-card-opens-that-bot.md)).
+- **This chat goes with it as a Referenced chat.** The first bot named brings a chip, "Bot Chat with <name>", summarized as any Referenced chat is (ADR 0165). The owner can remove it, and it isn't brought back while the message still names a bot. It isn't offered while the chat has nothing stored to summarize.
+- **The message carries an ask id.** Its attached context starts with `[Asked from: Bot Chat with <name> · <id>]` and one sentence saying the owner reads the reply there, before any reference. The id is ten random characters, and no chat id is sent. `typedText` hides it, as it hides references, and `storedReferences` never reads it into a summary.
+- **The Asked card is kept on this computer.** `hermes-chat.asks.<connection, profile>` holds each message asked from the profile's Bot Chat: the words, the titles it referenced, the bots, where the card goes, and each bot's reply once its turn ended. A profile has one Bot Chat, so the profile is the key, and a compression of the asking chat changes nothing. A restart draws every answered card from it, with no request, offline too. Only what hadn't finished is read again, once connected.
+- **The ask id settles what the app lost sight of.** A send the connection dropped, or a turn under way at a restart, is looked for by its id in the named bot's newest stored rows, at most five pages of 100. Found, the card shows the reply after it, unless a resume says the running turn answers another message: then the ask is still held. Not found, an unknown send is Failed ("It never reached @x"). Nothing scans a Bot Chat for asks the record doesn't name.
+- **The card goes before the owner's first message in this chat stored after the ask**, by stored row id, else at the end. A reply that was running when the owner asked stays above the card, as it showed then. Row ids outlive a reload, a restart and a compression. Several asks at one place go in the order asked.
+- **One card per message, a line per bot.** Each bot's line shows its face and name, and one of: sending, waiting behind its running reply, the reply streaming with what it is doing (thinking, a tool, waiting for the owner in its Bot Chat), the reply, no reply, or why it wasn't sent. **Open @x's Bot Chat** goes there. An Approval in the named bot's turn is answered in its Bot Chat, never from the card.
+- **Failed and unknown follow the outbox's rules, from the record.** Nothing resends by itself. **Retry** works only while connected, and an unknown send is looked for first and sent again only if it isn't there, with the same id. **Edit** takes the failed bots off the card and puts the words and references back in the composer. **Dismiss** takes a bot off; the card goes with its last. Nothing goes into the named bot's outbox: one failure, one place, in the chat the owner acted in.
+- **The composer refuses what it can't send, and keeps the words.** Offline, a message to another bot is refused, as a message with a reference can't be queued (ADR 0165). Files and skills are refused. A summary not ready yet holds the message in the composer, as today.
+
+## Considered options
+
+- **Rebuild the card from the named bots' Bot Chats alone**, stamping the asking chat in the message. It would show on another computer, but every open of a Bot Chat would read up to every other bot's Bot Chat (the owner runs about 19), through compressions, and place the card by comparing clocks. Dismiss couldn't exist.
+- **Keep only a record, and match the reply by words.** A held message has no row id, so two asks with the same words, or a dropped one, couldn't be told apart.
+- **Keep asks on the chat or as a new item kind**, as side questions are kept. `resume()` rebuilds the items from history, and every rule that saves, exports, branches or reconciles items would have to know about them.
+- **Put a failed ask in the named bot's outbox.** It would show twice, with two Retry buttons that don't know about each other, and that outbox is checked only while its profile is shown.
+- **Ask through `message_agent`.** The asking bot would have to take a turn to call it, and it needs the switch.
+- **A plain `prompt.submit`.** It would interrupt or redirect a bot that is replying, from a chat the owner can't see it in.
+
+## Consequences
+
+- An answered card on another computer, or after the record is lost, isn't there. The named bot's Bot Chat still has the turn, as an ordinary turn with the asking chat's chip.
+- The card keeps a copy of the reply's text. A later Regenerate in the named bot's Bot Chat doesn't change it. The record keeps at most 100 asks per profile; the oldest answered ones go first.
+- The owner can't interrupt a bot from another chat. That is done in its Bot Chat.
+- The named bot's model reads the ask's two lines with the message.
+- Resuming the named bot's Bot Chat moves its events to this socket, so another client watching that chat live stops hearing them, as when the owner opens a chat here.
+- A message Hermes holds ahead of the ask, sent by another client, can show on the card while it runs. The card takes the next turn that starts in that Bot Chat once the running one ends.
+- Asks held for one bot together get one turn, because Hermes merges them. Each of their cards shows that one reply, and the named bot's Bot Chat shows only the first ask's words as typed.

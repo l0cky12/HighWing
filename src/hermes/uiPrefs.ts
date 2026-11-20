@@ -78,6 +78,8 @@ export type UIPrefs = {
   summonSelection: boolean;
   /** Open the side panel's Screen once when a computer-use run starts in the chat on screen (ADR 0216). Off by default. */
   followScreen: boolean;
+  /** Ask first (ADR 0229): tell a bot, in each Bot Chat message sent from here, to ask before it messages another bot. On by default. */
+  askFirst: boolean;
   /**
    * The keyboard shortcuts the owner changed (ui/keybindings.ts, ADR 0147): each command's chords, by command id. Only
    * overrides, so a command never changed takes whatever default this version gives it. Checked for shape here only;
@@ -144,6 +146,7 @@ export const DEFAULT_UI_PREFS: Readonly<UIPrefs> = Object.freeze({
   messageDetails: "time",
   summonSelection: true,
   followScreen: false,
+  askFirst: true,
   keybindings: Object.freeze({}) as Record<string, string[]>,
   writingModels: Object.freeze({}) as Record<string, WritingPick>,
 });
@@ -332,6 +335,7 @@ export function readUIPrefs(doc: UIPrefsDoc, d: Readonly<UIPrefs> = DEFAULT_UI_P
     messageDetails: MESSAGE_DETAILS.includes(doc.messageDetails as MessageDetails) ? (doc.messageDetails as MessageDetails) : d.messageDetails,
     summonSelection: typeof doc.summonSelection === "boolean" ? doc.summonSelection : d.summonSelection,
     followScreen: typeof doc.followScreen === "boolean" ? doc.followScreen : d.followScreen,
+    askFirst: typeof doc.askFirst === "boolean" ? doc.askFirst : d.askFirst,
     keybindings: toKeybindings(doc.keybindings) ?? { ...d.keybindings },
     writingModels: toWritingModels(doc.writingModels) ?? { ...d.writingModels },
   };

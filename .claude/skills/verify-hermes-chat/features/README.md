@@ -37,10 +37,10 @@ Each feature file starts with an H1 and one paragraph describing the behaviour t
 
 - [Sign in](sign-in.md): first-run setup for a web address connection, a wrong password, and signing in again after a relaunch.
 - [Send a message](send-message.md): open a chat, send, watch the streamed reply, and confirm both messages on the server.
+- [Mark up an image](mark-up.md): paste a screenshot, draw a box on it, add a note, Cancel, and send the marked image.
 - [New chat](new-chat.md): start a chat from the rail, the list panel or Ctrl+N, and see it created on the server and in the list.
 - [New bot](new-bot.md): rewrite a rough persona with AI in place, edit a bot's persona, choose skills and tools, create, and read each back; the partial and narrow cases.
-- [Ask a bot](ask-a-bot.md): in a Bot Chat, `@` and the `@` button list the other bots above the chats, a pick puts `@handle` in as a pill that one Backspace takes out, a chat pick is still a chip, and an ordinary chat lists chats only.
-- [Bot threads](bot-threads.md): each bot's disclosure, New thread, Thread from here, switching, kept out of Chats, Archived and Search, kept after the Bot Chat is compacted (`HV_COMPRESS=rotate`), and a thread under another profile's bot.
+- [Ask a bot](ask-a-bot.md): in a Bot Chat, `@` and the `@` button list the other bots above the chats, a pick puts `@handle` in as a pill that one Backspace takes out, a chat pick is still a chip, and an ordinary chat lists chats only. A message naming bots goes to their Bot Chats, with an Asked card that survives a restart.
 - [MCP servers](mcp-servers.md): Settings → MCP servers: list, test, add, edit with write-only secrets, remove, switch, OAuth sign-in, catalog, another profile, Restart gateway after an edit.
 - [Gateways](gateways.md): Settings → Gateways: Telegram and Discord state, token replace and remove with read-back, the switch, a turned-down token, a missing library, a change on the server meanwhile, Check status, Restart gateway.
 - [Search chats](search.md): Ctrl+K or the rail opens search, a body-text match opens its chat, and a miss shows No matches.
@@ -52,3 +52,4 @@ Each feature file starts with an H1 and one paragraph describing the behaviour t
 - [Preview](preview.md): the empty Preview's dev servers, a bare port, following a link in the page, Back, Forward and Reload in one view, the badge's switch, a second view under a menu and Escape, and Hermes's `preview.act` turned down through `/__ask`.
 - [Dispatched work](dispatched-work.md): a reply that dispatches a kanban task or background subagents keeps its chat in Working with the waiting icon, the wake turn, the Inbox hand-off, a blocked task, Stop waiting, the Rail inbox state, and a relaunch rebuilt from the board.
 - [Computer use](computer-use.md): a computer-use run as one card with a line per action, cua Approvals under their steps, Watch live, Follow computer use, the refusal note while someone else holds the screen, the same steps reopened from Hermes (the stand-in's `computer use` prompt), and Settings → Diagnostics → Computer use's six prerequisites, green or red with Hermes's own reason (the `HV_COMPUTER_USE` seed).
+- [Slash commands](slash-commands.md): the "/" menu with Hermes's own commands, `/mod` resolving to `/model` and its Models list, bare `/model`, picking a model, `/kanban` subcommands run through `slash.exec`, an unclear prefix, the "Runs /steer." hint, and `/undo` refused with why.

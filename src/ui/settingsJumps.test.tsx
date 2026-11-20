@@ -1,10 +1,9 @@
 // @vitest-environment jsdom
-// A Settings page without sections of its own lists its headings under it in the tree, to jump to, and the one at the
-// top of the view is current as the page scrolls (ADR 0160). jsdom has no layout, so each section here sits 400 px
-// below the one before it, and the page's scroll offset moves them.
+// jsdom has no layout, so each section here sits 400 px below the one before it, and the page's scroll offset moves
+// them.
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
-import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { ModelSettingsApi } from "../hermes/modelSettings";
 import { appearanceStore } from "./appearance";
 import { SettingsScreen } from "./Settings";
@@ -13,6 +12,7 @@ vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDr
 
 const STEP = 400;
 const VIEW = 800;
+const REST = 150;
 let scrollTop = 0;
 const rect = (top: number) => ({ top, bottom: top + STEP, left: 0, right: 900, width: 900, height: STEP, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
 const realRect = HTMLElement.prototype.getBoundingClientRect;
@@ -33,8 +33,12 @@ beforeAll(() => {
 afterAll(() => {
   HTMLElement.prototype.getBoundingClientRect = realRect;
 });
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+});
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   scrollTop = 0;
   scrolled.length = 0;
   localStorage.clear();
@@ -81,8 +85,9 @@ async function appearance() {
     scrollHeight: { get: () => document.querySelectorAll(".settings-main section.set-section > .set-head h2").length * STEP + VIEW / 2, configurable: true },
   });
   const scrollTo = (top: number) => act(() => void ((main.scrollTop = top), main.dispatchEvent(new Event("scroll"))));
+  const wait = (ms: number) => act(() => void vi.advanceTimersByTime(ms));
   const current = () => links().filter((b) => b.getAttribute("aria-current") === "location").map((b) => b.textContent);
-  return { links, scrollTo, current };
+  return { links, scrollTo, wait, current };
 }
 
 it("makes the heading at the top of the view current as the page scrolls, and the last one at the page's foot", async () => {
@@ -105,77 +110,75 @@ it("makes the heading at the top of the view current as the page scrolls, and th
 });
 
 it("marks the heading under the scroll at once, and moves the highlight once that heading stays", async () => {
-  vi.useFakeTimers();
-  try {
-    const { links, scrollTo, current } = await appearance();
-    const names = links().map((b) => b.textContent);
-    const highlighted = () => links().filter((b) => b.classList.contains("on")).map((b) => b.textContent);
-    expect(current()).toEqual([names[0]]);
-    expect(highlighted()).toEqual([names[0]]);
+  const { links, scrollTo, wait, current } = await appearance();
+  const names = links().map((b) => b.textContent);
+  const highlighted = () => links().filter((b) => b.classList.contains("on")).map((b) => b.textContent);
+  expect(current()).toEqual([names[0]]);
+  expect(highlighted()).toEqual([names[0]]);
 
-    scrollTo(STEP + 10);
-    expect(current()).toEqual([names[1]]);
-    expect(highlighted()).toEqual([names[0]]);
+  scrollTo(STEP + 10);
+  expect(current()).toEqual([names[1]]);
+  expect(highlighted()).toEqual([names[0]]);
+  scrollTo(2 * STEP);
+  expect(current()).toEqual([names[2]]);
+  expect(highlighted()).toEqual([names[0]]);
 
-    await act(() => {
-      vi.advanceTimersByTime(200);
-    });
-    expect(highlighted()).toEqual([names[1]]);
-  } finally {
-    vi.useRealTimers();
-  }
+  wait(200);
+  expect(highlighted()).toEqual([names[2]]);
 });
 
 it("highlights the heading already in view when a jump page opens below the top", async () => {
-  vi.useFakeTimers();
-  try {
-    scrollTop = STEP + 10;
-    const { links, scrollTo, current } = await appearance();
-    const names = links().map((b) => b.textContent);
-    const highlighted = () => links().filter((b) => b.classList.contains("on")).map((b) => b.textContent);
-    expect(current()).toEqual([names[1]]);
-    expect(highlighted()).toEqual([names[1]]);
+  scrollTop = STEP + 10;
+  const { links, scrollTo, wait, current } = await appearance();
+  const names = links().map((b) => b.textContent);
+  const highlighted = () => links().filter((b) => b.classList.contains("on")).map((b) => b.textContent);
+  expect(current()).toEqual([names[1]]);
+  expect(highlighted()).toEqual([names[1]]);
 
-    fireEvent.click(screen.getByRole("tab", { name: "Keyboard Shortcuts" }));
-    const keys = () => within(screen.getByRole("group", { name: "Keyboard Shortcuts: on this page" })).getAllByRole("button");
-    const keyNames = keys().map((b) => b.textContent);
-    const keyOn = () => keys().filter((b) => b.classList.contains("on")).map((b) => b.textContent);
-    const keyAt = () => keys().filter((b) => b.getAttribute("aria-current") === "location").map((b) => b.textContent);
-    expect(keyNames.length).toBeGreaterThan(2);
-    expect(keyAt()).toEqual([keyNames[1]]);
-    expect(keyOn()).toEqual([keyNames[1]]);
+  fireEvent.click(screen.getByRole("tab", { name: "Keyboard Shortcuts" }));
+  const keys = () => within(screen.getByRole("group", { name: "Keyboard Shortcuts: on this page" })).getAllByRole("button");
+  const keyNames = keys().map((b) => b.textContent);
+  const keyOn = () => keys().filter((b) => b.classList.contains("on")).map((b) => b.textContent);
+  const keyAt = () => keys().filter((b) => b.getAttribute("aria-current") === "location").map((b) => b.textContent);
+  expect(keyNames.length).toBeGreaterThan(2);
+  expect(keyAt()).toEqual([keyNames[1]]);
+  expect(keyOn()).toEqual([keyNames[1]]);
 
-    scrollTo(2 * STEP + 10);
-    expect(keyAt()).toEqual([keyNames[2]]);
-    expect(keyOn()).toEqual([keyNames[1]]);
-    await act(() => {
-      vi.advanceTimersByTime(200);
-    });
-    expect(keyOn()).toEqual([keyNames[2]]);
-  } finally {
-    vi.useRealTimers();
-  }
+  scrollTo(2 * STEP + 10);
+  expect(keyAt()).toEqual([keyNames[2]]);
+  expect(keyOn()).toEqual([keyNames[1]]);
+  wait(200);
+  expect(keyOn()).toEqual([keyNames[2]]);
 });
 
 it("keeps a clicked link current while its own scroll settles, then follows the scroll again", async () => {
-  vi.useFakeTimers({ toFake: ["Date"] });
-  try {
-    const { links, scrollTo, current } = await appearance();
-    const names = links().map((b) => b.textContent!);
-    fireEvent.click(links()[3]);
-    expect(scrolled).toEqual([names[3]]);
-    expect(current()).toEqual([names[3]]);
+  const { links, scrollTo, wait, current } = await appearance();
+  const names = links().map((b) => b.textContent!);
+  fireEvent.click(links()[3]);
+  expect(scrolled).toEqual([names[3]]);
+  expect(current()).toEqual([names[3]]);
 
-    scrollTo(STEP);
-    expect(current()).toEqual([names[3]]);
-    vi.setSystemTime(Date.now() + 100);
-    scrollTo(STEP + 5);
-    expect(current()).toEqual([names[3]]);
+  scrollTo(STEP);
+  expect(current()).toEqual([names[3]]);
+  wait(100);
+  scrollTo(STEP + 5);
+  expect(current()).toEqual([names[3]]);
 
-    vi.setSystemTime(Date.now() + 200);
-    scrollTo(STEP + 10);
-    expect(current()).toEqual([names[1]]);
-  } finally {
-    vi.useRealTimers();
-  }
+  wait(REST);
+  scrollTo(STEP + 10);
+  expect(current()).toEqual([names[1]]);
+});
+
+it("keeps a link clicked before an earlier scroll rests current", async () => {
+  const { links, scrollTo, wait, current } = await appearance();
+  const names = links().map((b) => b.textContent!);
+
+  scrollTo(STEP + 10);
+  fireEvent.click(links()[3]);
+  wait(REST);
+  expect(current()).toEqual([names[3]]);
+
+  scrollTo(2 * STEP);
+  wait(REST);
+  expect(current()).toEqual([names[2]]);
 });

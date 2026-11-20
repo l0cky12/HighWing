@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { BRANCH_KEY_TTL_MS, fileRefs, locate, previewOf, spineOf } from "./branch";
+import { toBranches } from "./chatCache";
 import { FakeHermes, row } from "./fakeHermes";
 import { memoryCache } from "./memoryCache";
 import type { Item } from "./model";
@@ -68,6 +69,31 @@ describe("Branch from here: the boundary", () => {
     // The second "again" was sent with a file, which Hermes stores before the words.
     expect(locate(items, "u2", spine)).toEqual({ index: 2 });
     expect(locate(items, "a2", spine)).toEqual({ index: 3 });
+  });
+
+  it("finds a message whose stored row ends with context both clients hide, such as a Bot Chat's ask-first rule", () => {
+    const spine = spineOf([
+      { id: 1, role: "user", content: "Open Chrome.\n\n--- Attached Context ---\n\n[The owner's rule for messaging other bots]\nAsk first." },
+      { id: 2, role: "assistant", content: "Opened." },
+    ]);
+    const items: Item[] = [
+      { kind: "user", id: "u1", text: "Open Chrome." },
+      { kind: "assistant", id: "a1", text: "Opened." },
+    ];
+    expect(locate(items, "u1", spine)).toEqual({ index: 0 });
+  });
+
+  it("finds a reply that quotes the hidden-context marker, which only the owner's messages carry", () => {
+    const quoted = "Highwing hides what follows this line:\n--- Attached Context ---\nin both clients.";
+    const spine = spineOf([
+      { id: 1, role: "user", content: "What does Highwing hide?" },
+      { id: 2, role: "assistant", content: quoted },
+    ]);
+    const items: Item[] = [
+      { kind: "user", id: "u1", text: "What does Highwing hide?", rowId: 1 },
+      { kind: "assistant", id: "a1", text: quoted },
+    ];
+    expect(locate(items, "a1", spine)).toEqual({ index: 1 });
   });
 
   it("finds a message sent with images, which Hermes stores with their @image: lines after the words", () => {
@@ -513,5 +539,12 @@ describe("Branch from here: a dropped connection", () => {
     await hermes.idle();
     expect(await hermes.delete(chatId)).toBe(true);
     expect(hermes.getSnapshot().branches.links).toEqual({});
+  });
+});
+
+describe("Branch from here: what this computer kept", () => {
+  it("drops an attempt an older version kept for one of a bot's threads (#89), and keeps a branch's", () => {
+    const attempt = { key: "k", parentId: "bot", parentTitle: "Bot Chat", point: { role: "user", excerpt: "Plan" }, count: 1, fingerprint: "f", before: [], startedAt: 1 };
+    expect(toBranches({ links: {}, attempts: [attempt, { ...attempt, key: "t", thread: "Thread: Plan" }] }).attempts.map((a) => a.key)).toEqual(["k"]);
   });
 });

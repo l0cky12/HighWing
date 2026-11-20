@@ -423,7 +423,6 @@ kbd {
 }
 .chat-title { display: flex; align-items: center; gap: 8px; font-size: calc(14rem / 14); font-weight: 500; color: var(--text); min-width: 0; }
 .chat-title > span:not(.badge):not(.src) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-title > .chat-title-sep { flex: none; color: var(--faint); }
 .chat-head-actions { display: flex; gap: 4px; opacity: 0.75; }
 .chat-head:hover .chat-head-actions, .chat-head-actions:has(.menu), .chat-head-actions:has(.leave-overlay) { opacity: 1; }
 
@@ -509,9 +508,25 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
 .returned-head svg { flex: none; color: var(--accent); }
 .returned-head .chev { color: var(--muted); }
 .returned-title { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.sent-open { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .returned-why { margin: 6px 0 0; color: var(--text-2); font-size: calc(13rem / 14); overflow-wrap: anywhere; }
+/* A sent message's lines (ADR 0228): what Hermes said about it, one fact a line. */
+.delivery { list-style: none; margin: 8px 0 0; padding: 6px 0 0; border-top: 1px solid var(--line); display: grid; gap: 3px; color: var(--text-2); font-size: calc(13rem / 14); overflow-wrap: anywhere; }
+.delivery [data-status="failed"], .delivery [data-status="ambiguous"], .delivery [data-line="unconfirmed"], .delivery [data-line="noWayBack"] { color: var(--bad); }
 .returned-body { margin-top: 6px; max-height: 420px; overflow: auto; }
 .returned-body.msg.assistant { clip-path: none; }
+/* An Asked card (AskCard.tsx, ADR 0233): the owner's words, then a line for each bot asked, its reply under it. */
+.ask-words { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg.returned.ask .msg-files { margin-top: 6px; }
+.ask-target { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line-2); display: flex; flex-direction: column; gap: 6px; }
+.ask-who { display: flex; align-items: center; gap: 6px; font-size: calc(13rem / 14); min-width: 0; }
+.ask-name { font-weight: 600; }
+.ask-handle { color: var(--muted); }
+.ask-target .returned-body { margin-top: 0; }
+.ask-note { margin: 0; color: var(--text-2); font-size: calc(12.5rem / 14); }
+.ask-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.ask-target .send-failed { align-items: flex-start; }
+.ask-target .send-failed-why { text-align: left; }
 .returned-log {
   margin: 6px 0 0; background: var(--code-bg); border-radius: 8px; padding: 9px 12px; font-size: calc(var(--mono-size) - 1px); color: var(--text-2);
   white-space: pre-wrap; word-wrap: break-word;
@@ -627,6 +642,7 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
 .cu-banner > svg { flex: none; color: var(--warn); }
 .cu-banner-text { flex: 1; min-width: 14em; }
 .cu-banner-why { flex-basis: 100%; color: var(--bad); }
+.cu-banner-note { flex-basis: 100%; color: var(--text-2); }
 
 /* approval */
 .approval {
@@ -1627,6 +1643,10 @@ mark.hl { background: rgba(245, 184, 74, 0.22); color: var(--warn); border-radiu
 .settings-sub:hover { background: var(--hover); color: var(--text); }
 .settings-sub.on { color: var(--text-strong); background: var(--hover-2); box-shadow: inset 2px 0 0 var(--accent); }
 .settings-main { flex: 1; min-width: 0; overflow-y: auto; }
+/* WebKitGTK's own overlay scrollbars fade out after a page opens, and each fade step renders a frame, so a flick in the
+   first seconds stutters (#127). A styled scrollbar doesn't fade. */
+.settings-side-scroll::-webkit-scrollbar, .settings-main::-webkit-scrollbar { width: 8px; }
+.settings-side-scroll::-webkit-scrollbar-thumb, .settings-main::-webkit-scrollbar-thumb { background: var(--line-3); border-radius: 4px; }
 .settings-frame .settings-inner { max-width: 1024px; margin: 0 0 0 64px; padding: 30px 32px 120px 0; }
 
 /* The page header: eyebrow, title with the profile slot on its line, the description, chips with the page's actions at
@@ -2940,29 +2960,6 @@ label.memory-pick { cursor: pointer; }
 .sb-bots .bots-row > .bots-new:hover { background: var(--raised-3); }
 .sb-bots .bots-row:hover .inbox-line > :not(.bots-name), .sb-bots .bots-row:focus-within .inbox-line > :not(.bots-name) { visibility: hidden; }
 .sb-bots .bots-hidden { padding: 4px 6px; }
-.bots-threads { list-style: none; }
-.bots-threads-toggle { display: inline-flex; align-items: center; gap: 4px; margin: 2px 0 4px 46px; padding: 1px 6px 1px 2px; border-radius: 6px; font-size: calc(12rem / 14); color: var(--muted); }
-.bots-threads-toggle:hover { color: var(--text); background: var(--hover); }
-.bots-threads-toggle:focus-visible, .bots-thread-open:focus-visible, .bots-thread-new:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.bots-thread-list { list-style: none; margin: 0 0 6px 23px; padding: 0 0 0 7px; border-left: 1px solid var(--line-2); }
-.bots-thread { border-radius: 7px; }
-.bots-thread:hover { background: var(--hover); }
-.bots-thread.sel { background: var(--hover-2); box-shadow: inset 0 0 0 1px var(--line); }
-.bots-thread-open { display: flex; align-items: center; gap: 7px; width: 100%; height: 30px; padding: 0 8px 0 6px; text-align: left; border-radius: 7px; }
-.bots-thread-open[aria-busy="true"] { opacity: 0.6; }
-.bots-thread-icon { flex: none; color: var(--faint); }
-.bots-thread-topic { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(13rem / 14); color: var(--text-2); }
-.bots-thread.sel .bots-thread-topic { color: var(--text); }
-.bots-thread-age { flex: none; font-size: calc(12rem / 14); color: var(--faint); }
-.bots-thread-new { display: inline-flex; align-items: center; gap: 4px; height: 26px; margin: 1px 0 2px; padding: 0 8px; border-radius: 7px; font-size: calc(12rem / 14); font-weight: 500; color: var(--muted); }
-.bots-thread-new:hover { color: var(--text); background: var(--hover); }
-.bots-thread-topic-field {
-  width: calc(100% - 8px); height: 28px; margin: 1px 4px; padding: 0 8px; border-radius: 7px; border: 1px solid var(--line-3);
-  background: var(--raised-2); color: var(--text); font-size: calc(13rem / 14); outline: none;
-}
-.bots-thread-topic-field:focus { border-color: var(--accent); }
-.bots-thread-note { padding: 2px 8px 4px; font-size: calc(12rem / 14); color: var(--faint); }
-.bots-threads .bots-note { margin: 0 6px 6px 31px; }
 
 .sb-head-modes { padding: 14px 12px 6px; gap: 8px; }
 .segmented.sb-mode { flex: 1; min-width: 0; display: flex; gap: 2px; padding: 3px; border-radius: 10px; }
@@ -3937,6 +3934,37 @@ div.export-preview.export-page { height: auto; padding: 10px 12px; background: v
 .preview-toolbar .icon-btn.active { color: var(--accent); }
 .annotate.reviewing .annotate-notes { border-bottom: 1px solid var(--line); }
 .chip-stale .chip-size { white-space: nowrap; }
+
+/* ---------- Mark up a staged image (MarkUp.tsx, ADR 0227) ---------- */
+.chip-card .chip-card-markup { top: auto; right: auto; left: 5px; bottom: 5px; }
+.markup { position: absolute; inset: 0; z-index: 20; container-type: size; display: flex; flex-direction: column; background: var(--sidebar); color: var(--text); }
+.markup-bar { border-bottom: 1px solid var(--line); }
+.markup .attach-note { flex: none; padding: 6px 12px; border-bottom: 1px solid var(--line); }
+.markup .attach-note.failed { color: var(--warn); }
+.markup-body { flex: 1; min-height: 0; display: flex; }
+.markup-frame { flex: 1; min-width: 0; min-height: 0; container-type: size; display: flex; align-items: center; justify-content: center; }
+.markup-stage { position: relative; user-select: none; touch-action: none; border: 1px solid var(--line); border-radius: 6px; }
+.markup-stage.drawing { cursor: crosshair; }
+.markup-stage:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.markup-stage img { display: block; width: 100%; height: 100%; pointer-events: none; border-radius: 5px; }
+.markup-side { flex: none; width: 300px; display: flex; flex-direction: column; gap: 10px; padding: 14px; border-left: 1px solid var(--line); overflow-y: auto; }
+@container (max-width: 720px) {
+  .markup-body { flex-direction: column; }
+  .markup-side { width: auto; border-left: 0; border-top: 1px solid var(--line); }
+}
+.markup-box { position: absolute; box-sizing: border-box; border: 2px solid rgb(37, 99, 235); background: rgba(37, 99, 235, 0.08); pointer-events: none; }
+.markup-box.dragging { border-style: dashed; background: rgba(37, 99, 235, 0.12); }
+.markup-badge {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; flex: none;
+  background: rgb(37, 99, 235); color: #fff; font-size: 11px; font-weight: 700; border-radius: 3px;
+}
+.markup-box .markup-badge { position: absolute; left: -2px; top: -2px; transform: translateY(-100%); border-radius: 3px 3px 0 0; }
+.markup-note { display: flex; align-items: center; gap: 6px; }
+.markup-note input {
+  flex: 1; min-width: 0; height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit;
+}
+.markup-empty { margin: 0; color: var(--muted); }
+.markup-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-top: 4px; }
 
 /* ---------- write or improve a project's instructions with AI (InstructionsAI.tsx, ADR 0152) ---------- */
 .defaults-instructions-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

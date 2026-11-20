@@ -1,6 +1,6 @@
 # A Group room is the connection's, not a Chat, and its floor says whose move it is
 
-> **Accepted.** The domain is `src/hermes/groupRooms.ts`, the store `src/hermes/groupRoomsStore.ts`, the stand-in `src/hermes/fakeGroups.ts`. The screens are `src/ui/GroupRooms.tsx`, `src/ui/NewRoomDialog.tsx` and `src/ui/GroupRoomPane.tsx`. Tested in `src/hermes/groupRooms.test.ts` (a real room's log, replayed), `src/hermes/groupRoomsStore.test.ts`, `src/hermes/fakeGroups.test.ts`, `src/ui/groupRooms.test.tsx` and `e2e/features/group-rooms.e2e.tsx`. It leaves ADR 0203's one socket and one shown profile as they are.
+> **Superseded by [ADR 0233](0233-group-rooms-are-removed-and-an-at-in-a-bot-chat-asks-the-named-bot.md).** Group rooms are gone (#82): no code calls `groups.*`, and the files this ADR names were deleted. Rooms already on the server stay there; the app never lists, opens, disbands or deletes them, and their `Group: <room_id>` sessions stay out of every list. Bots message each other from their Bot Chats (ADR 0207), and the owner brings one in with an @ in a Bot Chat.
 
 The owner wanted to put 2 to 6 bots in a room, watch them take turns, and join the conversation. Hermes already hosts such rooms. It calls them Group Chat and serves them as `groups.*` on the dashboard's `/api/ws`, with no setting to turn on. Highwing called none of those methods.
 

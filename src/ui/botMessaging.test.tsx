@@ -57,7 +57,7 @@ const toast = () => document.querySelector<HTMLElement>(".toast")?.textContent;
 const configures = (server: FakeHermes) => server.requests.filter((r) => r.method === "profiles.configure");
 const botRow = (profile: string) => document.querySelector<HTMLElement>(`.sb-bots .bots-row[data-profile="${profile}"] .bots-open`)!;
 const cards = () => Array.from(document.querySelectorAll<HTMLElement>(".msg.returned"));
-const said = (card: HTMLElement) => Array.from(card.querySelectorAll(".returned-head, .returned-why, .returned-body")).flatMap(untranslated);
+const said = (card: HTMLElement) => Array.from(card.querySelectorAll(".returned-head, .returned-why, .returned-body, .delivery")).flatMap(untranslated);
 const pinned = (s: FakeHermes) => void (s.profileMeta.quill = { ui_meta: { "hermes-bots": { title: "Quill", pinned: true } } });
 
 describe("Bot messaging's switch", () => {
@@ -143,6 +143,9 @@ describe("A message between two bots, in their Bot Chats", () => {
     expect(sent.querySelector(".returned-body strong")?.textContent).toBe("backup window");
     expect(sent.closest(".tools")).toBeNull();
     expect(document.querySelector(".tools")).toBeNull();
+    expect(Array.from(sent.querySelectorAll(".delivery li")).map((li) => li.textContent)).toEqual(["Queued for @quill. @quill was idle when it was sent.", "Answered. Go to the answer"]);
+    await user.click(within(sent).getByRole("button", { name: "Go to the answer" }));
+    expect(document.activeElement).toBe(answer);
     expect(answer.querySelector(".returned-title")?.textContent).toBe("@quill answered.");
     expect(answer.querySelector(".returned-body")?.textContent).toContain(REPLIES.recipient);
     expect(answer.matches(".process")).toBe(false);
@@ -178,6 +181,49 @@ describe("A message between two bots, in their Bot Chats", () => {
     await waitFor(() => expect(hermes.profile).toBe("quill"));
     await waitFor(() => expect(cards()).toHaveLength(1));
     expect(cards()[0].querySelector(".returned-title")?.textContent).toBe(p.chat.agent.from("hermes", "hermes"));
+    expect(cards().flatMap(said)).toEqual([]);
+  });
+});
+
+describe("A Messaged card's Open chip", () => {
+  const chats = () => document.querySelector<HTMLElement>('.sidebar [role=tab][data-mode="chats"]')!;
+  const chips = (card: HTMLElement) => Array.from(card.querySelectorAll<HTMLElement>(".sent-open button")).map((b) => b.textContent?.trim());
+  /** Hermes's own bot asked a peer's bot and a bot on this connection, as its history stores the calls. */
+  const asked = (target: string) => (s: FakeHermes) => {
+    s.transcripts["hermes-bot"] = [
+      { role: "assistant", text: "", tool_calls: [{ id: "call_1", type: "function", function: { name: "message_agent", arguments: JSON.stringify({ target, message: ASK }) } }] },
+      { role: "tool", tool_call_id: "call_1", name: "message_agent", args: { target, message: ASK }, result: JSON.stringify({ status: "queued", delivery_id: "d-1", to: `@${target}` }) },
+    ];
+  };
+
+  it("opens the bot it names as a visit, which Chats ends", { timeout: 30_000 }, async () => {
+    const { hermes, user } = await delivered();
+    const [sent, answer] = cards();
+    expect(chips(sent)).toEqual(["Open @quill"]);
+    expect(chips(answer)).toEqual([]);
+    expect(within(sent).getByRole("button", { name: "Open @quill" }).title).toBe("Open @quill's Bot Chat");
+    await user.click(within(sent).getByRole("button", { name: "Open @quill" }));
+    await waitFor(() => expect(hermes.profile).toBe("quill"));
+    await waitFor(() => expect(cards()).toHaveLength(1));
+    expect(cards()[0].querySelector(".returned-title")?.textContent).toBe("Message from hermes (@hermes)");
+    await user.click(chats());
+    await waitFor(() => expect(hermes.profile).toBe("default"));
+  });
+
+  it("is the handle as text for a peer's bot, with no chip", { timeout: 30_000 }, async () => {
+    const { user } = await launch(asked("lab/quill"));
+    await user.click(botRow("default"));
+    await waitFor(() => expect(cards()).toHaveLength(1));
+    expect(cards()[0].querySelector(".returned-title")?.textContent).toBe("Messaged @lab/quill");
+    expect(chips(cards()[0])).toEqual([]);
+  });
+
+  it("says its words from the catalogue", { timeout: 30_000 }, async () => {
+    const p = pseudoLocale();
+    await delivered(p);
+    const chip = cards()[0].querySelector<HTMLElement>(".sent-open button")!;
+    expect(chip.textContent?.trim()).toBe(p.chat.agent.open("@quill"));
+    expect(chip.title).toBe(p.chat.agent.openTip("@quill"));
     expect(cards().flatMap(said)).toEqual([]);
   });
 });

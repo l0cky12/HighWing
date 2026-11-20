@@ -1,5 +1,6 @@
 // A fake Hermes dashboard for tests: it sits where the Rust pipe does and speaks wire-shaped legacy
 // JSON-RPC frames and dashboard REST bodies (shapes from the deployed contracts, see the research doc).
+import golden from "./commandsCatalogGolden.json";
 import { RestError, type LocalFile, type OpenPipe, type PipeEvent, type RestMethod, type Route, type Speech, type ToolsetGuards, type VoiceSetup } from "./pipe";
 import type { SavedKey } from "./setup";
 import type { ApprovalMode } from "./model";
@@ -18,6 +19,7 @@ import { ScheduleError, isoIn, parseSchedule, upcomingRuns } from "./schedule";
 import { skillInvocationText } from "./skillCommands";
 import { CANONICAL_READY } from "./canonicalVerbs";
 import { FakeAuthority, type CanonicalOptions } from "./fakeCanonical";
+import { typedText } from "./branch";
 
 type Request = { jsonrpc: "2.0"; id: number; method: string; params: Record<string, unknown> };
 /** The client's answer to a server→client request (`tui_gateway/server_requests.py`). */
@@ -484,6 +486,13 @@ export class FakeHermes {
   };
   /** The server commands `commands.catalog` lists; undefined for a Hermes without the method. */
   commandCatalog: string[] | undefined = ["steer", "btw", "context", "compress", "help", "goal"];
+  /**
+   * True: `commands.catalog` also lists Hermes's built-in commands, their aliases and subcommands, as the deployed
+   * `bf0203a` lists them (commandsCatalogGolden.json).
+   */
+  builtinCommands = false;
+  /** What `slash.exec` answers for a command other than `/context`, by its name; one not here answers with no output. */
+  slashAnswers: Record<string, Record<string, unknown>> = {};
   /** False: a Hermes with no `prompt.btw`, which answers "method not found". */
   sideQuestions = true;
   /**
@@ -935,7 +944,7 @@ export class FakeHermes {
         this.runtime.set(sid, stored);
         const messages = shownHistory(this.transcripts[stored] ?? []);
         const inflight = { user, assistant, streaming: true };
-        const answer = () => this.respond(r.id, { session_id: sid, stored_session_id: stored, message_count: messages.length, messages, info: this.sessionInfo, running: true, inflight });
+        const answer = () => this.respond(r.id, { session_id: sid, stored_session_id: stored, message_count: messages.length, messages, info: this.sessionInfo, running: true, inflight, ...(this.openRequestsOf(sid).length && { open_requests: this.openRequestsOf(sid) }) });
         const before = this.beforeResumeAnswer;
         if (!before) return answer();
         // Hermes answers on its own task, so the app is already waiting on the resume when these frames reach it.
@@ -1025,6 +1034,20 @@ export class FakeHermes {
         this.store(created.profile)?.push(stored);
       }
       const stored = this.runtime.get(runtimeId);
+      // `queued: true` while a turn runs: Hermes stores the message at accept and runs it once that turn ends, never
+      // cutting it short (`_handle_busy_submit`, research doc "A legacy prompt.submit while a turn runs").
+      // Text sent while one is held shares its slot: Hermes merges it into the held message and its row (`_enqueue_prompt`).
+      if (r.params.queued === true && this.turns.has(runtimeId) && stored) {
+        const text = String(r.params.text);
+        const held = this.heldPrompts.get(runtimeId);
+        const early = held && this.transcripts[stored]?.find((m) => m.row_id === held.row);
+        if (held && early) early.text = held.text = `${held.text}\n\n${text}`;
+        else {
+          this.storeMessage(stored, { role: "user", text });
+          this.heldPrompts.set(runtimeId, { text, row: this.transcripts[stored]!.at(-1)!.row_id! });
+        }
+        return this.respond(r.id, { status: "queued" });
+      }
       const images = this.attachedImages.get(runtimeId) ?? [];
       this.attachedImages.delete(runtimeId);
       if (stored) this.storeMessage(stored, { role: "user", text: imageDisplayText(String(r.params.text), images), row_id: this.userRowId });
@@ -1032,7 +1055,8 @@ export class FakeHermes {
       this.turns.add(runtimeId);
       if (stored) this.inflight.set(runtimeId, { stored, user: String(r.params.text ?? ""), assistant: "" });
       this.stopped.delete(runtimeId);
-      const prompt = String(r.params.text ?? "");
+      // The scripted turns go by the words typed, not by a Referenced chat's summary or an ask's note after them.
+      const prompt = typedText(String(r.params.text ?? ""));
       const fileTurn = !!stored && /edit two files/i.test(prompt);
       // The file turn's message has its stored row reported, as Hermes reports every message's, so its reply gets a time.
       const userRow = this.userRowId ?? (fileTurn ? this.transcripts[stored!].at(-1)?.row_id : undefined);
@@ -1160,8 +1184,13 @@ export class FakeHermes {
       const user = Object.keys(this.quickCommands).map((n) => [`/${n}`, this.quickCommands[n]]);
       // Skills are listed in `pairs` and `skills`, not in a category (`_catalog_skills`).
       const skills = this.catalogSkills ? this.skills.commandSkills(String(r.params.profile || "default")) : [];
+      const builtin = this.builtinCommands ? golden : { pairs: [], canon: {}, commands: {}, sub: {} };
+      const own = new Set(this.commandCatalog.map((n) => `/${n}`));
       this.respond(r.id, {
-        pairs: [...this.commandCatalog.map((n) => [`/${n}`, n]), ...user, ...skills.map((k) => [`/${k.slug}`, k.description])], canon, commands: {},
+        pairs: [...this.commandCatalog.map((n) => [`/${n}`, n]), ...builtin.pairs.filter((p) => !own.has(p[0])), ...user, ...skills.map((k) => [`/${k.slug}`, k.description])],
+        canon: { ...builtin.canon, ...canon },
+        commands: structuredClone(builtin.commands),
+        sub: structuredClone(builtin.sub),
         categories: [{ name: "Session", pairs: this.commandCatalog.map((n) => [`/${n}`, n]) }, ...(user.length ? [{ name: "User commands", pairs: user }] : [])],
         ...(this.catalogSkills && { skills: Object.fromEntries(skills.map((k) => [`/${k.slug}`, { usage: 0, origin: "local" }])), skill_count: skills.length }),
         warning: "", plugin_discovery_error: "", plugin_commands: {},
@@ -1218,7 +1247,8 @@ export class FakeHermes {
     // `slash.exec` for `/context`, answered from the live session.
     "slash.exec": (r) => {
       if (!this.runtime.has(String(r.params.session_id))) return this.fail(r.id, 4001, "session not found");
-      this.respond(r.id, { output: this.contextOutput });
+      const name = String(r.params.command ?? "").slice(1).split(/\s/)[0];
+      this.respond(r.id, name === "context" ? { output: this.contextOutput } : structuredClone(this.slashAnswers[name] ?? { output: "" }));
     },
     // Legacy `session.interrupt` (tui_gateway/methods_session_interrupt.py). The turn then ends with a
     // `message.complete` whose status is "interrupted"; tests send that themselves.
@@ -2672,6 +2702,23 @@ export class FakeHermes {
    * (`_live_session_payload`, `_inflight_snapshot`). Off, the resume starts a new idle runtime.
    */
   reattachTurns = false;
+  /** The message `prompt.submit {queued: true}` held behind a running turn, by runtime session, and its stored row. */
+  private heldPrompts = new Map<string, { text: string; row: number }>();
+  private busyTurnsStarted = 0;
+
+  /**
+   * A turn running in a stored session that another client started: the owner's message is stored, and the turn is
+   * live until a test ends it with `message.complete`. With `reattachTurns`, a resume joins it. Answers its runtime id.
+   */
+  busyTurn(stored: string, text: string): string {
+    const sid = `rt-busy${++this.busyTurnsStarted}`;
+    this.runtime.set(sid, stored);
+    this.runtimeProfile.set(sid, this.profileOf(stored));
+    this.storeMessage(stored, { role: "user", text });
+    this.turns.add(sid);
+    this.inflight.set(sid, { stored, user: text, assistant: "" });
+    return sid;
+  }
   /**
    * Runs when `session.resume` reattaches a running turn, after it read the in-flight text and before it answers: the
    * new connection is already the turn's, and Hermes's history read sits there (`_live_session_payload`).
@@ -2711,6 +2758,21 @@ export class FakeHermes {
       this.inflight.delete(sessionId);
     }
     this.emit(sessionId, type, payload);
+    // A message Hermes held runs as the turn before it ends.
+    const held = type === "message.complete" || type === "error" ? this.heldPrompts.get(sessionId) : undefined;
+    if (held) {
+      this.heldPrompts.delete(sessionId);
+      const stored = this.runtime.get(sessionId);
+      queueMicrotask(() => {
+        if (stored) {
+          // Its turn's row goes at the end and the early one is retired (`_replace_queued_user_row_for_turn`).
+          this.transcripts[stored] = (this.transcripts[stored] ?? []).filter((m) => m.row_id !== held.row);
+          this.storeMessage(stored, { role: "user", text: held.text });
+          this.inflight.set(sessionId, { stored, user: held.text, assistant: "" });
+        }
+        this.event(sessionId, "message.start");
+      });
+    }
     // The goal is judged once the turn is done, and its update follows `message.complete` (`prompt_turn.py`).
     const stored = this.runtime.get(sessionId);
     if (type === "message.complete" && payload.status === "complete" && stored) {
@@ -3035,15 +3097,6 @@ export class FakeHermes {
     const model = this.sessionModel.get(from);
     if (model) this.sessionModel.set(tip, model);
     this.runtime.set(runtimeId, tip);
-  }
-
-  seedThread(profile: string, topic: string, { messages = [], hours = 1 }: { messages?: TranscriptMessage[]; hours?: number } = {}): string {
-    const store = this.store(profile) ?? (this.otherProfiles[profile] = []);
-    const id = `thread-${profile}-${store.length}`;
-    const said = messages.filter((m) => m.role === "user" || m.role === "assistant");
-    store.push(row(id, hours / 24, { title: `Bot Thread: ${topic}`, hidden: true, message_count: messages.length, preview: said[0]?.text ?? "" }));
-    this.transcripts[id] = messages;
-    return id;
   }
 
   /**

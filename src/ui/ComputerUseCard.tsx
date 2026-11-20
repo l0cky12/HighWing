@@ -2,19 +2,28 @@
 // holds the screen now, and Watch live, which opens the side panel's Screen. Above the composer, a note when Hermes's
 // last step was refused because a person holds the screen. The run is `foldRuns`'s (computerUse.ts); who holds the
 // screen is the connection's ScreenControl's, through `ScreenDesk`.
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { Ban, Check, ChevronRight, CircleAlert, Hand, Minus, MonitorPlay, Square, X } from "lucide-react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Ban, Check, ChevronRight, CircleAlert, Hand, Minus, Monitor, MonitorOff, MonitorPlay, Square, X } from "lucide-react";
 import { screenUse, type CuRun, type CuStep, type RunLine } from "../hermes/computerUse";
+import { afterRead, afterTurnOn, noticeOf, type DesktopNotice, type TurnOnFailed } from "../hermes/computerUseReadiness";
 import { isWaiting, type ApprovalChoice, type Chat, type Item } from "../hermes/model";
 import { withoutBidi } from "../hermes/preview";
 import type { ScreenHolder, ScreenState } from "../hermes/screenControl";
+import type { Caution, Toolset, ToolsetsApi } from "../hermes/toolsets";
 import { errorText } from "../hermes/values";
 import { useLocale } from "../i18n/locale";
 import { ApprovalCard } from "./ApprovalCard";
 import { Spinner } from "./bits";
+import { cautionText } from "./ToolsetSettings";
 
-/** Who holds the shown profile's screen, and what the card and the note can do about it. App provides it. */
-export type ScreenDesk = { screen?: ScreenState; onWatch?: () => void; onHandBack?: () => Promise<void> };
+/** Who holds the shown profile's screen, and what the card and the notes can do about it. App provides it. */
+export type ScreenDesk = {
+  screen?: ScreenState;
+  onWatch?: () => void;
+  onHandBack?: () => Promise<void>;
+  /** The shown profile's toolsets, for a Bot Chat's Desktop control notice. Absent while not connected. */
+  toolsets?: { profile: string; api: Pick<ToolsetsApi, "list" | "cautions" | "set" | "subscribe" | "pending"> };
+};
 
 const ScreenDeskContext = createContext<ScreenDesk>({});
 
@@ -297,5 +306,144 @@ function HandBack({ onHandBack, primary }: { onHandBack: () => Promise<void>; pr
         </span>
       )}
     </>
+  );
+}
+
+const noSubscribe = () => () => {};
+const noPending = () => undefined;
+
+const failedText = (why: TurnOnFailed, l: ReturnType<typeof useLocale>["chat"]["computerUse"]["desktopOff"]) =>
+  why.kind === "mismatch" ? l.mismatch : l[why.kind](why.reason);
+
+/**
+ * Above the composer in a Bot Chat whose bot has computer_use off (ADR 0230). Turn on goes through Settings →
+ * Toolsets' own check and write, so a caution waits for the owner and a change counts only once Hermes reads it back.
+ * Reads on mount, when the window comes back to the front, and when a toolset change from anywhere in the app ends.
+ */
+export function DesktopOffNotice() {
+  const l = useLocale();
+  const w = l.chat.computerUse.desktopOff;
+  const { toolsets } = useContext(ScreenDeskContext);
+  const api = toolsets?.api;
+  const profile = toolsets?.profile;
+  const [notice, setNotice] = useState<DesktopNotice>({ kind: "hidden" });
+  const [dismissed, setDismissed] = useState(false);
+  const pending = useSyncExternalStore(api ? api.subscribe : noSubscribe, api ? api.pending : noPending);
+  /** Bumped by each read and each Turn on, at its start and end: an answer older than the latest is dropped. */
+  const seq = useRef(0);
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => void (live.current = false);
+  }, []);
+
+  /** Bumped when the connection or profile changes: a Turn on begun before it must not land after it. */
+  const epoch = useRef(0);
+  // A new connection or profile drops what the last one said, and any answer still on its way from it.
+  useEffect(() => {
+    epoch.current++;
+    seq.current++;
+    setNotice({ kind: "hidden" });
+  }, [api, profile]);
+
+  const read = useCallback(async () => {
+    if (!api || !profile) return;
+    const mine = ++seq.current;
+    const fresh = await api.list(profile).then(noticeOf, () => undefined);
+    if (live.current && mine === seq.current) setNotice((n) => afterRead(n, fresh));
+  }, [api, profile]);
+
+  useEffect(() => {
+    if (!pending) void read();
+  }, [pending, read]);
+  useEffect(() => {
+    window.addEventListener("focus", read);
+    return () => window.removeEventListener("focus", read);
+  }, [read]);
+
+  const save = async (row: Toolset, accepted: readonly Caution[]) => {
+    if (!api || !profile) return;
+    const at = epoch.current;
+    seq.current++;
+    setNotice({ kind: "busy", row, step: "saving" });
+    let next: DesktopNotice;
+    try {
+      next = afterTurnOn(row, await api.set(profile, row.name, true, false, [...accepted]));
+    } catch (e) {
+      // The write reads the list first, so a throw here means nothing was sent.
+      next = { kind: "off", row, why: { kind: "readFailed", reason: errorText(e) } };
+    }
+    if (!live.current || at !== epoch.current) return;
+    seq.current++;
+    setNotice(next);
+  };
+
+  const turnOn = async (row: Toolset) => {
+    if (!api || !profile) return;
+    const at = epoch.current;
+    seq.current++;
+    setNotice({ kind: "busy", row, step: "checking" });
+    let cautions: Caution[];
+    try {
+      cautions = await api.cautions(profile, row, true);
+    } catch (e) {
+      if (!live.current || at !== epoch.current) return;
+      seq.current++;
+      return setNotice({ kind: "off", row, why: { kind: "readFailed", reason: errorText(e) } });
+    }
+    if (!live.current || at !== epoch.current) return;
+    if (cautions.length) setNotice({ kind: "ask", row, cautions });
+    else await save(row, []);
+  };
+
+  if (!api || dismissed || notice.kind === "hidden") return null;
+  return (
+    <div className="cu-banner" role="status">
+      {notice.kind === "on" ? <Monitor size={14} aria-hidden /> : <MonitorOff size={14} aria-hidden />}
+      {notice.kind === "off" && (
+        <>
+          <span className="cu-banner-text">{w.text}</span>
+          <button className="btn primary" onClick={() => void turnOn(notice.row)}>
+            {w.turnOn}
+          </button>
+          <button className="btn" onClick={() => setDismissed(true)}>
+            {w.notNow}
+          </button>
+          {notice.why && (
+            <span className="cu-banner-why" role="alert">
+              <X size={12} aria-hidden /> {failedText(notice.why, w)}
+            </span>
+          )}
+        </>
+      )}
+      {notice.kind === "busy" && (
+        <span className="cu-banner-text">
+          <Spinner /> {notice.step === "checking" ? w.checking : w.saving}
+        </span>
+      )}
+      {notice.kind === "ask" && (
+        <>
+          <span className="cu-banner-text">{w.ask}</span>
+          {notice.cautions.map((c) => (
+            <span key={JSON.stringify(c)} className="cu-banner-note">
+              {cautionText(c, notice.row, l.toolsets.caution)}
+            </span>
+          ))}
+          <button className="btn primary" onClick={() => void save(notice.row, notice.cautions)}>
+            {w.anyway}
+          </button>
+          <button className="btn" onClick={() => setNotice({ kind: "off", row: notice.row })}>
+            {w.keepOff}
+          </button>
+        </>
+      )}
+      {notice.kind === "on" && (
+        <>
+          <span className="cu-banner-text">{w.on}</span>
+          {notice.installing && <span className="cu-banner-note">{w.installing(notice.installing)}</span>}
+          {notice.warning && <span className="cu-banner-note">{w.warning(notice.warning)}</span>}
+        </>
+      )}
+    </div>
   );
 }

@@ -54,6 +54,7 @@ import { StartupSettings } from "./StartupSettings";
 import { SummonSettings } from "./SummonSettings";
 import { ChatSectionSettings } from "./ChatSectionSettings";
 import { InboxSettings } from "./InboxSettings";
+import { AskFirstSettings } from "./AskFirstSettings";
 import { FollowScreenSettings } from "./FollowScreenSettings";
 import { FollowUpSettings } from "./FollowUpSettings";
 import { SpellCheckSettings } from "./SpellCheckSettings";
@@ -757,6 +758,7 @@ export function SettingsScreen({
         <ChatSectionSettings />
         <FollowUpSettings />
         <FollowScreenSettings />
+        <AskFirstSettings />
         <SpellCheckSettings />
         <InboxSettings />
       </>
@@ -1089,9 +1091,6 @@ export function SettingsScreen({
   const sections = searching ? undefined : sectionsOf(shownTab);
   const section = sections?.items.find((i) => i.id === sections.selected);
 
-  // A page without sections of its own lists its headings under it in the tree, to jump to; the one at the top of the
-  // view is current (scroll-spy). A jump link clicked stays current until any scroll after the jump's own has settled
-  // (a wheel, a key, a scrollbar drag), and at the end of the scroll the last section is current.
   const mainRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [jumps, setJumps] = useState<string[]>([]);

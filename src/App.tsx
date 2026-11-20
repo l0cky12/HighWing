@@ -4,7 +4,8 @@ import { ArrowLeft, ArrowRight, Columns2, FolderCog, PanelBottom, PanelLeft, Pan
 import { CONNECT_STOPPED, RenameConflict, TitleModelUnavailable, connect, openSaved, readSaved, toSource, type Delivery, type Hermes, type NoticeCard, type Notify } from "./hermes/transport";
 import { invoke } from "@tauri-apps/api/core";
 import type { CommandHost, NamedBot } from "./ui/SlashCommands";
-import { STEER, type ServerCommandList } from "./hermes/commands";
+import { STEER, commandSet, type ServerCommandList } from "./hermes/commands";
+import { hermesRefusal } from "./hermes/hermesCommands";
 import { offeredCommands, takenName, type ChatContext } from "./hermes/extensions";
 import { useExtensions } from "./ui/extensionsContext";
 import type { SkillCall, SkillCommands } from "./hermes/skillCommands";
@@ -44,7 +45,7 @@ import { readMethods } from "./hermes/signInMethods";
 import { PreferredRoutes, type RouteHealth, routesOf, sshAddressOf } from "./hermes/routes";
 import { signInError, testSignIn, type SignInError, type TestOutcome } from "./hermes/setup";
 import { isOutgoing, isWaiting, type Attachment, type Chat, type ConnectionStatus, type Found, type Hit, type SentReference } from "./hermes/model";
-import { shortName, type ModelCatalog, type ModelPick } from "./hermes/models";
+import { capabilitiesOf, describePick, effortsFor, isEffort, modelFromArg, shortName, type ModelCatalog, type ModelPick } from "./hermes/models";
 import { ChatList, Rail, leavingNote } from "./ui/Sidebar";
 import { lookShown, type BotLookShown } from "./ui/BotFace";
 import { type ChatLink, type ConnectionRefs, checkConnection, connectionKey, connectionLabel, connectionRefs, formatChatLink, locateChat, parseChatLink } from "./hermes/chatLinks";
@@ -54,13 +55,13 @@ import { Inbox } from "./ui/Inbox";
 import { BotList, useBotActions, type BotEditWiring } from "./ui/Bots";
 import { CHAT_POLICY, chatKind, policyOf } from "./hermes/chatKind";
 import { jobRunTitle } from "./hermes/cronJobs";
-import { botActivity, botsWaiting, newInBotChatNote, type Bot } from "./hermes/bots";
-import { isThreadTitle, threadTopic, type ThreadTitle } from "./hermes/threads";
+import { botActivity, botsWaiting, newInBotChatNote, teammateOf, type Bot } from "./hermes/bots";
 import { blocksRestore, inboxAcks, inboxEntries, inboxScope, needsOwner, type InboxAcks, type InboxEntry } from "./hermes/inbox";
 import { searchEverywhere, type EverywhereFilter, type EverywhereOutcome, type EverywhereRow } from "./hermes/everywhere";
 import { LiveConnections, attention as attentionOf, withoutServer, type ChatRef, type LiveSummary } from "./hermes/liveConnections";
 import { handoffs as handoffsOf, nextHandoffChange, outstandingIds, type Handoff, type StopWaiting } from "./hermes/dispatched";
-import { ChatPane, type Comparing, type FollowUpHost, type JumpTarget } from "./ui/ChatPane";
+import { ChatPane, TeammatesContext, type Comparing, type FollowUpHost, type JumpTarget, type Teammates } from "./ui/ChatPane";
+import type { AskHost } from "./ui/AskCard";
 import type { ChatPin } from "./ui/ChatMenu";
 import { BranchDialog, BranchedFrom } from "./ui/Branch";
 import { MembershipDialog, MembershipStatus, needsOwner as membershipNeedsOwner } from "./ui/MembershipSync";
@@ -1086,10 +1087,11 @@ type BotVisit = { home: string; before: string | null };
 
 /**
  * What opens once the profile switched to has listed its chats, unless the owner goes elsewhere first (`nav`): a bot's
- * Bot Chat (ADR 0066), the New chat pane, or the chat a bot visit left (ADR 0203).
+ * Bot Chat (ADR 0066), the New chat pane, or the chat a bot visit left (ADR 0203). A Bot Chat's lookup waits only for
+ * the connection; `shown` is the chat the roster named, put in the pane as soon as the profile is the bot's, or null
+ * when the roster named none (ADR 0232).
  */
-type Arrival = { profile: string; nav: number } & ({ open: "bot"; bot: Bot; thread?: ThreadArrival; opening?: boolean } | { open: "new" } | { open: "chat"; chatId: string });
-type ThreadArrival = { title: ThreadTitle } | { new: string };
+type Arrival = { profile: string; nav: number } & ({ open: "bot"; bot: Bot; opening?: boolean; shown?: string | null } | { open: "new" } | { open: "chat"; chatId: string });
 
 /**
  * Starts a pane's chat if it hasn't started, and sends to it. `mirrored`: the message was typed in the other compared
@@ -1267,7 +1269,7 @@ export function Main({
 }) {
   const connection: SavedConnection = "id" in given ? given : { ...given, id: "", name: defaultName(given), addedAt: 0 };
   const words = useLocale();
-  const { profile, chats, olderPulled, archivedListed, status, route, unsecure, closedReason, syncError, others, live, models, switching, branchNews, bots, botPictures, threads: botThreads, defaultName: defaultProfileName, screen: screenState } = useSyncExternalStore(
+  const { profile, chats, olderPulled, archivedListed, status, route, unsecure, closedReason, syncError, others, live, models, switching, branchNews, bots, botPictures, defaultName: defaultProfileName, screen: screenState } = useSyncExternalStore(
     hermes.subscribe,
     hermes.getSnapshot,
   );
@@ -1550,8 +1552,13 @@ export function Main({
   );
   // A computer-use run's Watch live, the refusal note's buttons, and follow mode (ADR 0216).
   const screenDesk = useMemo<ScreenDesk>(
-    () => ({ screen: screenState, onWatch: () => openPanel("screen"), onHandBack: () => hermes.screen.handBack() }),
-    [screenState, openPanel, hermes],
+    () => ({
+      screen: screenState,
+      onWatch: () => openPanel("screen"),
+      onHandBack: () => hermes.screen.handBack(),
+      ...(status === "connected" && { toolsets: { profile, api: hermes.toolsets } }),
+    }),
+    [screenState, openPanel, hermes, status, profile],
   );
   // A path in a reply (ADR 0167): a file opens in the Preview, a folder in a folder shell on the Hermes server. One
   // opener for every pane, so the newest click wins whichever pane it was in.
@@ -2295,7 +2302,6 @@ export function Main({
   // remembered for the next launch: what reopens a Bot Chat is its bot's row. The pen starts an ordinary chat there.
   const botEdit = useMemo<BotEditWiring>(() => ({ look: (name) => hermes.botLook(name), edit: (name, edits) => hermes.editBot(name, edits), messaging: (on) => hermes.setAgentMessaging(on) }), [hermes]);
   const loadBots = useCallback(() => hermes.bots(), [hermes]);
-  const [threadsOpen, setThreadsOpen] = useState<Record<string, boolean>>({});
   const activityOf = (b: Bot, roster: readonly Bot[]) => {
     const ids = b.botChat ? [b.botChat.id, b.botChat.resolvedId] : [];
     const open = b.profile === profile ? chats.find((c) => ids.includes(c.id)) : undefined;
@@ -2317,7 +2323,7 @@ export function Main({
   );
   // The bots an "@" in a Bot Chat names: every one on this connection but the shown profile's, whose chat it is.
   const otherBots = useMemo<NamedBot[]>(
-    () => (hasBotMode ? (bots?.roster ?? []).filter((b) => b.profile !== profile).map((b) => ({ ...lookShown(b, botPictures), handle: b.handle, description: b.description })) : []),
+    () => (hasBotMode ? (bots?.roster ?? []).filter((b) => b.profile !== profile).map((b) => ({ ...lookShown(b, botPictures), profile: b.profile, handle: b.handle, description: b.description })) : []),
     [hasBotMode, bots?.roster, profile, botPictures],
   );
   const beforeBotChat = useRef<string | null>(null);
@@ -2326,20 +2332,30 @@ export function Main({
   }, [profile]);
   const onBotChat = !!shownChat && chatKind(shownChat) === "bot";
   /** `visiting`: what becomes of a bot visit (ADR 0203); none ends it, here or with the switch to the bot's profile. */
-  const openBot = (b: Bot, then: "open" | "new", visiting?: BotVisit, thread?: ThreadArrival) => {
+  const openBot = (b: Bot, then: "open" | "new", visiting?: BotVisit) => {
     guard(() => {
-      if (then === "open" && !thread && b.profile === profile && !(shownChat && policyOf(shownChat).ofBot)) beforeBotChat.current = active.chatId;
+      if (then === "open" && b.profile === profile && !(shownChat && policyOf(shownChat).ofBot)) beforeBotChat.current = active.chatId;
       if (b.profile !== profile) void switchProfileNow(b.profile, { visit: visiting });
       else setVisit(visiting);
       // Anything the owner opens or switches to after this, before the Bot Chat opens, wins over it (`navGen`).
-      setArrival(then === "open" ? { open: "bot", bot: b, thread, profile: b.profile, nav: navGen.current } : { open: "new", profile: b.profile, nav: navGen.current });
+      setArrival(then === "open" ? { open: "bot", bot: b, profile: b.profile, nav: navGen.current } : { open: "new", profile: b.profile, nav: navGen.current });
     }, b.profile !== profile ? "profile" : "leave");
   };
   useEffect(() => {
     const go = arrival;
     if (!go) return;
     if (navGen.current !== go.nav) return setArrival(undefined);
-    if ((go.open === "bot" && go.opening) || go.profile !== profile || switching || !hermes.hasListed()) return;
+    if ((go.open === "bot" && go.opening) || go.profile !== profile) return;
+    if (go.open === "bot" && go.shown === undefined) {
+      // The click already passed `guard`, and a second ask would end this open.
+      const shown = hermes.showBotChat(go.bot) ?? null;
+      if (shown) {
+        openChat(shown, { remember: false, keepSettings: true });
+        setSettingsOpen(false);
+      }
+      return setArrival({ ...go, shown, nav: navGen.current });
+    }
+    if (go.open === "bot" ? !hermes.connectedTo(go.profile) : switching || !hermes.hasListed()) return;
     if (go.open !== "bot") {
       setArrival(undefined);
       if (go.open === "new") newChat();
@@ -2350,19 +2366,24 @@ export function Main({
     const opening = { ...go, opening: true };
     setArrival(opening);
     const still = () => navGen.current === go.nav && hermes.profile === go.profile;
-    const opened = !go.thread ? hermes.openBotChat(go.bot) : "new" in go.thread ? hermes.newThread(go.bot, go.thread.new) : hermes.openThread(go.bot, go.thread.title);
-    opened
-      .then((id) => still() && openChat(id, { remember: false }))
+    hermes
+      .openBotChat(go.bot)
+      .then((id) => {
+        if (!still() || id === go.shown) return;
+        openChat(id, { remember: false });
+        if (go.shown) hermes.dropShownBotChat(go.shown);
+      })
       .catch((e: unknown) => still() && setToast({ text: (e as Error).message, at: Date.now() }))
       .finally(() => setArrival((g) => (g === opening ? undefined : g)));
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- run when the pick, profile or list changes; `newChat` and `openChat` are new functions each render and would run it on every render
-  }, [arrival, profile, switching, chats]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- run when the pick, profile, list or connection changes; `newChat` and `openChat` are new functions each render and would run it on every render
+  }, [arrival, profile, switching, chats, status]);
 
   // A bot visit (ADR 0203). A bot row in Bots mode whose profile isn't shown starts one, or carries one on, and the
   // owner's own bot ends it there. Chats and New chat go back to `home`; an ordinary chat of the bot's profile on screen
   // makes that profile the owner's. The next launch opens on `home` while a visit lasts.
-  const visitBot = (b: Bot, thread?: ThreadArrival) =>
-    openBot(b, "open", b.profile === profile ? visit : b.profile === visit?.home ? undefined : (visit ?? { home: profile, before: active.chatId }), thread);
+  const visitBot = (b: Bot) => openBot(b, "open", b.profile === profile ? visit : b.profile === visit?.home ? undefined : (visit ?? { home: profile, before: active.chatId }));
+  const visitBotRef = useRef(visitBot);
+  visitBotRef.current = visitBot;
   const goHome = (v: BotVisit, to: "chats" | "new") =>
     guard(() => {
       if (to === "chats") setChatListMode("chats");
@@ -2991,9 +3012,7 @@ export function Main({
         pane={p.key}
         tabs={p.tabs.map((id) => {
           const c = id === null ? undefined : chats.find((c) => c.id === id);
-          const topic = c && threadTopic(c.title);
-          const title =
-            c && shownName !== undefined && policyOf(c).ofBot ? (topic === undefined ? shownName : words.threads.named(shownName, topic)) : (c?.title ?? "New chat");
+          const title = c && shownName !== undefined && policyOf(c).ofBot ? shownName : (c?.title ?? "New chat");
           return { id, title, running: c?.running, unread: c?.unread };
         })}
         current={p.chatId}
@@ -3050,6 +3069,10 @@ export function Main({
           desk={desk}
           referenceDesk={referenceDesk}
           onTextGenerationSettings={openTextGeneration}
+          onOpenBot={(name) => {
+            const b = roster.find((r) => r.profile === name);
+            if (b) openBot(b, "open");
+          }}
           syncOutbox={deskWiring.syncOutbox}
           voice={voice}
           catalog={catalog}
@@ -3225,25 +3248,31 @@ export function Main({
   };
   // Bots mode's New bot, Reload and row menu (ADR 0194, ADR 0203): the dialogs are drawn outside the list panel, so a
   // delete that switches away from the open bot's profile finishes.
-  const shownThread = !covering && shownChat && isThreadTitle(shownChat.title) ? shownChat.title : undefined;
-  const threadReads = {
-    all: (olderThan: number) => hermes.readThreads(hermes.getSnapshot().bots?.roster.map((b) => b.profile) ?? [], olderThan),
-    watched: () => hermes.readThreads([profile, ...Object.keys(threadsOpen).filter((p) => threadsOpen[p])]),
-  };
   const botActions = useBotActions({
     profiles: profilesWiring,
     botEdit,
     roster: bots?.roster,
     load: loadBots,
-    threads: threadReads,
     shown: botsInList,
     onRefresh: () => void hermes.checkOtherProfiles(),
     onNote: (text) => setToast({ text, at: Date.now() }),
   });
 
+  // What a Messaged card's Open chip opens (ADR 0229): a bot on this connection, as a Bot visit.
+  const teammates = useMemo<Teammates>(
+    () => ({
+      open: (handle) => {
+        const b = teammateOf(bots?.roster ?? [], handle, profile);
+        return b && (() => visitBotRef.current(b));
+      },
+    }),
+    [bots?.roster, profile],
+  );
+
   return (
     <LinksProvider preview={openPreview} path={openPath} web={webPages} onToast={(text) => setToast({ text, at: Date.now() })}>
     <ScreenDeskProvider value={screenDesk}>
+    <TeammatesContext value={teammates}>
     <SentImageReader.Provider value={sentImages}>
     <div className="app" inert={covered || restarting}>
       <Rail
@@ -3345,20 +3374,6 @@ export function Main({
                   onOpen={visitBot}
                   onNewChat={(b) => openBot(b, "new")}
                   onMenu={botActions.onMenu}
-                  threads={{
-                    shelves: botThreads,
-                    shown: shownThread,
-                    expanded: threadsOpen,
-                    onExpand: (p, open) => setThreadsOpen((was) => ({ ...was, [p]: open })),
-                    onOpen: (b, title) => visitBot(b, { title }),
-                    onNew: (b, topic) => visitBot(b, { new: topic }),
-                    onRename: (t, topic) => hermes.renameThread(t, topic).then(() => {}, (e: unknown) => setToast({ text: words.threads.notRenamed(t.topic, errorText(e)), at: Date.now() })),
-                    onDelete: (t) =>
-                      hermes.deleteThread(t).then(
-                        (deleted) => void (deleted || setToast({ text: words.threads.notDeleted(t.topic, words.threads.replyRunning), at: Date.now() })),
-                        (e: unknown) => setToast({ text: words.threads.notDeleted(t.topic, errorText(e)), at: Date.now() }),
-                      ),
-                  }}
                 />
               ) : (
                 <div className="empty-hint">{words.bots.reading}</div>
@@ -3963,6 +3978,7 @@ export function Main({
         )}
     </div>
     </SentImageReader.Provider>
+    </TeammatesContext>
     </ScreenDeskProvider>
     </LinksProvider>
   );
@@ -4028,6 +4044,7 @@ function ChatView({
   voice,
   referenceDesk,
   onTextGenerationSettings,
+  onOpenBot,
 }: {
   hermes: Hermes;
   connection: SavedConnection;
@@ -4103,10 +4120,11 @@ function ChatView({
   /** The chats each unsent message references, by Draft key. */
   referenceDesk: ReferenceDesk;
   onTextGenerationSettings: () => void;
+  /** Opens a bot's Bot Chat, by its profile: an Asked card's Open. */
+  onOpenBot?: (profile: string) => void;
 }) {
   // What the owner has typed and not sent, kept for each chat on this connection and profile. Two panes on one chat
   // share its draft.
-  const words = useLocale();
   const draftOf = (id: string | null) => draftKey(connection, profile, id);
   const shownDraft = draftOf(chatId);
   const composerText = useSyncExternalStore(savedDrafts.subscribe, () => savedDrafts.get(shownDraft));
@@ -4127,11 +4145,24 @@ function ChatView({
   useEffect(() => setApplying(false), [chatId]);
 
   const shownModel = (started && chat.model) || startSettings.model.value;
-  const pickModel = (pick: ModelPick) => {
+  /** The model picker's switch, which `/model` and `/reasoning` use too. Rejects saying why Hermes didn't switch. */
+  const switchModel = async (pick: ModelPick) => {
     setUIPrefs({ modelPicker: { ...pick, profile: prefScope(connection, profile) } });
     if (!started) return setChosen(pick);
-    hermes.setModel(chat.id, pick).catch((e) => stillIn() && onToast(`Couldn't switch this chat's model: ${errorText(e)}`));
+    await hermes.setModel(chat.id, pick);
   };
+  /** The pick `/reasoning <level>` means, or undefined for a bare `/reasoning`, which says the one in use. */
+  const effortFor = (arg: string): { pick: ModelPick } | { problem: string } | undefined => {
+    const level = arg.trim().toLowerCase();
+    if (!level) return undefined;
+    const current = shownModel ?? catalog?.defaultPick;
+    if (!current) return { problem: "Hermes hasn't said which model this chat runs on yet." };
+    const offered = effortsFor(capabilitiesOf(catalog, current));
+    if (!isEffort(level) || !offered.includes(level))
+      return { problem: offered.length ? `${shortName(current.model)} takes ${offered.join(", ")}. Highwing sets only the effort; Hermes's display options are its command line's.` : `${shortName(current.model)} has no reasoning effort to set.` };
+    return { pick: { ...current, effort: level } };
+  };
+  const pickModel = (pick: ModelPick) => void switchModel(pick).catch((e) => stillIn() && onToast(`Couldn't switch this chat's model: ${errorText(e)}`));
 
   const findTarget =
     picked?.found.chatId === chat.id && picked.found.find ? { query: picked.found.find, itemId: hermes.locate(picked.found), at: picked.at } : undefined;
@@ -4274,7 +4305,7 @@ function ChatView({
   const visible = usePaneVisible();
 
   // Branch from here (ADR 0027): the message the preview is open for, if any.
-  const [branchFrom, setBranchFrom] = useState<{ itemId: string; as: "branch" | "thread" }>();
+  const [branchFrom, setBranchFrom] = useState<string>();
   useEffect(() => setBranchFrom(undefined), [chatId, profile]);
   const link = useSyncExternalStore(hermes.subscribe, () => hermes.getSnapshot().branches.links[chat.id]);
   // Edit and Regenerate (ADR 0035): the message the dialog is open for, and the versions of this chat's turns.
@@ -4321,18 +4352,60 @@ function ChatView({
     () => listedChats.filter((c) => c.id !== chat.id && !c.archived && policyOf(c).listed && c.title.trim()).map((c) => ({ id: c.id, title: c.title, updatedAt: c.updatedAt })),
     [listedChats, chat.id],
   );
+  const hermesList = serverCommands.state === "ready" ? serverCommands.list.hermes : undefined;
+  const commandList = useMemo(() => commandSet(hermesList), [hermesList]);
+  // A message naming other bots goes to them (ADR 0233): the cards, and this chat as the chip it carries once it has
+  // something to summarize.
+  const asked = useSyncExternalStore(hermes.asks.subscribe, hermes.asks.list);
+  const hasHistory = chat.items.some((i) => (i.kind === "user" && !i.outgoing) || i.kind === "assistant");
+  const askWords = useLocale().chat.ask;
+  const selfTitle = bot && askWords.referenceTitle(bot.name);
+  const askSelf = useMemo(() => (hasHistory && selfTitle ? { chatId: chat.id, title: selfTitle } : undefined), [hasHistory, selfTitle, chat.id]);
+  const askHost: AskHost | undefined =
+    kind === "bot"
+      ? {
+          asks: asked,
+          bots: otherBots,
+          self: askSelf,
+          connected: status === "connected",
+          send: (to, text, refs) => {
+            const why = hermes.asks.send(chat.id, to, text, refs);
+            if (!why) savedDrafts.take(shownDraft);
+            return why;
+          },
+          retry: hermes.asks.retry,
+          dismiss: hermes.asks.dismiss,
+          edit: (id) => {
+            const back = hermes.asks.takeBack(id);
+            if (!back) return;
+            keepDraft(shownDraft, back.text);
+            referenceDesk.putBack(shownDraft, back.references);
+            if (askSelf && !back.references.some((r) => r.chatId === askSelf.chatId)) referenceDesk.decline(shownDraft);
+          },
+          open: (name) => onOpenBot?.(name),
+        }
+      : undefined;
   const commands: CommandHost = {
+    commands: commandList,
+    models: { catalog, favorites, current: shownModel },
     references: { chats: referable, bots: kind === "bot" ? otherBots : undefined, reference: (c) => referenceDesk.add(shownDraft, { chatId: c.id, title: c.title }) },
     skills: status === "connected" ? skillCommands.skills : undefined,
     refreshSkills: skillCommands.refresh,
     guide: caps.caps.commands.state === "unsupported" ? () => openGuide(guideUrl("commands")) : undefined,
-    why: (def) => {
+    why: (def, arg) => {
+      if (def.unavailable) return def.unavailable;
+      // The picker's own switches, which work before a chat starts too. What they'd switch to is checked before anything
+      // goes to Hermes.
+      if (def.name === "model" || def.name === "reasoning") {
+        const to = arg ? (def.name === "model" ? modelFromArg(catalog, arg, shownModel) : effortFor(arg)) : undefined;
+        return to && "problem" in to ? to.problem : undefined;
+      }
       if (def.name === "help" || (def.name === "new" && !policy.ofBot)) return undefined;
       // In a Bot Chat, /new compacts it, which needs the chat open on Hermes and no reply running.
       if (def.name === "new") {
         if (status !== "connected") return "Not connected to Hermes.";
         if (!chat.runtimeId) return "This chat is still loading from Hermes.";
-        if (chat.running) return kind === "thread" ? words.threads.compact.wait : "A Bot Chat is one continuous conversation, so /new compacts it. Wait for the reply to finish.";
+        if (chat.running) return "A Bot Chat is one continuous conversation, so /new compacts it. Wait for the reply to finish.";
         return undefined;
       }
       if (!started) return "This chat hasn't started yet. Send a message first.";
@@ -4341,7 +4414,17 @@ function ChatView({
       // A Bot Chat's title is its identity, and it is its bot's one chat (ADR 0066).
       if (def.name === "rename" && policy.rename === "none") return "A Bot Chat's name is how Hermes finds it, so it can't be renamed.";
       if (def.name === "delete" && !policy.remove) return "A Bot Chat is its bot's one continuous chat, so Highwing doesn't delete it.";
+      if (def.name === "compress") {
+        if (arg) return "Highwing compacts the whole chat; Hermes's here N and --preview options aren't offered here.";
+        if (policy.session !== "live" || hermes.cannotCompact()) return "This Hermes can't compact a chat from here.";
+        if (!chat.runtimeId) return "This chat is still loading from Hermes.";
+        return chat.running ? "Wait for the reply to finish: Hermes compacts only between replies." : undefined;
+      }
       if (def.scope === "local") return undefined;
+      if (def.scope === "hermes") {
+        if (!chat.runtimeId) return "This chat is still loading from Hermes.";
+        return hermesRefusal(def, arg, !!chat.running);
+      }
       if (serverCommands.state === "loading") return "Checking whether this Hermes has it…";
       if (serverCommands.state === "failed") return `Couldn't check whether this Hermes has it: ${serverCommands.reason}`;
       if (serverCommands.list.replaced.has(def.name))
@@ -4367,9 +4450,7 @@ function ChatView({
           if (policy.ofBot) {
             const res = await hermes.compact(chat.id);
             if (here()) done();
-            if (kind !== "thread") return newInBotChatNote(res);
-            const said = words.threads.compact;
-            return `${said.lead} ${res.kind === "compacted" ? said.compacted : res.kind === "nothing" ? said.nothing : (res.message ?? "")}`.trim();
+            return newInBotChatNote(res);
           }
           done();
           onNew();
@@ -4394,6 +4475,22 @@ function ChatView({
           if ((await hermes.askSideQuestion(chat.id, arg)) && here()) done();
           return undefined;
         }
+        if (def.name === "model" || def.name === "reasoning") {
+          const to = def.name === "model" ? (arg ? modelFromArg(catalog, arg, shownModel) : undefined) : effortFor(arg);
+          if (!to) {
+            if (here()) done();
+            return `This chat uses ${describePick(shownModel, catalog)}.`;
+          }
+          if ("problem" in to) throw new Error(to.problem);
+          await switchModel(to.pick);
+          if (here()) done();
+          return `Now on ${describePick(to.pick, catalog)}.`;
+        }
+        if (def.name === "compress") {
+          const res = await hermes.compact(chat.id);
+          if (here()) done();
+          return res.kind === "compacted" ? "Hermes compacted this chat's context." : res.kind === "nothing" ? "There was nothing to compact yet." : res.message;
+        }
         // Set a goal shows the check before anything is saved, so /goal opens it rather than going to Hermes as typed.
         if (def.name === "goal") {
           if (here()) {
@@ -4405,10 +4502,16 @@ function ChatView({
         const res = await hermes.runCommand(chat.id, def, arg);
         if (!here()) return undefined;
         done();
-        if (res.kind === "output") return res.text;
-        // Hermes wants the words sent as the chat's next message instead, as for a /steer after the reply ended. It goes
-        // straight to the chat, so whatever the owner has typed since stays in the composer; a failure is a Failed message.
-        await hermes.send(chat.id, res.message);
+        if (res.kind === "output") return res.text || undefined;
+        // Hermes puts words back for the owner to edit, as its own clients do.
+        if (res.kind === "prefill") {
+          if (!savedDrafts.get(key)) savedDrafts.set(key, res.text);
+          return res.notice;
+        }
+        // Hermes wants the words sent as the chat's next message instead, as for a /steer after the reply ended, or a
+        // skill message it built (`/plan`). It goes straight to the chat, so whatever the owner has typed since stays in
+        // the composer; a failure is a Failed message.
+        await (res.kind === "skill" ? hermes.send(chat.id, res.display, [], res.call) : hermes.send(chat.id, res.message));
         return res.notice;
       } finally {
         commandsRunning.delete(key);
@@ -4569,6 +4672,7 @@ function ChatView({
       voiceSend={sessionHere ? (text) => hermes.sendTracked(chat.id, text) : undefined}
       commands={commands}
       references={{ desk: referenceDesk, onTextModelSettings: onTextGenerationSettings }}
+      ask={askHost}
       onDismissSideQuestion={(id) => hermes.dismissSideQuestion(chat.id, id)}
       followUp={followUp}
       compare={compare}
@@ -4620,8 +4724,7 @@ function ChatView({
         started && policy.branch
           ? {
               blocked: branchBlocked(chat, status === "connected"),
-              onBranch: (itemId) => setBranchFrom({ itemId, as: "branch" }),
-              onThread: policy.threadFrom ? (itemId) => setBranchFrom({ itemId, as: "thread" }) : undefined,
+              onBranch: setBranchFrom,
             }
           : undefined
       }
@@ -4710,20 +4813,18 @@ function ChatView({
     {runOf && <RunDialog key={`${chat.id}/${runOf}`} api={{ read: () => hermes.run(chat.id, runOf) }} onClose={() => setRunOf(undefined)} />}
     {branchFrom && (
       <BranchDialog
-        key={`${chat.id}/${branchFrom.itemId}/${branchFrom.as}`}
-        as={branchFrom.as}
+        key={`${chat.id}/${branchFrom}`}
         api={{
-          preview: () => hermes.previewBranch(chat.id, branchFrom.itemId),
-          make: (p, title) => (branchFrom.as === "thread" ? hermes.threadFromHere(p, title ?? "") : hermes.branch(p, title)),
+          preview: () => hermes.previewBranch(chat.id, branchFrom),
+          make: (p, title) => hermes.branch(p, title),
         }}
         onClose={() => setBranchFrom(undefined)}
         done={(id, warnings) => {
-          const made = branchFrom.as;
           setBranchFrom(undefined);
           if (!stillIn()) return;
           // The branch opens here; this chat, and its Draft, stay as they were.
           onOpenChat(id);
-          if (warnings.length) onToast(made === "thread" ? words.threads.from.made(warnings.join(" ")) : `Branch made. ${warnings.join(" ")}`);
+          if (warnings.length) onToast(`Branch made. ${warnings.join(" ")}`);
         }}
       />
     )}

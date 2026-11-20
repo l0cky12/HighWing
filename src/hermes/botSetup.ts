@@ -91,7 +91,7 @@ type Judged = { item: SetupItem; unanswered?: string };
  * Whether a failed call got no answer from Hermes: lost on the way, cut off, or past its deadline. A status, a sign-in
  * Hermes turned down, or an answer this app can't read is an answer; so is a route the server lacks.
  */
-const noAnswer = (e: unknown): boolean =>
+export const noAnswer = (e: unknown): boolean =>
   e instanceof SkillsError
     ? e.status === undefined && (e.kind === "disconnected" || e.kind === "error")
     : e instanceof ToolsetReadError
@@ -225,11 +225,16 @@ export async function applySetup(
   return out;
 }
 
+/**
+ * Applies one item against a fresh read, as the first apply did it, and says whether a call got no answer.
+ * `accepted`: the cautions confirmed with Apply anyway.
+ */
+export const settleItem = (apis: SetupApis, profile: string, item: SetupItem, accepted: Caution[] = [], limits = TOOLSET_TIMEOUTS): Promise<Judged> =>
+  item.area === "skill"
+    ? settleSkill(apis, profile, item, apis.skills.rows(profile))
+    : settleToolset(apis, profile, item, listWithin(apis, profile, limits.readMs), accepted, limits.writeMs);
+
 /** Tries one item again, as the first apply did it, against a fresh read. `accepted`: the cautions confirmed with Apply anyway. */
 export async function retryItem(apis: SetupApis, profile: string, item: SetupItem, accepted: Caution[] = [], limits = TOOLSET_TIMEOUTS): Promise<SetupItem> {
-  const judged =
-    item.area === "skill"
-      ? await settleSkill(apis, profile, item, apis.skills.rows(profile))
-      : await settleToolset(apis, profile, item, listWithin(apis, profile, limits.readMs), accepted, limits.writeMs);
-  return judged.item;
+  return (await settleItem(apis, profile, item, accepted, limits)).item;
 }

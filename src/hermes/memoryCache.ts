@@ -1,7 +1,7 @@
 // An in-memory ChatCache for tests: `saved` holds each profile's list, `transcripts` the Saved copies by
 // `profile/chatId`, `profile` the one shown last, `pulled` the profiles whose older history the owner pulled, and
 // `outbox` each chat's messages Hermes hasn't confirmed and `queues` each chat's queue, by `profile/chatId`, and
-// `branches` each profile's branches, `replyTimes` its reply times, `sentHere` the images sent from here and `asks` its asks, which
+// `branches` each profile's branches, `replyTimes` its reply times, `sentHere` the images sent from here, `asks` its asks and `setupRecords` each Bot Chat's accepted setup, which
 // `clear` keeps. Values are copied through JSON, as localStorage would, so nothing kept shares objects with the app.
 // It has no storage limit.
 import type { Chat, ChatQueue, OutgoingItem } from "./model";
@@ -21,6 +21,7 @@ export type MemoryCache = ChatCache & {
   replyTimes: Record<string, ReplyTime[]>;
   sentHere: Record<string, SentHere[]>;
   asks: Record<string, unknown>;
+  setupRecords: Record<string, unknown>;
 };
 
 export function memoryCache({
@@ -39,6 +40,7 @@ export function memoryCache({
     replyTimes: {},
     sentHere: {},
     asks: {},
+    setupRecords: {},
     load: (p) => cache.saved[p] ?? [],
     save: (p, chats) => void (cache.saved[p] = chats),
     loadTranscript: (p, id) => cache.transcripts[`${p}/${id}`],
@@ -84,6 +86,12 @@ export function memoryCache({
     saveAsks: (p, asks) => {
       if (asks.length) cache.asks[p] = JSON.parse(JSON.stringify(asks));
       else delete cache.asks[p];
+      return true;
+    },
+    loadSetupRecord: (p, id) => cache.setupRecords[`${p}/${id}`] ?? null,
+    saveSetupRecord: (p, id, record) => {
+      if (record) cache.setupRecords[`${p}/${id}`] = JSON.parse(JSON.stringify(record));
+      else delete cache.setupRecords[`${p}/${id}`];
       return true;
     },
   };

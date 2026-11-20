@@ -10,6 +10,7 @@
 import { type ScopeSource, connectionScope } from "./connections";
 import { SOURCE_LABEL, type Attachment, type Chat, type ChatQueue, type Item, type Outgoing, type OutgoingItem, type Queued, type SentReference, type Source } from "./model";
 import type { ChatCache, SavedTranscript } from "./transport";
+import type { AcceptedRecord } from "./botSetupCard";
 import { UI_PREFS_KEY } from "./uiPrefs";
 import { replyUsageOf } from "./usage";
 import { replyTimesOf, withReplyTime, type ReplyTime } from "./replyTimes";
@@ -40,6 +41,8 @@ export const REPLY_TIMES_PREFIX = "hermes-chat.reply-times.";
 /** The images this app sent, per connection and profile (sentImages.ts `SentHere`). */
 export const SENT_HERE_PREFIX = "hermes-chat.sent-images.";
 export const ASKS_PREFIX = "hermes-chat.asks.";
+/** What the owner accepted on a Bot Chat's setup card, until the ready turn's row reads back (ADR 0231), by chat. */
+export const SETUP_RECORD_PREFIX = "hermes-chat.bot-setup-accepted.";
 /** Where drafts.ts kept a chat's sent messages Hermes didn't take, or may not have, before the outbox: moved into it. */
 export const HELD_PREFIX = "hermes-chat.undelivered.";
 
@@ -47,6 +50,7 @@ const outboxListeners = new Set<() => void>();
 // Include writes the store couldn't keep: those outboxes and queues still exist in the running transport.
 const liveOutboxes = new Map<string, OutgoingItem[]>();
 const liveQueues = new Map<string, ChatQueue>();
+const liveSetupRecords = new Map<string, AcceptedRecord | null>();
 export function subscribeOutbox(fn: () => void): () => void {
   outboxListeners.add(fn);
   return () => void outboxListeners.delete(fn);
@@ -57,7 +61,7 @@ export function subscribeOutbox(fn: () => void): () => void {
  * drop it, or undefined to keep it (profileLocalData.ts, a profile renamed or deleted).
  */
 export function moveLiveChatData(move: (key: string) => string | null | undefined) {
-  for (const rows of [liveOutboxes, liveQueues] as Map<string, unknown>[]) {
+  for (const rows of [liveOutboxes, liveQueues, liveSetupRecords] as Map<string, unknown>[]) {
     for (const [key, value] of [...rows]) {
       const to = move(key);
       if (to === undefined) continue;
@@ -358,6 +362,7 @@ export function localChatCache(connection: ScopeSource): ChatCache {
   const replyTimesKey = (profile: string) => REPLY_TIMES_PREFIX + scope(profile);
   const sentHereKey = (profile: string) => SENT_HERE_PREFIX + scope(profile);
   const asksKey = (profile: string) => ASKS_PREFIX + scope(profile);
+  const setupRecordKey = (profile: string, chatId: string) => SETUP_RECORD_PREFIX + scope(profile, chatId);
   const loadSentHere = (profile: string) => {
     try {
       return sentHereOf(JSON.parse(localStorage.getItem(sentHereKey(profile)) ?? "null"));
@@ -563,6 +568,23 @@ export function localChatCache(connection: ScopeSource): ChatCache {
     },
     saveAsks(profile, asks) {
       return persist(() => localStorage, asksKey(profile), asks.length ? JSON.stringify(asks) : null);
+    },
+    loadSetupRecord(profile, chatId) {
+      const key = setupRecordKey(profile, chatId);
+      if (liveSetupRecords.has(key)) return liveSetupRecords.get(key);
+      try {
+        return JSON.parse(localStorage.getItem(key) ?? "null");
+      } catch {
+        return null;
+      }
+    },
+    saveSetupRecord(profile, chatId, record) {
+      // A failed write keeps the record in memory, here and for an update's restart (unsaved.ts), as for a queue.
+      const key = setupRecordKey(profile, chatId);
+      liveSetupRecords.set(key, record);
+      const ok = persist(() => localStorage, key, record ? JSON.stringify(record) : null);
+      if (ok) liveSetupRecords.delete(key);
+      return ok;
     },
     loadSentHere,
     saveSentHere(profile, chat, images) {

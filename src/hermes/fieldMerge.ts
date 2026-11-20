@@ -22,9 +22,9 @@ export type Outcomes<F> = { [K in keyof F]?: FieldOutcome<F[K]> };
 
 /**
  * A save's answer: one outcome per edit sent in, and Hermes's values read back after it. `now` holds only the fields
- * that read covered, and is absent when it failed.
+ * that read covered, and is absent when it failed. `unread`: why that read failed, when it was made and failed.
  */
-export type EditResult<F> = { fields: Outcomes<F>; now?: Partial<F> };
+export type EditResult<F> = { fields: Outcomes<F>; now?: Partial<F>; unread?: ProfileFailure };
 
 /** What one attempt sends, and the fields it already settled without sending (converged, or changed elsewhere). */
 export type Plan<F> = { write: Partial<F>; settled: Outcomes<F> };

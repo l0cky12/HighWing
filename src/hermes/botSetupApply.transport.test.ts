@@ -460,6 +460,36 @@ describe("MCP servers at Set it up", () => {
     expect(reloads(server)).toHaveLength(1);
   });
 
+  it.each([
+    ["never landed", "lost", []],
+    ["landed, as the list then shows", "stored", ["install airbnb"]],
+  ] as const)("sends nothing more after an MCP write's answer is lost and the write %s: no later server, no reload and no ready turn", async (_, drop, written) => {
+    const server = hermes0232(withMcp);
+    const { hermes, chatId } = await withCard(server, cardText(mcpBlock([{ catalog: "airbnb" }], ["echo"])));
+    const read = cardOf(await hermes.readBotSetup(chatId));
+    const sent = server.requests.length;
+    server.mcp.drop = drop;
+    const out = await hermes.applyBotSetup(read, planOf(read), () => {});
+    expect(out.states["mcp:echo"]).toMatchObject({ kind: "failed", miss: { kind: "unsent" } });
+    expect(server.mcp.writes.map((w) => w.what)).toEqual(written);
+    expect(reloads(server)).toEqual([]);
+    expect(out.readyAt).toBeUndefined();
+    expect(server.requests.slice(sent).filter((r) => r.method === "prompt.submit")).toEqual([]);
+  });
+
+  it("doesn't reload from the button while a reply runs anywhere on Hermes, and runs one reload for calls that overlap", async () => {
+    const server = hermes0232(withMcp);
+    const { hermes, chatId } = await withCard(server, cardText(mcpBlock([{ catalog: "airbnb" }], [])));
+    server.liveSessions = [{ id: "rt-other", session_key: "side", status: "working", last_active: Math.floor(Date.now() / 1000) }];
+    const first = await hermes.reloadBotSetupMcp(chatId);
+    expect(reloads(server)).toEqual([]);
+    expect(first).toBe("replying");
+
+    server.liveSessions = [];
+    expect(await Promise.all([hermes.reloadBotSetupMcp(chatId), hermes.reloadBotSetupMcp(chatId)])).toEqual(["reloaded", "reloaded"]);
+    expect(reloads(server)).toHaveLength(1);
+  });
+
   it("names a copy that runs from the source bot's folder and an OAuth server, and adds neither", async () => {
     const server = hermes0232(withMcp);
     const { hermes, chatId } = await withCard(server, cardText(mcpBlock([{ catalog: "github" }], ["ours", "echo"])));

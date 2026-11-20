@@ -209,6 +209,7 @@ export const en = {
       waitingReload: (bot: string) => `Added and read back. It reaches ${bot} once Hermes reloads its MCP servers, which waits while a reply runs on this Hermes.`,
       reloadMcp: "Reload MCP servers",
       reloadFailed: (why: string) => `Hermes didn't reload them: ${why}`,
+      reloadReplying: "Not reloaded yet: a reply is running in a chat on this Hermes, and reloading would cut its MCP servers off. Try again once it's done.",
       mcpReloaded: "Added, and Hermes reloaded it.",
       notShown: (profile: string) => `Highwing switched away from the ${profile} profile, which it sets this bot up through. Switch back first.`,
       confirmFirst: "Hermes needs you to confirm this first:",

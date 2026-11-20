@@ -198,6 +198,7 @@ export const es: Catalogue = {
       waitingReload: (bot) => `Añadido y comprobado. Llega a ${bot} cuando Hermes recargue sus servidores MCP, lo que espera mientras haya una respuesta en curso en este Hermes.`,
       reloadMcp: "Recargar servidores MCP",
       reloadFailed: (why) => `Hermes no los recargó: ${why}`,
+      reloadReplying: "Aún no se recargó: hay una respuesta en curso en un chat de este Hermes, y recargar le cortaría sus servidores MCP. Vuelve a intentarlo cuando termine.",
       mcpReloaded: "Añadido, y Hermes lo recargó.",
       notShown: (profile) => `Highwing cambió del perfil ${profile}, desde el que configura este bot. Vuelve a él primero.`,
       confirmFirst: "Hermes necesita que confirmes esto primero:",

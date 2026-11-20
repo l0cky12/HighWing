@@ -48,10 +48,11 @@ export type SetupHost = {
   retry(item: ListedItem, accept: boolean): void;
   /** What Connect took for each MCP server, by item key. Never shown again. */
   secrets: McpSecrets;
-  /** Keeps `values` for an MCP server; one waiting on Connect after Set it up is added at once. */
+  /** Keeps `values` for an MCP server, which only Set it up sends. */
   connect(item: ListedItem, values: Record<string, string>): void;
   reloadMcp(): void;
-  mcpReload?: "working" | { failed: string };
+  /** `replying`: Hermes didn't reload, since a reply runs on it. */
+  mcpReload?: "working" | "replying" | { failed: string };
   reload(): void;
   send(text: string): void;
   restart?: Restart;
@@ -230,19 +231,18 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
       retry(item, accept && was?.kind === "confirm" ? was.cautions : [], secrets);
     },
     secrets,
-    connect(item, values) {
-      const next = { ...secrets, [item.key]: values };
-      setSecrets(next);
-      if (runs[item.key]?.kind === "connect") retry(item, [], next);
-    },
+    connect: (item, values) => setSecrets((was) => ({ ...was, [item.key]: values })),
     mcpReload,
     reloadMcp() {
+      if (busy || mcpReload === "working") return;
       setMcpReload("working");
       api.reloadBotSetupMcp(chatId).then(
-        () => {
+        (done) => {
           if (!here(chatId)) return;
+          if (done === "replying") return setMcpReload(done);
           setMcpReload(undefined);
-          setRuns((p) => Object.fromEntries(Object.entries(p).map(([k, s]) => [k, s.kind === "reload" ? { kind: "applied" } : s])));
+          const owed = Object.fromEntries((r?.mcpReload ?? []).map((k) => [k, { kind: "applied" } as const]));
+          setRuns((p) => ({ ...owed, ...Object.fromEntries(Object.entries(p).map(([k, s]) => [k, s.kind === "reload" ? { kind: "applied" } : s])) }));
         },
         (e: unknown) => here(chatId) && setMcpReload({ failed: errorText(e) }),
       );
@@ -438,7 +438,7 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
     setEditing(false);
   };
   const listed = item.status !== "notFound" ? item : undefined;
-  const run = host.runs[item.key];
+  const run: ItemRun | undefined = host.runs[item.key] ?? (item.status === "same" && read.mcpReload.includes(item.key) ? { kind: "reload" } : undefined);
   // The Remember row is applied once the bot's memory lists the name, which the card reads back as nothing to change.
   const done = item.status === "same" && (run?.kind === "applied" || run?.kind === "waiting");
   const addedAwaitingReload = item.status === "same" && run?.kind === "reload";
@@ -465,7 +465,7 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
           ? l.mcpRefused.path(item.from ?? "")
           : l.mcpRefused[refused]
         : l.notFoundWhy
-      : item.status === "same" && !done
+      : item.status === "same" && !done && !addedAwaitingReload
         ? item.kind === "model"
           ? l.inUse
           : item.kind === "remember"
@@ -480,7 +480,7 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
                 ? l.turnOn
                 : l.turnOff
               : undefined;
-  const dim = item.status === "notFound" || (item.status === "same" && !done);
+  const dim = item.status === "notFound" || (item.status === "same" && !done && !addedAwaitingReload);
   return (
     <li className={`bot-setup-item${dim ? " dim" : ""}`}>
       <span className="bot-setup-mark">
@@ -525,7 +525,7 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
         )}
         {sub && <div className="bot-setup-sub">{sub}</div>}
         {listed && offer && offer.kind !== "refused" && !shownRun && tickable(item) && <McpDetail host={host} item={listed} offer={offer} onConnect={() => setConnecting(true)} />}
-        {shownRun && <RunText host={host} item={item} run={shownRun} locale={loc} onConnect={() => setConnecting(true)} />}
+        {shownRun && <RunText host={host} item={item} run={shownRun} locale={loc} connectFilled={!!(listed && offer && host.secrets[listed.key] && connected(offer, host.secrets[listed.key]))} onConnect={() => setConnecting(true)} />}
         {connecting && listed && offer && offer.kind !== "refused" && (
           <ConnectEditor
             name={listed.name ?? ""}
@@ -624,7 +624,7 @@ function RunIcon({ run }: { run: ItemRun }) {
   }
 }
 
-function RunText({ host, item, run, locale: loc, onConnect }: { host: SetupHost; item: PlanItem; run: ItemRun; locale: Locale; onConnect: () => void }) {
+function RunText({ host, item, run, locale: loc, connectFilled, onConnect }: { host: SetupHost; item: PlanItem; run: ItemRun; locale: Locale; connectFilled: boolean; onConnect: () => void }) {
   const l = loc.chat.botSetup;
   const listed = item.status !== "notFound" ? item : undefined;
   const again = (accept: boolean) => listed && host.retry(listed, accept);
@@ -643,7 +643,12 @@ function RunText({ host, item, run, locale: loc, onConnect }: { host: SetupHost;
     case "connect":
       return (
         <div className="bot-setup-run">
-          <div className="bot-setup-sub bot-setup-warn">{l.waitingConnect}</div>
+          <div className={connectFilled ? "bot-setup-sub" : "bot-setup-sub bot-setup-warn"}>{connectFilled ? l.mcpReady : l.waitingConnect}</div>
+          {connectFilled && (
+            <button className="btn" disabled={host.busy || host.blocked === "offline"} onClick={() => again(false)}>
+              {l.setUp}
+            </button>
+          )}
           <button className="btn" disabled={host.blocked === "offline"} onClick={onConnect}>
             <Plug size={13} aria-hidden /> {l.connect}
           </button>
@@ -654,14 +659,14 @@ function RunText({ host, item, run, locale: loc, onConnect }: { host: SetupHost;
       return (
         <div className="bot-setup-run">
           <div className="bot-setup-sub bot-setup-warn">
-            {l.waitingReload(host.bot)}
+            {r === "replying" ? l.reloadReplying : l.waitingReload(host.bot)}
             {typeof r === "object" && (
               <div className="bot-setup-bad" role="alert" translate="no">
                 {l.reloadFailed(r.failed)}
               </div>
             )}
           </div>
-          <button className="btn" disabled={!!host.blocked || r === "working"} onClick={host.reloadMcp}>
+          <button className="btn" disabled={!!host.blocked || host.busy || r === "working"} onClick={host.reloadMcp}>
             {r === "working" ? <Spinner /> : <RotateCcw size={13} aria-hidden />} {l.reloadMcp}
           </button>
         </div>

@@ -33,11 +33,24 @@ export type McpSecrets = Readonly<Record<string, Readonly<Record<string, string>
 
 const line = (command: string | undefined, args: readonly string[]) => [command ?? "", ...args].filter(Boolean).join(" ");
 
-const PATH_ENDS = String.raw`(?![^/\s"'=:;,])`;
-const escaped = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function lexicalPathParts(path: string): string[] {
+  const windows = /^[A-Za-z]:[\\/]|\\/.test(path);
+  const parts: string[] = [];
+  for (const part of (windows ? path.replace(/\\/g, "/").toLowerCase() : path).split("/")) {
+    if (part === "..") parts.pop();
+    else if (part && part !== ".") parts.push(part);
+  }
+  return parts;
+}
+
+const ABSOLUTE_PATHS = /(?<![^\s"'=:;,])(?:[A-Za-z]:)?[\\/][^\s"'=:;,]*/g;
+
 const namesFolder = (text: string, folder: string) => {
-  const f = folder.replace(/\/+$/, "");
-  return !!f && new RegExp(escaped(f) + PATH_ENDS).test(text);
+  const f = lexicalPathParts(folder);
+  return f.length > 0 && [...text.matchAll(ABSOLUTE_PATHS)].some(([p]) => {
+    const parts = lexicalPathParts(p);
+    return f.every((part, i) => parts[i] === part);
+  });
 };
 
 function catalogOffer(entry: CatalogEntry): McpOffer {
@@ -85,9 +98,14 @@ export function mcpOffer(sources: McpSources, name: string, from?: string): McpO
 export const connected = (offer: McpOffer, values: Readonly<Record<string, string>> = {}) =>
   offer.kind === "refused" || offer.secrets.every((s) => !s.required || !!values[s.key]?.trim());
 
-const said = (text: string, unanswered = false): Step => ({ state: { kind: "failed", miss: { kind: "said", text } }, ...(unanswered && { unanswered: text }) });
+const said = (text: string): Step => ({ state: { kind: "failed", miss: { kind: "said", text } } });
 
-const stepOfChange = (c: McpChange): Step => (c.kind === "saved" ? { state: { kind: "reload" } } : said(c.reason, c.kind === "unconfirmed" && !c.list));
+function stepOfChange(c: McpChange): Step {
+  if (c.kind === "refused") return said(c.reason);
+  const step: Step = c.kind === "saved" ? { state: { kind: "reload" } } : said(c.reason);
+  const unanswered = c.lost ?? (c.kind === "unconfirmed" && !c.list ? c.reason : undefined);
+  return unanswered === undefined ? step : { ...step, unanswered };
+}
 
 /**
  * Adds the server `offer` describes to `profile`, with the values Connect took, and reads it back. Waits on Connect

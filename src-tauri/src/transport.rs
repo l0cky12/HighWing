@@ -2806,8 +2806,9 @@ fn profile_id(name: &str) -> bool {
 }
 
 /// Whether a `POST api/profiles` body is the Clone profile dialog's (ADR 0074): `{"name"}` with only `"soul"`,
-/// `"description"`, `"provider"` and `"model"` beside it, or `{"name", "clone_from"}` with only `"description"` beside
-/// them, the full copy the owner opted in to; each a string. The name is a profile id other than `default`, and the
+/// `"description"`, `"provider"` and `"model"` beside it, each a string, and `"mirror_credentials": false`, which keeps
+/// the launch profile's keys out (#117); or `{"name", "clone_from"}` with only `"description"` beside them, the full
+/// copy the owner opted in to, each a string. The name is a profile id other than `default`, and the
 /// source a profile id or `default`. Every other field Hermes takes is refused: `clone_all` copies the source's whole
 /// home, `clone_channels` its bot tokens, `clone_from_default` the default profile's keys, `mcp_servers` writes secrets
 /// and `hub_skills` starts installs.
@@ -2821,13 +2822,11 @@ pub fn profile_create_allowed(body: Option<&str>) -> bool {
     let name_ok = fields.get("name").and_then(|n| n.as_str()).is_some_and(|n| n != "default" && profile_id(n));
     let source_ok = fields.get("clone_from").is_none_or(|s| s.as_str().is_some_and(|s| s == "default" || profile_id(s)));
     let full = fields.contains_key("clone_from");
-    let known = fields.iter().all(|(k, v)| {
-        v.is_string()
-            && match k.as_str() {
-                "name" | "clone_from" | "description" => true,
-                "soul" | "provider" | "model" => !full,
-                _ => false,
-            }
+    let known = fields.iter().all(|(k, v)| match k.as_str() {
+        "name" | "clone_from" | "description" => v.is_string(),
+        "soul" | "provider" | "model" => !full && v.is_string(),
+        "mirror_credentials" => !full && v.as_bool() == Some(false),
+        _ => false,
     });
     name_ok && source_ok && known
 }

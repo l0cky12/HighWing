@@ -7,7 +7,9 @@
 //   an invalid one (400).
 // - Without `clone_from` the profile is fresh: an empty `.env`, Hermes's built-in skills, and only what the body gives:
 //   `soul` (SOUL.md), `description`, and `provider` with `model`, which Hermes checks against its model list and
-//   reports as `model_set`/`model_error` rather than failing the create.
+//   reports as `model_set`/`model_error` rather than failing the create. From Hermes 0.23.2 a fresh profile also gets
+//   the launch profile's `.env` keys and model unless the body says `mirror_credentials: false`. An older Hermes
+//   ignores the field.
 // - With `clone_from` Hermes copies the source's `config.yaml`, `.env` (its API keys), SOUL.md, every skill folder,
 //   both memory files and its plugins, and drops messaging channels. It never copies chats, scheduled jobs or the
 //   gateway's state. That is the full copy, sent only when the owner opts in.
@@ -206,7 +208,13 @@ export class ProfileCloneApi {
     const description = go.description ? source.profile.description : undefined;
     const body =
       plan.kind === "fresh"
-        ? { name: plan.name, ...(go.persona && { soul: source.soul.content }), ...(description && { description }), ...(go.model && modelOf(source.profile)) }
+        ? {
+            name: plan.name,
+            ...(go.persona && { soul: source.soul.content }),
+            ...(description && { description }),
+            ...(go.model && modelOf(source.profile)),
+            mirror_credentials: false,
+          }
         : { name: plan.name, clone_from: plan.source, ...(description && { description }) };
 
     onStage("create", "running");

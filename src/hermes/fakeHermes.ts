@@ -2647,9 +2647,9 @@ export class FakeHermes {
    * (else Hermes's default) and its model if Hermes's check takes it. `clone_from` copies the source's `.env` without bot
    * tokens, SOUL.md, model, skill folders and memory. Chats and scheduled jobs are never copied.
    *
-   * From Hermes 0.23.2 (`profile_provision.py` at `fe7e28b843e6`), a fresh profile also gets the launch profile's `.env`
-   * without bot tokens and, when the body names no model, its model, unless the body has `mirror_credentials: false`;
-   * then its `.env` is empty, as it always was at `f0d94882`.
+   * From Hermes 0.23.2 (`profile_provision.py` at `fe7e28b843e6`), unless the body has `mirror_credentials: false`, a
+   * fresh profile also gets the launch profile's `.env` without bot tokens and, when the body doesn't name both a provider
+   * and a model, its model. With `mirror_credentials: false` its `.env` is empty, as it always was at `f0d94882`.
    */
   private createProfile(body: Record<string, unknown>): unknown {
     const withoutBotTokens = (env: Record<string, string> = {}) => Object.fromEntries(Object.entries(env).filter(([k]) => !/_BOT_TOKEN$/.test(k)));

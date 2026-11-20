@@ -112,7 +112,7 @@ Settled with the owner earlier, on 2026-11-18, and kept:
 
 - New bot and New profile lose the form. `ProfileForm` keeps Edit only. Write with AI stays on Edit's Persona, where ADR 0206 and ADR 0209 still apply.
 - Writing the typed name creates a Bot Mode block, so making a bot turns Bots message each other on for the server if it was off.
-- A new bot starts with the launch profile's `.env` keys and model, and Bot setup relies on them: without keys the bot can't answer the brief. The relay doesn't pass `mirror_credentials`. Clone's fresh copy (ADR 0074) goes through the same route and gets the keys too on 0.23.2 (issue #117).
+- A new bot starts with the launch profile's `.env` keys and model, and Bot setup relies on them: without keys the bot can't answer the brief. New bot doesn't send `mirror_credentials`. Clone's fresh copy (ADR 0074) goes through the same route and sends `mirror_credentials: false`, the only value the relay passes, so it gets no keys (issue #117).
 - A `reload.mcp` at Set it up reconnects MCP servers for every bot with an open chat on that Hermes, and the next message in each re-sends its full input.
 - After Start fresh the bot's `session_search` can still find the archived Bot Chat. An external memory provider such as Honcho isn't cleared, since the app can't read or edit what it stores.
 - `Hermes.archive`, which ADR 0202 left with no caller in the app, gets one: Start fresh.

@@ -53,6 +53,7 @@ Every probe ran in a throwaway sandbox dashboard at that commit, with its own ho
 - **The card is the difference between the block and Hermes as read now** until Set it up. Each item has a tick and can be edited in place. An in-place edit is kept on a newer block that leaves the item alone or proposes the owner's value or one they chose it over. Any other value is the bot changing that item, and is a new offer.
 - **The model row on a new bot's card shows greyed as "Already in use"** and is not counted in the ticked totals, unless the bot proposes a different model.
 - **The owner's name goes to memory, not the persona.** The answer to "What should I call you?" is the card's **Remember** row. Hermes has no route that adds a memory entry, so the bot saves it with its own memory tool during the ready turn, only when the row is ticked. The row is applied once `MemoryApi.load` lists an entry with that name.
+- **The card sets the bot's picture too, since issue #86.** The bot names one of a set Highwing ships, and the owner can pick another or upload their own ([ADR 0235](0235-bot-setups-card-sets-the-bots-picture-from-a-set-highwing-ships-or-the-owners-upload.md)).
 
 ### Set it up
 

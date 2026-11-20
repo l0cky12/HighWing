@@ -5,11 +5,12 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalSto
 import { Brain, Copy, FolderOpen, Keyboard, MoreHorizontal, Pencil, Plus, Puzzle, RefreshCw, Sparkles, Trash2, TriangleAlert, Wand2 } from "lucide-react";
 import { BOT_LOOK_SAME, BOT_PICTURE_MAX_BYTES, type BotLook } from "../hermes/bots";
 import type { CapabilityStore } from "../hermes/capabilities";
-import { allApplied, applySetup, choosing, type SetupApis, type SetupItem } from "../hermes/botSetup";
 import { allSaved, editsOf, rebase, type EditResult, type Edits, type FieldOutcome } from "../hermes/fieldMerge";
 import type { CatalogProvider } from "../hermes/modelSettings";
 import { asReadBack, type PersonaApi, type Soul } from "../hermes/persona";
 import type { ProfileCloneApi } from "../hermes/profileClone";
+import type { BotSetupRefusal } from "../hermes/botSetupStart";
+import type { NewBotHow } from "../hermes/newBot";
 import type { PendingRename } from "../hermes/profileLocalData";
 import {
   DISPLAY_NAME_MAX,
@@ -24,14 +25,13 @@ import {
   type ProfileFields,
   type ProfileRow,
   type ProfilesApi,
-  type Removed,
 } from "../hermes/profiles";
 import { errorText } from "../hermes/values";
 import { useLocale, type Locale } from "../i18n/locale";
 import { Spinner, composing } from "./bits";
-import { BotCapabilities, SetupOutcome, outcomeNotice, useBotSetup, type Removal } from "./BotCapabilities";
 import { Menu } from "./ChatMenu";
 import { CloneProfileDialog } from "./CloneProfile";
+import { NewBot } from "./NewBot";
 import { useModal } from "./modal";
 import { RephraseButton, RephrasePanel, usePersonaRephrase } from "./PersonaRephrase";
 import type { Writer } from "../hermes/writingModel";
@@ -83,8 +83,8 @@ export type ProfilesWiring = {
   showTab: (tab: "memory" | "skills", name: string) => void;
   copyText: (text: string) => Promise<void>;
   /**
-   * Write with AI on the form's Persona (ADR 0197, 0206), run as `profile` on the model that writes for it
-   * (writingModel.ts, ADR 0209): the profile in use for New, the profile edited for Edit. Given only while connected.
+   * Write with AI on Edit's Persona (ADR 0206), run as the profile edited on the model that writes for it
+   * (writingModel.ts, ADR 0209). Given only while connected.
    */
   rephrase?: (profile: string) => Writer;
   /** Each profile's SOUL.md, which Edit reads as it opens and saves with the form (ADR 0206); without it Edit has no Persona. */
@@ -93,10 +93,14 @@ export type ProfilesWiring = {
   onPersonaDirty?: (dirty: boolean, profile: string) => void;
   /** Bumped each time the owner discards an unsaved persona on leaving: an open form closes, dropping it. */
   personaDiscards?: number;
-  /** New's Skills and Tools (ADR 0197): read from the profile in use, applied to the new profile and read back. */
-  setup?: SetupApis;
-  /** Tells the owner what a create came to once its form has closed, through the app's own notice. */
-  notify: (notice: Notice) => void;
+  /**
+   * Makes a bot named `name` from New bot or New profile (ADR 0231) and opens it as a Bot visit, with Bot setup's
+   * interview started unless `how` is blank or Hermes runs none. Resolves the new profile's id, and whether the app
+   * went to it. Rejects when the create failed.
+   */
+  makeBot: (name: string, how: NewBotHow) => Promise<{ profile: string; visited: boolean }>;
+  /** Why this Hermes runs no Bot setup (`Hermes.botSetupOff`), for the name dialog to say. */
+  botSetupOff: () => BotSetupRefusal | undefined;
 };
 
 /** How long a rename or delete runs before its button says the gateway is being stopped. */
@@ -109,7 +113,7 @@ type Dialog =
   | { kind: "new" }
   | { kind: "edit"; row: ProfileRow; focus?: FormFocus }
   | { kind: "delete"; row: ProfileRow }
-  | { kind: "clone"; source: string };
+  | { kind: "clone"; source: string; name?: string };
 
 const NO_STORE = { subscribe: () => () => {}, getSnapshot: () => undefined };
 
@@ -202,7 +206,7 @@ export function ProfileSettings({ wiring }: { wiring: ProfilesWiring }) {
   const lacking = (a: ProfileAction) => !!wiring.capabilities?.lacksAction("profiles", a);
 
   /** Reads the list. Resolves to the row selected after it, or undefined when a newer read or a failure took over. */
-  const read = async (select?: string, edit?: string): Promise<string | undefined> => {
+  const read = async (select?: string): Promise<string | undefined> => {
     const gen = ++readGen.current;
     setReading(true);
     try {
@@ -213,8 +217,6 @@ export function ProfileSettings({ wiring }: { wiring: ProfilesWiring }) {
       const kept = (s: string) => (listed.some((p) => p.name === s) ? s : (listed.find((p) => p.name === inUse)?.name ?? listed[0]?.name ?? s));
       const next = select && listed.some((p) => p.name === select) ? select : kept(selectedNow.current);
       setSelected(next);
-      const editing = edit && listed.find((p) => p.name === edit);
-      if (editing) setDialog({ kind: "edit", row: editing });
       // A rename the app closed in the middle of: Hermes renamed it, but this computer's data may not have moved.
       const pending = wiring.local.pending();
       if (pending) {
@@ -472,19 +474,35 @@ export function ProfileSettings({ wiring }: { wiring: ProfilesWiring }) {
         </Menu>
       )}
 
-      {(dialog?.kind === "new" || dialog?.kind === "edit") && (
+      {dialog?.kind === "new" && (
+        <NewBot
+          heading={w.form.newTitle}
+          list={() => api.list()}
+          off={wiring.botSetupOff()}
+          returnTo={selectedRow}
+          make={async (name, how) => {
+            const made = await wiring.makeBot(name, how);
+            // Gone to the bot: Settings has closed. Otherwise the new row is selected here, with Open it now.
+            if (made.visited) return;
+            setNotice({ tone: "muted", text: l.bots.make.made(made.profile), open: made.profile });
+            void read(made.profile).then((now) => now && focusRow(now));
+          }}
+          onCopy={wiring.clone && ((name) => setDialog({ kind: "clone", source: inUse, name }))}
+          onClose={() => setDialog((d) => (d?.kind === "new" ? undefined : d))}
+        />
+      )}
+      {dialog?.kind === "edit" && (
         <ProfileForm
           wiring={wiring}
-          row={dialog.kind === "edit" ? dialog.row : undefined}
-          focus={dialog.kind === "edit" ? dialog.focus : undefined}
+          row={dialog.row}
+          focus={dialog.focus}
           rows={rows ?? []}
           lacking={lacking}
           returnTo={selectedRow}
-          onClone={wiring.clone && (() => setDialog({ kind: "clone", source: selected }))}
           onDone={(result) => {
             setDialog(undefined);
             setNotice(result.notice);
-            void read(result.select, result.edit).then((now) => !result.edit && now && focusRow(now));
+            void read(result.select).then((now) => now && focusRow(now));
           }}
           // Closed without finishing: what saved meanwhile (Write for me, a field before one that failed) shows.
           onClose={() => {
@@ -512,6 +530,7 @@ export function ProfileSettings({ wiring }: { wiring: ProfilesWiring }) {
         <CloneProfileDialog
           api={wiring.clone}
           current={dialog.source}
+          name={dialog.name}
           returnTo={selectedRow}
           onClose={() => {
             setDialog(undefined);
@@ -714,7 +733,7 @@ function SwitchQuestion({ to, note, onStay, onGo }: { to: string; note: string; 
  */
 type FieldState<V = never> = { kind: "saved" } | { kind: "failed"; text: string } | { kind: "changedElsewhere"; theirs: V };
 
-type FormStates = { name?: FieldState; create?: FieldState; soul?: FieldState<string> } & { [K in keyof ProfileFields]?: FieldState<ProfileFields[K]> } & {
+type FormStates = { name?: FieldState; soul?: FieldState<string> } & { [K in keyof ProfileFields]?: FieldState<ProfileFields[K]> } & {
   [K in "title" | "color" | "picture"]?: FieldState<BotLook[K]>;
 };
 
@@ -777,8 +796,8 @@ function ModelPicker({
   );
 }
 
-/** What a finished form tells its screen: what to say, which row to select, and a profile to edit next. */
-export type FormResult = { notice?: Notice; select?: string; edit?: string };
+/** What a finished form tells its screen: what to say, and which row to select. */
+export type FormResult = { notice?: Notice; select?: string };
 
 /** A field Edit puts focus in once it can be typed in, for a menu entry that opens Edit at it. */
 export type FormFocus = "persona";
@@ -787,17 +806,16 @@ export type FormFocus = "persona";
 type SoulRead = { kind: "reading" } | { kind: "read"; base: Soul } | { kind: "failed"; message: string };
 
 /**
- * New profile and Edit, one modal. New makes a blank profile in one create. Edit saves each changed field through its
- * own route, in order: description, model, the bot's look, the persona, then the name, so the earlier calls still use
- * the old name. A failed field keeps the dialog open, marked with Hermes's words; the fields that saved stay saved.
+ * Edit profile and Edit bot. Each changed field is saved through its own route, in order: description, model, the
+ * bot's look, the persona, then the name, so the earlier calls still use the old name. A failed field keeps the dialog
+ * open, marked with Hermes's words; the fields that saved stay saved. New bot and New profile are the name dialog
+ * (NewBot.tsx, ADR 0231).
  *
  * Edit never writes over a change made elsewhere since the dialog opened (ADR 0189): each field is saved only where
  * Hermes still has what the form last showed. One that changed keeps the owner's text, shows Hermes's value with Use
  * Hermes's, and a second Save then replaces it knowingly. The name is changed last, and only once every other field
  * saved.
  *
- * Bots mode's New bot is this form's New (ADR 0164): `heading` and `createLabel` name what it makes there, and
- * `noEdit` leaves out Set model after a create that didn't set it, since Bots mode has no Edit to go on to.
  * `bot`: Edit bot, which adds the bot's look. Edit's Persona is the profile's SOUL.md, read as the form opens and
  * saved with the other fields, before the name (ADR 0206); `focus` puts focus in it once read.
  */
@@ -808,25 +826,19 @@ export function ProfileForm({
   lacking,
   returnTo,
   heading,
-  createLabel,
-  noEdit,
   bot,
   focus,
-  onClone,
   onDone,
   onClose,
 }: {
   wiring: Omit<ProfilesWiring, "showTab">;
-  row?: ProfileRow;
-  rows: readonly Pick<ProfileRow, "name">[] | undefined;
+  row: ProfileRow;
+  rows: readonly Pick<ProfileRow, "name">[];
   lacking: (a: ProfileAction) => boolean;
   returnTo: RefObject<HTMLElement | null>;
   heading?: string;
-  createLabel?: string;
-  noEdit?: boolean;
   bot?: BotSection;
   focus?: FormFocus;
-  onClone?: () => void;
   onDone: (result: FormResult) => void;
   onClose: () => void;
 }) {
@@ -843,17 +855,16 @@ export function ProfileForm({
   const modelId = useId();
   const soulId = useId();
   const rephraseHint = useId();
-  const saveWhyId = useId();
   const soulBox = useRef<HTMLTextAreaElement>(null);
   const titleFieldId = useId();
   const colorId = useId();
   const pictureId = useId();
-  const isDefault = row?.name === "default";
+  const isDefault = row.name === "default";
   // What the owner was last shown of each field. A field equal to it isn't sent, and one Hermes has moved off isn't
   // written over.
   const [base, setBase] = useState<{ name: string; profile: ProfileFields; look?: BotLook }>({
-    name: row ? (isDefault ? (row.displayName ?? "") : row.name) : "",
-    profile: row ? profileFieldsOf(row) : { description: "", model: null },
+    name: isDefault ? (row.displayName ?? "") : row.name,
+    profile: profileFieldsOf(row),
     look: bot?.look,
   });
   const [name, setName] = useState(base.name);
@@ -873,28 +884,16 @@ export function ProfileForm({
   const [stopping, setStopping] = useState(false);
   const [writing, setWriting] = useState(false);
   const [writeNote, setWriteNote] = useState<{ tone: "muted" | "bad"; text: string }>();
-  /** Asked before leaving with unsaved changes: `then` is where leaving goes (Clone instead), else the dialog closes. */
-  const [asking, setAsking] = useState<{ then?: () => void }>();
-  const [madeNoModel, setMadeNoModel] = useState<{ name: string; error: string }>();
-  /** A profile made with chosen skills or tools that didn't all apply: what each came to (ADR 0197). */
-  const [outcome, setOutcome] = useState<{ name: string; items: SetupItem[]; modelError?: string }>();
-  /** The chosen skills and tools being applied: how many items of how many are judged. */
-  const [applying, setApplying] = useState<{ done: number; total: number }>();
-  // Set by the Create that runs, and cleared only by it: a second activation before the screen catches up sends nothing.
-  const creating = useRef(false);
-  // Edit's Persona, when it has one: the profile's SOUL.md, read once the dialog opens.
-  const soulApi = row ? wiring.persona : undefined;
+  /** Asked before leaving with unsaved changes. */
+  const [asking, setAsking] = useState(false);
+  // The Persona, when the app can read it: the profile's SOUL.md, read once the dialog opens.
+  const soulApi = wiring.persona;
   const [soulRead, setSoulRead] = useState<SoulRead>({ kind: "reading" });
   const soulReads = useRef(0);
-  const hasPersona = !row || !!soulApi;
-  // New's rewrite runs on the profile in use, as the new one doesn't exist yet; Edit's on the profile edited.
-  const writtenFor = row ? row.name : wiring.inUse;
-  const rephrase = usePersonaRephrase({ writer: hasPersona ? wiring.rephrase?.(writtenFor) : undefined, connected, profile: writtenFor, text: soul, setText: setSoul });
-  // New only: Edit has none, so it reads nothing there.
-  const capabilities = useBotSetup(row ? undefined : wiring.setup, wiring.inUse);
-  // The dialog swaps the whole form for a shorter view (what a create came to, or the question before leaving). WebKit
-  // keeps the form's scroll offset past the shorter view's end, which draws it blank, so each view starts at its top.
-  const view = outcome ? "outcome" : madeNoModel ? "noModel" : asking ? "asking" : "form";
+  const rephrase = usePersonaRephrase({ writer: soulApi ? wiring.rephrase?.(row.name) : undefined, connected, profile: row.name, text: soul, setText: setSoul });
+  // The dialog swaps the whole form for the shorter question before leaving. WebKit keeps the form's scroll offset past
+  // the shorter view's end, which draws it blank, so each view starts at its top.
+  const view = asking ? "asking" : "form";
   useLayoutEffect(() => {
     if (box.current) box.current.scrollTop = 0;
   }, [view]);
@@ -911,7 +910,7 @@ export function ProfileForm({
 
   /** Reads Edit's SOUL.md into the Persona field; only the newest read counts. */
   const readSoul = async () => {
-    if (!row || !soulApi) return;
+    if (!soulApi) return;
     const n = ++soulReads.current;
     setSoulRead({ kind: "reading" });
     try {
@@ -927,7 +926,7 @@ export function ProfileForm({
     void readSoul();
   // eslint-disable-next-line react-hooks/exhaustive-deps -- read once, when the dialog opens; Try again reads it again
   }, []);
-  const soulReady = !row || soulRead.kind === "read";
+  const soulReady = soulRead.kind === "read";
   const reportSoul = wiring.onPersonaDirty;
   useEffect(() => {
     if (focus === "persona" && soulReady) soulBox.current?.focus();
@@ -946,12 +945,9 @@ export function ProfileForm({
   const lookEdits = base.look && formLook ? editsOf(base.look, formLook, BOT_LOOK_SAME) : {};
   const lookChanged = Object.keys(lookEdits).length > 0;
   // Compared as Hermes reads SOUL.md back, so a line end it changes on the way isn't an edit.
-  const soulChanged = row ? soulRead.kind === "read" && asReadBack(soul) !== asReadBack(soulRead.base.content) : !!soul.trim();
-  const dirty = (row ? nameChanged : !!trimmed) || descChanged || modelTouched || lookChanged || soulChanged || choosing(capabilities.setup);
-  const soulOwner = row?.name ?? (trimmed || wiring.inUse);
-  // Once Create has made the profile, its persona is on Hermes, even while the form shows what the create came to.
-  const soulUnsaved = soulChanged && !outcome && !madeNoModel;
-  useEffect(() => reportSoul?.(soulUnsaved, soulOwner), [soulUnsaved, soulOwner, reportSoul]);
+  const soulChanged = soulRead.kind === "read" && asReadBack(soul) !== asReadBack(soulRead.base.content);
+  const dirty = nameChanged || descChanged || modelTouched || lookChanged || soulChanged;
+  useEffect(() => reportSoul?.(soulChanged, row.name), [soulChanged, row.name, reportSoul]);
   useEffect(() => () => reportSoul?.(false, ""), [reportSoul]);
   const discards = useRef(wiring.personaDiscards);
   useEffect(() => {
@@ -968,43 +964,32 @@ export function ProfileForm({
         ? f.displayLong(DISPLAY_NAME_MAX)
         : undefined
     : (() => {
-        if (row && !nameChanged) return undefined;
-        const i = nameIssue(trimmed, rows ?? [], row?.name);
+        if (!nameChanged) return undefined;
+        const i = nameIssue(trimmed, rows, row.name);
         return i === undefined ? undefined : i === "empty" ? f.issues.empty : i === "invalid" ? f.issues.invalid : f.issues[i](trimmed);
       })();
-  const busy = row && nameChanged && !isDefault ? wiring.busy(row.name) : undefined;
+  const busy = nameChanged && !isDefault ? wiring.busy(row.name) : undefined;
   const busyText = busy ? (busy.kind === "queue" ? f.busyQueue : busy.title ? f.busyReply(busy.title) : f.busyReplyHere) : undefined;
   const why = (a: ProfileAction) => blocked(l, connected, lacking, a);
-  const renameWhy = row && nameChanged ? why("rename") : undefined;
-  const descWhy = descChanged ? (row ? why("describe") : undefined) : undefined;
-  const modelWhy = row && modelChanged ? why("setModel") : undefined;
+  const renameWhy = nameChanged ? why("rename") : undefined;
+  const descWhy = descChanged ? why("describe") : undefined;
+  const modelWhy = modelChanged ? why("setModel") : undefined;
   // A picture's save ends with a write of the Bot Mode block, so it needs both methods.
   const lookWhy = why("botLook");
   const pictureWhy = why("botPicture") ?? lookWhy;
-  const createWhy = row ? undefined : why("create");
-  // `rows` undefined: the profiles there are aren't read yet, so New waits rather than send a name it can't check.
-  const unreadWhy = !row && !rows ? f.namesUnread : undefined;
-  // A rewrite in flight is about to replace the persona: Create waits for it.
+  // A rewrite in flight is about to replace the persona: Save waits for it.
   const rephraseWhy = rephrase.state.kind === "asking" ? f.rephrase.blockedAsking : undefined;
-  const listWhy = !row && (capabilities.skills.inventory.kind === "reading" || capabilities.toolsets.inventory.kind === "reading") ? f.setup.waitList : undefined;
-  const saveWhy =
-    createWhy ?? (!connected ? w.notConnected : undefined) ?? (issue && (row ? nameChanged : true) ? issue : undefined) ?? unreadWhy ?? busyText ?? renameWhy ?? descWhy ?? modelWhy ?? rephraseWhy ?? listWhy;
-  const nothing = row && !nameChanged && !descChanged && !modelChanged && !lookChanged && !soulChanged;
-  // Where the reason Create can't run is shown: the name's own note when it's the name's issue, else the line under it.
-  const issueShown = !!issue && (row ? nameChanged : !!name);
-  const saveWhyShown = saveWhy !== undefined && !(issueShown && saveWhy === issue) && saveWhy !== busyText && saveWhy !== renameWhy;
+  const saveWhy = (!connected ? w.notConnected : undefined) ?? (issue && nameChanged ? issue : undefined) ?? busyText ?? renameWhy ?? descWhy ?? modelWhy ?? rephraseWhy;
+  const nothing = !nameChanged && !descChanged && !modelChanged && !lookChanged && !soulChanged;
 
   /** Leaves the dialog, asking first when it holds changes; never while a save or Write for me runs. */
-  const leave = (then?: () => void) => {
-    // A profile made whose choices didn't all apply is closed only by Delete it or Keep it as is.
-    if (saving || writing || outcome) return;
-    if (dirty) setAsking({ then });
-    else (then ?? onClose)();
+  const close = () => {
+    if (saving || writing) return;
+    if (dirty) setAsking(true);
+    else onClose();
   };
-  const close = () => leave();
 
   const writeForMe = async () => {
-    if (!row) return;
     setWriting(true);
     setWriteNote(undefined);
     try {
@@ -1023,92 +1008,6 @@ export function ProfileForm({
     }
   };
 
-  const create = async () => {
-    if (creating.current) return;
-    creating.current = true;
-    try {
-      await createOnce();
-    } finally {
-      creating.current = false;
-    }
-  };
-
-  /** Ends the form with `result`; once the form has closed, its notice reaches the owner through the app instead. */
-  const finish = (result: FormResult) => {
-    if (live.current) onDone(result);
-    else if (result.notice) wiring.notify(result.notice);
-  };
-
-  /**
-   * Makes the profile, then applies any chosen skills and tools. Once Hermes answered, the profile exists: if the form
-   * has closed meanwhile, the owner still hears what the create came to.
-   */
-  const createOnce = async () => {
-    setSaving(true);
-    setStates({});
-    const { setup } = capabilities;
-    try {
-      const made = await api.create({
-        name: trimmed,
-        description,
-        ...(provider && model.trim() && { provider, model: model.trim() }),
-        ...(soul.trim() && { soul }),
-      });
-      if (choosing(setup)) return await applyChosen(made);
-      const modelError = !made.modelSet && provider && model.trim() && made.answered ? (made.modelError ?? f.modelNotSetWhy) : undefined;
-      if (modelError && live.current) {
-        setMadeNoModel({ name: made.name, error: modelError });
-        setSaving(false);
-        return;
-      }
-      const text = modelError ? f.modelNotSet(modelError) : made.answered ? w.created(made.name) : w.createdUnanswered(made.name);
-      finish({ notice: { tone: modelError ? "warn" : "muted", text, open: made.name }, select: made.name });
-    } catch (e) {
-      const failure = profileFailure(e, "create");
-      if (!live.current) return finish({ notice: { tone: "bad", text: f.notCreated(trimmed, failureText(l, failure, trimmed)) } });
-      setStates({ create: { kind: "failed", text: failure.kind === "refused" ? failure.detail : failureText(l, failure, trimmed) } });
-      setSaving(false);
-    }
-  };
-
-  /**
-   * After a create with chosen skills or tools: applies each to the new profile and reads it back, then closes with a
-   * success notice only when everything is as chosen, else shows what isn't. A lost answer changes nothing more (ADR
-   * 0197). Closed meanwhile, the form says what it came to in the notice instead.
-   */
-  const applyChosen = async (made: Awaited<ReturnType<typeof api.create>>) => {
-    const { setup, skills, toolsets } = capabilities;
-    if (!made.answered || !wiring.setup) return finish({ notice: { tone: "warn", text: f.setup.unanswered(made.name), open: made.name }, select: made.name });
-    const items = await applySetup(
-      wiring.setup,
-      made.name,
-      {
-        ...(setup.skills.kind === "chosen" && skills.inventory.kind === "read" && { skills: { options: skills.inventory.options, on: setup.skills.on } }),
-        ...(setup.toolsets.kind === "chosen" && toolsets.inventory.kind === "read" && { toolsets: { options: toolsets.inventory.options, on: setup.toolsets.on } }),
-      },
-      (done, total) => live.current && setApplying({ done, total }),
-    );
-    const modelError = !made.modelSet && provider && model.trim() ? (made.modelError ?? f.modelNotSetWhy) : undefined;
-    if ((allApplied(items) && !modelError) || !live.current) return finish({ notice: outcomeNotice(l, made.name, items, modelError), select: made.name });
-    setApplying(undefined);
-    setSaving(false);
-    setOutcome({ name: made.name, items, modelError });
-  };
-
-  /** Deletes a profile this form made, as Delete profile does, and this computer's data for it. */
-  const removeMade = async (name: string): Promise<Removal> => {
-    let out: Removed;
-    try {
-      out = await api.remove(name);
-    } catch (e) {
-      return { kind: "failed", why: failureText(l, profileFailure(e, "remove"), name) };
-    }
-    return wiring.local.deleted(name).then(
-      (): Removal => (out.kind === "settling" ? out : { kind: "deleted" }),
-      (): Removal => ({ kind: "localKept" }),
-    );
-  };
-
   const pickPicture = (file: File | undefined) => {
     if (!file) return;
     if (!PICTURE_TYPES.includes(file.type)) return setPictureNote(f.pictureFormat);
@@ -1124,7 +1023,6 @@ export function ProfileForm({
   };
 
   const save = async () => {
-    if (!row) return;
     setSaving(true);
     const next: FormStates = {};
     const show = () => live.current && setStates({ ...next });
@@ -1278,14 +1176,14 @@ export function ProfileForm({
         value={name}
         readOnly={saving}
         maxLength={isDefault ? DISPLAY_NAME_MAX + 10 : 70}
-        aria-invalid={!!issue && (row ? nameChanged : !!name)}
+        aria-invalid={!!issue && nameChanged}
         aria-describedby={nameNote}
         onChange={(e) => setName(e.target.value)}
       />
       <div id={nameNote} className="set-hint">
-        {issue && (row ? nameChanged : !!name) ? <span className="sign-in-error">{issue}</span> : isDefault ? f.displayHint : f.nameHint}
+        {issue && nameChanged ? <span className="sign-in-error">{issue}</span> : isDefault ? f.displayHint : f.nameHint}
       </div>
-      {row?.gatewayRunning && !isDefault && nameChanged && (
+      {row.gatewayRunning && !isDefault && nameChanged && (
         <SettingNote tone="warn">
           <TriangleAlert size={12} aria-hidden /> {f.gatewayWarn}
         </SettingNote>
@@ -1308,50 +1206,22 @@ export function ProfileForm({
           keys(e);
           if (e.key === "Escape" && !composing(e)) {
             e.preventDefault();
-            if (asking) setAsking(undefined);
+            if (asking) setAsking(false);
             else close();
           }
         }}
       >
         <h2 id={titleId} className="leave-title">
-          {heading ?? (row ? f.editTitle(rowName(l, row)) : f.newTitle)}
+          {heading ?? f.editTitle(rowName(l, row))}
         </h2>
-        {outcome && wiring.setup ? (
-          <SetupOutcome
-            name={outcome.name}
-            first={outcome.items}
-            modelError={outcome.modelError}
-            apis={wiring.setup}
-            remove={() => removeMade(outcome.name)}
-            setModel={!noEdit}
-            onFinish={finish}
-          />
-        ) : madeNoModel ? (
-          <>
-            <p role="alert">{f.modelNotSet(madeNoModel.error)}</p>
-            <div className="confirm-actions">
-              <button
-                className="btn"
-                autoFocus
-                onClick={() => onDone({ notice: { tone: "warn", text: f.modelNotSet(madeNoModel.error), open: madeNoModel.name }, select: madeNoModel.name })}
-              >
-                {w.dismiss}
-              </button>
-              {!noEdit && (
-                <button className="btn primary" onClick={() => onDone({ select: madeNoModel.name, edit: madeNoModel.name })}>
-                  {f.setModel}
-                </button>
-              )}
-            </div>
-          </>
-        ) : asking ? (
+        {asking ? (
           <>
             <p className="muted">{f.leaveNote}</p>
             <div className="confirm-actions">
-              <button className="btn" autoFocus onClick={() => setAsking(undefined)}>
+              <button className="btn" autoFocus onClick={() => setAsking(false)}>
                 {f.keepEditing}
               </button>
-              <button className="btn danger" onClick={asking.then ?? onClose}>
+              <button className="btn danger" onClick={onClose}>
                 {f.discard}
               </button>
             </div>
@@ -1390,7 +1260,7 @@ export function ProfileForm({
                   </span>
                   <div className="profile-picture" role="group" aria-labelledby={pictureId}>
                     <span className={`bots-face${color ? " has-color" : ""}`} style={color ? { background: color } : undefined} aria-hidden translate="no">
-                      {picture ? <img src={picture} alt="" /> : ((title.trim() || row?.name || "?")[0] ?? "?").toUpperCase()}
+                      {picture ? <img src={picture} alt="" /> : ((title.trim() || row.name)[0] ?? "?").toUpperCase()}
                     </span>
                     <input
                       ref={pictureInput}
@@ -1437,12 +1307,10 @@ export function ProfileForm({
             )}
             <div className="field">
               <div className="field-label">
-                <label htmlFor={descId}>{row ? f.description : f.descriptionOptional}</label>
-                {row && (
-                  <button className="btn profile-write" disabled={writing || saving || !!why("describeAuto")} title={why("describeAuto")} onClick={() => void writeForMe()}>
-                    {writing ? <Spinner /> : <Wand2 size={13} aria-hidden />} {f.writeForMe}
-                  </button>
-                )}
+                <label htmlFor={descId}>{f.description}</label>
+                <button className="btn profile-write" disabled={writing || saving || !!why("describeAuto")} title={why("describeAuto")} onClick={() => void writeForMe()}>
+                  {writing ? <Spinner /> : <Wand2 size={13} aria-hidden />} {f.writeForMe}
+                </button>
               </div>
               <input id={descId} value={description} onChange={(e) => setDescription(e.target.value)} disabled={writing || saving} />
               {writing && <div className="small muted">{f.writing}</div>}
@@ -1455,14 +1323,14 @@ export function ProfileForm({
             </div>
             <div className="field">
               <span className="field-label" id={modelId}>
-                {row ? f.model : f.modelOptional}
+                {f.model}
               </span>
               <ModelPicker
                 disabled={saving || writing}
                 catalog={catalog}
                 provider={provider}
                 model={model}
-                optional={!row || !base.profile.model?.provider}
+                optional={!base.profile.model?.provider}
                 labelId={modelId}
                 onChange={(p, m) => {
                   setProvider(p);
@@ -1479,25 +1347,24 @@ export function ProfileForm({
                 },
               )}
             </div>
-            {hasPersona && (
+            {soulApi && (
               <div className="field">
                 <div className="field-label">
-                  <label htmlFor={soulId}>{row ? f.persona : f.personaOptional}</label>
+                  <label htmlFor={soulId}>{f.persona}</label>
                   <RephraseButton r={rephrase} disabled={saving || !soulReady} hintId={rephraseHint} />
                 </div>
                 <textarea
                   ref={soulBox}
                   id={soulId}
                   className="persona-text profile-soul"
-                  rows={row ? 8 : 4}
+                  rows={8}
                   disabled={!soulReady}
                   readOnly={saving || rephrase.state.kind === "asking"}
-                  placeholder={row ? undefined : f.personaDefault}
                   value={soul}
                   onChange={(e) => setSoul(e.target.value)}
                 />
-                <div className="set-hint">{row ? f.personaEditHint : f.personaHint}</div>
-                {soulRead.kind === "reading" && row && <div className="small muted">{f.personaReading}</div>}
+                <div className="set-hint">{f.personaEditHint}</div>
+                {soulRead.kind === "reading" && <div className="small muted">{f.personaReading}</div>}
                 {soulRead.kind === "failed" && (
                   <div className="small sign-in-error" role="alert">
                     {f.personaUnread(soulRead.message)}{" "}
@@ -1513,47 +1380,15 @@ export function ProfileForm({
                 })}
               </div>
             )}
-            {!row && <BotCapabilities state={capabilities} profile={wiring.inUse} disabled={saving} />}
             {bot && nameField}
-            {!row && <SettingNote>{f.keysNote}</SettingNote>}
-            {stateNote("create")}
-            {applying && (
-              // Only the count is announced as it changes; the sentence around it doesn't repeat.
-              <div className="small muted">
-                <Spinner /> {f.setup.applying} <span role="status">{f.setup.progress(applying.done, applying.total)}</span>
-              </div>
-            )}
-            {!row && onClone && (
-              <button className="link-btn profile-clone-link" disabled={saving} onClick={() => leave(onClone)}>
-                {f.cloneInstead}
-              </button>
-            )}
             <div className="confirm-actions">
               <button className="btn" onClick={close} disabled={saving || writing}>
                 {l.common.cancel}
               </button>
-              {row ? (
-                <button className="btn primary" disabled={saving || writing || !!saveWhy || nothing} title={saveWhy ?? (nothing ? f.nothingChanged : undefined)} onClick={() => void save()}>
-                  {saving && <Spinner />} {stopping ? f.stopping : saving ? f.saving : f.save}
-                </button>
-              ) : (
-                // Stays focusable while it can't run, so its reason is read with it.
-                <button
-                  className="btn primary"
-                  disabled={saving || writing}
-                  aria-disabled={!!saveWhy || undefined}
-                  aria-describedby={saveWhy === undefined ? undefined : saveWhyShown ? saveWhyId : nameNote}
-                  onClick={() => void (!saveWhy && create())}
-                >
-                  {saving && <Spinner />} {saving ? f.creating : (createLabel ?? f.create)}
-                </button>
-              )}
+              <button className="btn primary" disabled={saving || writing || !!saveWhy || nothing} title={saveWhy ?? (nothing ? f.nothingChanged : undefined)} onClick={() => void save()}>
+                {saving && <Spinner />} {stopping ? f.stopping : saving ? f.saving : f.save}
+              </button>
             </div>
-            {saveWhyShown && !saving && (
-              <div id={saveWhyId} className="small muted profile-save-why" role="status">
-                {saveWhy}
-              </div>
-            )}
           </>
         )}
       </div>

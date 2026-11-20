@@ -1,11 +1,11 @@
 // The bots (ADR 0066), in the chat list's Bots mode (ADR 0195, ADR 0203): one row per bot, which is a Hermes profile,
 // with its picture, its name, its Bot Chat's last message and what it is doing. The name's tip is the bot's description.
 // A row opens the bot's Bot Chat, found by title every time (bots.ts); the pen beside it starts an ordinary chat in the
-// bot's profile. Above the rows, New bot makes a profile through Settings → Profiles' New profile form, and the new
-// bot's row is shown once the roster is read again (ADR 0164); Reload reads the roster now. A right-click on a row
-// opens its menu (ADR 0194): Chat, Settings, Edit persona (ADR 0206), Clone, Pin, Hide and Delete, through Settings →
-// Profiles' own dialogs and `Hermes.editBot`, which never writes over a change made elsewhere (ADR 0189). Every word
-// comes from the catalogue (ADR 0100).
+// bot's profile. Above the rows, New bot asks for a name, makes the bot and opens its Bot Chat, where Bot setup
+// interviews the owner (ADR 0231); Reload reads the roster now. A right-click on a row opens its menu (ADR 0194): Chat,
+// Settings, Edit persona (ADR 0206), Clone, Pin, Hide and Delete, through Settings → Profiles' own dialogs and
+// `Hermes.editBot`, which never writes over a change made elsewhere (ADR 0189). Every word comes from the catalogue
+// (ADR 0100).
 import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import { ChevronDown, ChevronRight, Copy, EyeOff, Eye, Loader, MessageSquare, Pin, PinOff, Plus, RefreshCw, Settings2, ShieldAlert, Sparkles, SquarePen, Trash2 } from "lucide-react";
 import { agentMessaging, type Bot, type BotActivity, type BotLook, type MessagingSave } from "../hermes/bots";
@@ -16,7 +16,8 @@ import { composing } from "./bits";
 import { Menu } from "./ChatMenu";
 import { CloneProfileDialog } from "./CloneProfile";
 import { pick } from "./keybindings";
-import { DeleteProfile, MenuEntry, ProfileForm, blocked, failureText, useSwitchTo, type FormFocus, type FormResult, type ProfilesWiring } from "./ProfileSettings";
+import { NewBot } from "./NewBot";
+import { DeleteProfile, MenuEntry, ProfileForm, blocked, failureText, useSwitchTo, type FormFocus, type ProfilesWiring } from "./ProfileSettings";
 import { useLocale } from "../i18n/locale";
 
 /** How often the roster is read again while the bots show. Hermes's desktop polls every 5 seconds; this is enough. */
@@ -62,7 +63,7 @@ function MessagingSwitch({ roster, why, save, onNote }: { roster: readonly Bot[]
 type BotDialog =
   | { kind: "edit"; bot: Bot; row: ProfileRow; rows: ProfileRow[]; look: BotLook; focus?: FormFocus }
   | { kind: "delete"; row: ProfileRow }
-  | { kind: "clone"; source: string };
+  | { kind: "clone"; source: string; name?: string };
 
 /** Opens a bot's Edit bot or Delete bot on its profile as Hermes lists it now; undefined once Hermes no longer has it. */
 async function dialogOn(profiles: Omit<ProfilesWiring, "showTab">, botEdit: BotEditWiring, bot: Bot, kind: "edit" | "delete"): Promise<BotDialog | undefined> {
@@ -82,9 +83,9 @@ async function dialogOn(profiles: Omit<ProfilesWiring, "showTab">, botEdit: BotE
  *
  * `shown`: the bots show, so the roster is read now and every BOTS_REFRESH_MS. It is read again once a dialog closes,
  * and then a row whose focus went with it hands focus to the bot saved (under its new name after a rename), else the
- * Hidden in Hermes fold it went behind, the open bot's row, the first bot's, or the profile switcher. The bot New bot
- * made takes focus once listed. `onRefresh`: Reload's check of what is live. `onNote`: what an action did, or why it
- * couldn't.
+ * Hidden in Hermes fold it went behind, the open bot's row, the first bot's, or the profile switcher. A bot New bot
+ * made that the app didn't go to takes focus once listed. `onRefresh`: Reload's check of what is live. `onNote`: what
+ * an action did, or why it couldn't.
  */
 export function useBotActions({
   profiles,
@@ -179,15 +180,6 @@ export function useBotActions({
     setDialog(undefined);
     if (note) onNote(note);
     reread(profile);
-  };
-
-  const onMade = (result: FormResult) => {
-    setMaking(false);
-    const name = result.select;
-    const said = result.notice?.text ?? (name ? l.profiles.created(name) : "");
-    // No bot selected: the form deleted the one it made, so there is no row to open.
-    if (said) profiles.notify({ tone: result.notice?.tone ?? "muted", text: name ? w.made(said).trim() : said, command: result.notice?.command });
-    reread(name, true);
   };
 
   useEffect(() => {
@@ -305,15 +297,23 @@ export function useBotActions({
         </Menu>
       )}
       {making && (
-        <ProfileForm
-          wiring={profiles}
-          rows={roster?.map((b) => ({ name: b.profile }))}
-          lacking={lacking}
-          returnTo={newBtn}
+        <NewBot
           heading={w.newBot}
-          createLabel={w.createBot}
-          noEdit
-          onDone={onMade}
+          list={() => profiles.api.list()}
+          off={profiles.botSetupOff()}
+          returnTo={newBtn}
+          make={async (name, how) => {
+            const made = await profiles.makeBot(name, how);
+            reread(made.profile, !made.visited);
+          }}
+          onCopy={
+            profiles.clone &&
+            ((name) => {
+              setMaking(false);
+              menuFrom.current = newBtn.current;
+              setDialog({ kind: "clone", source: profiles.inUse, name });
+            })
+          }
           onClose={() => setMaking(false)}
         />
       )}
@@ -348,6 +348,7 @@ export function useBotActions({
         <CloneProfileDialog
           api={profiles.clone}
           current={dialog.source}
+          name={dialog.name}
           returnTo={menuFrom}
           onClose={() => closeDialog()}
           onMade={() => void read()}

@@ -52,6 +52,7 @@ const STATE_ICON: Record<Result["state"], ReactElement> = {
 export function CloneProfileDialog({
   api,
   current,
+  name: given,
   returnTo,
   onOpen,
   onMade,
@@ -59,6 +60,8 @@ export function CloneProfileDialog({
 }: {
   api: ProfileCloneApi;
   current: string;
+  /** The copy's name as New bot's Copy a bot fills it in; otherwise one is suggested from the source. */
+  name?: string;
   returnTo?: RefObject<HTMLElement | null>;
   onOpen: (name: string) => void;
   /** Called with the new profile's name once Hermes has it (Settings → Profiles selects it). */
@@ -76,8 +79,8 @@ export function CloneProfileDialog({
   const [sourceName, setSourceName] = useState(current);
   const [source, setSource] = useState<Source>();
   const [sourceError, setSourceError] = useState<string>();
-  const [name, setName] = useState("");
-  const [named, setNamed] = useState(false);
+  const [name, setName] = useState(given ?? "");
+  const [named, setNamed] = useState(!!given);
   const [full, setFull] = useState(false);
   const [parts, setParts] = useState<ReadonlySet<Part>>(new Set(PARTS));
   const [stages, setStages] = useState<Stages>(fresh);

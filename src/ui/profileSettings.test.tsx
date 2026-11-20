@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Settings → Profiles (ADR 0156) in the running app against a fake Hermes: the list, New profile, Edit (rename with this
+// Settings → Profiles (ADR 0156) in the running app against a fake Hermes: the list, New profile (ADR 0231), Edit (rename with this
 // computer's data moving, default's display name, description and model), Delete (typed name, the profile in use, a
 // delete Hermes is still settling and one already gone), Clone from a row, a route the server lacks, and the whole flow
 // by keyboard. All data is synthetic.
@@ -62,25 +62,38 @@ describe("Settings → Profiles", { timeout: 30_000 }, () => {
     expect(option(list, "default").getAttribute("aria-selected")).toBe("true");
   });
 
-  it("makes a blank profile, checking its name as it's typed, and offers to open it", async () => {
-    const { server, user } = await launch();
+  it("asks only for a name, then makes the bot and opens its Bot Chat, where Bot setup starts, on Hermes 0.23.2", async () => {
+    const { server, hermes, user } = await launch((s) => {
+      s.health = { ...s.health, version: "0.23.2", displayVersion: "0.23.2" };
+      s.status = { ...s.status, version: "0.23.2" };
+    });
     await user.click(screen.getByRole("button", { name: "New profile" }));
     const dialog = screen.getByRole("dialog", { name: "New profile" });
-    const name = within(dialog).getByLabelText("Name");
-    await user.type(name, "work");
-    expect(within(dialog).getByText("There's already a profile named work. Pick another name.")).toBeTruthy();
-    expect(within(dialog).getByRole("button", { name: /Create profile/ }).getAttribute("aria-disabled")).toBe("true");
-    await user.clear(name);
-    await user.type(name, "papers");
-    await user.type(within(dialog).getByLabelText("Description (optional)"), "Reads papers");
-    await user.type(within(dialog).getByLabelText("Persona (optional)"), "Be brief.");
-    await user.click(within(dialog).getByRole("button", { name: /Create profile/ }));
+    expect(within(dialog).getAllByRole("textbox")).toHaveLength(1);
+    await user.type(within(dialog).getByLabelText("Name"), "Work");
+    await waitFor(() => expect(within(dialog).getByText("work-2")).toBeTruthy());
+    await user.click(within(dialog).getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(hermes.profile).toBe("work-2"));
+    await waitFor(() => expect(server.requests.some((r) => r.method === "prompt.submit" && r.params.display_kind === "hidden")).toBe(true));
+    expect(screen.queryByRole("tab", { name: "Profiles" })).toBeNull();
+    expect(server.restRequests.filter((r) => r.method === "POST").map((r) => r.body)).toEqual([{ name: "work-2" }]);
+    expect(server.requests.filter((r) => r.method === "session.create" && Array.isArray(r.params.messages)).map((r) => r.params.profile)).toEqual(["work-2"]);
+  });
+
+  it("without Bot Mode, makes the profile from the name, selects it and offers to open it, switching nothing", async () => {
+    const { server, hermes, user } = await launch((s) => (s.botMode = "none"));
+    await user.click(screen.getByRole("button", { name: "New profile" }));
+    const dialog = screen.getByRole("dialog", { name: "New profile" });
+    await user.type(within(dialog).getByLabelText("Name"), "papers");
+    await user.click(within(dialog).getByRole("button", { name: "Create" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "New profile" })).toBeNull());
-    expect(server.restRequests.find((r) => r.method === "POST")?.body).toEqual({ name: "papers", description: "Reads papers", soul: "Be brief." });
-    expect(await screen.findByText("Created papers.")).toBeTruthy();
+    expect(server.restRequests.find((r) => r.method === "POST")?.body).toEqual({ name: "papers" });
+    expect(await screen.findByText("Made papers.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Open papers now" })).toBeTruthy();
     const list = screen.getByRole("listbox", { name: "Profiles" });
     await waitFor(() => expect(option(list, "papers").getAttribute("aria-selected")).toBe("true"));
+    expect(hermes.profile).toBe("default");
+    expect(server.requests.filter((r) => r.method === "prompt.submit")).toEqual([]);
   });
 
   it("renames a profile, warning about its gateway, and moves this computer's drafts with it", async () => {
@@ -370,27 +383,30 @@ describe("Settings → Profiles", { timeout: 30_000 }, () => {
     expect(within(dialog).getByText("The changes you made here aren't saved.")).toBeTruthy();
   });
 
-  it("asks before Clone instead leaves a filled-in New profile, and offers neither while creating", async () => {
-    const { server, user } = await launch();
+  it("Copy a bot opens Clone with the name filled in, and nothing in the dialog can change while it creates", async () => {
+    const { server, user } = await launch((s) => (s.botMode = "none"));
     await user.click(screen.getByRole("button", { name: "New profile" }));
     let dialog = screen.getByRole("dialog", { name: "New profile" });
-    await user.type(within(dialog).getByLabelText("Name"), "papers");
-    await user.click(within(dialog).getByRole("button", { name: /Clone one instead/ }));
-    expect(within(dialog).getByText("The changes you made here aren't saved.")).toBeTruthy();
-    await user.click(within(dialog).getByRole("button", { name: "Keep editing" }));
+    await user.type(within(dialog).getByLabelText("Name"), "Papers");
+    await user.click(within(dialog).getByRole("button", { name: /^Skip/ }));
+    await user.click(screen.getByRole("menuitem", { name: /Copy a bot/ }));
+    const clone = await screen.findByRole("dialog", { name: /Clone/ });
+    expect(within(clone).getByLabelText("New profile's name")).toHaveProperty("value", "papers");
+    await user.click(within(clone).getByRole("button", { name: "Cancel" }));
+
     let finish = () => {};
-    server.beforeProfileCreate = () => {};
     const gate = new Promise<void>((go) => (finish = go));
     const create = server.rest["POST /api/profiles"];
     server.rest["POST /api/profiles"] = async (req) => (await gate, create(req));
+    await user.click(screen.getByRole("button", { name: "New profile" }));
     dialog = screen.getByRole("dialog", { name: "New profile" });
-    await user.click(within(dialog).getByRole("button", { name: /Create profile/ }));
-    expect(within(dialog).getByRole("button", { name: /Clone one instead/ })).toHaveProperty("disabled", true);
+    await user.type(within(dialog).getByLabelText("Name"), "papers");
+    await user.click(within(dialog).getByRole("button", { name: "Create" }));
     expect(within(dialog).getByLabelText("Name")).toHaveProperty("readOnly", true);
-    expect(within(dialog).getByLabelText("Provider")).toHaveProperty("disabled", true);
-    expect(within(dialog).getByLabelText("Persona (optional)")).toHaveProperty("readOnly", true);
+    expect(within(dialog).getByRole("button", { name: /^Skip/ })).toHaveProperty("disabled", true);
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveProperty("disabled", true);
     finish();
-    expect(await screen.findByText("Created papers.")).toBeTruthy();
+    expect(await screen.findByText("Made papers.")).toBeTruthy();
   });
 
   it("shows what Hermes saved when the form is closed without finishing", async () => {

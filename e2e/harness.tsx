@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, type TestContext } from "vitest";
-import { page, server as vitest } from "vitest/browser";
+import { page, server as vitest, type Locator } from "vitest/browser";
 import { FakeHermes } from "../src/hermes/fakeHermes";
 import type { Pipe, PipeEvent } from "../src/hermes/pipe";
 
@@ -157,6 +157,11 @@ export async function boot(opts: BootOptions = {}) {
     return frame.__TAURI_INTERNALS__.invoke("plugin:event|emit", { event, payload: null });
   };
   return { server, rust, relaunch, emit, app: page.frameLocator(page.getByTitle("Highwing")) };
+}
+
+/** Waits for what was just drawn to finish its way in (a popover fades in), so a screenshot shows it as it stays. */
+export async function settled(drawn: Locator) {
+  await Promise.all(drawn.element().getAnimations({ subtree: true }).map((a) => a.finished));
 }
 
 export async function shot(name: string) {

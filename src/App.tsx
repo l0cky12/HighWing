@@ -3286,7 +3286,14 @@ export function Main({
           })
         : [];
       const bot = roster.find((b) => b.profile === made.profile);
-      if (bot) visitBotRef.current(bot, how === "setup" && !(await hermes.botSetupOffKnown()) ? name.trim() : undefined);
+      const interview =
+        !!bot &&
+        how === "setup" &&
+        !(await hermes.botSetupOffKnown().catch((e: unknown) => {
+          if (note) setToast({ text: note, lasting: true, at: Date.now() });
+          throw new MakeStopped({ at: "unopened", profile: made.profile, failure: profileFailure(e, "create") });
+        }));
+      if (bot) visitBotRef.current(bot, interview ? name.trim() : undefined);
       // After the visit, whose switch clears the toast.
       if (note) setToast({ text: note, lasting: true, at: Date.now() });
       return { profile: made.profile, visited: !!bot };

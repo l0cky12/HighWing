@@ -384,6 +384,24 @@ describe("New bot in Bots mode", () => {
     expect(server.requests.filter((r) => r.method === "prompt.submit")).toEqual([]);
   });
 
+  it("when the app goes offline before Hermes's version is read, keeps the made bot for Check again instead of waiting", async () => {
+    const { server, hermes, user } = await launch((s) => {
+      for (const route of ["GET /api/health", "GET /api/status"] as const) s.rest[route] = () => new Promise(() => {});
+    });
+    await showBots(user);
+    await named(user, "Ada");
+    await user.click(within(dialog()).getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(writes(server)).toEqual([["POST /api/profiles", { name: "ada" }]]));
+    server.refuse = "Wrong username or password.";
+    act(() => server.drop());
+    await waitFor(() => expect(hermes.getSnapshot().status).toBe("offline"), { timeout: 5000 });
+    await within(dialog()).findByRole("button", { name: "Check again" });
+    expect(within(dialog()).getByRole("alert").textContent).toMatch(/^Made ada, but/);
+    expect(within(dialog()).getByRole("button", { name: "Cancel" })).toHaveProperty("disabled", false);
+    expect(hermes.profile).toBe("default");
+    expect(briefs(server)).toEqual([]);
+  });
+
   it("below Hermes 0.23.2, makes the bot from the name and the model in use, and opens its Bot Chat with no brief", async () => {
     const { server, hermes, user } = await launch((s) => {
       s.health = { ...s.health, version: "0.23.1", displayVersion: "0.23.1" };

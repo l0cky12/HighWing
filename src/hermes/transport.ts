@@ -2570,19 +2570,26 @@ export class Hermes {
   /**
    * `botSetupOff` once Hermes's version has been read, which the first check after connecting does a moment later, so
    * a bot made before then isn't interviewed on a Hermes too old for it. A Hermes that names no version stays allowed.
+   * Rejects when the app goes offline or closes first, as the version can't be read then.
    */
   async botSetupOffKnown(): Promise<BotSetupRefusal | undefined> {
     const read = () => {
       const f = this.capabilities.getSnapshot().facts;
       return (f.version ?? f.build ?? f.commit ?? f.versionWhy) !== undefined;
     };
+    const gone = () => this.closing || this.snapshot.status === "offline";
     if (!read())
-      await new Promise<void>((done) => {
-        const stop = this.capabilities.subscribe(() => {
-          if (!read()) return;
-          stop();
-          done();
-        });
+      await new Promise<void>((done, fail) => {
+        const settle = () => {
+          if (read()) done();
+          else if (gone()) fail(new Error("Not connected to Hermes."));
+          else return;
+          stopFacts();
+          stopStatus();
+        };
+        const stopFacts = this.capabilities.subscribe(settle);
+        const stopStatus = this.subscribe(settle);
+        settle();
       });
     return this.botSetupOff();
   }

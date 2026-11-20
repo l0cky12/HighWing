@@ -5,7 +5,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { createRef } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import type { NewBotHow } from "../hermes/newBot";
+import { MakeStopped, type MakeStop, type NewBotHow } from "../hermes/newBot";
 import { ProfileError, type ProfileRow } from "../hermes/profiles";
 import { LocaleContext } from "../i18n/locale";
 import { pseudoLocale, untranslated } from "../i18n/pseudo";
@@ -19,8 +19,10 @@ afterEach(cleanup);
 
 const ROWS: ProfileRow[] = [{ name: "default", description: "" }, { name: "scribe", description: "" }];
 
-function open({ off, copy = true, make }: { off?: BotSetupRefusal; copy?: boolean; make?: (name: string, how: NewBotHow) => Promise<void> } = {}) {
-  const made = vi.fn<(name: string, how: NewBotHow) => Promise<void>>(make ?? (async () => {}));
+type Make = (name: string, how: NewBotHow, from?: MakeStop) => Promise<void>;
+
+function open({ off, copy = true, make }: { off?: BotSetupRefusal; copy?: boolean; make?: Make } = {}) {
+  const made = vi.fn<Make>(make ?? (async () => {}));
   const copied = vi.fn<(id: string) => void>();
   const closed = vi.fn();
   const back = document.createElement("button");
@@ -61,14 +63,14 @@ describe("The name dialog", () => {
     await user.type(nameBox(), "日本語");
     await waitFor(() => expect(idLine()).toBe("Hermes's own apps and its command line call it bot."));
     await user.click(create());
-    expect(made).toHaveBeenCalledWith("日本語", "setup");
+    expect(made).toHaveBeenCalledWith("日本語", "setup", undefined);
   });
 
   it("makes the bot on Create or Enter, once, then closes", async () => {
     let finish = () => {};
     const { user, made, closed } = open({ make: () => new Promise<void>((r) => (finish = r)) });
     await user.type(nameBox(), "Ada{Enter}");
-    expect(made).toHaveBeenCalledWith("Ada", "setup");
+    expect(made).toHaveBeenCalledWith("Ada", "setup", undefined);
     expect(create().textContent).toContain("Creating…");
     await user.click(create());
     await user.keyboard("{Enter}");
@@ -120,7 +122,7 @@ describe("The name dialog", () => {
     await user.type(nameBox(), "Ada");
     await user.click(skip());
     await user.click(screen.getByRole("menuitem", { name: /Start blank/ }));
-    expect(made).toHaveBeenCalledWith("Ada", "blank");
+    expect(made).toHaveBeenCalledWith("Ada", "blank", undefined);
   });
 
   it("Copy a bot hands Clone the id the name gets, or nothing when no name is typed yet", async () => {
@@ -171,6 +173,18 @@ describe("The name dialog", () => {
       await user.tab();
       expect(dialog().contains(document.activeElement)).toBe(true);
     }
+  });
+
+  it("after a lost create, Check again reads Hermes's profiles and, with the bot not listed, offers Create again without making it", async () => {
+    const lost = new MakeStopped({ at: "unsure", profile: "ada", failure: { kind: "lost", message: "The connection was reset." } });
+    const { user, made } = open();
+    made.mockRejectedValueOnce(lost);
+    await user.type(nameBox(), "Ada{Enter}");
+    await user.click(await within(dialog()).findByRole("button", { name: "Check again" }));
+    await waitFor(() => expect(within(dialog()).getByRole("alert").textContent).toBe("Hermes doesn't list ada, so it wasn't made. Create makes it."));
+    expect(made).toHaveBeenCalledTimes(1);
+    expect(create().textContent).toContain("Create");
+    expect(nameBox().readOnly).toBe(false);
   });
 
   it("says why there's no interview where Hermes runs no Bot setup", async () => {

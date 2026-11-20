@@ -4,19 +4,19 @@
 import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import { ChevronDown, Copy, FileText } from "lucide-react";
 import type { BotSetupRefusal } from "../hermes/botSetupStart";
-import type { NewBotHow } from "../hermes/newBot";
+import { MakeStopped, type MakeStop, type NewBotHow } from "../hermes/newBot";
 import { profileFailure, profileIdFor, type ProfileRow } from "../hermes/profiles";
 import { useLocale } from "../i18n/locale";
 import { Spinner, composing } from "./bits";
 import { Menu } from "./ChatMenu";
 import { useModal } from "./modal";
-import { failureText } from "./ProfileSettings";
+import { failureText } from "./profileFailure";
 
 /** The Skip menu's width in styles.css, so it opens right-aligned under Skip. */
 const SKIP_MENU_WIDTH = 300;
 
-/** Where the dialog is: taking a name, with why the last make failed, or making the bot one way. */
-type Phase = { at: "naming"; failed?: string } | { at: "making"; how: NewBotHow };
+/** Where the dialog is: taking a name, making the bot one way, or stopped after the create went out. */
+type Phase = { at: "naming"; failed?: string } | { at: "making"; how: NewBotHow } | { at: "stuck"; how: NewBotHow; stop: MakeStop };
 
 export function NewBot({
   heading,
@@ -33,8 +33,11 @@ export function NewBot({
   /** Why this Hermes runs no Bot setup, so Create makes the bot without the interview. */
   off?: BotSetupRefusal;
   returnTo: RefObject<HTMLElement | null>;
-  /** Makes the bot named `name` and goes to it. Rejects with the create's failure, and the dialog stays open. */
-  make: (name: string, how: NewBotHow) => Promise<void>;
+  /**
+   * Makes the bot named `name` and goes to it, or carries on `from` where an earlier make stopped. Rejects with the
+   * create's failure, or with `MakeStopped`, and the dialog stays open.
+   */
+  make: (name: string, how: NewBotHow, from?: MakeStop) => Promise<void>;
   /** Copy a bot: Clone profile with `id` filled in as the copy's name. Without it the Skip menu has no Copy. */
   onCopy?: (id: string) => void;
   onClose: () => void;
@@ -68,18 +71,29 @@ export function NewBot({
   const idFor = (listed: readonly ProfileRow[]) => profileIdFor(typed, new Set(listed.map((r) => r.name)));
   const id = rows && typed ? idFor(rows) : undefined;
   const making = phase.at === "making";
+  const stuck = phase.at === "stuck" ? phase : undefined;
   const why = typed ? undefined : w.nameFirst;
   const offWhy = off && off !== "hasBotChat" ? w.off[off] : undefined;
+  const failed = phase.at === "naming" ? phase.failed : stuck && w[stuck.stop.at](stuck.stop.profile, failureText(l, stuck.stop.failure, stuck.stop.profile));
 
-  const go = async (how: NewBotHow) => {
+  const createdAfterAll = async (profile: string) => (await list()).some((r) => r.name === profile);
+
+  const go = async (how: NewBotHow, from?: MakeStop) => {
     setSkipAt(undefined);
-    if (why || making) return;
+    if (making || (!from && (why || stuck))) return;
     setPhase({ at: "making", how });
     try {
-      await make(typed, how);
+      if (from?.at === "unsure" && !(await createdAfterAll(from.profile))) {
+        if (live.current) setPhase({ at: "naming", failed: w.notMade(from.profile) });
+        return;
+      }
+      await make(typed, how, from);
       if (live.current) onClose();
     } catch (e) {
-      if (live.current) setPhase({ at: "naming", failed: w.failed(failureText(l, profileFailure(e, "create"), id ?? typed)) });
+      if (!live.current) return;
+      if (e instanceof MakeStopped) setPhase({ at: "stuck", how, stop: e.stop });
+      else if (from) setPhase({ at: "stuck", how, stop: { ...from, failure: profileFailure(e, "create") } });
+      else setPhase({ at: "naming", failed: w.failed(failureText(l, profileFailure(e, "create"), id ?? typed)) });
     }
   };
 
@@ -112,7 +126,7 @@ export function NewBot({
               autoFocus
               spellCheck={false}
               value={name}
-              readOnly={making}
+              readOnly={making || !!stuck}
               aria-describedby={id ? idLine : undefined}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => {
@@ -127,7 +141,7 @@ export function NewBot({
               className="btn"
               aria-haspopup="menu"
               aria-expanded={!!skipAt}
-              disabled={making}
+              disabled={making || !!stuck}
               onClick={() => {
                 const r = skipBtn.current!.getBoundingClientRect();
                 setSkipAt(skipAt ? undefined : { x: r.right - SKIP_MENU_WIDTH, y: r.bottom + 4 });
@@ -143,19 +157,25 @@ export function NewBot({
           )}
         </div>
         <p className="muted">{offWhy ?? w.next(typed)}</p>
-        {phase.at === "naming" && phase.failed && (
+        {failed && (
           <p className="sign-in-error" role="alert">
-            {phase.failed}
+            {failed}
           </p>
         )}
         <div className="confirm-actions">
           <button className="btn" onClick={onClose} disabled={making}>
             {l.common.cancel}
           </button>
-          {/* Stays focusable while it can't run, so its reason is read with it. */}
-          <button className="btn primary" disabled={making} aria-disabled={!!why || undefined} title={why} onClick={() => void go("setup")}>
-            {making && <Spinner />} {making ? w.creating : w.create}
-          </button>
+          {stuck ? (
+            <button className="btn primary" onClick={() => void go(stuck.how, stuck.stop)}>
+              {w.checkAgain}
+            </button>
+          ) : (
+            // Stays focusable while it can't run, so its reason is read with it.
+            <button className="btn primary" disabled={making} aria-disabled={!!why || undefined} title={why} onClick={() => void go("setup")}>
+              {making && <Spinner />} {making ? w.creating : w.create}
+            </button>
+          )}
         </div>
         {skipAt && (
           <Menu label={w.skipMenu} x={skipAt.x} y={skipAt.y} onClose={() => setSkipAt(undefined)}>

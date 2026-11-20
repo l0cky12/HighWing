@@ -57,7 +57,8 @@ import { CHAT_POLICY, askRule, chatKind, policyOf } from "./hermes/chatKind";
 import { jobRunTitle } from "./hermes/cronJobs";
 import { botActivity, botsWaiting, newInBotChatNote, teammateOf, type Bot } from "./hermes/bots";
 import { botSetupBrief } from "./hermes/botSetupBrief";
-import { makeBot, newBotInventory } from "./hermes/newBot";
+import { MakeStopped, makeBot, newBotInventory, type MadeBot } from "./hermes/newBot";
+import { profileFailure } from "./hermes/profiles";
 import { blocksRestore, inboxAcks, inboxEntries, inboxScope, needsOwner, type InboxAcks, type InboxEntry } from "./hermes/inbox";
 import { searchEverywhere, type EverywhereFilter, type EverywhereOutcome, type EverywhereRow } from "./hermes/everywhere";
 import { LiveConnections, attention as attentionOf, withoutServer, type ChatRef, type LiveSummary } from "./hermes/liveConnections";
@@ -89,7 +90,8 @@ import { AttentionClock, ClearedStore, PINS_KEY, PinStore, SNOOZE_KEY, STOP_WAIT
 import { IDLE_COMPACT_CHECK_MS, IdleCompactor, idleCompactionNote } from "./hermes/idleCompact";
 import { runFilter } from "./hermes/chatFilter";
 import { SettingsScreen } from "./ui/Settings";
-import { failureText, type ProfilesWiring } from "./ui/ProfileSettings";
+import type { ProfilesWiring } from "./ui/ProfileSettings";
+import { failureText } from "./ui/profileFailure";
 import { LeaveArtifacts } from "./ui/ArtifactEditor";
 import { ASK_DEADLINE_MS, ArtifactStore, artifactIo, isDirty } from "./hermes/artifacts";
 import { useWindowTitle, windowTitle } from "./ui/windowTitle";
@@ -3268,17 +3270,23 @@ export function Main({
     persona: hermes.persona,
     // New bot and New profile (ADR 0231): the bot is made from the name, then opened as a Bot visit, where Create
     // starts Bot setup when this Hermes runs it. Without Bot Mode there is no bot to go to.
-    makeBot: async (name, how) => {
+    makeBot: async (name, how, from) => {
       const io = {
         list: () => hermes.manageProfiles.list(),
         create: (fields: { name: string; provider?: string; model?: string }) => hermes.manageProfiles.create(fields),
         ...(hasBotMode && { name: (p: string, title: string) => hermes.editBot(p, { title: { from: "", to: title } }) }),
       };
-      const made = await makeBot(io, name, profile);
+      const made: MadeBot = from?.at === "unopened" ? { profile: from.profile } : await makeBot(io, name, profile, from?.profile);
       const m = words.bots.make;
       const note = made.modelError !== undefined ? m.modelNotSet(made.profile, made.modelError) : made.unnamed && m.unnamed(made.profile, failureText(words, made.unnamed, made.profile));
-      const bot = hasBotMode ? (await hermes.bots().catch(() => [])).find((b) => b.profile === made.profile) : undefined;
-      if (bot) visitBotRef.current(bot, how === "setup" && !hermes.botSetupOff() ? name.trim() : undefined);
+      const roster = hasBotMode
+        ? await hermes.bots().catch((e: unknown) => {
+            if (note) setToast({ text: note, lasting: true, at: Date.now() });
+            throw new MakeStopped({ at: "unopened", profile: made.profile, failure: profileFailure(e, "create") });
+          })
+        : [];
+      const bot = roster.find((b) => b.profile === made.profile);
+      if (bot) visitBotRef.current(bot, how === "setup" && !(await hermes.botSetupOffKnown()) ? name.trim() : undefined);
       // After the visit, whose switch clears the toast.
       if (note) setToast({ text: note, lasting: true, at: Date.now() });
       return { profile: made.profile, visited: !!bot };

@@ -6,7 +6,7 @@ import type { Bot, BotLook } from "./bots";
 import { BOT_SETUP_CAPS, type BotSetupInventory } from "./botSetupBrief";
 import type { EditResult } from "./fieldMerge";
 import type { ModelCatalog } from "./models";
-import { profileIdFor, type Created, type ProfileFailure, type ProfileRow } from "./profiles";
+import { ProfileError, profileIdFor, type Created, type ProfileFailure, type ProfileRow } from "./profiles";
 import type { SkillRow } from "./skills";
 import type { ToolsetList } from "./toolsets";
 
@@ -27,21 +27,41 @@ export type NewBotIo = {
 export type MadeBot = { profile: string; modelError?: string; unnamed?: ProfileFailure };
 
 /**
+ * Where a make stopped once its create had gone out, for the name dialog to carry on from without a second create.
+ * `unsure`: the create's answer was lost and no list has shown `profile` since. `unopened`: `profile` is made, but the
+ * bots couldn't be read to open it.
+ */
+export type MakeStop = { at: "unsure" | "unopened"; profile: string; failure: ProfileFailure };
+
+export class MakeStopped extends ProfileError {
+  constructor(readonly stop: MakeStop) {
+    super(stop.failure);
+  }
+}
+
+/**
  * Makes a bot named `name`: lists the profiles now, so the id is free, creates the profile, then writes the name in
  * Bot Mode. The model sent is `inUse`'s own, and only when it has one; otherwise Hermes gives the new profile the
- * launch profile's. Rejects only when the create failed, with the create's `ProfileError`.
+ * launch profile's. `made`: a profile a list has shown since its create's answer was lost, which is named without
+ * another create. Rejects with `MakeStopped` when the create's answer was lost, else with the create's `ProfileError`.
  */
-export async function makeBot(io: NewBotIo, name: string, inUse: string): Promise<MadeBot> {
+export async function makeBot(io: NewBotIo, name: string, inUse: string, made?: string): Promise<MadeBot> {
   const typed = name.trim();
-  const rows = await io.list();
-  const profile = profileIdFor(typed, new Set(rows.map((r) => r.name)));
-  const own = rows.find((r) => r.name === inUse);
-  const made = await io.create({ name: profile, ...(own?.provider && own.model && { provider: own.provider, model: own.model }) });
-  // A 200 can still carry `model_error`: Hermes made the profile and refused only the model.
-  const modelError = made.answered && !made.modelSet ? (made.modelError ?? "") : undefined;
+  const { profile, modelError } = made === undefined ? await create(io, typed, inUse) : { profile: made };
   const named = await io.name?.(profile, typed);
   const outcome = named?.fields.title;
   return { profile, ...(modelError !== undefined && { modelError }), ...(outcome?.kind === "failed" && { unnamed: outcome.failure }) };
+}
+
+async function create(io: NewBotIo, typed: string, inUse: string): Promise<Omit<MadeBot, "unnamed">> {
+  const rows = await io.list();
+  const profile = profileIdFor(typed, new Set(rows.map((r) => r.name)));
+  const own = rows.find((r) => r.name === inUse);
+  const made = await io.create({ name: profile, ...(own?.provider && own.model && { provider: own.provider, model: own.model }) }).catch((e: unknown) => {
+    throw e instanceof ProfileError && e.failure.kind === "lost" ? new MakeStopped({ at: "unsure", profile, failure: e.failure }) : e;
+  });
+  // A 200 can still carry `model_error`: Hermes made the profile and refused only the model.
+  return { profile, ...(made.answered && !made.modelSet && { modelError: made.modelError ?? "" }) };
 }
 
 export type InventoryIo = {

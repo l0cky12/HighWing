@@ -67,6 +67,7 @@ describe("Settings → Profiles", { timeout: 30_000 }, () => {
       s.health = { ...s.health, version: "0.23.2", displayVersion: "0.23.2" };
       s.status = { ...s.status, version: "0.23.2" };
     });
+    await act(async () => void (await hermes.capabilities.refresh()));
     await user.click(screen.getByRole("button", { name: "New profile" }));
     const dialog = screen.getByRole("dialog", { name: "New profile" });
     expect(within(dialog).getAllByRole("textbox")).toHaveLength(1);
@@ -76,7 +77,7 @@ describe("Settings → Profiles", { timeout: 30_000 }, () => {
     await waitFor(() => expect(hermes.profile).toBe("work-2"));
     await waitFor(() => expect(server.requests.some((r) => r.method === "prompt.submit" && r.params.display_kind === "hidden")).toBe(true));
     expect(screen.queryByRole("tab", { name: "Profiles" })).toBeNull();
-    expect(server.restRequests.filter((r) => r.method === "POST").map((r) => r.body)).toEqual([{ name: "work-2" }]);
+    expect(server.restRequests.filter((r) => r.method === "POST" && r.path === "/api/profiles").map((r) => r.body)).toEqual([{ name: "work-2" }]);
     expect(server.requests.filter((r) => r.method === "session.create" && Array.isArray(r.params.messages)).map((r) => r.params.profile)).toEqual(["work-2"]);
   });
 

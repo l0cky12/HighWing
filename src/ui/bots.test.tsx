@@ -12,7 +12,7 @@ import { FakeHermes, row } from "../hermes/fakeHermes";
 import { memoryCache } from "../hermes/memoryCache";
 import { RestError } from "../hermes/pipe";
 import { BOT_CHAT_TITLE } from "../hermes/bots";
-import { botSetupMarkerId } from "../hermes/botSetupBrief";
+import { botSetupBrief, botSetupMarkerId } from "../hermes/botSetupBrief";
 import { botSetupBegin } from "../hermes/botSetupStart";
 import { getUIPrefs } from "../hermes/uiPrefs";
 import { BOTS_REFRESH_MS } from "./Bots";
@@ -77,6 +77,7 @@ const botRows = () => Array.from(document.querySelectorAll<HTMLButtonElement>(".
 const modeTab = (name: "Chats" | "Bots") => within(document.querySelector<HTMLElement>(".sidebar")!).getByRole("tab", { name: new RegExp(`^${name}`) });
 const listTitles = () => [...document.querySelectorAll(".sidebar .row-title")].map((e) => e.textContent);
 const toast = () => document.querySelector<HTMLElement>(".toast")?.textContent;
+const SETUP_ID = "c0ffee00-0000-4000-8000-000000000001";
 const titleLookups = (server: FakeHermes) => server.requests.filter((r) => r.method === "session.list" && r.params.title !== undefined).map((r) => r.params.title);
 
 async function pickProfile(user: ReturnType<typeof userEvent.setup>, profile: string) {
@@ -233,6 +234,7 @@ describe("New bot in Bots mode", () => {
 
   it("on Hermes 0.23.2, Create makes the bot from the name, names it in Bot Mode, opens its Bot Chat as a visit and starts Bot setup there", async () => {
     const { server, hermes, user } = await launch(at0232);
+    await act(async () => void (await hermes.capabilities.refresh()));
     await showBots(user);
     await named(user, "Travel Buddy");
     await user.click(within(dialog()).getByRole("button", { name: "Create" }));
@@ -262,9 +264,124 @@ describe("New bot in Bots mode", () => {
       server.storeMessage(chat.id, { role: "assistant", text: "Hi, I'm Travel Buddy. What should I call you?" });
       server.event(sid, "message.complete", { text: "Hi, I'm Travel Buddy. What should I call you?", status: "complete" });
     });
-    await waitFor(() => expect(screen.getByText("Hi, I'm Travel Buddy. What should I call you?")).toBeTruthy());
+    await waitFor(() => expect(document.querySelector(".msg.assistant")?.textContent).toContain("Hi, I'm Travel Buddy. What should I call you?"));
     expect(document.querySelector(".msg.user")).toBeNull();
     await waitFor(() => expect(botRows().find((r) => r.querySelector(".bots-name")?.textContent === "Travel Buddy")?.getAttribute("aria-current")).toBe("true"));
+  });
+
+  it("right after Create, a begin turn Hermes fails shows Hermes's words on the Setup started line, and Try again sends the begin turn again", async () => {
+    const { server, hermes, user } = await launch(at0232);
+    await act(async () => void (await hermes.capabilities.refresh()));
+    await showBots(user);
+    await named(user, "Travel Buddy");
+    await user.click(within(dialog()).getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(server.requests.some((r) => r.method === "prompt.submit")).toBe(true));
+    const begin = server.last("prompt.submit")!.params;
+    await act(async () => {
+      server.event(String(begin.session_id), "message.start");
+      server.event(String(begin.session_id), "error", { message: "No API key for openrouter." });
+    });
+    const line = (await screen.findByText("Setup didn't start", undefined, { timeout: 5000 })).closest<HTMLElement>(".bot-setup-line")!;
+    expect(line.textContent).toContain("Hermes said: No API key for openrouter.");
+    await user.click(within(line).getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(server.requests.filter((r) => r.method === "prompt.submit").map((r) => r.params.text)).toEqual([begin.text, begin.text]));
+  });
+
+  it("an ordinary open of a Bot Chat that holds a brief with no begin turn sends the begin turn once", async () => {
+    const { server, hermes, user } = await launch((s) => {
+      at0232(s);
+      s.liveSessions = [];
+      s.transcripts["scribe-bot"] = [{ role: "user", text: botSetupBrief({ id: SETUP_ID, name: "Scribe", inventory: { models: [], skills: [], toolsets: [], bots: [] } }), display_kind: "hidden", row_id: 1 }];
+    });
+    await showBots(user);
+    await user.click(botRows().find((r) => r.querySelector(".bots-name")?.textContent === "Scribe")!);
+    await waitFor(() => expect(server.requests.filter((r) => r.method === "prompt.submit").map((r) => r.params.text)).toEqual([botSetupBegin(SETUP_ID)]));
+    await act(async () => void (await hermes.idle()));
+    expect(server.requests.filter((r) => r.method === "prompt.submit")).toHaveLength(1);
+    expect(briefs(server)).toEqual([]);
+  });
+
+  it("when Create's answer is lost and the list can't be read either, offers Check again, which reads and never makes a second bot", async () => {
+    const { server, hermes, user } = await launch(at0232);
+    const post = server.rest["POST /api/profiles"];
+    const get = server.rest["GET /api/profiles"];
+    let unreadable = 0;
+    server.rest["POST /api/profiles"] = (req) => {
+      post(req);
+      unreadable = 1;
+      throw new Error("The connection was reset.");
+    };
+    server.rest["GET /api/profiles"] = (req) => {
+      if (unreadable-- > 0) throw new Error("The connection was reset.");
+      return get(req);
+    };
+    await act(async () => void (await hermes.capabilities.refresh()));
+    await showBots(user);
+    await named(user, "Ada");
+    await user.click(within(dialog()).getByRole("button", { name: "Create" }));
+    const check = await within(dialog()).findByRole("button", { name: "Check again" });
+    expect(within(dialog()).getByRole("alert").textContent).toMatch(/Check again reads Hermes's profiles to see whether it made ada, and doesn't make another\.$/);
+    expect(within(dialog()).queryByRole("button", { name: "Create" })).toBeNull();
+    await user.click(check);
+    await waitFor(() => expect(hermes.profile).toBe("ada"));
+    expect(writes(server)).toEqual([["POST /api/profiles", { name: "ada" }]]);
+    expect(titleOf(server, "ada")).toBe("Ada");
+    await waitFor(() => expect(server.requests.filter((r) => r.method === "prompt.submit")).toHaveLength(1));
+  });
+
+  it("when the bots can't be read after Create, keeps the made bot and opens it on Check again without making another", async () => {
+    const { server, hermes, user } = await launch(at0232);
+    await act(async () => void (await hermes.capabilities.refresh()));
+    const configure = server.handlers["profiles.configure"];
+    const bots = hermes.bots.bind(hermes);
+    let unreadable = false;
+    server.handlers["profiles.configure"] = (r) => {
+      unreadable = true;
+      configure(r);
+    };
+    vi.spyOn(hermes, "bots").mockImplementation(() => {
+      if (!unreadable) return bots();
+      unreadable = false;
+      return Promise.reject(new Error("The connection was reset."));
+    });
+    await showBots(user);
+    await named(user, "Ada");
+    await user.click(within(dialog()).getByRole("button", { name: "Create" }));
+    const check = await within(dialog()).findByRole("button", { name: "Check again" });
+    expect(within(dialog()).getByRole("alert").textContent).toMatch(/^Made ada, but the bots couldn't be read to open it\./);
+    expect(hermes.profile).toBe("default");
+    await user.click(check);
+    await waitFor(() => expect(hermes.profile).toBe("ada"));
+    expect(screen.queryByRole("dialog", { name: "New bot" })).toBeNull();
+    expect(writes(server)).toEqual([["POST /api/profiles", { name: "ada" }]]);
+    await waitFor(() => expect(server.requests.filter((r) => r.method === "prompt.submit")).toHaveLength(1));
+  });
+
+  it("waits for Hermes's version before starting Bot setup, so a Create right after connecting to 0.23.1 asks nothing", async () => {
+    let versionRead = () => {};
+    const { server, hermes, user } = await launch((s) => {
+      s.health = { ...s.health, version: "0.23.1", displayVersion: "0.23.1" };
+      s.status = { ...s.status, version: "0.23.1" };
+      const gate = new Promise<void>((r) => (versionRead = r));
+      for (const route of ["GET /api/health", "GET /api/status"] as const) {
+        const real = s.rest[route];
+        s.rest[route] = async (req) => {
+          await gate;
+          return real(req);
+        };
+      }
+    });
+    await showBots(user);
+    expect(hermes.capabilities.getSnapshot().facts.version).toBeUndefined();
+    await named(user, "Ada");
+    await user.click(within(dialog()).getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(writes(server)).toEqual([["POST /api/profiles", { name: "ada" }]]));
+    await act(async () => versionRead());
+    await waitFor(() => expect(hermes.profile).toBe("ada"), { timeout: 5000 });
+    await waitFor(() => expect(hermes.getSnapshot().chats.some((c) => c.bot && c.title === BOT_CHAT_TITLE)).toBe(true));
+    await act(async () => void (await hermes.idle()));
+    expect(briefs(server)).toEqual([]);
+    expect(server.requests.filter((r) => r.method === "prompt.submit")).toEqual([]);
   });
 
   it("below Hermes 0.23.2, makes the bot from the name and the model in use, and opens its Bot Chat with no brief", async () => {
@@ -298,6 +415,11 @@ describe("New bot in Bots mode", () => {
     await act(async () => void (await hermes.idle()));
     expect(writes(server)).toEqual([["POST /api/profiles", { name: "ada" }]]);
     expect(briefs(server)).toEqual([]);
+    await user.click(botRows().find((r) => r.querySelector(".bots-name")?.textContent === "Scribe")!);
+    await waitFor(() => expect(hermes.profile).toBe("scribe"));
+    await user.click(botRows().find((r) => r.querySelector(".bots-name")?.textContent === "Ada")!);
+    await waitFor(() => expect(hermes.profile).toBe("ada"));
+    await act(async () => void (await hermes.idle()));
     expect(starts(server).filter((r) => r.method === "prompt.submit")).toEqual([]);
   });
 

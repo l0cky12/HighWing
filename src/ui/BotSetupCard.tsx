@@ -16,7 +16,7 @@ import { ProfileError } from "../hermes/profiles";
 import { errorText } from "../hermes/values";
 import { useLocale, type Locale } from "../i18n/locale";
 import { composing, Spinner } from "./bits";
-import { failureText } from "./ProfileSettings";
+import { failureText } from "./profileFailure";
 import { cautionText } from "./ToolsetSettings";
 import { TurnCard } from "./TurnCard";
 
@@ -105,9 +105,10 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
         }
         if (shown.current.holds && !shown.current.started) {
           shown.current.started = true;
+          // A pick-up that failed, as one does while a profile switch reconnects, is tried on the next read.
           api.resumeBotSetup().then(
             (s) => here(chatId) && setStart(s),
-            () => {},
+            () => here(chatId) && (shown.current.started = false),
           );
         }
       },

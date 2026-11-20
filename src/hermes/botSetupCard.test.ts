@@ -12,6 +12,7 @@ import {
   fencedBlocks,
   parseSetup,
   planCard,
+  previewWithoutSetup,
   readAcceptedRecord,
   readBlock,
   tickable,
@@ -191,6 +192,16 @@ describe("fenced blocks", () => {
 
   it("closes only on a fence of the same kind, at least as long", () => {
     expect(fencedBlocks("````highwing-bot-setup\n```\n~~~~\n````", BOT_SETUP_FENCE)).toEqual(["```\n~~~~"]);
+  });
+});
+
+describe("a Bot Chat's preview", () => {
+  it("stops before Bot setup's block, even one Hermes's cut ends inside, and leaves other code alone", () => {
+    expect(previewWithoutSetup(`Here's how I'd set myself up. \`\`\`${BOT_SETUP_FENCE} {"v":1,"persona":"You are...`)).toBe("Here's how I'd set myself up.");
+    expect(previewWithoutSetup("Here's the change. Everything else stays as it is. ```highwing-b...")).toBe("Here's the change. Everything else stays as it is.");
+    expect(previewWithoutSetup(`~~~${ACCEPTED_FENCE} {"v":1}`)).toBe("");
+    expect(previewWithoutSetup("Run this: ```bash ls ```")).toBe("Run this: ```bash ls ```");
+    expect(previewWithoutSetup("Release notes drafted: three fixes.")).toBe("Release notes drafted: three fixes.");
   });
 });
 

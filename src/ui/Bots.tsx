@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import { ChevronDown, ChevronRight, Copy, EyeOff, Eye, Loader, MessageSquare, Pin, PinOff, Plus, RefreshCw, Settings2, ShieldAlert, Sparkles, SquarePen, Trash2, WandSparkles } from "lucide-react";
 import type { AgainAsk, AgainBusy } from "../hermes/botSetupAgain";
+import { previewWithoutSetup } from "../hermes/botSetupCard";
 import { agentMessaging, type Bot, type BotActivity, type BotLook, type MessagingSave } from "../hermes/bots";
 import { predatesBotMessaging, reachesBotSetup } from "../hermes/capabilities";
 import type { EditResult, Edits } from "../hermes/fieldMerge";
@@ -560,7 +561,8 @@ function Row({
 }) {
   const l = useLocale();
   const w = l.bots;
-  const preview = b.botChat?.preview || (b.botChat ? w.noMessages : w.noBotChat);
+  const last = b.botChat?.preview ? previewWithoutSetup(b.botChat.preview) || l.chat.botSetup.title(b.name) : "";
+  const preview = last || (b.botChat ? w.noMessages : w.noBotChat);
   const age = b.lastActive ? l.fmt.age(b.lastActive) : "";
   const when = age && age !== l.time.now ? w.ago(age) : age;
   const state = activity === "replying" ? w.replying : activity === "needs-you" ? w.needsYou : undefined;
@@ -569,7 +571,7 @@ function Row({
       b.profile !== b.name.toLowerCase() ? w.rowProfile(b.name, b.profile) : b.name,
       state,
       b.description,
-      b.botChat?.preview ? w.rowLast(b.botChat.preview) : preview,
+      last ? w.rowLast(last) : preview,
       when && w.rowActive(when),
       shown && w.rowShown,
     ].filter((part): part is string => !!part),
@@ -605,7 +607,7 @@ function Row({
               )
             )}
           </span>
-          <span className={`bots-preview${b.botChat?.preview ? "" : " is-empty"}`} translate={b.botChat?.preview ? "no" : undefined}>
+          <span className={`bots-preview${last ? "" : " is-empty"}`} translate={last ? "no" : undefined}>
             {preview}
           </span>
         </span>

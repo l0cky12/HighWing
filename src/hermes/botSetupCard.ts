@@ -102,7 +102,10 @@ export type NotFoundItem = { kind: "model" | "skill" | "toolset" | "mcp"; key: s
 
 export type PlanItem = ListedItem | NotFoundItem;
 
-/** The card's items in the card's order: about the bot, then skills, toolsets and MCP servers. */
+/**
+ * The card's items in the card's order: about the bot, then skills, toolsets and MCP servers. Set up again's plan also
+ * holds every skill, toolset and MCP server the bot has on that the block leaves as it is, each with nothing to do.
+ */
 export type Plan = { cardId: string; items: PlanItem[] };
 
 /**
@@ -432,6 +435,11 @@ function planBlock(card: Card, now: HermesNow): (Proposal<ItemKind> | NotFoundIt
   for (const { c, bot } of copies) for (const n of c.toolsets) bot ? toolset(n, true, bot) : add(notFound("toolset", n, c.from));
   for (const m of b.mcp) mcp(m.catalog, now.mcp?.catalog);
   for (const { c, bot } of copies) for (const n of c.mcp) mcp(n, bot?.mcp, bot?.name ?? c.from);
+  if (card.again) {
+    for (const s of now.skills) if (s.enabled) add(listed("skill", `skill:${s.name}`, "on", "on", { name: s.name }));
+    for (const t of now.toolsets) if (t.enabled) add(listed("toolset", `toolset:${t.name}`, "on", "on", { name: t.name }));
+    for (const name of now.mcp?.servers ?? []) add(listed("mcp", `mcp:${name}`, "added", "added", { name }));
+  }
   return items;
 }
 

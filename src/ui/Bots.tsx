@@ -3,14 +3,16 @@
 // A row opens the bot's Bot Chat, found by title every time (bots.ts); the pen beside it starts an ordinary chat in the
 // bot's profile. Above the rows, New bot asks for a name, makes the bot and opens its Bot Chat, where Bot setup
 // interviews the owner (ADR 0231); Reload reads the roster now. A right-click on a row opens its menu (ADR 0194): Chat,
-// Settings, Edit persona (ADR 0206), Clone, Pin, Hide and Delete, through Settings → Profiles' own dialogs and
+// Settings, Edit persona (ADR 0206), Set up again (ADR 0231), Clone, Pin, Hide and Delete, through Settings → Profiles' own dialogs and
 // `Hermes.editBot`, which never writes over a change made elsewhere (ADR 0189). Every word comes from the catalogue
 // (ADR 0100).
 import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
-import { ChevronDown, ChevronRight, Copy, EyeOff, Eye, Loader, MessageSquare, Pin, PinOff, Plus, RefreshCw, Settings2, ShieldAlert, Sparkles, SquarePen, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, EyeOff, Eye, Loader, MessageSquare, Pin, PinOff, Plus, RefreshCw, Settings2, ShieldAlert, Sparkles, SquarePen, Trash2, WandSparkles } from "lucide-react";
+import type { AgainAsk, AgainBusy } from "../hermes/botSetupAgain";
 import { agentMessaging, type Bot, type BotActivity, type BotLook, type MessagingSave } from "../hermes/bots";
-import { predatesBotMessaging } from "../hermes/capabilities";
+import { predatesBotMessaging, reachesBotSetup } from "../hermes/capabilities";
 import type { EditResult, Edits } from "../hermes/fieldMerge";
+import type { MemoryEntry } from "../hermes/memory";
 import { PROFILE_ROUTES, profileFailure, type ProfileAction, type ProfileRow } from "../hermes/profiles";
 import { composing } from "./bits";
 import { Menu } from "./ChatMenu";
@@ -19,6 +21,7 @@ import { pick } from "./keybindings";
 import { NewBot } from "./NewBot";
 import { DeleteProfile, MenuEntry, ProfileForm, blocked, useSwitchTo, type FormFocus, type ProfilesWiring } from "./ProfileSettings";
 import { failureText } from "./profileFailure";
+import { SetUpAgain } from "./SetUpAgain";
 import { useLocale } from "../i18n/locale";
 
 /** How often the roster is read again while the bots show. Hermes's desktop polls every 5 seconds; this is enough. */
@@ -60,11 +63,22 @@ function MessagingSwitch({ roster, why, save, onNote }: { roster: readonly Bot[]
   );
 }
 
-/** A dialog a bot's menu opened, on the profile's row as `GET /api/profiles` listed it just before. */
+/**
+ * What Set up again needs (ADR 0231). `entries`: the bot's memory entries, which Start fresh's question counts. `busy`:
+ * why the bot's Bot Chat can't take it now. `run`: goes to the bot and sets it up again as asked.
+ */
+export type AgainWiring = {
+  entries: (profile: string) => Promise<readonly MemoryEntry[]>;
+  busy: (bot: Bot) => AgainBusy | undefined;
+  run: (bot: Bot, ask: AgainAsk) => void;
+};
+
+/** A dialog a bot's menu opened. Edit and Delete are on the profile's row as `GET /api/profiles` listed it just before. */
 type BotDialog =
   | { kind: "edit"; bot: Bot; row: ProfileRow; rows: ProfileRow[]; look: BotLook; focus?: FormFocus }
   | { kind: "delete"; row: ProfileRow }
-  | { kind: "clone"; source: string; name?: string };
+  | { kind: "clone"; source: string; name?: string }
+  | { kind: "again"; bot: Bot };
 
 /** Opens a bot's Edit bot or Delete bot on its profile as Hermes lists it now; undefined once Hermes no longer has it. */
 async function dialogOn(profiles: Omit<ProfilesWiring, "showTab">, botEdit: BotEditWiring, bot: Bot, kind: "edit" | "delete"): Promise<BotDialog | undefined> {
@@ -78,7 +92,8 @@ async function dialogOn(profiles: Omit<ProfilesWiring, "showTab">, botEdit: BotE
  * What Bots mode does besides opening a bot (ADR 0203). `head` goes above the rows: New bot, Reload, and why the last
  * read of the roster failed. `onMenu` is `BotList`'s, for a right-click, Shift+F10 or the Menu key on a row, as the
  * panel's chat rows have (ADR 0194). Chat opens the bot as its row does. Settings is Edit bot, and Edit persona is
- * Edit bot with focus in Persona (ADR 0206). Settings, Edit persona and Delete read the profile from
+ * Edit bot with focus in Persona (ADR 0206). Set up again is in the menu only with `again`, once Hermes says it is at
+ * Bot setup's floor and runs it, and asks Keep history or Start fresh first (ADR 0231). Settings, Edit persona and Delete read the profile from
  * `GET /api/profiles` as they open; only the entry picked last opens. `element`, the menu and every dialog, is drawn
  * outside Bots mode, so a delete that switches away from the open bot's profile runs to its end.
  *
@@ -91,6 +106,7 @@ async function dialogOn(profiles: Omit<ProfilesWiring, "showTab">, botEdit: BotE
 export function useBotActions({
   profiles,
   botEdit,
+  again,
   roster,
   load,
   shown,
@@ -99,6 +115,7 @@ export function useBotActions({
 }: {
   profiles: Omit<ProfilesWiring, "showTab">;
   botEdit: BotEditWiring;
+  again?: AgainWiring;
   roster?: readonly Bot[];
   load: () => Promise<unknown>;
   shown: boolean;
@@ -254,6 +271,17 @@ export function useBotActions({
               }}
             />
           )}
+          {again && !!store && reachesBotSetup(store.getSnapshot().facts) && !profiles.botSetupOff() && (
+            <MenuEntry
+              icon={<WandSparkles size={15} />}
+              label={w.menu.again}
+              why={!connected ? l.profiles.notConnected : undefined}
+              onPick={() => {
+                setMenu(undefined);
+                setDialog({ kind: "again", bot: menu.bot });
+              }}
+            />
+          )}
           {profiles.clone && (
             <MenuEntry
               icon={<Copy size={15} />}
@@ -342,6 +370,20 @@ export function useBotActions({
           returnTo={menuFrom}
           switchAway={() => switchTo("default", true)}
           onDone={(n) => closeDialog(n.command ? `${n.text} ${n.command}` : n.text)}
+          onClose={() => setDialog(undefined)}
+        />
+      )}
+      {dialog?.kind === "again" && again && (
+        <SetUpAgain
+          key={dialog.bot.profile}
+          bot={dialog.bot}
+          busy={again.busy(dialog.bot)}
+          entries={() => again.entries(dialog.bot.profile)}
+          returnTo={menuFrom}
+          onGo={(ask) => {
+            setDialog(undefined);
+            again.run(dialog.bot, ask);
+          }}
           onClose={() => setDialog(undefined)}
         />
       )}

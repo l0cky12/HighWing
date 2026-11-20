@@ -889,6 +889,12 @@ export const BOT_SETUP_SINCE = "0.23.2";
 /** Whether Hermes says it is older than Bot setup's floor. A Hermes that names no version isn't treated as older. */
 export const predatesBotSetup = (f: ServerFacts) => atLeast(f, BOT_SETUP_SINCE.split(".").map(Number)) === false;
 
+/**
+ * Whether Hermes says it is at Bot setup's floor or later. Set up again is offered only then: its Start fresh deletes
+ * memory and relies on the archive that frees a Bot Chat's title, so a version not read yet, or not named, isn't enough.
+ */
+export const reachesBotSetup = (f: ServerFacts) => atLeast(f, BOT_SETUP_SINCE.split(".").map(Number)) === true;
+
 /** What a failed `client.capabilities` means for Approvals. A Hermes without it is older than the requests this app reads. */
 export function approvalsFailed(e: unknown): Pick<Capability, "state" | "why"> {
   const f = failureOf(e);

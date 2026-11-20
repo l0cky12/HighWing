@@ -439,6 +439,20 @@ describe("Set up again", () => {
     }
   });
 
+  it("lists what the bot has on and the block leaves alone, with nothing to do; a new bot's card lists only what its block names", () => {
+    const b = keeping({ skills: [{ name: "find-nearby", on: true }], toolsets: [{ name: "browser", on: true }], copy: [] });
+    const plan = planCard(cardOf([briefAgain("s1", has.persona), reply(2, JSON.stringify(b))]).card, has);
+    expect(plan.items.filter((i) => i.kind === "skill" || i.kind === "toolset").map((i) => [i.key, i.status])).toEqual([
+      ["skill:find-nearby", "change"],
+      ["toolset:browser", "change"],
+      ["skill:weather", "same"],
+      ["toolset:terminal", "same"],
+    ]);
+    expect(acceptedRecord(plan).items.map((i) => i.key).filter((k) => /^(skill|toolset):/.test(k))).toEqual(["skill:find-nearby", "toolset:browser"]);
+    const fresh = planCard(cardOf([brief("s2"), reply(2, JSON.stringify(block({ toolsets: [], copy: [] })))]).card, has);
+    expect(fresh.items.filter((i) => i.kind === "skill" || i.kind === "toolset").map((i) => i.key)).toEqual(["skill:find-nearby"]);
+  });
+
   it("refuses a persona when the brief left the persona out", () => {
     const long = `You are Travel Buddy. ${"Rule. ".repeat(BOT_SETUP_CAPS.persona / 6)}`;
     const rows = [briefAgain("s1", long), reply(2, JSON.stringify(keeping({ persona: "You are Travel Buddy." })))];

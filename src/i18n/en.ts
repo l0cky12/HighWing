@@ -125,6 +125,16 @@ export const en = {
       hide: "Hide the card",
       show: "Show the card",
       intro: (bot: string) => `Untick what you don't want. Edit an item to change it, or tell ${bot} in the chat and it draws this card again.`,
+      /** Set up again's card (ADR 0231): what changes, each as before → after, over what stays, folded away. */
+      againTitle: (bot: string) => `Set up ${bot} again`,
+      againIntro: (bot: string) => `Only what changes is ticked. Before is what Hermes has now, read when this card was drawn. Untick what you don't want, or tell ${bot} what else to change.`,
+      unchanged: (n: number) => (n === 1 ? "1 more that doesn't change" : `${n} more that don't change`),
+      state: { on: "On", off: "Off", absent: "Not installed" },
+      fromTo: (from: string, to: string) => `${from} → ${to}`,
+      none: "None",
+      showNow: "Show what it is now",
+      hideNow: "Hide what it is now",
+      personaNow: "The persona now",
       reading: "Reading the card…",
       readFailed: (why: string) => `Couldn't read what the card would change: ${why}`,
       draft: "earlier draft, replaced by a newer card",
@@ -601,12 +611,54 @@ export const en = {
       chat: "Chat",
       settings: "Settings",
       persona: "Edit persona…",
+      again: "Set up again…",
       clone: "Clone…",
       pin: "Pin",
       unpin: "Unpin",
       hide: "Hide",
       show: "Show",
       delete: "Delete",
+    },
+    /** Set up again's question, and what it says when it couldn't go as asked (ADR 0231). */
+    again: {
+      title: (bot: string) => `Set up ${bot} again?`,
+      what: (bot: string) => `${bot} shows how it's set up now and asks what you want to change.`,
+      how: "What happens to its Bot Chat",
+      keep: "Keep history",
+      keepWhat: (bot: string) => `Keeps this Bot Chat and everything in ${bot}'s memory.`,
+      fresh: "Start fresh",
+      freshWhat: (bot: string, n: number | undefined) =>
+        `Archives this Bot Chat in Hermes, where you can restore it later, and starts a new one. ${
+          n === undefined ? `Deletes everything in ${bot}'s memory.` : n === 0 ? `${bot}'s memory is empty.` : `Deletes ${bot}'s ${n === 1 ? "1 memory entry" : `${n} memory entries`}.`
+        }`,
+      counting: "Counting the memory entries…",
+      freshWarn: (bot: string, n: number) =>
+        `${n === 0 ? "" : n === 1 ? "The 1 memory entry can't be brought back. " : `The ${n} memory entries can't be brought back. `}${bot}'s other chats stay as they are.`,
+      memoryUnread: (why: string) => `Start fresh is off, because Highwing couldn't read the memory it would delete: ${why}`,
+      defaultWhat: (bot: string) => `${bot}'s Bot Chat and its memory stay as they are.`,
+      noFreshDefault: "Start fresh isn't offered for the main bot.",
+      busy: {
+        replying: (bot: string) => `${bot} is replying in its Bot Chat. Wait for the reply to end, then set it up again.`,
+        waiting: (bot: string) => `${bot} is waiting for your answer in its Bot Chat. Answer it first, then set it up again.`,
+      },
+      go: "Set up again",
+      goFresh: "Start fresh",
+      /** The old Bot Chat's title once it is archived, so it can be found in Archived. */
+      earlierTitle: (bot: string, when: string) => `Earlier Bot Chat with ${bot}, ${when}`,
+      off: "This Hermes doesn't run Bot setup, so nothing was sent.",
+      isDefault: "Start fresh isn't offered for the main bot. Nothing was changed.",
+      titleKept: (bot: string, restored: boolean) =>
+        `This Hermes can't start a Bot Chat fresh: it still finds ${bot}'s old Bot Chat by its title after archiving it. ${
+          restored ? "The chat is back as it was" : "The chat is still archived, and you can restore it from Archived"
+        }. No memory was deleted.`,
+      stopped: {
+        asItWas: (bot: string, why: string) => `Start fresh stopped before anything changed for ${bot}: ${why}`,
+        archived: (bot: string, why: string) => `${bot}'s old Bot Chat is archived, and Start fresh stopped there: ${why} No memory was deleted. Choose Start fresh again to carry on.`,
+        noChat: (bot: string, why: string) => `${bot}'s old Bot Chat is archived, but the new one didn't start: ${why} Open ${bot} to start one.`,
+      },
+      notRetitled: (why: string) => `The old Bot Chat is in Archived without a name: ${why}`,
+      memoryLeft: (n: number) => `${n === 1 ? "1 memory entry wasn't" : `${n} memory entries weren't`} deleted. Settings → Memory shows what is left.`,
+      memoryMissed: (why: string) => `The memory wasn't cleared: ${why}`,
     },
     /** Bot messaging's switch above the bots (ADR 0207). */
     messaging: {

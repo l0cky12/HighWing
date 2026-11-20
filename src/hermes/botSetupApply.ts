@@ -51,8 +51,11 @@ export type SetupNow = {
 
 const named = <T extends { name: string }>(rows: readonly T[]) => rows.map((r) => r.name);
 
-/** The bot `profile` as Hermes has it now, and what it lists, read for `card`. Rejects when a read fails. */
-export async function readSetupNow(apis: SetupApis, profile: string, card: Card): Promise<SetupNow> {
+/**
+ * The bot `profile` as Hermes has it now, and what it lists, with the bots `asked.copy` copies from and, when `asked`
+ * names any MCP server, the MCP servers. Rejects when a read fails.
+ */
+export async function readSetupNow(apis: SetupApis, profile: string, asked: Pick<Card["block"], "copy" | "mcp">): Promise<SetupNow> {
   const [soul, rows, roster, skills, toolsets, catalog, memory] = await Promise.all([
     apis.persona.read(profile),
     apis.profiles.list(),
@@ -67,8 +70,8 @@ export async function readSetupNow(apis: SetupApis, profile: string, card: Card)
   if (!row) throw new ProfileError({ kind: "gone", detail: `Hermes lists no profile named ${profile}.` });
   const providers: Record<string, string> = {};
   for (const p of catalog?.providers ?? []) for (const m of p.models) providers[m.model] ??= p.slug;
-  const sources = card.block.copy.flatMap((c) => roster.filter((b) => b.name.trim() === c.from && b.profile !== profile));
-  const mcpNamed = card.block.mcp.length > 0 || card.block.copy.some((c) => c.mcp.length > 0);
+  const sources = asked.copy.flatMap((c) => roster.filter((b) => b.name.trim() === c.from && b.profile !== profile));
+  const mcpNamed = asked.mcp.length > 0 || asked.copy.some((c) => c.mcp.length > 0);
   const [bots, mcp] = await Promise.all([
     Promise.all(
       sources.map(async (b) => {

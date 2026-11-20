@@ -3,7 +3,8 @@
 // read on open and after each reply (`useBotSetup`); what the card offers and what a choice does, from botSetupCard.ts;
 // what Set it up writes, from botSetupApply.ts. The pane keeps the pending edits above the transcript, so a card
 // scrolled out of the rendered window keeps them. What Connect takes for an MCP server is kept there too, in memory
-// only, until Set it up sends it; leaving the Bot Chat drops it (#85 owner call 4).
+// only, until Set it up sends it; leaving the Bot Chat drops it (#85 owner call 4). Set up again's card shows each
+// change as before → after, and folds what stays as it is under one line per group.
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Check, ChevronRight, CircleAlert, FileText, Hourglass, Pencil, Plug, RotateCcw, Sparkles, TriangleAlert } from "lucide-react";
 import { BOT_SETUP_COLORS, BOT_SETUP_DESCRIPTION_MAX, BOT_SETUP_FENCE } from "../hermes/botSetupBrief";
@@ -353,14 +354,17 @@ function Card({ host, read, plan }: { host: SetupHost; read: BotSetupCardRead; p
   // Try again and Apply anyway change an item after Set it up, so the count is read from each item's state now.
   const judged = Object.values(host.runs).filter((s) => s.kind !== "waiting");
   const canSetUp = !host.busy && !host.blocked && host.mcpReload !== "working" && (count > 0 || owed);
+  const again = read.parse.card.again;
+  const folded = (i: PlanItem) => again && i.status === "same" && !host.runs[i.key];
+  const row = (item: PlanItem) => <Row key={item.key} host={host} read={read} item={item} />;
   return (
-    <TurnCard kind="bot-setup" icon={<Sparkles size={14} aria-hidden />} heading={l.title(host.bot)} tips={{ hide: l.hide, show: l.show }} data-card={plan.cardId}>
+    <TurnCard kind="bot-setup" icon={<Sparkles size={14} aria-hidden />} heading={again ? l.againTitle(host.bot) : l.title(host.bot)} tips={{ hide: l.hide, show: l.show }} data-card={plan.cardId}>
       {judged.length > 0 ? (
         <p className="bot-setup-note" role="status">
           {l.appliedOf(judged.filter((s) => s.kind === "applied").length, judged.length)}
         </p>
       ) : (
-        <p className="bot-setup-note">{l.intro(host.bot)}</p>
+        <p className="bot-setup-note">{again ? l.againIntro(host.bot) : l.intro(host.bot)}</p>
       )}
       {GROUPS.map((g) => {
         const items = plan.items.filter((i) => (g.kinds as readonly string[]).includes(i.kind));
@@ -373,9 +377,8 @@ function Card({ host, read, plan }: { host: SetupHost; read: BotSetupCardRead; p
               {!ran && offered.length > 0 && <span>{l.ticked(offered.filter((i) => i.ticked).length, offered.length)}</span>}
             </h4>
             <ul className="bot-setup-items">
-              {items.map((item) => (
-                <Row key={item.key} host={host} read={read} item={item} />
-              ))}
+              {items.filter((i) => !folded(i)).map(row)}
+              {items.some(folded) && <Unchanged>{items.filter(folded).map(row)}</Unchanged>}
             </ul>
           </section>
         );
@@ -408,6 +411,19 @@ function Card({ host, read, plan }: { host: SetupHost; read: BotSetupCardRead; p
   );
 }
 
+function Unchanged({ children }: { children: ReactNode[] }) {
+  const l = useLocale().chat.botSetup;
+  const [open, setOpen] = useState(false);
+  return (
+    <li className="bot-setup-unchanged">
+      <button className="link-btn small" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <ChevronRight size={13} className={`chev ${open ? "open" : ""}`} aria-hidden /> {l.unchanged(children.length)}
+      </button>
+      {open && <ul className="bot-setup-items">{children}</ul>}
+    </li>
+  );
+}
+
 const colorName = (l: Locale["chat"]["botSetup"], hex: string | null) => {
   const named = BOT_SETUP_COLORS.find((c) => BOT_SETUP_COLOR_HEX[c] === hex);
   return named ? l.colors[named] : (hex ?? l.hermesColor);
@@ -426,6 +442,7 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
   const [editing, setEditing] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [whole, setWhole] = useState(false);
+  const [showNow, setShowNow] = useState(false);
   const editButton = useRef<HTMLButtonElement>(null);
   const refocus = useRef(false);
   useEffect(() => {
@@ -452,7 +469,8 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
         : (run ?? (rememberAsked(read.parse.accepted, item) ? { kind: "waiting" } : undefined));
   const offer = listed?.kind === "mcp" && read.setup.mcp && listed.name !== undefined ? mcpOffer(read.setup.mcp, listed.name, listed.from) : undefined;
   const label = labelOf(l, read, item);
-  const value = listed && valueOf(l, listed);
+  const beforeAfter = read.parse.card.again && tickable(item);
+  const value = listed && valueOf(l, listed, beforeAfter);
   const edited = listed && listed.over.length > 0 && listed.after !== listed.proposed;
   const refused = item.status === "notFound" ? item.why : undefined;
   const badge = refused ? l.mcpCantAdd : item.status === "notFound" ? l.notFound : item.from !== undefined ? l.from(item.from) : (item.kind === "skill" || item.kind === "toolset") && item.status === "change" ? l.suggested : undefined;
@@ -476,9 +494,11 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
           : !shownRun && item.kind === "remember"
             ? l.rememberWhere(host.bot)
             : !shownRun && (item.kind === "skill" || item.kind === "toolset")
-              ? item.after === "on"
-                ? l.turnOn
-                : l.turnOff
+              ? beforeAfter
+                ? l.fromTo(l.state[item.before], l.state[item.after])
+                : item.after === "on"
+                  ? l.turnOn
+                  : l.turnOff
               : undefined;
   const dim = item.status === "notFound" || (item.status === "same" && !done && !addedAwaitingReload);
   return (
@@ -520,6 +540,16 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
               <button className="link-btn small" onClick={() => setWhole((w) => !w)}>
                 {whole ? l.showLess : l.showAll}
               </button>
+            )}
+            {beforeAfter && (
+              <button className="link-btn small" aria-expanded={showNow} onClick={() => setShowNow((n) => !n)}>
+                {showNow ? l.hideNow : l.showNow}
+              </button>
+            )}
+            {beforeAfter && showNow && (
+              <div className="bot-setup-persona was" role="group" aria-label={l.personaNow} translate="no">
+                {listed.before.trim() || l.none}
+              </div>
             )}
           </>
         )}
@@ -574,24 +604,47 @@ function labelOf(l: Locale["chat"]["botSetup"], read: BotSetupCardRead, item: Pl
   }
 }
 
-function valueOf(l: Locale["chat"]["botSetup"], item: ListedItem): ReactNode {
+function valueOf(l: Locale["chat"]["botSetup"], item: ListedItem, beforeAfter: boolean): ReactNode {
+  const was = (now: ReactNode) =>
+    beforeAfter && (
+      <>
+        <span className="bot-setup-was">{now}</span>
+        {" → "}
+      </>
+    );
+  const model = (m: string | null) => (
+    <span className="mono" translate="no">
+      {m ?? "—"}
+    </span>
+  );
+  const color = (hex: string | null) => (
+    <>
+      {hex && <span className="bot-setup-swatch" style={{ background: hex }} aria-hidden />} {colorName(l, hex)}
+    </>
+  );
   switch (item.kind) {
     case "description":
-      return <span className="bot-setup-value"> · {item.after}</span>;
+      return (
+        <span className="bot-setup-value">
+          {" · "}
+          {was(item.before.trim() || l.none)}
+          {item.after}
+        </span>
+      );
     case "model":
       return (
         <span className="bot-setup-value">
           {" · "}
-          <span className="mono" translate="no">
-            {item.after ?? "—"}
-          </span>
+          {was(model(item.before))}
+          {model(item.after)}
         </span>
       );
     case "color":
       return (
         <span className="bot-setup-value">
           {" · "}
-          {item.after && <span className="bot-setup-swatch" style={{ background: item.after }} aria-hidden />} {colorName(l, item.after)}
+          {was(color(item.before))}
+          {color(item.after)}
         </span>
       );
     case "toolset":

@@ -22,7 +22,8 @@ export type StartRead = { chatId: string; rows: readonly SetupRow[]; running: bo
 
 /**
  * Where a start stands. `noBrief`: the profile has a Bot Chat this app didn't seed. `briefed`: `hidden` is whether
- * Hermes stored the brief hidden. `beganAt`: the stored row of the setup's first begin turn.
+ * Hermes stored the brief hidden. `beganAt`: the stored row of the setup's first begin turn, or of the brief itself
+ * when it was sent as a turn and no begin row follows it.
  */
 export type StartState =
   | { at: "noChat" }
@@ -60,9 +61,14 @@ export function startState(read: StartRead | null): StartState {
   const after = rows.slice(briefAt + 1);
   const begin = botSetupBegin(id);
   const begins = after.flatMap((r, n) => (r.role === "user" && r.text.trim() === begin ? [n] : []));
-  if (!begins.length) return { at: "briefed", chatId, id, hidden: rows[briefAt].hidden };
+  const replied = (from: number) => after.slice(from).some((r) => r.role === "assistant" && r.text.trim());
+  if (!begins.length) {
+    const beganAt = rows[briefAt].rowId;
+    if (replied(0)) return { at: "started", chatId, id, beganAt };
+    return running ? { at: "running", chatId, id, beganAt } : { at: "briefed", chatId, id, hidden: rows[briefAt].hidden };
+  }
   const beganAt = after[begins[0]].rowId;
-  if (after.slice(begins.at(-1)! + 1).some((r) => r.role === "assistant" && r.text.trim())) return { at: "started", chatId, id, beganAt };
+  if (replied(begins.at(-1)! + 1)) return { at: "started", chatId, id, beganAt };
   return running ? { at: "running", chatId, id, beganAt } : { at: "noReply", chatId, id, beganAt, ...(error && { error }) };
 }
 

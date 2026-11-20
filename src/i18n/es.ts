@@ -115,6 +115,15 @@ export const es: Catalogue = {
       hide: "Ocultar la tarjeta",
       show: "Mostrar la tarjeta",
       intro: (bot) => `Desmarca lo que no quieras. Edita un elemento para cambiarlo, o díselo a ${bot} en el chat y volverá a dibujar esta tarjeta.`,
+      againTitle: (bot) => `Configurar ${bot} de nuevo`,
+      againIntro: (bot) => `Solo está marcado lo que cambia. «Antes» es lo que Hermes tiene ahora, leído al dibujar esta tarjeta. Desmarca lo que no quieras, o dile a ${bot} qué más cambiar.`,
+      unchanged: (n) => (n === 1 ? "1 más que no cambia" : `${n} más que no cambian`),
+      state: { on: "Activado", off: "Desactivado", absent: "Sin instalar" },
+      fromTo: (from, to) => `${from} → ${to}`,
+      none: "Ninguno",
+      showNow: "Mostrar cómo es ahora",
+      hideNow: "Ocultar cómo es ahora",
+      personaNow: "La persona ahora",
       reading: "Leyendo la tarjeta…",
       readFailed: (why) => `No se pudo leer qué cambiaría la tarjeta: ${why}`,
       draft: "borrador anterior, sustituido por una tarjeta más reciente",
@@ -573,12 +582,52 @@ export const es: Catalogue = {
       chat: "Chat",
       settings: "Ajustes",
       persona: "Editar la persona…",
+      again: "Configurar de nuevo…",
       clone: "Clonar…",
       pin: "Fijar",
       unpin: "Desfijar",
       hide: "Ocultar",
       show: "Mostrar",
       delete: "Borrar",
+    },
+    again: {
+      title: (bot) => `¿Configurar ${bot} de nuevo?`,
+      what: (bot) => `${bot} muestra cómo está configurado ahora y pregunta qué quieres cambiar.`,
+      how: "Qué pasa con su Bot Chat",
+      keep: "Conservar el historial",
+      keepWhat: (bot) => `Conserva este Bot Chat y todo lo que hay en la memoria de ${bot}.`,
+      fresh: "Empezar de cero",
+      freshWhat: (bot, n) =>
+        `Archiva este Bot Chat en Hermes, donde puedes restaurarlo más tarde, y empieza uno nuevo. ${
+          n === undefined ? `Borra todo lo que hay en la memoria de ${bot}.` : n === 0 ? `La memoria de ${bot} está vacía.` : `Borra ${n === 1 ? "la entrada" : `las ${n} entradas`} de la memoria de ${bot}.`
+        }`,
+      counting: "Contando las entradas de la memoria…",
+      freshWarn: (bot, n) =>
+        `${n === 0 ? "" : n === 1 ? "La entrada de la memoria no se puede recuperar. " : `Las ${n} entradas de la memoria no se pueden recuperar. `}Los demás chats de ${bot} se quedan como están.`,
+      memoryUnread: (why) => `Empezar de cero está desactivado, porque Highwing no pudo leer la memoria que borraría: ${why}`,
+      defaultWhat: (bot) => `El Bot Chat de ${bot} y su memoria se quedan como están.`,
+      noFreshDefault: "Empezar de cero no se ofrece para el bot principal.",
+      busy: {
+        replying: (bot) => `${bot} está respondiendo en su Bot Chat. Espera a que termine la respuesta y configúralo de nuevo después.`,
+        waiting: (bot) => `${bot} espera tu respuesta en su Bot Chat. Respóndele primero y configúralo de nuevo después.`,
+      },
+      go: "Configurar de nuevo",
+      goFresh: "Empezar de cero",
+      earlierTitle: (bot, when) => `Bot Chat anterior con ${bot}, ${when}`,
+      off: "Este Hermes no ejecuta la configuración de bots, así que no se envió nada.",
+      isDefault: "Empezar de cero no se ofrece para el bot principal. No se cambió nada.",
+      titleKept: (bot, restored) =>
+        `Este Hermes no puede empezar un Bot Chat de cero: sigue encontrando el Bot Chat anterior de ${bot} por su título después de archivarlo. ${
+          restored ? "El chat vuelve a estar como estaba" : "El chat sigue archivado, y puedes restaurarlo desde Archivados"
+        }. No se borró nada de la memoria.`,
+      stopped: {
+        asItWas: (bot, why) => `Empezar de cero se detuvo antes de cambiar nada de ${bot}: ${why}`,
+        archived: (bot, why) => `El Bot Chat anterior de ${bot} está archivado, y Empezar de cero se detuvo ahí: ${why} No se borró nada de la memoria. Elige Empezar de cero otra vez para continuar.`,
+        noChat: (bot, why) => `El Bot Chat anterior de ${bot} está archivado, pero el nuevo no empezó: ${why} Abre ${bot} para empezar uno.`,
+      },
+      notRetitled: (why) => `El Bot Chat anterior está en Archivados sin nombre: ${why}`,
+      memoryLeft: (n) => `${n === 1 ? "1 entrada de la memoria no se borró" : `${n} entradas de la memoria no se borraron`}. Ajustes → Memoria muestra lo que queda.`,
+      memoryMissed: (why) => `La memoria no se borró: ${why}`,
     },
     messaging: {
       label: "Los bots se escriben entre sí",

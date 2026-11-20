@@ -15,17 +15,19 @@
 //
 // HERMES_LIVE_SKIP_SEED=1 makes the seeded Bot Chat open as the control does, unseeded: its check must then fail.
 // HERMES_LIVE_SKIP_RELOAD=1 leaves out Set it up's reload.mcp in the MCP copy test: its tool call must then fail.
+// HERMES_LIVE_KEEP_MEMORY=1 has Start fresh remove no memory entry: its check of the memory files must then fail.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { RestError, type RestMethod } from "./pipe";
+import { botSetupBrief } from "./botSetupBrief";
+import { RestError, type OpenPipe, type Pipe, type RestMethod } from "./pipe";
 import { addMcp, mcpOffer, type McpSources } from "./botSetupMcp";
 import { removeAttempted, sandboxRefusal } from "./liveSandbox";
 import { McpApi } from "./mcp";
 import { ProfilesApi } from "./profiles";
-import { APP_SOURCE, RpcError } from "./transport";
+import { APP_SOURCE, RpcError, connect } from "./transport";
 
 // This app's tsconfig has no Node types; vitest runs the file in Node.
 declare const process: { env: Record<string, string | undefined> };
-type Fs = { readFileSync(p: string, e: string): string; realpathSync(p: string): string };
+type Fs = { readFileSync(p: string, e: string): string; realpathSync(p: string): string; mkdirSync(p: string, o: { recursive: boolean }): void; writeFileSync(p: string, text: string): void };
 const fs = async () => (await import(/* @vite-ignore */ "node:fs" as string)) as Fs;
 const readText = async (path: string): Promise<string> => (await fs()).readFileSync(path, "utf8");
 
@@ -33,6 +35,7 @@ const BASE = process.env.HERMES_LIVE_DASHBOARD;
 const MODEL_LOG = process.env.HERMES_LIVE_MODEL_LOG ?? "";
 const SKIP_SEED = process.env.HERMES_LIVE_SKIP_SEED === "1";
 const SKIP_RELOAD = process.env.HERMES_LIVE_SKIP_RELOAD === "1";
+const KEEP_MEMORY = process.env.HERMES_LIVE_KEEP_MEMORY === "1";
 const RUN = Date.now().toString(36);
 
 type Event = { type: string; session_id?: string; payload?: Record<string, unknown> };
@@ -42,25 +45,49 @@ type ModelRequest = { kind: string; users?: string[]; system?: string; tools?: s
 /** Dashboard REST with the sign-in cookies, failing as the Rust relay does; and `/api/ws` connections opened as it opens them. */
 function dashboard() {
   let cookie = "";
-  const send = async (method: string, path: string, body?: unknown) => {
-    const res = await fetch(new URL(path, BASE), { method, headers: { cookie, "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const send = async (method: string, path: string, body?: string) => {
+    const res = await fetch(new URL(path, BASE), { method, headers: { cookie, "content-type": "application/json" }, body });
     for (const c of res.headers.getSetCookie()) cookie = [...cookie.split("; ").filter((p) => p && !p.startsWith(c.split("=")[0] + "=")), c.split(";")[0]].join("; ");
     return res;
   };
-  const rest = async (method: RestMethod | "PATCH", path: string, body?: unknown): Promise<any> => {
-    if (!cookie) await send("POST", "auth/password-login", { provider: "basic", username: process.env.HERMES_LIVE_USER, password: process.env.HERMES_LIVE_PASSWORD });
+  const request = async (method: RestMethod, path: string, body?: string): Promise<string> => {
+    if (!cookie) await send("POST", "auth/password-login", JSON.stringify({ provider: "basic", username: process.env.HERMES_LIVE_USER, password: process.env.HERMES_LIVE_PASSWORD }));
     const res = await send(method, path, body);
     const text = await res.text();
     if (!res.ok) throw new RestError(res.status, text.slice(0, 300));
-    return JSON.parse(text);
+    return text;
+  };
+  const rest = async (method: RestMethod, path: string, body?: unknown): Promise<any> => JSON.parse(await request(method, path, body === undefined ? undefined : JSON.stringify(body)));
+  const wsUrl = async (profile: string) => {
+    const { ticket } = await rest("POST", "api/auth/ws-ticket");
+    const url = new URL(`api/ws?ticket=${encodeURIComponent(ticket)}&profile=${profile}`, BASE);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    return url;
+  };
+
+  const openPipe: OpenPipe = async (onEvent, profile) => {
+    const ws = new WebSocket(await wsUrl(profile));
+    await new Promise((open, failed) => {
+      ws.onopen = open;
+      ws.onerror = () => failed(new Error("the WebSocket failed"));
+    });
+    ws.onmessage = (m) => {
+      for (const text of String(m.data).split("\n").filter((l) => l.trim())) onEvent({ kind: "frame", text });
+    };
+    ws.onclose = () => onEvent({ kind: "closed", reason: "The test closed the connection." });
+    const pipe: Partial<Pipe> = {
+      route: { kind: "url", url: BASE!, addresses: [] },
+      send: async (frame) => ws.send(frame),
+      request,
+      getLimited: (path) => request("GET", path),
+      close: async () => ws.close(),
+    };
+    return pipe as Pipe;
   };
 
   /** One connection: JSON-RPC calls, every event pushed, and a turn that waits for its reply. */
   const socket = async () => {
-    const { ticket } = await rest("POST", "api/auth/ws-ticket");
-    const url = new URL(`api/ws?ticket=${encodeURIComponent(ticket)}&profile=default`, BASE);
-    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(await wsUrl("default"));
     const pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>();
     const events: Event[] = [];
     let wake = () => {};
@@ -101,7 +128,7 @@ function dashboard() {
     };
     return { rpc, turn, close: () => ws.close() };
   };
-  return { rest, socket };
+  return { rest, socket, openPipe };
 }
 
 const replyOf = (evs: Event[]) => evs.filter((e) => e.type === "message.complete").map((e) => String(e.payload?.text ?? "")).join(" ");
@@ -226,6 +253,71 @@ describe.skipIf(!BASE)("Bot setup's spikes against a throwaway Hermes", () => {
     expect(await row()).toMatchObject({ title: "Earlier Bot Chat", archived: 0 });
     expect(await lookup(profile)).toEqual([fresh]);
   }, 120_000);
+
+  // Hermes has no call that adds a memory entry, so the entries are written into the throwaway profile's own folder.
+  it("Start fresh, run by the app's transport, archives the Bot Chat, names it, clears the memory and seeds a new one (S3)", async () => {
+    const profile = await newProfile("fresh");
+    const { profiles: listed } = (await hermes.rest("GET", "api/profiles")) as { profiles: { name: string; path: string }[] };
+    const home = listed.find((p) => p.name === profile)!.path;
+    const { mkdirSync, writeFileSync, realpathSync } = await fs();
+    const outside = sandboxRefusal(process.env.HERMES_LIVE_SANDBOX, process.env.HOME, [home], realpathSync);
+    if (outside) throw new Error(`Refusing to write memory files: ${outside}`);
+    mkdirSync(`${home}/memories`, { recursive: true });
+    writeFileSync(`${home}/memories/MEMORY.md`, ["Rome trip is in May.", "Prefers trains."].join("\n§\n"));
+    writeFileSync(`${home}/memories/USER.md`, "The owner wants to be called Lena.");
+    const title = `Earlier Bot Chat with ${profile}, 19 Nov 2026`;
+    const app = await connect(hermes.openPipe, profile);
+    try {
+      const me = async () => (await app.bots()).find((b) => b.profile === profile)!;
+      const old = await app.openBotChat(await me());
+      await app.send(old, "Rome to Florence?");
+      const settled = async (id: string) => {
+        for (const end = Date.now() + 90_000; app.getSnapshot().chats.find((c) => c.id === id)?.running; ) {
+          if (Date.now() > end) throw new Error(`The reply in ${id} didn't end in 90 s.`);
+          await new Promise((r) => setTimeout(r, 300));
+        }
+      };
+      await settled(old);
+      expect(await lookup(profile)).toEqual([old]);
+      const entries = Object.values((await app.memory.load(profile)).resources).flatMap((r) => r.entries);
+      expect(entries.map((e) => e.text)).toEqual(["Rome trip is in May.", "Prefers trains.", "The owner wants to be called Lena."]);
+      const current = await app.botSetupCurrent(await me());
+      const brief = (id: string) => botSetupBrief({ id, name: profile, inventory: { models: [], skills: [], toolsets: [], bots: [] }, current });
+
+      const end = await app.startBotFresh(await me(), brief, KEEP_MEMORY ? [] : entries, title);
+      console.log("Start fresh ended:", JSON.stringify(end));
+      expect(end).toMatchObject({ kind: "fresh", start: { kind: "waiting" }, missed: {}, memoryLeft: 0 });
+      if (end.kind !== "fresh" || end.start.kind === "refused") throw new Error("Start fresh didn't start a new Bot Chat.");
+      const made = end.start.chatId;
+      expect(made).not.toBe(old);
+
+      const oldRow = await hermes.rest("GET", `api/sessions/${old}?profile=${profile}`);
+      console.log("old row:", JSON.stringify({ title: oldRow.title, archived: oldRow.archived, hidden: oldRow.hidden }));
+      expect(oldRow).toMatchObject({ title, archived: 1, hidden: 0 });
+      expect(await lookup(profile)).toEqual([made]);
+      const archived = await hermes.rest("GET", `api/sessions?profile=${profile}&archived=only&limit=10&offset=0&order=recent`);
+      expect((archived.sessions as { id: string; title: string }[]).map((s) => [s.id, s.title])).toEqual([[old, title]]);
+      const memory = [await readText(`${home}/memories/MEMORY.md`), await readText(`${home}/memories/USER.md`)];
+      console.log("memory files after:", JSON.stringify(memory));
+      expect(memory.map((m) => m.trim())).toEqual(["", ""]);
+      await settled(made);
+      const rows = await storedRows(profile, made);
+      console.log("new Bot Chat rows:", rows.map(([r, k, c]) => [r, k, c.slice(0, 44)]));
+      expect(rows.map(([r, k]) => [r, k])).toEqual([
+        ["user", "hidden"],
+        ["user", "hidden"],
+        ["assistant", null],
+      ]);
+      expect(rows[0][2]).toContain("Bot setup again");
+      expect(rows[0][2]).toContain("CURRENT (how you are set up now");
+
+      expect(await app.restore(old)).toBe(true);
+      expect(await hermes.rest("GET", `api/sessions/${old}?profile=${profile}`)).toMatchObject({ title, archived: 0 });
+      expect(await lookup(profile)).toEqual([made]);
+    } finally {
+      await app.close();
+    }
+  }, 300_000);
 
   // spikes/s1v2.py: toolsets and persona changed mid-chat reach the Bot Chat's next turn, with or without a Bot Mode
   // block and a reconnect, and a call to a newly enabled tool runs.

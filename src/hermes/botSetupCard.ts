@@ -24,6 +24,7 @@ import {
   type BotSetupOtherBot,
   type BotSetupToggle,
 } from "./botSetupBrief";
+import type { McpRefusal } from "./botSetupMcp";
 import type { SkillRow } from "./skills";
 import { textOf } from "./storedTranscript";
 import type { Toolset } from "./toolsets";
@@ -93,8 +94,11 @@ type Proposal<K extends ItemKind> = { kind: K; key: string; name?: string; from?
  */
 export type ListedItem = { [K in ItemKind]: Proposal<K> & { after: ItemValues[K]; over: readonly ItemValues[K][] } & ItemStatus }[ItemKind];
 
-/** A name the block gave that Hermes doesn't list. Shown with the block's own spelling; never ticked, never sent. */
-export type NotFoundItem = { kind: "model" | "skill" | "toolset" | "mcp"; key: string; name: string; from?: string; status: "notFound" };
+/**
+ * A name the block gave that Hermes doesn't list, or (`why`) an MCP server Hermes lists that the card won't add. Shown
+ * with the block's own spelling; never ticked, never sent.
+ */
+export type NotFoundItem = { kind: "model" | "skill" | "toolset" | "mcp"; key: string; name: string; from?: string; status: "notFound"; why?: McpRefusal };
 
 export type PlanItem = ListedItem | NotFoundItem;
 
@@ -103,7 +107,8 @@ export type Plan = { cardId: string; items: PlanItem[] };
 
 /**
  * What the plan is read against: the bot as Hermes has it now, and what Hermes lists. `mcp` undefined: MCP isn't
- * offered, so every MCP server the block names is not found. `memory`: the bot's memory entries, as text.
+ * offered, so every MCP server the block names is not found. `mcp.refused`: why the card won't add a server Hermes
+ * lists, by its `mcpSourceKey`. `memory`: the bot's memory entries, as text.
  */
 export type HermesNow = {
   persona: string;
@@ -114,7 +119,7 @@ export type HermesNow = {
   skills: readonly Pick<SkillRow, "name" | "enabled">[];
   toolsets: readonly Pick<Toolset, "name" | "enabled">[];
   models: readonly string[];
-  mcp?: { catalog: readonly string[]; servers: readonly string[] };
+  mcp?: { catalog: readonly string[]; servers: readonly string[]; refused?: Readonly<Record<string, McpRefusal>> };
   bots: readonly Pick<BotSetupOtherBot, "name" | "skills" | "toolsetsOn" | "mcp">[];
 };
 
@@ -366,12 +371,16 @@ const remembers = (now: HermesNow, name: string | null): string | null => {
 const listed = <K extends ItemKind>(kind: K, key: string, before: ItemValues[K], proposed: ItemValues[K], extra: { name?: string; from?: string } = {}) =>
   ({ kind, key, ...extra, before, proposed }) as Proposal<ItemKind>;
 
-const notFound = (kind: NotFoundItem["kind"], name: string, from?: string): NotFoundItem => ({
+/** An MCP server's source: the catalog's entry `name`, or the server `name` of the bot `from`. */
+export const mcpSourceKey = (name: string, from?: string) => `${from === undefined ? "" : `${from}/`}${name}`;
+
+const notFound = (kind: NotFoundItem["kind"], name: string, from?: string, why?: McpRefusal): NotFoundItem => ({
   kind,
-  key: `${kind}:${from === undefined ? "" : `${from}/`}${name}`,
+  key: `${kind}:${mcpSourceKey(name, from)}`,
   name,
   ...(from !== undefined && { from }),
   status: "notFound",
+  ...(why && { why }),
 });
 
 /** The block against Hermes now: one item per row the card shows. */
@@ -410,6 +419,8 @@ function planBlock(card: Card, now: HermesNow): (Proposal<ItemKind> | NotFoundIt
   const mcp = (name: string, source: readonly string[] | undefined, from?: string) => {
     const known = source?.find((n) => n === name);
     if (known === undefined || !now.mcp) return add(notFound("mcp", name, from));
+    const why = now.mcp.refused?.[mcpSourceKey(known, from)];
+    if (why) return add(notFound("mcp", known, from, why));
     add(listed("mcp", `mcp:${known}`, now.mcp.servers.includes(known) ? "added" : "absent", "added", { name: known, ...(from !== undefined && { from }) }));
   };
 

@@ -207,6 +207,91 @@ describe("Bot setup's card after Set it up", { timeout: 30_000 }, () => {
   });
 });
 
+describe("MCP servers on the card", { timeout: 30_000 }, () => {
+  const withMcp = (s: FakeHermes) => {
+    s.otherProfiles = { research: [] };
+    s.skills.profiles.add("research");
+    s.profileMeta.research = { description: "Finds sources.", ui_meta: { "hermes-bots": { title: "Research" } } };
+    s.mcp.servers.research = { "brave-search": { command: "npx", args: ["-y", "@brave/brave-search-mcp-server"], env: { BRAVE_API_KEY: "secret-value-1" } } };
+    s.mcp.catalogEntries = [
+      { name: "airbnb", description: "Stays", transport: "stdio", command: "npx", args: ["-y", "@openbnb/mcp-server-airbnb"] },
+      { name: "github", description: "Code", transport: "http", url: "https://api.githubcopilot.com/mcp/", auth_type: "oauth" },
+    ];
+  };
+  const mcpCard = card({ ...BLOCK, skills: [], toolsets: [], mcp: [{ catalog: "airbnb" }, { catalog: "github" }], copy: [{ from: "Research", skills: [], toolsets: [], mcp: ["brave-search"] }] });
+  const row = (name: string) => within(group(t.mcp)).getByText(name, { selector: ".bot-setup-label" }).closest<HTMLElement>(".bot-setup-item")!;
+  const sentAnywhere = (server: FakeHermes, text: string) => JSON.stringify([server.requests, server.mcp.writes]).includes(text);
+
+  it("shows each server's command first, names an OAuth server without letting it be ticked, and keeps Connect's key unsent and unshown", async () => {
+    const { server, user } = await inBotChat(interview(mcpCard), withMcp);
+    await waitCard();
+    expect(within(row("airbnb")).getByText("npx -y @openbnb/mcp-server-airbnb")).toBeTruthy();
+    const github = box("github") as HTMLInputElement;
+    expect([github.checked, github.disabled]).toEqual([false, true]);
+    expect(within(row("github")).getByText(t.mcpRefused.oauth)).toBeTruthy();
+    expect(within(row("brave-search")).getByText(t.mcpNeeds("BRAVE_API_KEY"))).toBeTruthy();
+
+    await user.click(within(row("brave-search")).getByRole("button", { name: t.connect }));
+    await user.type(within(row("brave-search")).getByLabelText("BRAVE_API_KEY"), "fresh-key-77{Enter}");
+    expect(within(row("brave-search")).getByText(t.mcpReady)).toBeTruthy();
+    expect(sentAnywhere(server, "fresh-key-77")).toBe(false);
+    await user.click(within(row("brave-search")).getByRole("button", { name: t.connect }));
+    expect((within(row("brave-search")).getByLabelText("BRAVE_API_KEY") as HTMLInputElement).value).toBe("");
+    await user.click(within(row("brave-search")).getByRole("button", { name: t.cancel }));
+
+    await user.click(within(liveCard()!).getByRole("button", { name: t.setUp }));
+    await waitFor(() => expect(within(row("brave-search")).getByText(t.mcpReloaded)).toBeTruthy(), { timeout: 5000 });
+    expect(server.mcp.servers.default["brave-search"]?.env).toEqual({ BRAVE_API_KEY: "fresh-key-77" });
+    expect(server.requests.filter((r) => r.method === "reload.mcp")).toHaveLength(1);
+  });
+
+  it("drops Connect's key when the owner leaves the card, so Set it up waits on Connect", async () => {
+    const { server, user } = await inBotChat(interview(mcpCard), withMcp);
+    await waitCard();
+    await user.click(within(row("brave-search")).getByRole("button", { name: t.connect }));
+    await user.type(within(row("brave-search")).getByLabelText("BRAVE_API_KEY"), "fresh-key-88{Enter}");
+    await user.click(document.querySelector<HTMLElement>('.sidebar [role=tab][data-mode="chats"]')!);
+    await user.click(screen.getByRole("button", { name: /^Archived/ }));
+    await user.click(await screen.findByText("Notes"));
+    await waitFor(() => expect(liveCard()).toBeNull());
+    await user.click(document.querySelector<HTMLElement>('.sidebar [role=tab][data-mode="bots"]')!);
+    await user.click(document.querySelector<HTMLElement>('.sb-bots .bots-row[data-profile="default"] .bots-open')!);
+    await waitCard();
+    expect(within(row("brave-search")).getByText(t.mcpNeeds("BRAVE_API_KEY"))).toBeTruthy();
+
+    await user.click(within(liveCard()!).getByRole("button", { name: t.setUp }));
+    await waitFor(() => expect(within(liveCard()!).getByText(t.waitingConnect)).toBeTruthy(), { timeout: 5000 });
+    expect(server.mcp.writes.map((w) => w.what)).toEqual(["install airbnb"]);
+    expect(sentAnywhere(server, "fresh-key-88")).toBe(false);
+  });
+
+  it("waits with Reload MCP servers while a reply runs on Hermes, and the button reloads once", async () => {
+    const { server, user } = await inBotChat(interview(card({ ...BLOCK, skills: [], toolsets: [], mcp: [{ catalog: "airbnb" }] })), (s) => {
+      withMcp(s);
+      s.liveSessions = [{ id: "rt-other", session_key: "side", status: "working", last_active: Math.floor(Date.now() / 1000) }];
+    });
+    await waitCard();
+    await user.click(within(liveCard()!).getByRole("button", { name: t.setUp }));
+    const reload = await within(liveCard()!).findByRole("button", { name: t.reloadMcp }, { timeout: 5000 });
+    expect(within(liveCard()!).getByText(t.waitingReload("Hermes"))).toBeTruthy();
+    expect(server.mcp.servers.default.airbnb).toBeDefined();
+    expect(server.requests.filter((r) => r.method === "reload.mcp")).toEqual([]);
+
+    expect((reload as HTMLButtonElement).disabled).toBe(true);
+    const sid = String(server.last("prompt.submit")!.params.session_id);
+    act(() => {
+      server.event(sid, "message.start");
+      server.storeMessage("hermes-bot", { role: "assistant", text: "I'm set up." });
+      server.event(sid, "message.complete", { text: "I'm set up.", status: "complete" });
+    });
+    server.liveSessions = [];
+    await waitFor(() => expect((reload as HTMLButtonElement).disabled).toBe(false));
+    await user.click(reload);
+    await waitFor(() => expect(within(liveCard()!).getByText(t.mcpReloaded)).toBeTruthy());
+    expect(server.requests.filter((r) => r.method === "reload.mcp").map((r) => r.params.confirm)).toEqual([true]);
+  });
+});
+
 describe("The Setup started line", { timeout: 30_000 }, () => {
   it("says the setup didn't start when the bot never replied, with Hermes's words and Try again, which sends the begin turn again", async () => {
     const rows = interview().slice(0, 2);

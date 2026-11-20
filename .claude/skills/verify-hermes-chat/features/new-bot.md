@@ -10,6 +10,7 @@ Bots mode's New bot, and Settings → Profiles' New profile, open the name dialo
 - `new-bot-old-hermes`: below 0.23.2 the dialog says why there's no interview, and Create sends no brief.
 - `new-bot-blank`: Start blank opens the Bot Chat empty, with no brief.
 - `new-bot-copy`: Copy a bot… opens Clone profile with the id filled in.
+- `new-bot-mcp`: the card's MCP servers: the command shown first, Connect's write-only field, an OAuth server named but not tickable, and after Set it up `reload.mcp` on the Bot Chat, or Reload MCP servers while a reply runs.
 - `edit-persona-rewrite`: Edit bot's Persona, Write with AI, the field holding the rewrite, Undo, and a failed rewrite that leaves the persona as typed.
 
 ## How to get to it (user POV)
@@ -28,6 +29,7 @@ Preconditions: `hv up`, signed in per [sign-in.md](sign-in.md). A stand-in that 
 - **Create.** `$S/wd.mjs click button "Create"`, `$S/wd.mjs gone .profile-dialog`. The app is on the new bot's profile with its Bot Chat open. `$S/hv state` shows the create body under `profileCreates`; the real sandbox's stored rows (`GET /api/sessions/<id>/messages`) hold the brief and the begin turn, both `display_kind: hidden`.
 - **Start blank.** Open it, name it, **Skip** → **Start blank**: the Bot Chat opens empty and no `prompt.submit` is sent.
 - **Copy a bot.** Open it, name it, **Skip** → **Copy a bot…**: Clone profile opens with the id in "New profile's name".
+- **MCP servers on the card.** Once the bot's card names an MCP server (`mcp: [{"catalog": …}]` or a `copy` with `mcp`), its row is under `'.msg.returned.bot-setup[data-card] [aria-label="MCP servers"]'`. `$S/wd.mjs click button "Connect"`, then type into the `input[type=password]` under the row and `$S/wd.mjs click '.bot-setup-connect button' "Connect"`: nothing reaches Hermes until **Set it up**, and Connect opened again shows an empty field. After Set it up, `$S/hv state` (or the real sandbox's request log) shows the add or install with the typed value, then one `reload.mcp {session_id, confirm: true}` before the hidden ready turn. With a reply running in any chat the row waits with **Reload MCP servers** instead. The real proof that the bot reaches the server is the "MCP copy" test in `src/hermes/botSetupSpikes.live.test.ts`, which calls its tool from the Bot Chat.
 - **Edit persona.** `$S/wd.mjs rightclick '.sb-bots .bots-row[data-profile=<name>] .bots-open'`, `$S/wd.mjs click '[role=menuitem]' "Edit persona…"`: Edit bot opens with the SOUL.md in `textarea "Persona"`, focused. Type a rough persona, `$S/wd.mjs wait .set-hint "writes"`, `$S/wd.mjs click button "Write with AI"`, `$S/wd.mjs wait button "Undo"`. With an empty `HV_PERSONA_REPLY` file, Write with AI shows `[role=alert]` "couldn't rewrite" and keeps the text.
 
 ## Gotchas

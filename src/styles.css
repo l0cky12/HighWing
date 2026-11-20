@@ -554,6 +554,9 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
 .bot-setup-field { width: 100%; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line-3); background: var(--bg); color: var(--text); font: inherit; }
 textarea.bot-setup-field { resize: vertical; min-height: 8em; }
 .bot-setup-editor-actions { display: flex; gap: 6px; }
+.msg.assistant .bot-setup-runs, .bot-setup-runs { display: block; font-size: calc(12rem / 14); color: var(--text-2); background: none; padding: 0; }
+.bot-setup-connect { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--raised-2); }
+.bot-setup-secret { display: grid; gap: 4px; font-size: calc(12.5rem / 14); }
 .bot-setup-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; border-top: 1px solid var(--line-2); margin-top: 6px; padding-top: 10px; }
 .bot-setup-foot-note { color: var(--text-2); font-size: calc(12.5rem / 14); }
 .bot-setup-sent summary { cursor: pointer; color: var(--muted); font-size: calc(12.5rem / 14); }

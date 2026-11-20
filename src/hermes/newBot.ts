@@ -1,10 +1,11 @@
 // Making a bot from the name the owner typed (ADR 0231, "Making a bot"). The id is derived from the name the way
 // Hermes's own clients derive it, the create carries the profile in use's model and nothing else, and the typed name is
 // then written as the bot's name in Bot Mode. The brief's inventory for a new bot is read here too: what Hermes lists
-// for the bot and for the other bots it could copy from, with no MCP servers yet.
+// for the bot and for the other bots it could copy from.
 import type { Bot, BotLook } from "./bots";
 import { BOT_SETUP_CAPS, type BotSetupInventory } from "./botSetupBrief";
 import type { EditResult } from "./fieldMerge";
+import type { McpApi } from "./mcp";
 import type { ModelCatalog } from "./models";
 import { ProfileError, profileIdFor, type Created, type ProfileFailure, type ProfileRow } from "./profiles";
 import type { SkillRow } from "./skills";
@@ -69,28 +70,36 @@ export type InventoryIo = {
   models(): Promise<ModelCatalog | undefined>;
   skills(profile: string): Promise<SkillRow[]>;
   toolsets(profile: string): Promise<ToolsetList>;
+  /** Absent, or a catalog Hermes doesn't answer: no MCP servers are offered. */
+  mcp?: Pick<McpApi, "catalog" | "list">;
 };
 
 const settled = <T,>(p: Promise<T>, none: T) => p.catch(() => none);
 
 /**
- * What a new bot's brief offers (ADR 0231): the models its profile lists, its own skills and toolsets, and what the
- * first `BOT_SETUP_CAPS.bots` of `others` have on. A list Hermes doesn't answer is left empty rather than holding the
- * interview back. No MCP servers are offered.
+ * What a new bot's brief offers (ADR 0231): the models its profile lists, its own skills and toolsets, Hermes's MCP
+ * catalog, and what the first `BOT_SETUP_CAPS.bots` of `others` have on, MCP servers included. A list Hermes doesn't
+ * answer is left empty rather than holding the interview back; without the catalog no MCP server is offered.
  */
 export async function newBotInventory(io: InventoryIo, profile: string, others: readonly Bot[]): Promise<BotSetupInventory> {
   const names = <T extends { name: string }>(rows: readonly T[], on?: (r: T) => boolean) => rows.filter((r) => !on || on(r)).map((r) => r.name);
-  const [catalog, skills, toolsets, bots] = await Promise.all([
+  const mcp = io.mcp;
+  const [catalog, skills, toolsets, mcpCatalog, bots] = await Promise.all([
     settled(io.models(), undefined),
     settled(io.skills(profile), []),
     settled(io.toolsets(profile).then((l) => l.toolsets), []),
+    mcp ? settled(mcp.catalog(profile).then((c) => names(c.entries)), undefined) : undefined,
     Promise.all(
       others
         .filter((b) => b.profile !== profile)
         .slice(0, BOT_SETUP_CAPS.bots)
         .map(async (b) => {
-          const [s, t] = await Promise.all([settled(io.skills(b.profile), []), settled(io.toolsets(b.profile).then((l) => l.toolsets), [])]);
-          return { name: b.name, description: b.description, skills: names(s, (r) => r.enabled), toolsetsOn: names(t, (r) => r.enabled) };
+          const [s, t, m] = await Promise.all([
+            settled(io.skills(b.profile), []),
+            settled(io.toolsets(b.profile).then((l) => l.toolsets), []),
+            mcp && settled(mcp.list(b.profile).then((l) => names(l.servers)), []),
+          ]);
+          return { name: b.name, description: b.description, skills: names(s, (r) => r.enabled), toolsetsOn: names(t, (r) => r.enabled), ...(m && { mcp: m }) };
         }),
     ),
   ]);
@@ -98,6 +107,7 @@ export async function newBotInventory(io: InventoryIo, profile: string, others: 
     models: [...new Set(catalog?.providers.flatMap((p) => p.models.map((m) => m.model)) ?? [])],
     skills: names(skills),
     toolsets: names(toolsets),
+    ...(mcpCatalog && { mcpCatalog }),
     bots,
   };
 }

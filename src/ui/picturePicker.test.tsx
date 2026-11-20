@@ -305,6 +305,10 @@ describe("The picture picker", () => {
     }
     await user.tab({ shift: true });
     expect(inside()).toBe(true);
+
+    await user.click(within(dialog()).getByText(p.drop));
+    await user.tab({ shift: true });
+    expect(document.activeElement).toBe(within(dialog()).getByRole("button", { name: p.browse }));
   });
 
   it("keeps Tab inside it from a picture the arrow keys reached", async () => {

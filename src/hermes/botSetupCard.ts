@@ -78,9 +78,10 @@ export type ItemKind = keyof ItemValues;
 /**
  * Whether Set it up has anything to do for an item. `change`: Hermes differs from `after`; ticked by default.
  * `elsewhere`: the owner accepted `after`, and Hermes has since been changed to `before` from somewhere else; unticked,
- * so it isn't overwritten unless the owner ticks it. `same`: Hermes already has it, so it isn't counted or written.
+ * so it isn't overwritten unless the owner ticks it. `same`: Hermes already has it, so it isn't counted or written, and
+ * its tick is the owner's, so an untick survives Set it up for when Hermes changes it again.
  */
-export type ItemStatus = { status: "change"; ticked: boolean } | { status: "elsewhere"; ticked: boolean } | { status: "same" };
+export type ItemStatus = { status: "change" | "elsewhere" | "same"; ticked: boolean };
 
 type Proposal<K extends ItemKind> = { kind: K; key: string; name?: string; from?: string; before: ItemValues[K]; proposed: ItemValues[K] };
 
@@ -446,7 +447,7 @@ export function planCard(card: Card, now: HermesNow, accepted: AcceptedRecord | 
     const after = held ? held.to : p.proposed;
     const before = p.kind === "remember" ? remembers(now, after as string | null) : p.before;
     const status: ItemStatus = same(p.kind, before, after)
-      ? { status: "same" }
+      ? { status: "same", ticked: held?.ticked ?? true }
       : a?.ticked && !same(p.kind, before, a.from) && same(p.kind, after, a.to)
         ? { status: "elsewhere", ticked: chosen?.ticked ?? false }
         : { status: "change", ticked: held?.ticked ?? true };
@@ -456,7 +457,7 @@ export function planCard(card: Card, now: HermesNow, accepted: AcceptedRecord | 
 }
 
 /** An item Set it up can write, ticked or not. */
-export const tickable = (item: PlanItem): item is ListedItem & { status: "change" | "elsewhere"; ticked: boolean } => item.status === "change" || item.status === "elsewhere";
+export const tickable = (item: PlanItem): item is ListedItem & { status: "change" | "elsewhere" } => item.status === "change" || item.status === "elsewhere";
 
 /** The card's "N changes": items ticked now. Rows already in Hermes, and names Hermes doesn't list, don't count. */
 export const tickedCount = (plan: Plan) => plan.items.filter((i) => tickable(i) && i.ticked).length;
@@ -474,9 +475,9 @@ export const choose = <I extends ListedItem>(item: I, change: { ticked?: boolean
 
 /**
  * The record of Set it up on `plan`, laid over `previous`, the setup's record so far: every item Set it up could write,
- * ticked or not, and every item Hermes already has that a choice made over another value holds on. Any other item keeps
- * its earlier record while that still holds and is still what the card shows, so a retry doesn't forget what an earlier
- * Set it up applied, and a later choice of the bot's own value replaces it.
+ * ticked or not, and every item Hermes already has that the owner left unticked or that a choice made over another value
+ * holds on. Any other item keeps its earlier record while that still holds and is still what the card shows, so a retry
+ * doesn't forget what an earlier Set it up applied, and a later choice of the bot's own value replaces it.
  */
 export function acceptedRecord(plan: Plan, previous: AcceptedRecord | null = null): AcceptedRecord {
   const earlier = previous && setupOf(previous.card) === setupOf(plan.cardId) ? previous.items : [];
@@ -484,8 +485,8 @@ export function acceptedRecord(plan: Plan, previous: AcceptedRecord | null = nul
   for (const item of plan.items) {
     if (item.status === "notFound") continue;
     const a = items.get(item.key);
-    if (tickable(item) || item.over.length)
-      items.set(item.key, { kind: item.kind, key: item.key, over: item.over, ticked: tickable(item) ? item.ticked : true, from: item.before, to: item.after } as AcceptedItem);
+    if (tickable(item) || item.over.length || !item.ticked)
+      items.set(item.key, { kind: item.kind, key: item.key, over: item.over, ticked: item.ticked, from: item.before, to: item.after } as AcceptedItem);
     else if (a && !(holds(a, item.proposed) && same(item.kind, a.to, item.after))) items.delete(item.key);
   }
   return { v: 1, card: plan.cardId, items: [...items.values()] };

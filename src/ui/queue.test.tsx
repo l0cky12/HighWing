@@ -7,6 +7,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { FakeHermes, row } from "../hermes/fakeHermes";
 import { connect, type Hermes } from "../hermes/transport";
 import { Main } from "../App";
+import { PICK_MARK } from "../hermes/mentionPicker";
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }));
 
@@ -169,6 +170,21 @@ describe("While Hermes replies", () => {
 
     await s.finish();
     expect(prompts(s.server)).toEqual(["Unlock it", "first"]);
+  });
+
+  it("saves an edit without the pick mark of a pill pasted from the composer, so Hermes never gets it", async () => {
+    const s = await replying();
+    await s.user.type(composerIn(document.body), "first{Enter}");
+    const queue = () => queueIn(document.body)!;
+    await s.user.click(within(queue()).getByRole("button", { name: "Edit queued message 1" }));
+    const edit = within(queue()).getByRole("textbox", { name: "Edit queued message 1" });
+    await s.user.clear(edit);
+    await s.user.click(edit);
+    await s.user.paste(`@${PICK_MARK}quill hi`);
+    await s.user.keyboard("{Enter}");
+    expect(queuedTexts(queue())).toEqual(["@quill hi"]);
+    await s.finish();
+    expect(prompts(s.server)).toEqual(["Unlock it", "@quill hi"]);
   });
 
   it("moves a message dragged to the top, the middle or the bottom, marking the place first", async () => {

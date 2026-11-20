@@ -10,6 +10,7 @@ import { connect, type Hermes } from "../hermes/transport";
 import { Main } from "../App";
 import { RestError } from "../hermes/pipe";
 import { BOT_CHAT_TITLE } from "../hermes/bots";
+import { PICK_MARK } from "../hermes/mentionPicker";
 import { LocaleContext, type Locale } from "../i18n/locale";
 import { pseudoLocale } from "../i18n/pseudo";
 
@@ -353,7 +354,7 @@ describe("Review regressions", () => {
   });
 });
 
-describe("The @ menu in a Bot Chat", () => {
+describe("The @ menu, where a bot can be picked", () => {
   const BOTS = { ada: "Writes the release notes", bram: "Reviews pull requests", cleo: "Watches the nightly jobs" };
 
   /** The app on a fake Hermes whose bots are Hermes (default), ada, bram and cleo, with ada's Bot Chat open. */
@@ -415,7 +416,7 @@ describe("The @ menu in a Bot Chat", () => {
     expect(menuLines()).toEqual(["# Bots", "HHermes@hermes"]);
     await user.keyboard("{Escape}");
     await user.clear(box());
-    await user.click(screen.getByRole("button", { name: "Name a bot or reference a chat" }));
+    await user.click(screen.getByRole("button", { name: "Pick a bot or reference a chat" }));
     expect(box().value).toBe("@");
     expect(menuLines()[0]).toBe("# Bots");
     expect(menuLines()).toContain("# Chats");
@@ -427,7 +428,7 @@ describe("The @ menu in a Bot Chat", () => {
     await user.keyboard("@br");
     expect(pill()).toBeNull();
     await user.keyboard("{Tab}");
-    expect(box().value).toBe("@bram ");
+    expect(box().value).toBe(`@${PICK_MARK}bram `);
     expect(screen.queryByRole("listbox")).toBeNull();
     await waitFor(() => expect(pill()?.textContent).toBe("@bram"));
     await user.keyboard("{Backspace}");
@@ -435,7 +436,7 @@ describe("The @ menu in a Bot Chat", () => {
     expect(pill()).toBeNull();
 
     await user.keyboard("ask @cl{Enter}");
-    expect(box().value).toBe("ask @cleo ");
+    expect(box().value).toBe(`ask @${PICK_MARK}cleo `);
     await waitFor(() => expect(pill()?.textContent).toBe("@cleo"));
     expect(server.requests.filter((r) => r.method === "prompt.submit")).toEqual([]);
   });
@@ -445,7 +446,7 @@ describe("The @ menu in a Bot Chat", () => {
     await user.click(box());
     await user.keyboard("ask @br");
     await user.click(within(menu()).getByRole("option", { name: /@bram/ }));
-    expect([box().value, box().selectionStart]).toEqual(["ask @bram ", 10]);
+    expect([box().value, box().selectionStart]).toEqual([`ask @${PICK_MARK}bram `, 11]);
     expect(pill()?.textContent).toBe("@bram");
   });
 
@@ -462,7 +463,7 @@ describe("The @ menu in a Bot Chat", () => {
     await user.keyboard("@bram {ArrowLeft}");
     expect(menuLines()).toEqual(["# Bots", `BBram@bram${BOTS.bram}`]);
     await user.keyboard("{Tab}");
-    expect([box().value, box().selectionStart]).toEqual(["@bram ", 6]);
+    expect([box().value, box().selectionStart]).toEqual([`@${PICK_MARK}bram `, 7]);
     await user.keyboard("{Backspace}");
     expect(box().value).toBe("");
   });
@@ -486,7 +487,7 @@ describe("The @ menu in a Bot Chat", () => {
     expect(pill()).toBeNull();
   });
 
-  it("lists only chats, with no Bots group, in an ordinary chat once the bots are known", { timeout: 30_000 }, async () => {
+  it("lists the other bots above the chats in an ordinary chat too, without the bot whose chat it is", { timeout: 30_000 }, async () => {
     const { hermes, user } = await inAdasBotChat();
     expect(hermes.getSnapshot().bots?.roster.map((b) => b.handle)).toEqual(["hermes", "ada", "bram", "cleo"]);
     await user.click(document.querySelector<HTMLElement>('.sidebar [role=tab][data-mode="chats"]')!);
@@ -495,10 +496,11 @@ describe("The @ menu in a Bot Chat", () => {
     await waitFor(() => expect(hermes.getSnapshot().chats.find((c) => c.id === "backup")?.runtimeId).toBeTruthy());
     await user.click(box());
     await user.keyboard("@");
-    const list = screen.getByRole("listbox", { name: "Chats" });
-    expect(within(list).getAllByRole("option").map((o) => o.textContent)).toEqual(["Deploy pipeline"]);
-    expect(list.querySelector(".cmd-group")).toBeNull();
-    expect(screen.getByRole("button", { name: "Reference a chat" })).toBeTruthy();
+    const lines = menuLines();
+    expect(lines.filter((l) => l?.startsWith("# "))).toEqual(["# Bots", "# Chats"]);
+    expect(lines.flatMap((l) => l?.match(/@(?:hermes|ada|bram|cleo)/) ?? [])).toEqual(["@ada", "@bram", "@cleo"]);
+    expect(lines.at(-1)).toBe("Deploy pipeline");
+    expect(screen.getByRole("button", { name: "Pick a bot or reference a chat" })).toBeTruthy();
   });
 
   it("names its groups, the menu and the button in the app's language", { timeout: 30_000 }, async () => {

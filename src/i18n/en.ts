@@ -20,13 +20,12 @@ export const en = {
     workOn: (name: string) => `What should ${name} work on?`,
     botChat: "Bot Chat",
     botChatTip: "Its bot's one continuous chat",
-    /** The composer's "@" menu in a Bot Chat (ADR 0165): its groups, its name, its keys, and the button that opens it. */
     at: {
       bots: "Bots",
       chats: "Chats",
       menu: "Bots and chats",
       keys: "↑↓ to choose · Enter or Tab to put it in · Esc to close",
-      button: "Name a bot or reference a chat",
+      button: "Pick a bot or reference a chat",
     },
     /** A Returned result's card (ADR 0175): its title when Hermes sent none, and its header's tooltip. */
     returned: {
@@ -79,10 +78,6 @@ export const en = {
         goToAnswer: "Go to the answer",
       },
     },
-    /**
-     * An "@" in a Bot Chat that asks other bots (ADR 0233): the Asked card, each bot's line on it, the chip for this chat,
-     * and why a message to another bot can't go.
-     */
     ask: {
       asked: (handles: readonly string[]) => `Asked ${handles.map((h) => `@${h}`).join(", ").replace(/, ([^,]*)$/, " and $1")}`,
       referenceTitle: (name: string) => `Bot Chat with ${name}`,

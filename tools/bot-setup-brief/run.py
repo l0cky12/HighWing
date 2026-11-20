@@ -39,7 +39,8 @@ ASKED = ["Hi, I'm Travel Buddy. What should I call you?", "What do you want me t
 
 def card(mcp, copied, change):
     """The block the redraw turn starts from, and the owner's change to it."""
-    block = {"v": 1, "persona": "You are Travel Buddy...", "description": "Plans European trips.", "model": None, "color": "teal", "callOwner": "Liam",
+    block = {"v": 1, "persona": "You are Travel Buddy...", "description": "Plans European trips.", "model": None, "color": "teal", "picture": "plane",
+             "callOwner": "Liam",
              "skills": [{"name": "find-nearby", "on": True}], "toolsets": [{"name": "web", "on": True}], "mcp": mcp,
              "copy": [{"from": "Research Assistant", "skills": ["deep-research"], "toolsets": [], "mcp": copied}]}
     return json.dumps(block, separators=(",", ":")), change
@@ -92,6 +93,13 @@ MUTANTS = [
     ("description rewritten though the owner didn't ask", "good-again-keep.txt", lambda b: b.update(description="Plans European trips."), False),
     ("description null on a new bot", "good-card.txt", lambda b: b.update(description=None), False),
     ("persona null on a new bot", "good-card.txt", lambda b: b.update(persona=None), False),
+    ("picture a URL", "good-card.txt", lambda b: b.update(picture="https://example.com/plane.png"), False),
+    ("picture image data", "good-card.txt", lambda b: b.update(picture="data:image/png;base64,iVBORw0KGgo="), False),
+    ("picture a name the set doesn't have", "good-card.txt", lambda b: b.update(picture="rocket"), False),
+    ("picture null on a new bot", "good-card.txt", lambda b: b.update(picture=None), False),
+    ("picture left out", "good-card.txt", lambda b: b.pop("picture"), False),
+    ("another of the set's pictures", "good-card.txt", lambda b: b.update(picture="compass"), True),
+    ("picture changed though the owner didn't ask", "good-again-keep.txt", lambda b: b.update(picture="moon"), False),
 ]
 
 

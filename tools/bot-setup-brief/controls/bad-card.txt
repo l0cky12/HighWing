@@ -7,6 +7,7 @@ Here’s the setup I suggest. Gmail has no listed connector, so I’ve included 
   "description": "Plans European trips, stays, day plans and packing lists.",
   "model": null,
   "color": "teal",
+  "picture": "plane",
   "callOwner": "Liam",
   "skills": [
     {"name": "google-workspace", "on": true}

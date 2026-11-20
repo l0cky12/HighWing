@@ -43,13 +43,18 @@ function lexicalPathParts(path: string): string[] {
   return parts;
 }
 
-const ABSOLUTE_PATHS = /(?<![^\s"'=:;,])(?:[A-Za-z]:)?[\\/][^\s"'=:;,]*/g;
+const PATH_START = /(?<![^\s"'=:;,])(?:[A-Za-z]:)?[\\/]/g;
 
+// A path may hold spaces, so it runs to a quote or the argument's end, and each cut of it at a space is tried too.
 const namesFolder = (text: string, folder: string) => {
   const f = lexicalPathParts(folder);
-  return f.length > 0 && [...text.matchAll(ABSOLUTE_PATHS)].some(([p]) => {
-    const parts = lexicalPathParts(p);
+  const inFolder = (path: string) => {
+    const parts = lexicalPathParts(path);
     return f.every((part, i) => parts[i] === part);
+  };
+  return f.length > 0 && [...text.matchAll(PATH_START)].some(({ index }) => {
+    const words = /^(?:[A-Za-z]:)?[^"'=:;,]*/.exec(text.slice(index))![0].split(" ");
+    return words.some((_, i) => inFolder(words.slice(0, i + 1).join(" ")));
   });
 };
 

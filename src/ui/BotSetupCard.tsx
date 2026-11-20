@@ -352,7 +352,7 @@ function Card({ host, read, plan }: { host: SetupHost; read: BotSetupCardRead; p
   const out = host.outcome;
   // Try again and Apply anyway change an item after Set it up, so the count is read from each item's state now.
   const judged = Object.values(host.runs).filter((s) => s.kind !== "waiting");
-  const canSetUp = !host.busy && !host.blocked && (count > 0 || owed);
+  const canSetUp = !host.busy && !host.blocked && host.mcpReload !== "working" && (count > 0 || owed);
   return (
     <TurnCard kind="bot-setup" icon={<Sparkles size={14} aria-hidden />} heading={l.title(host.bot)} tips={{ hide: l.hide, show: l.show }} data-card={plan.cardId}>
       {judged.length > 0 ? (
@@ -645,7 +645,7 @@ function RunText({ host, item, run, locale: loc, connectFilled, onConnect }: { h
         <div className="bot-setup-run">
           <div className={connectFilled ? "bot-setup-sub" : "bot-setup-sub bot-setup-warn"}>{connectFilled ? l.mcpReady : l.waitingConnect}</div>
           {connectFilled && (
-            <button className="btn" disabled={host.busy || host.blocked === "offline"} onClick={() => again(false)}>
+            <button className="btn" disabled={host.busy || host.blocked === "offline" || host.mcpReload === "working"} onClick={() => again(false)}>
               {l.setUp}
             </button>
           )}
@@ -697,7 +697,7 @@ function RunText({ host, item, run, locale: loc, connectFilled, onConnect }: { h
             <MissText miss={m} profile={cardRead(host)?.profile ?? host.bot} locale={loc} />
           </div>
           {m.kind !== "changed" && (
-            <button className="btn" disabled={host.blocked === "offline"} onClick={() => again(false)}>
+            <button className="btn" disabled={host.blocked === "offline" || (item.kind === "mcp" && host.mcpReload === "working")} onClick={() => again(false)}>
               <RotateCcw size={13} aria-hidden /> {l.tryAgain}
             </button>
           )}

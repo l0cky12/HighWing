@@ -477,6 +477,48 @@ describe("MCP servers at Set it up", () => {
     expect(server.requests.slice(sent).filter((r) => r.method === "prompt.submit")).toEqual([]);
   });
 
+  it("doesn't reload after a row's Set it up loses the answer to its MCP write, though the list then shows the server", async () => {
+    const server = hermes0232(withMcp);
+    const { hermes, chatId } = await withCard(server, cardText(mcpBlock([], ["brave-search"])));
+    const read = cardOf(await hermes.readBotSetup(chatId));
+    const plan = planOf(read);
+    expect((await hermes.applyBotSetup(read, plan, () => {})).states["mcp:brave-search"]).toEqual({ kind: "connect" });
+
+    server.mcp.drop = "stored";
+    expect(await hermes.retryBotSetupItem(read, item(plan, "mcp:brave-search"), [], { "mcp:brave-search": { BRAVE_API_KEY: "fresh-key" } })).toEqual({ kind: "reload" });
+    expect(server.mcp.servers.default["brave-search"]).toBeDefined();
+    expect(reloads(server)).toEqual([]);
+  });
+
+  it("reloads again for a server a row's Set it up adds while Reload MCP servers runs, as that reload went before it", async () => {
+    const server = hermes0232(withMcp);
+    const { hermes, chatId } = await withCard(server, cardText(mcpBlock([{ catalog: "airbnb" }], ["brave-search"])));
+    const read = cardOf(await hermes.readBotSetup(chatId));
+    const plan = planOf(read);
+    server.liveSessions = [{ id: "rt-other", session_key: "side", status: "working", last_active: Math.floor(Date.now() / 1000) }];
+    const out = await hermes.applyBotSetup(read, plan, () => {});
+    expect([out.states["mcp:airbnb"], out.states["mcp:brave-search"]]).toEqual([{ kind: "reload" }, { kind: "connect" }]);
+    server.liveSessions = [];
+
+    const reload = server.handlers["reload.mcp"];
+    const writtenBefore: string[][] = [];
+    let release!: () => void;
+    const held = new Promise<void>((go) => (release = go));
+    server.handlers["reload.mcp"] = (r) => {
+      writtenBefore.push(server.mcp.writes.map((w) => w.what));
+      void (writtenBefore.length === 1 ? held : Promise.resolve()).then(() => reload(r));
+    };
+    const button = hermes.reloadBotSetupMcp(chatId);
+    await vi.waitFor(() => expect(writtenBefore).toHaveLength(1));
+    const row = hermes.retryBotSetupItem(read, item(plan, "mcp:brave-search"), [], { "mcp:brave-search": { BRAVE_API_KEY: "fresh-key" } });
+    await vi.waitFor(() => expect(localChatCache(nas).loadMcpReload("default", chatId)).toContain("mcp:brave-search"));
+    release();
+
+    expect(await Promise.all([button, row])).toEqual(["reloaded", { kind: "applied" }]);
+    expect(writtenBefore).toEqual([["install airbnb"], ["install airbnb", "add brave-search"]]);
+    expect(localChatCache(nas).loadMcpReload("default", chatId)).toEqual([]);
+  });
+
   it("doesn't reload from the button while a reply runs anywhere on Hermes, and runs one reload for calls that overlap", async () => {
     const server = hermes0232(withMcp);
     const { hermes, chatId } = await withCard(server, cardText(mcpBlock([{ catalog: "airbnb" }], [])));

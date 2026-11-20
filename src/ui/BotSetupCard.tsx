@@ -101,6 +101,7 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
     setStart(undefined);
     setSecrets({});
     setMcpReload(undefined);
+    setBusy(false);
   }, []);
   useEffect(() => {
     shown.current = { chatId, reads: 0, started: false, readOnce: false, holds: false, afterSetUp: false, setupId: null };
@@ -109,6 +110,8 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
   }, [chatId, forgetSetup]);
 
   const here = (id: string) => shown.current.chatId === id;
+  // What a Set it up or Retry hears belongs to the setup it ran on: Keep history may start another here meanwhile.
+  const ours = (setupId: string) => here(chatId) && shown.current.setupId === setupId;
   const load = useCallback(() => {
     if (!api) return;
     const n = ++shown.current.reads;
@@ -172,17 +175,19 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
   }, [restart?.state, running, checkRestart]);
 
   if (!api) return undefined;
-  const hear = (key: string, state: ItemRun) => here(chatId) && setRuns((p) => ({ ...p, [key]: state }));
+  const hearFor = (setupId: string) => (key: string, state: ItemRun) => ours(setupId) && setRuns((p) => ({ ...p, [key]: state }));
   const dropSecretsOfAdded = (states: Readonly<Record<string, ItemRun>>) =>
     setSecrets((was) => Object.fromEntries(Object.entries(was).filter(([k]) => states[k]?.kind !== "reload" && states[k]?.kind !== "applied")));
   const retry = (item: ListedItem, cautions: Caution[], using: McpSecrets) => {
     const on = ranOn.current;
     if (!on) return;
+    const setupId = on.read.parse.card.setupId;
+    const hear = hearFor(setupId);
     hear(item.key, { kind: "working" });
     api.retryBotSetupItem(on.read, on.items.get(item.key) ?? item, cautions, using).then(
       (state) => {
         hear(item.key, state);
-        if (here(chatId)) dropSecretsOfAdded({ [item.key]: state });
+        if (ours(setupId)) dropSecretsOfAdded({ [item.key]: state });
       },
       (e: unknown) => hear(item.key, { kind: "failed", miss: { kind: "said", text: errorText(e) } }),
     );
@@ -216,9 +221,10 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
       setMcpReload(undefined);
       const items = setupItems(plan, r.parse.accepted);
       ranOn.current = { read: r, items: new Map(items.map((i) => [i.key, i])) };
-      api.applyBotSetup(r, plan, hear, secrets).then(
+      const setupId = r.parse.card.setupId;
+      api.applyBotSetup(r, plan, hearFor(setupId), secrets).then(
         (out) => {
-          if (!here(chatId)) return;
+          if (!ours(setupId)) return;
           setOutcome(out);
           setBusy(false);
           dropSecretsOfAdded(out.states);
@@ -229,7 +235,7 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
           if (out.readyAt === undefined) load();
         },
         (e: unknown) => {
-          if (!here(chatId)) return;
+          if (!ours(setupId)) return;
           setOutcome({ states: {}, readyFailed: { kind: "said", text: errorText(e) } });
           setBusy(false);
         },

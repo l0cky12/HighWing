@@ -95,6 +95,12 @@ describe("Start fresh's steps", () => {
     expect(calls).toEqual(["find", "unnamed", "retitle", "clearMemory", "start"]);
     expect(named).toEqual(["old-chat"]);
   });
+
+  it("carries on into the new Bot Chat when the old chat an earlier run archived can't be read, as if it were gone", async () => {
+    const { io, calls } = scripted({ find: async () => null, unnamed: fails("Hermes didn't answer.") });
+    expect(await runFresh(io)).toMatchObject({ kind: "fresh", missed: {} });
+    expect(calls).toEqual(["find", "unnamed", "clearMemory", "start"]);
+  });
 });
 
 describe("a Bot Chat too busy for Set up again", () => {

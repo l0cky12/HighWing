@@ -421,6 +421,14 @@ describe("Set up again's card", { timeout: 30_000 }, () => {
     { role: "assistant", text: `Here's the change. Everything else stays as it is.\n\n${fenced(JSON.stringify(block))}` },
   ];
   const more = (name: string) => within(group(name)).getByRole("button", { name: /more that do(es)?n't change/ });
+  /** The bot's reply `text` to the turn last sent into the Bot Chat. */
+  const reply = async (server: FakeHermes, hermes: Hermes, text: string) => {
+    const sid = String(server.last("prompt.submit")!.params.session_id);
+    server.event(sid, "message.start");
+    server.storeMessage("hermes-bot", { role: "assistant", text });
+    server.event(sid, "message.complete", { text, status: "complete" });
+    await act(async () => void (await hermes.idle()));
+  };
 
   it("shows what changes as before → after, read from Hermes, and folds what stays under a line that counts it", async () => {
     const { server, user } = await inBotChat(again());
@@ -470,13 +478,7 @@ describe("Set up again's card", { timeout: 30_000 }, () => {
     await user.click(within(liveCard()!).getByRole("button", { name: t.setUp }));
     const foot = () => liveCard()!.querySelector(".bot-setup-foot-note")!.textContent;
     await waitFor(() => expect(within(liveCard()!).getAllByText(t.applied).length).toBeGreaterThan(0), { timeout: 5000 });
-    const answer = async (text: string) => {
-      const sid = String(server.last("prompt.submit")!.params.session_id);
-      server.event(sid, "message.start");
-      server.storeMessage("hermes-bot", { role: "assistant", text });
-      server.event(sid, "message.complete", { text, status: "complete" });
-      await act(async () => void (await hermes.idle()));
-    };
+    const answer = (text: string) => reply(server, hermes, text);
     await answer("Thanks, I'm set up.");
     await waitFor(() => expect(within(liveCard()!).getAllByText(t.applied).length).toBeGreaterThan(0));
 
@@ -487,6 +489,31 @@ describe("Set up again's card", { timeout: 30_000 }, () => {
     await waitFor(() => expect(foot()).toBe(t.changes(1)));
     expect(within(liveCard()!).queryAllByText(t.applied)).toEqual([]);
     expect(within(group(t.about("Hermes"))).getByRole("checkbox", { name: t.description })).toHaveProperty("checked", true);
+  });
+
+  it("leaves the new setup's card alone when Keep history starts one while Set it up still writes", async () => {
+    const { server, hermes, user } = await inBotChat(interview(card({ ...BLOCK, toolsets: [{ name: "web", on: false }] })));
+    await waitCard();
+    let release!: () => void;
+    server.toolsetGate = new Promise((r) => (release = r));
+    await user.click(within(liveCard()!).getByRole("button", { name: t.setUp }));
+    await waitFor(() => expect(within(liveCard()!).getAllByText(t.applied).length).toBeGreaterThan(0), { timeout: 5000 });
+
+    const me = (await hermes.bots()).find((b) => b.profile === "default")!;
+    await act(async () => void (await hermes.setUpBotAgain(me, (id) => botSetupBrief({ id, name: "Hermes", inventory: { models: [], skills: ["notes", "recipes"], toolsets: [], bots: [] }, current }))));
+    const answer = (text: string) => reply(server, hermes, text);
+    await answer(`Here's the change.\n\n${fenced(JSON.stringify(AGAIN))}`);
+    await waitFor(() => expect(within(liveCard()!).getByText(t.againTitle("Hermes"))).toBeTruthy(), { timeout: 5000 });
+    const setUp = () => within(liveCard()!).getByRole("button", { name: t.setUp }) as HTMLButtonElement;
+    await waitFor(() => expect(setUp().disabled).toBe(false));
+    await user.click(within(group(t.about("Hermes"))).getByRole("checkbox", { name: t.description }));
+
+    const submits = server.requests.filter((r) => r.method === "prompt.submit").length;
+    release();
+    await waitFor(() => expect(server.requests.filter((r) => r.method === "prompt.submit").length).toBe(submits + 1), { timeout: 5000 });
+    await answer("Thanks, I'm set up.");
+    expect(within(group(t.about("Hermes"))).getByRole("checkbox", { name: t.description })).toHaveProperty("checked", false);
+    expect(within(liveCard()!).queryAllByText(t.applied)).toEqual([]);
   });
 
   it("leaves a new bot's card whole: nothing folded, no before", async () => {

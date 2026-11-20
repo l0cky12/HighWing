@@ -99,7 +99,9 @@ export const FRESH_STEPS: readonly FreshStep[] = [
       const found = await io.find();
       if (found?.busy) return { kind: "refused", reason: found.busy };
       run.old = found?.chatId ?? null;
-      run.unnamed = found ? null : await io.unnamed();
+      // A failed read passes the unnamed chat over, as one Hermes no longer has: stopping here would tell the owner
+      // nothing changed while the bot has no Bot Chat.
+      run.unnamed = found ? null : await io.unnamed().catch(() => null);
     },
   },
   { name: "leave", on: "old", fail: "asItWas", run: (io, old) => io.leave(old) },

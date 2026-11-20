@@ -483,6 +483,13 @@ export const en = {
       extensions: "Optional commands and views that run in a sandbox.",
       diagnostics: "What the connected Hermes is and supports, and the logs.",
     },
+    /** Settings → General → Chats: notifications about finished scheduled-job runs (#28). */
+    jobRuns: {
+      section: "Scheduled jobs",
+      name: "Notify when a job runs",
+      hint: "A desktop notification names the job, its bot and how the run went. Clicking it opens the run.",
+      more: "Highwing checks every profile's jobs about every 2 minutes while it is connected, so a notification can come that long after the run. Runs that finished before Highwing started, or while it was disconnected, aren't announced. No notification shows while the window has focus, or while that bot's Scheduled jobs are on screen.",
+    },
     searchTitle: "Search",
     done: "Done",
     closeNav: "Close the list of settings",

@@ -44,7 +44,7 @@ afterEach(() => {
 
 describe("reading", () => {
   it("is the defaults when nothing is stored", () => {
-    expect(getUIPrefs()).toEqual({ theme: "system", reopenLastChat: false, checkUpdatesOnLaunch: true, lastOpenChat: {}, modelPicker: null, modelPicks: {}, modelFavorites: [], statusBar: ["context", "model", "status"], previewWidth: null, sidebarWidth: null, zoom: 1, templates: [], terminalKind: "server", followUp: "queue", idleCompact: { enabled: false, percent: 70, idleMinutes: 15 }, chatSectionsShown: ["pinned", "inbox", "snoozed", "working", "archived"], chatSectionsCollapsed: ["snoozed", "archived"], chatListMode: "chats", inboxAutoDismissDays: null, messageDetails: "time", spellCheck: true, summonSelection: true, followScreen: false, askFirst: true, keybindings: {}, writingModels: {}, hiddenProviders: {} });
+    expect(getUIPrefs()).toEqual({ theme: "system", reopenLastChat: false, checkUpdatesOnLaunch: true, lastOpenChat: {}, modelPicker: null, modelPicks: {}, modelFavorites: [], statusBar: ["context", "model", "status"], previewWidth: null, sidebarWidth: null, zoom: 1, templates: [], terminalKind: "server", followUp: "queue", idleCompact: { enabled: false, percent: 70, idleMinutes: 15 }, chatSectionsShown: ["pinned", "inbox", "snoozed", "working", "archived"], chatSectionsCollapsed: ["snoozed", "archived"], chatListMode: "chats", inboxAutoDismissDays: null, messageDetails: "time", spellCheck: true, summonSelection: true, followScreen: false, askFirst: true, jobRunNotices: true, keybindings: {}, writingModels: {}, hiddenProviders: {} });
     expect(getUIPrefs()).toEqual(DEFAULT_UI_PREFS);
   });
 
@@ -79,6 +79,7 @@ describe("reading", () => {
         officeQuality: "ultra",
         inboxAutoDismissDays: "7",
         messageDetails: "everything",
+        jobRunNotices: "off",
         keybindings: { search: ["Ctrl+J"], bad: [], worse: "Ctrl+K", nope: [7] },
         hiddenProviders: { home: ["openrouter", "bad/slug", 7, "openrouter", "nous"], empty: [], gone: "openrouter" },
       }),
@@ -103,6 +104,7 @@ describe("reading", () => {
       summonSelection: true,
       followScreen: false,
       askFirst: true,
+      jobRunNotices: true,
       keybindings: { search: ["Ctrl+J"] },
       writingModels: {},
       hiddenProviders: { home: ["openrouter", "nous"] },
@@ -132,6 +134,17 @@ describe("reading", () => {
     for (const bad of ["no", 0, null]) {
       localStorage.setItem(UI_PREFS_KEY, JSON.stringify({ v: UI_PREFS_VERSION, askFirst: bad }));
       expect(getUIPrefs().askFirst).toBe(true);
+    }
+  });
+
+  it("notifies about job runs by default, keeps a stored choice, and goes back to on for anything that isn't a boolean", () => {
+    expect(getUIPrefs().jobRunNotices).toBe(true);
+    setUIPrefs({ jobRunNotices: false });
+    expect(stored().jobRunNotices).toBe(false);
+    expect(getUIPrefs().jobRunNotices).toBe(false);
+    for (const bad of ["no", 0, null]) {
+      localStorage.setItem(UI_PREFS_KEY, JSON.stringify({ v: UI_PREFS_VERSION, jobRunNotices: bad }));
+      expect(getUIPrefs().jobRunNotices).toBe(true);
     }
   });
 

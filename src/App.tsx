@@ -1,7 +1,7 @@
 import { type ReactNode, type RefObject, Suspense, lazy, useCallback, useLayoutEffect, useMemo, useEffect, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal, flushSync } from "react-dom";
 import { ArrowLeft, ArrowRight, Columns2, FolderCog, PanelBottom, PanelLeft, PanelRight, PanelTop, Target, X } from "lucide-react";
-import { CONNECT_STOPPED, RenameConflict, TitleModelUnavailable, connect, openSaved, readSaved, toSource, type Delivery, type Hermes, type NoticeCard, type Notify } from "./hermes/transport";
+import { CONNECT_STOPPED, RenameConflict, TitleModelUnavailable, connect, openSaved, readSaved, toSource, type Delivery, type Hermes, type NoticeCard, type NoticeRun, type Notify } from "./hermes/transport";
 import { invoke } from "@tauri-apps/api/core";
 import type { CommandHost, NamedBot } from "./ui/SlashCommands";
 import { STEER, commandSet, type ServerCommandList } from "./hermes/commands";
@@ -263,16 +263,19 @@ const liveConnections = () => (liveStore ??= new LiveConnections((ids) => savedC
 const notifyFor = (c: SavedConnection): Notify => (n, actions) =>
   desktopNotify(liveConnections().size > 1 ? { title: `${savedConnections().get(c.id)?.name ?? c.name}: ${n.title}`, body: n.body } : n, actions);
 
-/** The inbox entry for the waiting card a notification is about, so its click goes where the entry's would. */
-const noticeEntry = (card: NoticeCard): InboxEntry => ({
-  key: `notice ${card.profile} ${card.chatId} ${card.itemId}`,
-  kind: "approval",
-  profile: card.profile,
-  chatId: card.chatId,
-  title: card.title,
-  itemId: card.itemId,
+/**
+ * The inbox entry for the waiting card or job run a notification is about, so its click goes where the entry's would.
+ * A run opens read-only, as a Job-run chat (ADR 0184).
+ */
+const noticeEntry = (target: NoticeCard | NoticeRun): InboxEntry => ({
+  profile: target.profile,
+  chatId: target.chatId,
+  title: target.title,
   at: 0,
   summary: "",
+  ...("itemId" in target
+    ? { key: `notice ${target.profile} ${target.chatId} ${target.itemId}`, kind: "approval", itemId: target.itemId }
+    : { key: `notice ${target.profile} ${target.chatId}`, kind: "completed", source: target.source }),
 });
 
 const account: Account = {
@@ -2697,6 +2700,12 @@ export function Main({
   useEffect(() => () => tray.reportInbox(0), [tray]);
   // Hidden to the tray, the window shows no chat: replies arriving meanwhile leave their chats Unread.
   const windowHidden = useWindowHidden();
+  // A job's run isn't announced while its profile's Scheduled jobs are on screen.
+  const jobsShown = jobsOpen && !settingsOpen && !windowHidden;
+  useEffect(() => {
+    hermes.showingJobs(jobsShown);
+    return () => hermes.showingJobs(false);
+  }, [hermes, jobsShown]);
 
   // The inbox and Bots mode ask for fresh checks as they open, and keep asking while open: they show what is live.
   const liveWatched = inboxOpen || botsInList;

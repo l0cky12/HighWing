@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { editFlags, FakeHermes, row } from "./fakeHermes";
-import { connect, NOTICES, type NoticeActions, type NoticeCard, type Notify } from "./transport";
+import { connect, NOTICES, type NoticeActions, type NoticeCard, type NoticeRun, type Notify } from "./transport";
 
 /** A new chat with a reply under way, out of focus unless `focused`; `shown` collects the notifications. */
 async function replying(opts: { focused?: boolean; notify?: Notify } = {}) {
@@ -103,7 +103,7 @@ describe("Acting on a notification about a waiting card (ADR 0173)", () => {
   async function offering() {
     const offered: (NoticeActions | undefined)[] = [];
     const r = await replying({ notify: async (_, actions) => void offered.push(actions) });
-    const opened: NoticeCard[] = [];
+    const opened: (NoticeCard | NoticeRun)[] = [];
     r.hermes.onNoticeOpen((card) => opened.push(card));
     return { ...r, offered, opened };
   }
@@ -149,7 +149,7 @@ describe("Acting on a notification about a waiting card (ADR 0173)", () => {
   it("denies nothing once the owner switched to another profile, and says it wasn't denied, with a click that opens the card", async () => {
     const offered: { n: { title: string; body: string }; actions?: NoticeActions }[] = [];
     const { server, hermes, id, runtime, chat } = await replying({ notify: async (n, actions) => void offered.push({ n, actions }) });
-    const opened: NoticeCard[] = [];
+    const opened: (NoticeCard | NoticeRun)[] = [];
     hermes.onNoticeOpen((card) => opened.push(card));
     const { id: card } = server.askApproval(runtime);
     await hermes.idle();

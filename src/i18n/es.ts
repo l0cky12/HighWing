@@ -460,6 +460,12 @@ export const es: Catalogue = {
       extensions: "Órdenes y vistas opcionales que se ejecutan en un entorno aislado.",
       diagnostics: "Qué es y qué admite el Hermes conectado, y los registros.",
     },
+    jobRuns: {
+      section: "Tareas programadas",
+      name: "Avisar cuando se ejecute una tarea",
+      hint: "Una notificación de escritorio nombra la tarea, su bot y cómo fue la ejecución. Al hacer clic se abre la ejecución.",
+      more: "Highwing revisa las tareas de cada perfil cada 2 minutos más o menos mientras está conectado, así que una notificación puede llegar hasta ese tiempo después de la ejecución. No avisa de las ejecuciones que terminaron antes de que Highwing arrancara, ni mientras estaba desconectado. No se muestra ninguna notificación mientras la ventana tiene el foco, ni mientras la pantalla Scheduled jobs de ese bot está abierta.",
+    },
     searchTitle: "Búsqueda",
     done: "Listo",
     closeNav: "Cerrar la lista de ajustes",

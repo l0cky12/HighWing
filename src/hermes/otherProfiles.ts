@@ -159,7 +159,7 @@ function sameProfile(a: OtherProfile, b: OtherProfile): boolean {
 }
 
 /** Runs `fn` over `items`, at most `n` at a time. */
-async function eachAtMost<T>(items: T[], n: number, fn: (item: T) => Promise<void>) {
+export async function eachAtMost<T>(items: T[], n: number, fn: (item: T) => Promise<void>) {
   let next = 0;
   const worker = async () => {
     while (next < items.length) await fn(items[next++]);

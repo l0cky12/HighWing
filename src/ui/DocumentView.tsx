@@ -92,7 +92,7 @@ export function DocumentView({ format, bytes, name, size }: { format: DocumentFo
   );
 }
 
-/** About the most cells a table draws (ADR 0236): the rows that would pass it are left out. */
+/** About the most cells a table draws (ADR 0243): the rows that would pass it are left out. */
 const TABLE_MAX_CELLS = 10_000;
 
 type Cell = { row: number; col: number };

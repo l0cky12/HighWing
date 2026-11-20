@@ -400,7 +400,7 @@ const dragWatch = {
 };
 
 /**
- * Opens a CSV of `rows` rows and `cols` columns in the Preview's table (ADR 0236), then selects every cell with Ctrl+A
+ * Opens a CSV of `rows` rows and `cols` columns in the Preview's table (ADR 0243), then selects every cell with Ctrl+A
  * and grows the selection by a row with Shift+ArrowDown. Each time is until painted.
  */
 async function table(rows: number, cols: number) {

@@ -460,6 +460,10 @@ _Avoid_: text model, title model (that is Text generation, which names chats), d
 The steps that connect Highwing to a Hermes server: the server, the dashboard sign-in, then optionally a Provider key, which can be skipped. Setup tests the connection before it keeps anything, and says what to fix when the test fails. It opens by itself only on a computer with nothing set up, and again to add a Connection or change a saved one, from Settings, the rail or the sign-in screen (**Run setup again**). Cancelling it, or stopping Save and connect, leaves every Connection as it was.
 _Avoid_: onboarding (fine in conversation, not in the app), wizard, first-run (that's only when setup opens by itself)
 
+**Hidden provider**:
+A model provider the owner turned off in Settings → Providers → Model lists. Its models leave every model list in Highwing, its starred ones included, and `/model` won't pick one. Only Highwing's lists change: Hermes keeps the provider, its keys and sign-ins, and anything already set to one of its models keeps it. Kept on this computer for one connection. A provider is its route, so OpenAI's models through OpenRouter are OpenRouter's (ADR 0235).
+_Avoid_: disabled provider (nothing is disabled on Hermes)
+
 **Provider key**:
 A model provider's API key that the owner gives Hermes, through Setup or Settings → Providers. The provider checks it first. Hermes keeps it in the profile's `.env` on the server, and Highwing never stores it. Settings → Providers lists the shown profile's saved keys by Hermes's redacted preview, replaces a key, and removes one after asking; a removed key leaves the list only once Hermes reads back as not having it (ADR 0095). A subscription sign-in and a custom endpoint aren't Provider keys.
 _Avoid_: token, secret, credential (too broad), login (a subscription sign-in isn't a key)

@@ -1,8 +1,10 @@
 import { expect, it } from "vitest";
 import { userEvent } from "vitest/browser";
 import { BOT_CHAT_TITLE } from "../../src/hermes/bots";
+import { BOT_PICTURE_URLS } from "../../src/hermes/botPictures";
 import { row, type FakeHermes } from "../../src/hermes/fakeHermes";
-import { boot, shot } from "../harness";
+import { APPEARANCE_KEY } from "../../src/ui/appearance";
+import { boot, settled, shot } from "../harness";
 
 const seed = (s: FakeHermes) => {
   s.sessions = [row("disk", 0.5, { title: "Disk usage" })];
@@ -68,6 +70,32 @@ it("Settings edits that bot and its row reads the change back", async () => {
   expect(writes(server)).toEqual(["PUT /api/profiles/scratch/description"]);
   expect(server.profileMeta.scratch.description).toBe("Disposable test bot, edited from the panel");
 });
+
+async function picksPicture(scheme: "dark" | "light") {
+  localStorage.setItem(APPEARANCE_KEY, JSON.stringify({ scheme }));
+  const { app, server, panel, rowOf } = await botMode();
+  await rowOf("Scratch").click({ button: "right" });
+  await app.getByRole("menuitem", { name: "Settings" }).click();
+  const dialog = app.getByRole("dialog", { name: "Edit bot: Scratch" });
+  await dialog.getByRole("button", { name: "Change the picture" }).click();
+  const picker = dialog.getByRole("dialog", { name: "Choose a picture" });
+  await expect.element(picker.getByRole("tab", { name: "Pictures" })).toHaveAttribute("aria-selected", "true");
+  await expect.element(picker.getByRole("radio")).toHaveLength(10);
+  await settled(picker);
+  await shot(`${scheme}-picture-picker`);
+  await picker.getByRole("radio", { name: "Compass · for planning" }).click();
+  await expect.element(picker).not.toBeInTheDocument();
+  await expect.element(dialog.getByRole("button", { name: "Remove picture" })).toBeVisible();
+  await shot(`${scheme}-picture-chosen`);
+  await dialog.getByRole("button", { name: /Save changes/ }).click();
+  await expect.element(dialog).not.toBeInTheDocument();
+  expect(server.requests.filter((r) => r.method === "profiles.set_asset").map((r) => r.params)).toEqual([{ name: "scratch", asset: "avatar", data: BOT_PICTURE_URLS.compass }]);
+  expect(server.botAvatars.scratch).toBe(BOT_PICTURE_URLS.compass);
+  expect(panel.getByRole("button", { name: /^Scratch\./ }).element().querySelector("img")?.getAttribute("src")).toBe(BOT_PICTURE_URLS.compass);
+}
+
+it("Settings' picture picker opens on Pictures, and the one chosen is saved as the set's own bytes, in the dark theme", () => picksPicture("dark"));
+it("does the same in the light theme", () => picksPicture("light"));
 
 it("Delete asks first, naming the bot; Cancel deletes nothing, and confirming deletes only that bot", async () => {
   const { app, server, panel, rowOf } = await botMode();

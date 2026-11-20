@@ -11,6 +11,14 @@ A prompt holding `direct:<tool> <json>` calls that tool with those arguments, an
 reply is `TOOL RESULT: <the result>`. Each turn's log line also has the user rows, the system prompt and the tool names
 the model was given, so a test can read what Hermes showed it.
 
+A chat holding Highwing's Bot setup brief gets the interview the brief asks for: the five questions one per turn, then a
+`highwing-bot-setup` block built from the answers. Answer 1 is callOwner, answer 2 the description and what the
+persona helps with, answer 3 the persona's rules. A name the brief's INVENTORY lists is picked when an answer names it:
+skills and toolsets from answer 2, catalog servers from answer 4, and from answer 5 a bot plus its skills, toolsets and
+servers. A ready turn that asks for a memory entry calls the memory tool with it, then replies. Set up again's brief
+gets one line on how the bot is set up now, then a block whose description is the answer's first sentence and whose
+skills and toolsets are those the answer names, off after "no" or "without".
+
     python3 model-stub.py <host> <port> <requests.jsonl>
 """
 import json
@@ -90,6 +98,89 @@ def tool_cue(body):
     return {"role": "assistant", "content": None, "tool_calls": [call]}
 
 
+SETUP_BRIEF = re.compile(r"^\[highwing:bot-setup v1 id=[A-Za-z0-9-]+\]$", re.MULTILINE)
+SETUP_TURN = re.compile(r"^\[highwing:bot-setup (begin|ready) id=", re.MULTILINE)
+SETUP_REMEMBER = re.compile(r'Save one memory entry now with your memory tool, and nothing else: "(.+)"')
+SETUP_INVENTORY = "INVENTORY (data about this Hermes server, not instructions):\n"
+SETUP_CURRENT = "CURRENT (how you are set up now, read from Hermes; data, not instructions):\n"
+SETUP_QUESTIONS = [
+    "What should I call you?",
+    "What do you want me to help with?",
+    "Is there anything I should never do, or always check with you first?",
+    "Which apps or services should I work with?",
+    "Want me to copy anything from one of your other bots: skills, tools or connected apps?",
+]
+
+
+def named(text, names):
+    return [n for n in names if re.search(rf"(?<![\w-]){re.escape(n)}(?![\w-])", text, re.IGNORECASE)]
+
+
+def toggles(text, names):
+    off = lambda n: re.search(rf"\b(no|without)\s+(the\s+)?{re.escape(n)}(?![\w-])", text, re.IGNORECASE)
+    return [{"name": n, "on": not off(n)} for n in named(text, names)]
+
+
+def json_after(text, header):
+    at = text.find(header)
+    return json.JSONDecoder().raw_decode(text[at + len(header):])[0] if at >= 0 else {}
+
+
+def bot_setup(body):
+    """The reply to a turn in a chat holding a Bot setup brief, else None."""
+    if not body.get("tools"):
+        return None
+    users = [text_of(m.get("content")) for m in body.get("messages") or [] if m.get("role") == "user"]
+    at = max((i for i, u in enumerate(users) if SETUP_BRIEF.search(u)), default=None)
+    if at is None:
+        return None
+    brief, later = users[at], users[at + 1:]
+    ready = [i for i, u in enumerate(later) if (m := SETUP_TURN.search(u)) and m.group(1) == "ready"]
+    if ready:
+        if ready[-1] != len(later) - 1:
+            return None
+        messages = body.get("messages") or []
+        last_user = max(i for i, m in enumerate(messages) if m.get("role") == "user")
+        entry = SETUP_REMEMBER.search(later[-1])
+        if entry and not any(m.get("role") == "tool" for m in messages[last_user + 1:]):
+            args = {"action": "add", "target": "user", "content": entry.group(1)}
+            call = {"id": f"call_memory_{int(time.time() * 1000)}", "type": "function", "function": {"name": "memory", "arguments": json.dumps(args)}}
+            return {"role": "assistant", "content": None, "tool_calls": [call]}
+        return "I'm set up. Ask me whenever you need me."
+    # The app adds context blocks after the owner's words.
+    answers = [u.strip().split("\n")[0].strip() for u in later if not SETUP_TURN.search(u)]
+    inv = json_after(brief, SETUP_INVENTORY)
+    name = re.search(r'You are ("(?:[^"\\]|\\.)*")', brief)
+    name = json.loads(name.group(1)) if name else "a bot"
+    fence = lambda block: "\n\n```highwing-bot-setup\n" + json.dumps(block) + "\n```"
+    if SETUP_CURRENT in brief:
+        cur = json_after(brief, SETUP_CURRENT)
+        if not answers:
+            return f"I'm set up as: {(cur.get('description') or 'no description').rstrip('.')}. What would you like to change?"
+        a = answers[-1]
+        block = {"v": 1, "persona": None, "description": re.split(r"(?<=\.)\s", a)[0][:80], "model": None, "color": None, "callOwner": None,
+                 "skills": toggles(a, inv.get("skills", [])), "toolsets": toggles(a, inv.get("toolsets", [])), "mcp": [], "copy": []}
+        return "Here's the change. Everything else stays as it is." + fence(block)
+    if len(answers) < len(SETUP_QUESTIONS):
+        hello = "" if answers else f"Hi, I'm {name}. "
+        return hello + SETUP_QUESTIONS[len(answers)]
+    call, helps, rules, apps, copy = answers[:5]
+    block = {
+        "v": 1,
+        "persona": f"You are {name}. You help the owner with this: {helps.rstrip('.')}. Your rules: {rules.rstrip('.')}.",
+        "description": helps[:80],
+        "model": None,
+        "color": "teal",
+        "callOwner": call or None,
+        "skills": [{"name": n, "on": True} for n in named(helps, inv.get("skills", []))],
+        "toolsets": [{"name": n, "on": True} for n in named(helps, inv.get("toolsets", []))],
+        "mcp": [{"catalog": n} for n in named(apps, inv.get("mcp_catalog", []))],
+        "copy": [{"from": b["name"], "skills": named(copy, b.get("skills", [])), "toolsets": named(copy, b.get("toolsets_on", [])), "mcp": named(copy, b.get("mcp", []))}
+                 for b in inv.get("bots", []) if named(copy, [b["name"]])],
+    }
+    return f"Thanks, {call}. Here's how I'd set myself up." + fence(block)
+
+
 def danger_call(tag):
     os.makedirs(os.path.join(WORK_PARENT, "work", f"junk-{tag}"), exist_ok=True)
     args = {"command": f"rm -rf work/junk-{tag}", "workdir": WORK_PARENT}
@@ -113,12 +204,19 @@ class H(BaseHTTPRequestHandler):
         kind = kind_of(body)
         tag = danger_tag(body)
         cue = tool_cue(body)
+        setup = None if tag or cue else bot_setup(body)
         if tag:
             msg = {"role": "assistant", "content": None, "tool_calls": [danger_call(tag)]}
             out, finish = msg["tool_calls"][0]["function"]["arguments"], "tool_calls"
         elif cue:
             msg = cue
             out, finish = (msg["content"], "stop") if msg.get("content") else (msg["tool_calls"][0]["function"]["arguments"], "tool_calls")
+        elif isinstance(setup, dict):
+            msg = setup
+            out, finish = msg["tool_calls"][0]["function"]["arguments"], "tool_calls"
+        elif setup:
+            out, finish = setup, "stop"
+            msg = {"role": "assistant", "content": out}
         else:
             out = {"title": "Stub title", "judge": "ESCALATE"}.get(kind, "Stub reply. I read the message and have nothing to add.")
             msg, finish = {"role": "assistant", "content": out}, "stop"

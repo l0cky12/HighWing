@@ -39,7 +39,7 @@ Each feature file starts with an H1 and one paragraph describing the behaviour t
 - [Send a message](send-message.md): open a chat, send, watch the streamed reply, and confirm both messages on the server.
 - [Mark up an image](mark-up.md): paste a screenshot, draw a box on it, add a note, Cancel, and send the marked image.
 - [New chat](new-chat.md): start a chat from the rail, the list panel or Ctrl+N, and see it created on the server and in the list.
-- [New bot](new-bot.md): rewrite a rough persona with AI in place, edit a bot's persona, choose skills and tools, create, and read each back; the partial and narrow cases.
+- [New bot](new-bot.md): the name dialog, and on a real Hermes the whole Bot setup flow (interview, card, Connect, Set it up, Set up again with Keep history and Start fresh) read back from Hermes; Edit bot's persona and Write with AI.
 - [Ask a bot](ask-a-bot.md): in a Bot Chat or a started ordinary chat, `@` and the `@` button list the other bots above the chats, a pick puts `@handle` in as a pill that one Backspace takes out, and a chat pick is still a chip. In an ordinary chat only a picked bot asks and a typed `@handle` stays words. A message naming bots goes to their Bot Chats, with an Asked card that survives a restart.
 - [MCP servers](mcp-servers.md): Settings → MCP servers: list, test, add, edit with write-only secrets, remove, switch, OAuth sign-in, catalog, another profile, Restart gateway after an edit.
 - [Gateways](gateways.md): Settings → Gateways: Telegram and Discord state, token replace and remove with read-back, the switch, a turned-down token, a missing library, a change on the server meanwhile, Check status, Restart gateway.

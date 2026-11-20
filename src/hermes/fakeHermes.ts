@@ -2680,7 +2680,7 @@ export class FakeHermes {
       if (this.memory[source]) this.memory[name] = { memory: [...this.memory[source].memory], profile: [...this.memory[source].profile] };
     } else {
       const mirror = body.mirror_credentials !== false;
-      this.profileEnv[name] = mirror ? withoutBotTokens(this.profileEnv.default) : {};
+      this.profileEnv[name] = mirror ? withoutBotTokens(this.profileEnv[this.servedProfile]) : {};
       this.souls[name] = typeof body.soul === "string" ? body.soul : "You are Hermes, a helpful assistant.\n";
       // `seed_profile_skills`: Hermes's bundled skills, here the ones `default` has as bundled.
       for (const skill of (this.skills.folders.default ?? []).filter((s) => s.source === "bundled")) {
@@ -2695,7 +2695,7 @@ export class FakeHermes {
           this.profileModel[name] = { model, provider, reasoning_effort: "medium", fast: false };
           modelSet = true;
         }
-      } else if (mirror && this.profileModel.default) this.profileModel[name] = { ...this.profileModel.default };
+      } else if (mirror && this.profileModel[this.servedProfile]) this.profileModel[name] = { ...this.profileModel[this.servedProfile] };
     }
     if (typeof body.description === "string" && body.description.trim()) this.profileMeta[name] = { ...this.profileMeta[name], description: body.description.trim() };
     if (this.profileCreateLost) throw new Error(this.profileCreateLost);

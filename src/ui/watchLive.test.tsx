@@ -161,7 +161,7 @@ describe("Watch live on a bot's Bot Desktop", () => {
   });
 
   it("offers Start when Hermes says the screen runs but it has stopped by the time the Screen attaches", async () => {
-    const { server, hermes, openScreen } = await botChat((s) => {
+    const { server, hermes, say, begin, end, openScreen } = await botChat((s) => {
       const real = s.handlers["display.status"];
       let once = true;
       s.handlers["display.status"] = (r) => {
@@ -173,8 +173,42 @@ describe("Watch live on a bot's Bot Desktop", () => {
     await openScreen();
     await settle(hermes);
     await waitFor(() => expect(startButton()).toBeTruthy());
-    expect(asked(server, "display.observe").length).toBeGreaterThan(0);
+    const observed = asked(server, "display.observe").length;
+    expect(observed).toBeGreaterThan(0);
     expect(asked(server, "display.start")).toEqual([]);
+
+    // The bot's computer use then starts it: the Screen watches it again, rather than waiting on Reconnect.
+    await say("message.start");
+    await begin("c1");
+    await end("c1", true);
+    await waitFor(() => expect(panelText()).toContain(WATCHING));
+    await waitFor(() => expect(asked(server, "display.observe").length).toBeGreaterThan(observed));
+  });
+
+  it("keeps the newer answer when an older read of a stopped screen comes back after it", async () => {
+    const { server, hermes, user, say, begin, end, openScreen } = await botChat();
+    await openScreen();
+    await waitFor(() => expect(startButton()).toBeTruthy());
+    await user.click(document.getElementById("panel-tab-files")!);
+
+    const real = server.handlers["display.status"];
+    const held: (() => void)[] = [];
+    server.handlers["display.status"] = (r) => {
+      if (held.length) return real(r);
+      const stopped = { ...server.display!.status, lease: server.display!.lease, profile_key: "/home/lena/.hermes" };
+      held.push(() => server.respond(r.id, stopped));
+    };
+    await user.click(screenTab());
+    await waitFor(() => expect(held).toHaveLength(1));
+
+    await say("message.start");
+    await begin("c1");
+    await end("c1", true);
+    await waitFor(() => expect(panelText()).toContain(WATCHING));
+    act(() => held.splice(0).forEach((answer) => answer()));
+    await settle(hermes);
+    expect(panelText()).toContain(WATCHING);
+    expect(startButton()).toBeNull();
   });
 
   it("keeps a late answer about one bot's screen off the next bot's Screen", async () => {

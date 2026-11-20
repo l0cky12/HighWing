@@ -133,15 +133,27 @@ export function ScreenTab({
   const heldRef = useRef(held);
   heldRef.current = held;
 
+  // Bumped by every status read and every status an action got, so a read answered after a later one is dropped.
+  const reads = useRef(0);
+  const settle = useCallback((s: DisplayStatus) => {
+    reads.current++;
+    setStatus(s);
+  }, []);
+
   const refresh = useCallback(async () => {
     setFound(undefined);
+    const read = ++reads.current;
     try {
       const s = await api.status();
+      if (read !== reads.current) return s;
       setStatus(s);
       setError(undefined);
       if (s.running) setStartFailed(undefined);
+      // A stream lost to a stopped screen: the next running status attaches again.
+      else setConn((c) => (c.kind === "lost" ? { kind: "idle" } : c));
       return s;
     } catch (e) {
+      if (read !== reads.current) return;
       if (isUnavailable(e)) setUnavailable(true);
       else setError(errorText(e));
     }
@@ -168,7 +180,7 @@ export function ScreenTab({
       const Rfb = await loadRfb();
       const observed = await api.observe();
       if (gen !== generation.current) return;
-      setStatus(observed);
+      settle(observed);
       const socket = await RelayedSocket.open(api.openSocket, observed.ticket);
       if (gen !== generation.current || !host.current) return socket.close();
       const client = new Rfb(host.current, socket, { shared: true });
@@ -210,7 +222,7 @@ export function ScreenTab({
       // A screen that stopped since the last read shows as stopped, with Start, rather than as a stream to reconnect.
       void refresh();
     }
-  }, [api, bridge, detach, loadRfb, refresh]);
+  }, [api, bridge, detach, loadRfb, refresh, settle]);
 
   // What the screen is doing: asked on first show and after each reconnect to Hermes, which watches again a stream
   // the drop ended. The stream isn't let go here: a normal close would tell Hermes the owner left, and hand control
@@ -308,10 +320,10 @@ export function ScreenTab({
   const start = () =>
     act(async () => {
       const now = await api.status();
-      setStatus(now);
+      settle(now);
       if (!now.running) {
         try {
-          setStatus(await api.start());
+          settle(await api.start());
         } catch (e) {
           setStartFailed(errorText(e));
           return;
@@ -334,7 +346,7 @@ export function ScreenTab({
       await api.stop();
       detach();
       if (status) await api.resetDock(status.profile_key);
-      setStatus(await api.start());
+      settle(await api.start());
       setConn({ kind: "idle" });
       setSetup((s) => (s.kind === "checked" ? { ...s, dock: { kind: "current" } } : s));
     });

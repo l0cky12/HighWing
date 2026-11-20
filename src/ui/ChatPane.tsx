@@ -40,6 +40,7 @@ import type { EditKind } from "../hermes/editHistory";
 import { wakeFull } from "../hermes/snooze";
 import { AttachmentChip, InlineSentImage, Previews, SentImages, readPreview } from "./previews";
 import { clipboardImages, pasteAttaches } from "./pasted";
+import { dropClaimed } from "./dropClaim";
 import { MarkUpDialog } from "./MarkUp";
 import { markedName, markupWords, type Marked } from "../hermes/markup";
 import { createPortal } from "react-dom";
@@ -2263,12 +2264,13 @@ function Composer({
   }, [desk, autoFocus, draftKey, chatTitle]);
 
   // Tauri's native drop event (off on Windows, below): it gives real file paths, so Rust can read the bytes. Every composer
-  // hears every drop; with two panes, the one under the pointer takes it. Tauri gives the point in physical pixels.
+  // hears every drop; with two panes, the one under the pointer takes it, unless something above the pane claimed the point
+  // (dropClaim.ts). Tauri gives the point in physical pixels.
   useEffect(() => {
     const unlisten = getCurrentWebview().onDragDropEvent(({ payload }) => {
       const here = (p: { x: number; y: number }) => {
         const scale = window.devicePixelRatio || 1;
-        return dropHereRef.current?.(p.x / scale, p.y / scale) ?? true;
+        return !dropClaimed(p.x / scale, p.y / scale) && (dropHereRef.current?.(p.x / scale, p.y / scale) ?? true);
       };
       if (payload.type === "enter" || payload.type === "over") setDragging(here(payload.position));
       else {

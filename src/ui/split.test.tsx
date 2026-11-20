@@ -12,6 +12,7 @@ import { connect, type Hermes } from "../hermes/transport";
 import { UI_PREFS_KEY } from "../hermes/uiPrefs";
 import { Main, type DeskWiring } from "../App";
 import { RestError } from "../hermes/pipe";
+import { claimDrops } from "./dropClaim";
 
 const drops = vi.hoisted(() => new Set<(e: { payload: unknown }) => void>());
 const staging = vi.hoisted(() => ({ stage: (): string => { throw new Error("nothing is pasted in this test"); } }));
@@ -347,6 +348,25 @@ describe("Pane lifecycle regressions", () => {
       expect(pane(0).textContent).not.toContain("narrow.txt");
       expect(pane(1).textContent).toContain("narrow.txt");
     } finally { globalThis.ResizeObserver = observe; }
+  });
+
+  it("leaves a native drop to what claimed its point above the pane, as the picture picker does", async () => {
+    const s = await signedIn();
+    s.server.files["/tmp/face.png"] = "a face";
+    const release = claimDrops((x, y) => x < 100 && y < 100);
+    try {
+      await act(async () => {
+        for (const drop of drops) drop({ payload: { type: "drop", paths: ["/tmp/face.png"], position: { x: 10, y: 10 } } });
+      });
+      await settle(s.hermes);
+      expect(pane(0).textContent).not.toContain("face.png");
+      await act(async () => {
+        for (const drop of drops) drop({ payload: { type: "drop", paths: ["/tmp/face.png"], position: { x: 500, y: 10 } } });
+      });
+      await waitFor(() => expect(pane(0).textContent).toContain("face.png"));
+    } finally {
+      release();
+    }
   });
 });
 

@@ -475,7 +475,8 @@ export const choose = <I extends ListedItem>(item: I, change: { ticked?: boolean
 /**
  * The record of Set it up on `plan`, laid over `previous`, the setup's record so far: every item Set it up could write,
  * ticked or not, and every item Hermes already has that a choice made over another value holds on. Any other item keeps
- * its earlier record while that still holds, so a retry doesn't forget what an earlier Set it up applied.
+ * its earlier record while that still holds and is still what the card shows, so a retry doesn't forget what an earlier
+ * Set it up applied, and a later choice of the bot's own value replaces it.
  */
 export function acceptedRecord(plan: Plan, previous: AcceptedRecord | null = null): AcceptedRecord {
   const earlier = previous && setupOf(previous.card) === setupOf(plan.cardId) ? previous.items : [];
@@ -485,7 +486,7 @@ export function acceptedRecord(plan: Plan, previous: AcceptedRecord | null = nul
     const a = items.get(item.key);
     if (tickable(item) || item.over.length)
       items.set(item.key, { kind: item.kind, key: item.key, over: item.over, ticked: tickable(item) ? item.ticked : true, from: item.before, to: item.after } as AcceptedItem);
-    else if (a && !holds(a, item.proposed)) items.delete(item.key);
+    else if (a && !(holds(a, item.proposed) && same(item.kind, a.to, item.after))) items.delete(item.key);
   }
   return { v: 1, card: plan.cardId, items: [...items.values()] };
 }

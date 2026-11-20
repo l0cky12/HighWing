@@ -252,19 +252,34 @@ export function skillProblems(content: string, name: string, fresh = false): str
   return out;
 }
 
+const YAML_DATE = /^([0-9]{4})-([0-9]{1,2})-([0-9]{1,2})(?:(?:[Tt]|[ \t]+)([0-9]{1,2}):([0-9]{2}):([0-9]{2})(?:\.[0-9]*)?(?:[ \t]*(?:Z|[-+]([0-9]{1,2})(?::([0-9]{2}))?))?)?$/;
+
+/** A YAML 1.1 date (`2024-01-02`) or timestamp Python can build. One it can't, such as `2024-02-31`, stays text. */
+function yamlDate(v: string): boolean {
+  const m = YAML_DATE.exec(v);
+  if (!m) return false;
+  const [y, mo, d] = [m[1], m[2], m[3]].map(Number);
+  const leap = y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][mo - 1];
+  if (y < 1 || !days || d < 1 || d > days) return false;
+  if (m[4] === undefined) return m[2].length === 2 && m[3].length === 2;
+  return +m[4] < 24 && +m[5] < 60 && +m[6] < 60 && +(m[7] ?? 0) * 60 + +(m[8] ?? 0) < 24 * 60;
+}
+
 /**
  * Whether Hermes reads a bare front matter value as something other than text. Hermes parses front matter as YAML 1.1
  * (`hermes_yaml.py`, ruamel), whose implicit types these follow: `yes`, `off` or `y` is a yes/no, `null` or `~` is null,
- * `1_000`, `017` or `0x1f` an integer, `1.0` or `1e5` a float, and `2024-01-02` a date. Checked against Hermes's own
- * `parse_frontmatter` for every name of up to three characters it allows. A `name:` like that makes Hermes leave the skill
- * out of its list (`_skill_catalog` slices it as text); a `description:` like that is shown as some other line, or also
- * leaves the skill out.
+ * `1_000`, `017` or `0x1f` an integer, `1.0` or `1e5` a float, and `2024-01-02` a date. A value of one of those shapes
+ * that Python can't build, such as `08` or `2024-02-31`, stays text. Checked against Hermes's own `parse_frontmatter` for
+ * every name of up to three characters it allows, and for dates, timestamps and floats of every shape. A `name:` like
+ * that makes Hermes leave the skill out of its list (`_skill_catalog` slices it as text); a `description:` like that is
+ * shown as some other line, or also leaves the skill out.
  */
 const yamlNotText = (v: string) =>
   /^(?:y|Y|n|N|yes|Yes|YES|no|No|NO|true|True|TRUE|false|False|FALSE|on|On|ON|off|Off|OFF|~|null|Null|NULL)$/.test(v) ||
   /^[-+]?(?:0b[01_]*[01][01_]*|0x[0-9a-fA-F_]*[0-9a-fA-F][0-9a-fA-F_]*|0[0-7_]+|0|[1-9][0-9_]*|[1-9][0-9_]*(?::[0-5]?[0-9])+)$/.test(v) ||
-  /^(?:[-+]?[0-9][0-9_]*\.[0-9_]*(?:[eE][-+]?[0-9]+)?|[-+]?[0-9][0-9_]*[eE][-+]?[0-9]+|\.[0-9_]+(?:[eE][-+]?[0-9]+)?|[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$/.test(v) ||
-  /^(?:[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])|[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}(?:[Tt]|[ \t]+)[0-9]{1,2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]*)?(?:[ \t]*(?:Z|[-+][0-9]{1,2}(?::[0-9]{2})?))?)$/.test(v);
+  /^(?:[-+]?[0-9][0-9_]*\.[0-9_]*(?:[eE][-+]?[0-9]+)?|[-+]?[0-9][0-9_]*[eE][-+]?[0-9]+|\.[0-9_]+(?:[eE][-+][0-9]+)?|[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$/.test(v) ||
+  yamlDate(v);
 
 /** The words Hermes's rule for a new skill's folder name or category comes to (`VALID_NAME_RE`, at most 64 characters). */
 const NAME_RULE = "at most 64 lowercase letters, digits, dots, dashes and underscores, starting with a letter or digit";

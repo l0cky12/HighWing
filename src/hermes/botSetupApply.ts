@@ -3,14 +3,15 @@
 // failed with why, or waiting on a toolset caution, and once a call gets no answer nothing more is sent.
 // Every write goes through the route Settings already uses for it, checked against what the card read, so a change
 // made elsewhere since isn't overwritten: SOUL.md by its content, the description and the model by `ProfilesApi.edit`,
-// the colour by the Bot Mode block's revision (ADR 0189). Description and model are two writes, since `edit` still
-// sends the model after a description write that got no answer. A field counts as applied only once Hermes answered
-// the read that follows its write.
+// the colour by the Bot Mode block's revision (ADR 0189), the picture by its bytes (ADR 0235). Description and model
+// are two writes, since `edit` still sends the model after a description write that got no answer. A field counts as
+// applied only once Hermes answered the read that follows its write.
 import { settleItem, noAnswer, type ItemState, type Miss, type SetupApis as CapabilityApis, type SetupItem } from "./botSetup";
-import { acceptedRecordBlock, mcpSourceKey, tickable, type AcceptedRecord, type Card, type HermesNow, type ListedItem, type Plan, type PlanItem } from "./botSetupCard";
+import type { BotPictureName } from "./botSetupBrief";
+import { acceptedRecordBlock, mcpSourceKey, pictureKey, tickable, type AcceptedRecord, type Card, type HermesNow, type ListedItem, type PictureCant, type Plan, type PlanItem } from "./botSetupCard";
 import { addMcp, mcpOffer, type McpRefusal, type McpSecrets, type McpSources } from "./botSetupMcp";
 import type { Bot, BotLook } from "./bots";
-import type { EditResult, FieldOutcome } from "./fieldMerge";
+import type { EditResult, Edits, FieldOutcome } from "./fieldMerge";
 import { McpUnsupportedError, type McpApi } from "./mcp";
 import type { MemoryApi } from "./memory";
 import type { ModelCatalog } from "./models";
@@ -30,13 +31,22 @@ export type SetupApis = CapabilityApis & {
   bots(): Promise<Bot[]>;
   /** The models the bot's profile can switch to, when Hermes lists them. */
   models(): Promise<ModelCatalog | undefined>;
-  editBot(profile: string, edits: { color: { from: string | null; to: string | null } }): Promise<EditResult<BotLook>>;
+  editBot(profile: string, edits: Edits<Pick<BotLook, "color" | "picture">>): Promise<EditResult<BotLook>>;
+  /** The bot's picture as Hermes has it, a data URL or null, and why this Hermes can't save one, when it can't. */
+  picture(profile: string): Promise<{ picture: string | null; cant?: PictureCant }>;
+  /** The pictures the card offers, each as a data URL. */
+  pictures(): Readonly<Record<BotPictureName, string>>;
 };
+
+/** The pictures the owner uploaded on the card, as data URLs by their `pictureKey`. Kept in the app's memory only. */
+export type PictureUploads = Readonly<Record<string, string>>;
 
 /**
  * The bot as the card was drawn against it. `soul`: SOUL.md as read, which the persona is saved over only while
- * Hermes still has it. `model`: the profile's model as `ProfilesApi.edit` compares it. `providers`: each listed
- * model's provider. `copyFrom`: the profile of each bot the block copies from, by its name. `labels`: each toolset's.
+ * Hermes still has it. `model`: the profile's model as `ProfilesApi.edit` compares it. `picture`: the bot's picture
+ * as read, which a new one is saved over only while Hermes still has it. `pictures`: the set's, as data URLs by their
+ * `pictureKey`. `providers`: each listed model's provider. `copyFrom`: the profile of each bot the block copies from,
+ * by its name. `labels`: each toolset's.
  * `mcp`: where the MCP servers the block names come from, read for Set up again or when it names one, where Hermes
  * has the routes.
  */
@@ -44,6 +54,8 @@ export type SetupNow = {
   now: HermesNow;
   soul: Soul;
   model: ProfileFields["model"];
+  picture: string | null;
+  pictures: Readonly<Record<string, string>>;
   providers: Readonly<Record<string, string>>;
   copyFrom: Readonly<Record<string, string>>;
   labels: Readonly<Record<string, string>>;
@@ -57,7 +69,7 @@ const named = <T extends { name: string }>(rows: readonly T[]) => rows.map((r) =
  * servers when `asked` is Set up again's, whose "before" shows the bot's own, or names any. Rejects when a read fails.
  */
 export async function readSetupNow(apis: SetupApis, profile: string, asked: { again: boolean; block: Pick<Card["block"], "copy" | "mcp"> }): Promise<SetupNow> {
-  const [soul, rows, roster, skills, toolsets, catalog, memory] = await Promise.all([
+  const [soul, rows, roster, skills, toolsets, catalog, memory, picture] = await Promise.all([
     apis.persona.read(profile),
     apis.profiles.list(),
     apis.bots(),
@@ -66,7 +78,9 @@ export async function readSetupNow(apis: SetupApis, profile: string, asked: { ag
     apis.models(),
     // A memory Highwing can't read only leaves the Remember row to offer again.
     apis.memory.load(profile).catch(() => undefined),
+    apis.picture(profile),
   ]);
+  const set = Object.entries(apis.pictures()).map(([name, url]) => ({ name: name as BotPictureName, key: pictureKey(url), url }));
   const row = rows.find((r) => r.name === profile);
   if (!row) throw new ProfileError({ kind: "gone", detail: `Hermes lists no profile named ${profile}.` });
   const providers: Record<string, string> = {};
@@ -89,6 +103,9 @@ export async function readSetupNow(apis: SetupApis, profile: string, asked: { ag
       description: row.description,
       model,
       color: roster.find((b) => b.profile === profile)?.color?.toLowerCase() ?? null,
+      picture: picture.picture === null ? null : pictureKey(picture.picture),
+      pictures: set.map(({ name, key }) => ({ name, key })),
+      ...(picture.cant && { pictureCant: picture.cant }),
       memory: memory ? Object.values(memory.resources).flatMap((r) => r.entries.map((e) => e.text)) : [],
       skills,
       toolsets: toolsets.toolsets,
@@ -98,6 +115,8 @@ export async function readSetupNow(apis: SetupApis, profile: string, asked: { ag
     },
     soul,
     model: row.provider || row.model ? { provider: row.provider ?? "", model: row.model ?? "" } : null,
+    picture: picture.picture,
+    pictures: Object.fromEntries(set.map(({ key, url }) => [key, url])),
     providers,
     copyFrom: Object.fromEntries(sources.map((b) => [b.name, b.profile])),
     labels: Object.fromEntries(toolsets.toolsets.map((t) => [t.name, t.label])),
@@ -129,14 +148,16 @@ async function readMcp(mcp: SetupApis["mcp"], profile: string, from: readonly Bo
 /**
  * Why an item wasn't applied: ADR 0197's misses, and those only the card has. `profile`: a profile call failed.
  * `noProvider`: Hermes lists no provider for the model. `mcpRefused`: an MCP server the card won't add.
- * `notShown`: the bot's profile isn't the one shown, which every write goes through.
+ * `notShown`: the bot's profile isn't the one shown, which every write goes through. `pictureLost`: the owner's
+ * uploaded picture is no longer in the app's memory, so there is nothing to send until they upload it again.
  */
 export type CardMiss =
   | Miss
   | { kind: "profile"; failure: ProfileFailure }
   | { kind: "noProvider"; model: string | null }
   | { kind: "mcpRefused"; why: McpRefusal; from?: string }
-  | { kind: "notShown"; profile: string };
+  | { kind: "notShown"; profile: string }
+  | { kind: "pictureLost" };
 
 /**
  * Where an item stands at Set it up: ADR 0197's states, `waiting` for the Remember row, which the bot saves, and for
@@ -201,8 +222,16 @@ async function copySkill(apis: SetupApis, profile: string, from: string, item: S
   return judged(await settleItem(apis, profile, item));
 }
 
-/** `accepted`: the cautions the owner confirmed with Apply anyway. `secrets`: what Connect took. */
-export async function applyItem(apis: SetupApis, profile: string, read: SetupNow, item: ListedItem, accepted: Caution[] = [], secrets: McpSecrets = {}): Promise<Step> {
+/** `accepted`: the cautions the owner confirmed with Apply anyway. `secrets`: what Connect took. `uploads`: the owner's pictures. */
+export async function applyItem(
+  apis: SetupApis,
+  profile: string,
+  read: SetupNow,
+  item: ListedItem,
+  accepted: Caution[] = [],
+  secrets: McpSecrets = {},
+  uploads: PictureUploads = {},
+): Promise<Step> {
   const capability = (area: SetupItem["area"], want: boolean): SetupItem => {
     const name = item.name ?? item.key;
     return { area, name, label: area === "toolset" ? (read.labels[name] ?? name) : name, want, state: APPLIED.state as SetupItem["state"] };
@@ -219,6 +248,12 @@ export async function applyItem(apis: SetupApis, profile: string, read: SetupNow
     }
     case "color":
       return fieldStep(await apis.editBot(profile, { color: { from: item.before, to: item.after } }), "color");
+    case "picture": {
+      // The bytes sent are the app's own set's or the owner's upload, found by key. Nothing the bot wrote is sent.
+      const to = item.after === null ? null : (read.pictures[item.after] ?? uploads[item.after]);
+      if (to === undefined) return missed({ kind: "pictureLost" });
+      return fieldStep(await apis.editBot(profile, { picture: { from: read.picture, to } }), "picture");
+    }
     case "remember":
       return { state: { kind: "waiting" } };
     case "skill": {
@@ -285,6 +320,7 @@ const ITEM_WORDS: { [K in ListedItem["kind"]]: (i: Extract<ListedItem, { kind: K
   description: (i) => `your description: ${JSON.stringify(i.after)}`,
   model: (i) => `your model: ${i.after ?? "none"}`,
   color: (i) => `your colour: ${i.after ?? "Hermes's own"}`,
+  picture: (i) => (i.after === null ? "no picture" : i.name ? `your picture: ${i.name}` : "your picture: one the owner uploaded"),
   remember: (i) => `what to call the owner: ${JSON.stringify(i.after)}`,
   skill: (i) => `the skill ${i.name} ${i.after === "on" ? "on" : "off"}${i.from ? ` (copied from ${i.from})` : ""}`,
   toolset: (i) => `the toolset ${i.name} ${i.after === "on" ? "on" : "off"}${i.from ? ` (as ${i.from} has it)` : ""}`,

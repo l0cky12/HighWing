@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { BOT_PICTURE_URLS } from "../../src/hermes/botPictures";
 import { BOT_SETUP_FENCE, botSetupBrief, type BotSetupNewBlock } from "../../src/hermes/botSetupBrief";
 import { botSetupBegin } from "../../src/hermes/botSetupStart";
 import { BOT_CHAT_TITLE } from "../../src/hermes/bots";
@@ -14,6 +15,7 @@ const BLOCK: BotSetupNewBlock = {
   description: "Plans trips: trains, places to stay and day plans.",
   model: null,
   color: "teal",
+  picture: "plane",
   callOwner: "Lena",
   skills: [
     { name: "recipes", on: true },
@@ -65,9 +67,17 @@ async function setUp(scheme: "dark" | "light") {
   const shown = app.getByRole("region", { name: "About Hermes" });
   await expect.element(shown).toBeVisible();
   await expect.element(app.getByText("Setup started")).toBeVisible();
-  await expect.element(app.getByText("7 changes. Nothing changes until you press Set it up.")).toBeVisible();
+  await expect.element(app.getByText("8 changes. Nothing changes until you press Set it up.")).toBeVisible();
   shown.element().closest(".msg.returned")!.scrollIntoView({ block: "start" });
   await shot(`${scheme}-before`);
+
+  // The bot picked the plane; the owner picks the moon from the strip instead.
+  await expect.element(app.getByRole("radio", { name: "Plane · for travel" })).toHaveAttribute("aria-checked", "true");
+  await app.getByRole("radio", { name: "Moon · for night and sleep" }).click();
+  await expect.element(app.getByRole("radio", { name: "Moon · for night and sleep" })).toHaveAttribute("aria-checked", "true");
+  await expect.element(app.getByRole("checkbox", { name: "Picture" })).toBeChecked();
+  app.getByRole("radiogroup", { name: "Pictures" }).element().scrollIntoView({ block: "center" });
+  await shot(`${scheme}-picture`);
 
   await app.getByRole("button", { name: "Set it up", exact: true }).click();
   await expect.element(app.getByRole("button", { name: "Apply anyway" })).toBeVisible();
@@ -76,6 +86,8 @@ async function setUp(scheme: "dark" | "light") {
   await shot(`${scheme}-during`);
   expect(server.souls.default).toBe(BLOCK.persona);
   expect(server.profileMeta.default.description).toBe(BLOCK.description);
+  expect(server.botAvatars.default).toBe(BOT_PICTURE_URLS.moon);
+  expect(server.requests.filter((r) => r.method === "profiles.set_asset").map((r) => r.params)).toEqual([{ name: "default", asset: "avatar", data: BOT_PICTURE_URLS.moon }]);
 
   server.skills.toggleRefusal = undefined;
   await app.getByRole("button", { name: "Try again" }).click();
@@ -92,7 +104,7 @@ async function setUp(scheme: "dark" | "light") {
   server.storeMessage("hermes-bot", { role: "assistant", text: "I'm set up, Lena. Ask me to plan a trip whenever you like." });
   server.event(sid, "message.complete", { status: "complete" });
   await expect.element(app.getByText("Hermes already remembers it.")).toBeVisible();
-  await expect.element(app.getByText("6 of 6 applied and read back.")).toBeVisible();
+  await expect.element(app.getByText("7 of 7 applied and read back.")).toBeVisible();
   // The chat was resumed before the ready turn, and Hermes rebuilds a Bot Chat's agent only from its second turn on.
   await expect.element(app.getByText("Restart not confirmed yet: Hermes's chat doesn't list its new tools.")).toBeVisible();
   shown.element().closest(".msg.returned")!.scrollIntoView({ block: "start" });

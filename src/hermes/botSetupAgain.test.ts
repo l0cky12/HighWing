@@ -131,10 +131,21 @@ describe("the current setup in Set up again's brief", () => {
     ],
     models: ["claude-sonnet-4-5"],
     bots: [],
+    picture: null,
+    pictures: [
+      { name: "plane", key: "00000000000000a1" },
+      { name: "moon", key: "00000000000000a2" },
+    ],
   };
 
   it("is what Hermes has: persona, description, model, and only what is on", () => {
-    expect(currentSetup(now)).toEqual({ persona: "You are Travel Buddy.", description: "Plans trips.", model: "claude-sonnet-4-5", color: "teal", skillsOn: ["find-nearby"], toolsetsOn: ["web"] });
+    expect(currentSetup(now)).toEqual({ persona: "You are Travel Buddy.", description: "Plans trips.", model: "claude-sonnet-4-5", color: "teal", picture: null, skillsOn: ["find-nearby"], toolsetsOn: ["web"] });
+  });
+
+  it("names the bot's picture when it is one of the set's, and says only that another one is uploaded", () => {
+    expect(currentSetup({ ...now, picture: "00000000000000a2" }).picture).toBe("moon");
+    expect(currentSetup({ ...now, picture: "00000000000000ff" }).picture).toBe("uploaded");
+    expect(currentSetup(now).picture).toBeNull();
   });
 
   it("names a colour the brief lists, and keeps any other as Hermes has it", () => {

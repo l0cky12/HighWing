@@ -10,7 +10,9 @@ import {
   acceptedRecordBlock,
   choose,
   fencedBlocks,
+  isListed,
   parseSetup,
+  pictureKey,
   planCard,
   previewWithoutSetup,
   readAcceptedRecord,
@@ -33,6 +35,7 @@ const block = (over: Partial<BotSetupNewBlock> = {}): BotSetupNewBlock => ({
   description: "Plans trips: flights, trains, places to stay.",
   model: null,
   color: "teal",
+  picture: null,
   callOwner: "Liam",
   skills: [{ name: "find-nearby", on: true }],
   toolsets: [{ name: "browser", on: true }],
@@ -41,11 +44,19 @@ const block = (over: Partial<BotSetupNewBlock> = {}): BotSetupNewBlock => ({
   ...over,
 });
 
+const PLANE = "00000000000000a1";
+const MOON = "00000000000000a2";
+
 const now = (over: Partial<HermesNow> = {}): HermesNow => ({
   persona: "",
   description: "",
   model: "claude-sonnet-4.5",
   color: null,
+  picture: null,
+  pictures: [
+    { name: "plane", key: PLANE },
+    { name: "moon", key: MOON },
+  ],
   memory: [],
   skills: [
     { name: "find-nearby", enabled: false },
@@ -67,7 +78,7 @@ const brief = (id: string): SetupRow => ({ role: "user", display_kind: "hidden",
 const briefAgain = (id: string, persona: string): SetupRow => ({
   role: "user",
   display_kind: "hidden",
-  content: botSetupBrief({ id, name: "Travel Buddy", inventory, current: { persona, description: "Plans trips.", model: null, color: "#14b8a6", skillsOn: [], toolsetsOn: [] } }),
+  content: botSetupBrief({ id, name: "Travel Buddy", inventory, current: { persona, description: "Plans trips.", model: null, color: "#14b8a6", picture: null, skillsOn: [], toolsetsOn: [] } }),
 });
 const keeping = (over: Partial<BotSetupAgainBlock> = {}): BotSetupAgainBlock => ({ ...block(), persona: null, description: null, color: null, ...over });
 const fenced = (lang: string, body: string) => `\`\`\`${lang}\n${body}\n\`\`\``;
@@ -87,7 +98,7 @@ const item = (plan: Plan, key: string): PlanItem => {
 };
 const listedItem = (plan: Plan, key: string): ListedItem => {
   const i = item(plan, key);
-  if (i.status === "notFound") throw new Error(`${key} is not found`);
+  if (!isListed(i)) throw new Error(`${key} is ${i.status}`);
   return i;
 };
 /** The card's plan once the owner made `changes` on the card as shown, each keyed by its item. */
@@ -237,6 +248,9 @@ describe("reading a block strictly", () => {
       { color: null },
       { color: "Teal" },
       { color: "#14b8a6" },
+      { picture: 7 },
+      { picture: "" },
+      { picture: ["moon"] },
       { callOwner: 1 },
       { skills: [{ name: "a", on: "yes" }] },
       { skills: [{ name: "a", on: true }, { name: "a", on: false }] },
@@ -282,6 +296,7 @@ describe("the plan", () => {
       "description change",
       "model same",
       "color change",
+      "picture same",
       "remember change",
       "skill:find-nearby change",
       "skill:deep-research change",
@@ -483,6 +498,97 @@ describe("Set up again", () => {
   });
 });
 
+describe("the picture", () => {
+  const card = (b: BotSetupNewBlock | BotSetupAgainBlock = block(), rows = [brief("s1")]) => cardOf([...rows, reply(2, JSON.stringify(b))]).card;
+  const picture = (b: BotSetupNewBlock | BotSetupAgainBlock, h = now()) => item(planCard(card(b), h), "picture");
+
+  it("is known by its bytes, whatever label the data URL carries", () => {
+    expect(pictureKey("data:image/png;base64,iVBORw0KGgo=")).toMatch(/^[0-9a-f]{16}$/);
+    expect(pictureKey("data:image/jpeg;base64,iVBORw0KGgo=")).toBe(pictureKey("data:image/png;base64,iVBORw0KGgo="));
+    expect(pictureKey("data:image/png;base64,iVBORw0KGgoAAAA=")).not.toBe(pictureKey("data:image/png;base64,iVBORw0KGgo="));
+  });
+
+  it("proposes the set's picture the block names, by its key, right after the colour", () => {
+    const plan = planCard(card(block({ picture: "moon" })), now());
+    expect(plan.items.map((i) => i.key).slice(3, 6)).toEqual(["color", "picture", "remember"]);
+    expect(item(plan, "picture")).toMatchObject({ kind: "picture", status: "change", ticked: true, before: null, proposed: MOON, after: MOON, name: "moon" });
+  });
+
+  it.each([
+    ["an https URL", "https://evil.example/avatar.png"],
+    ["a data URL", "data:image/png;base64,iVBORw0KGgo="],
+    ["a name the set doesn't have", "rocket"],
+    ["a set name in another case", "Moon"],
+  ])("shows %s as not found, which can't be ticked and is in no record", (_, named) => {
+    const plan = planCard(card(block({ picture: named })), now());
+    expect(item(plan, "picture")).toEqual({ kind: "picture", key: "picture", name: named, status: "notFound" });
+    expect(tickable(item(plan, "picture"))).toBe(false);
+    expect(tickedCount(plan)).toBe(tickedCount(planCard(card(block()), now())));
+    expect(JSON.stringify(acceptedRecord(plan))).not.toContain("picture");
+  });
+
+  it("keeps the picture the bot has when the block names none", () => {
+    expect(picture(block({ picture: null }), now({ picture: PLANE }))).toMatchObject({ status: "same", before: PLANE, after: PLANE, name: "plane" });
+    expect(picture(block({ picture: null }))).toMatchObject({ status: "same", before: null, after: null });
+    expect(picture(block({ picture: null }))).not.toHaveProperty("name");
+  });
+
+  it("reads a block written before the picture key existed, as one that keeps the picture, under the card id it had", () => {
+    const old = { v: 1, persona: "You are Travel Buddy.", description: "Plans trips.", model: null, color: "teal", callOwner: "Liam", skills: [], toolsets: [], mcp: [], copy: [] };
+    const read = cardOf([brief("s1"), reply(2, JSON.stringify(old))]).card;
+    expect(read.block.picture).toBeNull();
+    // The id this block had before #86, when the format had no picture key.
+    expect(read.id).toBe("s1:2dbf9ba43e15f3da");
+    expect(cardOf([brief("s1"), reply(2, JSON.stringify({ ...old, picture: null }))]).card.id).toBe(read.id);
+    expect(cardOf([brief("s1"), reply(2, JSON.stringify({ ...old, picture: "moon" }))]).card.id).not.toBe(read.id);
+    expect(cardOf([brief("s1"), reply(2, JSON.stringify({ ...old, picture: "sun" }))]).card.id).not.toBe(cardOf([brief("s1"), reply(2, JSON.stringify({ ...old, picture: "moon" }))]).card.id);
+    const { color: _, ...noColor } = old;
+    expect(readBlock(JSON.stringify(noColor), "new")).toEqual({ ok: false, reason: "block: keys color" });
+  });
+
+  it("is unavailable, with the reason, on a Hermes that can't save one, and the other items are planned as ever", () => {
+    for (const why of [{ kind: "noCheck" }, { kind: "noRoute", action: "botLook" }, { kind: "noRoute", action: "botPicture" }] as const) {
+      const plan = planCard(card(block({ picture: "moon" })), now({ pictureCant: why }));
+      expect(item(plan, "picture")).toEqual({ kind: "picture", key: "picture", status: "unavailable", why });
+      expect(tickable(item(plan, "picture"))).toBe(false);
+      expect(plan.items.filter((i) => i.key !== "picture")).toEqual(planCard(card(block()), now()).items.filter((i) => i.key !== "picture"));
+      expect(acceptedRecord(plan).items.some((a) => a.kind === "picture")).toBe(false);
+    }
+  });
+
+  it("takes the owner's pick from the set or their upload, and keeps it on a newer block that names the bot's first pick", () => {
+    const first = card(block({ picture: "moon" }));
+    const upload = pictureKey("data:image/png;base64,QUJDRA==");
+    const picked = onCard(first, now(), { picture: { to: PLANE } });
+    expect(item(picked, "picture")).toMatchObject({ status: "change", after: PLANE, name: "plane", over: [MOON] });
+    const uploaded = onCard(first, now(), { picture: { to: upload } });
+    expect(item(uploaded, "picture")).toMatchObject({ status: "change", after: upload, over: [MOON] });
+    expect(item(uploaded, "picture")).not.toHaveProperty("name");
+
+    const record = acceptedRecord(uploaded);
+    expect(record.items.find((a) => a.kind === "picture")).toEqual({ kind: "picture", key: "picture", over: [MOON], ticked: true, from: null, to: upload });
+    expect(readAcceptedRecord(JSON.stringify(record))).toEqual(record);
+    const redrawn = card(block({ picture: "moon", description: "Plans trips by train." }));
+    expect(item(planCard(redrawn, now(), record), "picture")).toMatchObject({ status: "change", after: upload });
+    expect(item(planCard(redrawn, now({ picture: upload }), record), "picture")).toMatchObject({ status: "same", after: upload });
+  });
+
+  describe("on Set up again", () => {
+    const again = (b: BotSetupAgainBlock, h: HermesNow) => item(planCard(card(b, [briefAgain("s1", "You are Travel Buddy.")]), h), "picture");
+
+    it("has nothing to do for the picture the bot already has, named or kept", () => {
+      expect(again(keeping({ picture: null }), now({ picture: MOON }))).toMatchObject({ status: "same", before: MOON, after: MOON, name: "moon" });
+      expect(again(keeping({ picture: "moon" }), now({ picture: MOON }))).toMatchObject({ status: "same", before: MOON, after: MOON });
+    });
+
+    it("changes it, from what Hermes has now, when the block names another", () => {
+      expect(again(keeping({ picture: "plane" }), now({ picture: MOON }))).toMatchObject({ status: "change", ticked: true, before: MOON, after: PLANE, name: "plane" });
+      const uploaded = "00000000000000ff";
+      expect(again(keeping({ picture: "plane" }), now({ picture: uploaded }))).toMatchObject({ status: "change", before: uploaded, after: PLANE });
+    });
+  });
+});
+
 describe("colours", () => {
   it("maps every block colour to a hex colour Bot Mode stores and the roster shows", () => {
     expect(Object.keys(BOT_SETUP_COLOR_HEX).sort()).toEqual([...BOT_SETUP_COLORS].sort());
@@ -532,6 +638,10 @@ describe("what the owner accepted", () => {
       { ...good, items: [{ kind: "skill", key: "skill:x", over: ["on"], ticked: true, from: "absent", to: "npx evil" }] },
       { ...good, items: [{ kind: "skill", key: "skill:x", over: ["off", "npx evil"], ticked: true, from: "absent", to: "on" }] },
       { ...good, items: [{ kind: "color", key: "color", over: [null], ticked: true, from: null, to: "url(https://evil.example)" }] },
+      { ...good, items: [{ kind: "picture", key: "picture", over: [null], ticked: true, from: null, to: "https://evil.example/a.png" }] },
+      { ...good, items: [{ kind: "picture", key: "picture", over: [null], ticked: true, from: null, to: "data:image/png;base64,iVBORw0KGgo=" }] },
+      { ...good, items: [{ kind: "picture", key: "picture", over: ["moon"], ticked: true, from: null, to: MOON }] },
+      { ...good, items: [{ kind: "picture", key: "picture", over: [], ticked: true, from: "plane", to: MOON }] },
     ];
     for (const r of bad) expect(readAcceptedRecord(JSON.stringify(r)), JSON.stringify(r)).toBeNull();
   });

@@ -3,13 +3,14 @@
 // read on open and after each reply (`useBotSetup`); what the card offers and what a choice does, from botSetupCard.ts;
 // what Set it up writes, from botSetupApply.ts. The pane keeps the pending edits above the transcript, so a card
 // scrolled out of the rendered window keeps them. What Connect takes for an MCP server is kept there too, in memory
-// only, until Set it up sends it; leaving the Bot Chat drops it (#85 owner call 4). Set up again's card shows each
-// change as before → after, and folds what stays as it is under one line per group.
+// only, until Set it up sends it; leaving the Bot Chat drops it (#85 owner call 4). A picture the owner uploads is kept
+// the same way (ADR 0235). Set up again's card shows each change as before → after, and folds what stays as it is
+// under one line per group.
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Check, ChevronRight, CircleAlert, FileText, Hourglass, Pencil, Plug, RotateCcw, Sparkles, TriangleAlert } from "lucide-react";
 import { BOT_SETUP_COLORS, BOT_SETUP_DESCRIPTION_MAX, BOT_SETUP_FENCE } from "../hermes/botSetupBrief";
-import { BOT_SETUP_COLOR_HEX, choose, fencedBlocks, planCard, tickable, type Choice, type ListedItem, type Plan, type PlanItem } from "../hermes/botSetupCard";
-import { rememberAsked, restartState, setupItems, type CardMiss, type CardState } from "../hermes/botSetupApply";
+import { BOT_SETUP_COLOR_HEX, choose, fencedBlocks, isListed, pictureKey, pictureNamed, planCard, tickable, type Choice, type ListedItem, type Plan, type PlanItem } from "../hermes/botSetupCard";
+import { rememberAsked, restartState, setupItems, type CardMiss, type CardState, type PictureUploads } from "../hermes/botSetupApply";
 import { connected, mcpOffer, type McpOffer, type McpSecrets } from "../hermes/botSetupMcp";
 import type { Note } from "../hermes/botSetup";
 import type { BotSetupStart } from "../hermes/botSetupStart";
@@ -20,6 +21,7 @@ import type { Caution } from "../hermes/toolsets";
 import { errorText } from "../hermes/values";
 import { useLocale, type Locale } from "../i18n/locale";
 import { composing, Spinner } from "./bits";
+import { Picture, PicturePicker, type ShownPicture } from "./BotSetupPicture";
 import { failureText } from "./profileFailure";
 import { cautionText } from "./ToolsetSettings";
 import { TurnCard } from "./TurnCard";
@@ -51,6 +53,10 @@ export type SetupHost = {
   secrets: McpSecrets;
   /** Keeps `values` for an MCP server, which only Set it up sends. */
   connect(item: ListedItem, values: Record<string, string>): void;
+  /** The pictures the owner uploaded on this card, by key. */
+  uploads: PictureUploads;
+  /** Keeps an uploaded picture, which only Set it up sends. */
+  upload(key: string, dataUrl: string): void;
   reloadMcp(): void;
   /** `replying`: Hermes didn't reload, since a reply runs on it. */
   mcpReload?: "working" | "replying" | { failed: string };
@@ -85,6 +91,7 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
   const [restart, setRestart] = useState<Restart>();
   const [start, setStart] = useState<BotSetupStart>();
   const [secrets, setSecrets] = useState<McpSecrets>({});
+  const [uploads, setUploads] = useState<PictureUploads>({});
   const [mcpReload, setMcpReload] = useState<SetupHost["mcpReload"]>();
   const shown = useRef({ chatId, reads: 0, started: false, readOnce: false, holds: false, afterSetUp: false, setupId: null as string | null });
   // What the last Set it up ran on: a retry compares against what the card read then, not against a later reload.
@@ -100,6 +107,7 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
     setRestart(undefined);
     setStart(undefined);
     setSecrets({});
+    setUploads({});
     setMcpReload(undefined);
   }, []);
   useEffect(() => {
@@ -183,7 +191,7 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
     const setupId = on.read.parse.card.setupId;
     const hear = hearFor(setupId);
     hear(item.key, { kind: "working" });
-    api.retryBotSetupItem(on.read, on.items.get(item.key) ?? item, cautions, using).then(
+    api.retryBotSetupItem(on.read, on.items.get(item.key) ?? item, cautions, using, uploads).then(
       (state) => {
         hear(item.key, state);
         if (ours(setupId)) dropSecretsOfAdded({ [item.key]: state });
@@ -221,7 +229,7 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
       const items = setupItems(plan, r.parse.accepted);
       ranOn.current = { read: r, items: new Map(items.map((i) => [i.key, i])) };
       const setupId = r.parse.card.setupId;
-      api.applyBotSetup(r, plan, hearFor(setupId), secrets).then(
+      api.applyBotSetup(r, plan, hearFor(setupId), secrets, uploads).then(
         (out) => {
           setBusy(false);
           if (!ours(setupId)) return;
@@ -246,6 +254,8 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
     },
     secrets,
     connect: (item, values) => setSecrets((was) => ({ ...was, [item.key]: values })),
+    uploads,
+    upload: (key, dataUrl) => setUploads((was) => ({ ...was, [key]: dataUrl })),
     mcpReload,
     reloadMcp() {
       if (busy || mcpReload === "working") return;
@@ -352,7 +362,7 @@ function Unreadable({ host, source }: { host: SetupHost; source: string }) {
 }
 
 const GROUPS = [
-  { id: "about", kinds: ["persona", "description", "model", "color", "remember"] },
+  { id: "about", kinds: ["persona", "description", "model", "color", "picture", "remember"] },
   { id: "skills", kinds: ["skill"] },
   { id: "tools", kinds: ["toolset"] },
   { id: "mcp", kinds: ["mcp"] },
@@ -467,7 +477,7 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
     refocus.current = true;
     setEditing(false);
   };
-  const listed = item.status !== "notFound" ? item : undefined;
+  const listed = isListed(item) ? item : undefined;
   const run: ItemRun | undefined = host.runs[item.key] ?? (item.status === "same" && read.mcpReload.includes(item.key) ? { kind: "reload" } : undefined);
   // The Remember row is applied once the bot's memory lists the name, which the card reads back as nothing to change.
   const done = item.status === "same" && (run?.kind === "applied" || run?.kind === "waiting");
@@ -483,37 +493,44 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
   const offer = listed?.kind === "mcp" && read.setup.mcp && listed.name !== undefined ? mcpOffer(read.setup.mcp, listed.name, listed.from) : undefined;
   const label = labelOf(l, read, item);
   const beforeAfter = read.parse.card.again && tickable(item);
-  const value = listed && valueOf(l, listed, beforeAfter);
+  const now = read.setup.now;
+  const shownPicture = (key: string | null): ShownPicture => {
+    const name = pictureNamed(now, key);
+    if (key === null) return { kind: "none" };
+    if (name) return { kind: "set", name, url: read.setup.pictures[key] };
+    return key === now.picture ? { kind: "now", url: read.setup.picture ?? undefined } : { kind: "yours", url: host.uploads[key] };
+  };
+  // An upload lives in the app's memory only, so a reload can leave the card holding its key with nothing to send.
+  const pictureRow = listed?.kind === "picture" ? listed : undefined;
+  const pictureLost = !!pictureRow && tickable(item) && pictureRow.after !== null && shownPicture(pictureRow.after).url === undefined;
+  const pickPicture = !host.busy && (!shownRun || (shownRun.kind === "failed" && shownRun.miss.kind === "pictureLost"));
+  const value = listed ? (
+    valueOf(l, listed, beforeAfter, (key) => <Picture picture={shownPicture(key)} />)
+  ) : item.status === "notFound" && item.kind === "picture" ? (
+    <span className="bot-setup-value bot-setup-label gone" translate="no">
+      {" · "}
+      {item.name.length > 60 ? `${item.name.slice(0, 60)}…` : item.name}
+    </span>
+  ) : null;
   const edited = listed && listed.over.length > 0 && listed.after !== listed.proposed;
   const refused = item.status === "notFound" ? item.why : undefined;
-  const badge = refused ? l.mcpCantAdd : item.status === "notFound" ? l.notFound : item.from !== undefined ? l.from(item.from) : (item.kind === "skill" || item.kind === "toolset") && item.status === "change" ? l.suggested : undefined;
+  const badge = refused ? l.mcpCantAdd : item.status === "notFound" ? l.notFound : item.status === "unavailable" ? l.unavailable : item.from !== undefined ? l.from(item.from) : (item.kind === "skill" || item.kind === "toolset") && item.status === "change" ? l.suggested : undefined;
   const editable = listed && !host.busy && !shownRun && (item.kind === "persona" || item.kind === "description" || item.kind === "color" || (item.kind === "model" && read.setup.now.models.length > 1));
   const ticked = tickable(item) && item.ticked;
-  const sub =
-    item.status === "notFound"
-      ? refused
-        ? refused === "path"
-          ? l.mcpRefused.path(item.from ?? "")
-          : l.mcpRefused[refused]
-        : l.notFoundWhy
-      : item.status === "same" && !done && !addedAwaitingReload
-        ? item.kind === "model"
-          ? l.inUse
-          : item.kind === "remember"
-            ? l.remembered(host.bot)
-            : l.already
-        : item.status === "elsewhere" && !shownRun
-          ? l.elsewhere
-          : !shownRun && item.kind === "remember"
-            ? l.rememberWhere(host.bot)
-            : !shownRun && (item.kind === "skill" || item.kind === "toolset")
-              ? beforeAfter
-                ? l.fromTo(l.state[item.before], l.state[item.after])
-                : item.after === "on"
-                  ? l.turnOn
-                  : l.turnOff
-              : undefined;
-  const dim = item.status === "notFound" || (item.status === "same" && !done && !addedAwaitingReload);
+  const sub = ((): string | undefined => {
+    if (item.status === "notFound") return refused ? (refused === "path" ? l.mcpRefused.path(item.from ?? "") : l.mcpRefused[refused]) : item.kind === "picture" ? l.pictureNotFound : l.notFoundWhy;
+    if (item.status === "unavailable") return failureText(loc, item.why, read.profile);
+    if (item.status === "same" && !done && !addedAwaitingReload)
+      return item.kind === "model" ? l.inUse : item.kind === "remember" ? l.remembered(host.bot) : item.kind === "picture" && item.after === null ? l.pictureNoneYet : l.already;
+    if (shownRun) return undefined;
+    if (pictureLost) return l.pictureLost;
+    if (item.status === "elsewhere") return l.elsewhere;
+    if (item.kind === "remember") return l.rememberWhere(host.bot);
+    if (item.kind === "skill" || item.kind === "toolset") return beforeAfter ? l.fromTo(l.state[item.before], l.state[item.after]) : item.after === "on" ? l.turnOn : l.turnOff;
+    return undefined;
+  })();
+  const dim = !listed || (item.status === "same" && !done && !addedAwaitingReload);
+  const warn = item.status === "notFound" || item.status === "unavailable";
   return (
     <li className={`bot-setup-item${dim ? " dim" : ""}`}>
       <span className="bot-setup-mark">
@@ -531,13 +548,13 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
       </span>
       <div className="bot-setup-body">
         <div className="bot-setup-head">
-          <span id={id} className={`bot-setup-label${item.status === "notFound" ? " gone" : ""}`} translate={item.kind === "skill" || item.kind === "mcp" ? "no" : undefined}>
+          <span id={id} className={`bot-setup-label${item.status === "notFound" && item.kind !== "picture" ? " gone" : ""}`} translate={item.kind === "skill" || item.kind === "mcp" ? "no" : undefined}>
             {label}
           </span>
           {value}
           {edited && <span className="bot-setup-edited"> · {l.edited}</span>}
           <span className="bot-setup-spacer" />
-          {badge && <span className={`badge${item.status === "notFound" ? " warn" : ""}`}>{badge}</span>}
+          {badge && <span className={`badge${warn ? " warn" : ""}`}>{badge}</span>}
           {editable && !editing && (
             <button ref={editButton} className="icon-btn bot-setup-edit" title={l.edit(label)} aria-label={l.edit(label)} onClick={() => setEditing(true)}>
               <Pencil size={13} aria-hidden />
@@ -566,7 +583,19 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
             )}
           </>
         )}
-        {sub && <div className="bot-setup-sub">{sub}</div>}
+        {sub && <div className={`bot-setup-sub${pictureLost && !shownRun ? " bot-setup-warn" : ""}`}>{sub}</div>}
+        {pictureRow && pickPicture && (
+          <PicturePicker
+            set={now.pictures.map((p) => ({ ...p, url: read.setup.pictures[p.key] }))}
+            picked={pictureRow.after}
+            onPick={(key) => host.choose(choose(pictureRow, { to: key }))}
+            onUpload={(dataUrl) => {
+              const key = pictureKey(dataUrl);
+              host.upload(key, dataUrl);
+              host.choose(choose(pictureRow, { to: key }));
+            }}
+          />
+        )}
         {listed && offer && offer.kind !== "refused" && !shownRun && tickable(item) && <McpDetail host={host} item={listed} offer={offer} onConnect={() => setConnecting(true)} />}
         {shownRun && <RunText host={host} item={item} run={shownRun} locale={loc} connectFilled={!!(listed && offer && host.secrets[listed.key] && connected(offer, host.secrets[listed.key]))} onConnect={() => setConnecting(true)} />}
         {connecting && listed && offer && offer.kind !== "refused" && (
@@ -598,6 +627,7 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
 }
 
 function labelOf(l: Locale["chat"]["botSetup"], read: BotSetupCardRead, item: PlanItem): string {
+  if (item.kind === "picture") return l.picture;
   if (item.status === "notFound") return item.name;
   switch (item.kind) {
     case "persona":
@@ -617,7 +647,7 @@ function labelOf(l: Locale["chat"]["botSetup"], read: BotSetupCardRead, item: Pl
   }
 }
 
-function valueOf(l: Locale["chat"]["botSetup"], item: ListedItem, beforeAfter: boolean): ReactNode {
+function valueOf(l: Locale["chat"]["botSetup"], item: ListedItem, beforeAfter: boolean, picture: (key: string | null) => ReactNode): ReactNode {
   const was = (now: ReactNode) =>
     beforeAfter && (
       <>
@@ -660,6 +690,14 @@ function valueOf(l: Locale["chat"]["botSetup"], item: ListedItem, beforeAfter: b
           {color(item.after)}
         </span>
       );
+    case "picture":
+      return (
+        <span className="bot-setup-value">
+          {" · "}
+          {was(picture(item.before))}
+          {picture(item.after)}
+        </span>
+      );
     case "toolset":
       return (
         <span className="bot-setup-value mono" translate="no">
@@ -692,7 +730,7 @@ function RunIcon({ run }: { run: ItemRun }) {
 
 function RunText({ host, item, run, locale: loc, connectFilled, onConnect }: { host: SetupHost; item: PlanItem; run: ItemRun; locale: Locale; connectFilled: boolean; onConnect: () => void }) {
   const l = loc.chat.botSetup;
-  const listed = item.status !== "notFound" ? item : undefined;
+  const listed = isListed(item) ? item : undefined;
   const again = (accept: boolean) => listed && host.retry(listed, accept);
   switch (run.kind) {
     case "working":
@@ -762,7 +800,7 @@ function RunText({ host, item, run, locale: loc, connectFilled, onConnect }: { h
           <div className="bot-setup-sub bot-setup-bad" role="alert">
             <MissText miss={m} profile={cardRead(host)?.profile ?? host.bot} locale={loc} />
           </div>
-          {m.kind !== "changed" && (
+          {m.kind !== "changed" && m.kind !== "pictureLost" && (
             <button className="btn" disabled={host.blocked === "offline" || (item.kind === "mcp" && host.mcpReload === "working")} onClick={() => again(false)}>
               <RotateCcw size={13} aria-hidden /> {l.tryAgain}
             </button>

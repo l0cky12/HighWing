@@ -9,6 +9,9 @@
 // the app draws is the bot's proposal, then what was accepted at Set it up, then the owner's pending choices. A newer
 // block keeps each choice unless the bot changed that same item to a value the owner hasn't moved away from (ADR 0231),
 // so neither a redraw nor a reload offers to write the bot's value over the owner's.
+// A picture (ADR 0235) is held here as a key, a fingerprint of its bytes, never as the bytes: the accepted record rides
+// in a row Hermes sends the model on every turn. The bytes a key stands for are the app's own set's or the owner's
+// upload, so a URL or image data in the block has nowhere to go.
 import {
   BOT_SETUP_BLOCK_KEYS,
   BOT_SETUP_BLOCK_VERSION,
@@ -20,11 +23,13 @@ import {
   type BotSetupAgainBlock,
   type BotSetupColor,
   type BotSetupCopy,
+  type BotPictureName,
   type BotSetupNewBlock,
   type BotSetupOtherBot,
   type BotSetupToggle,
 } from "./botSetupBrief";
 import type { McpRefusal } from "./botSetupMcp";
+import { payloadOf } from "./bots";
 import type { SkillRow } from "./skills";
 import { textOf } from "./storedTranscript";
 import type { Toolset } from "./toolsets";
@@ -68,6 +73,8 @@ export type ItemValues = {
   model: string | null;
   /** A Bot Mode colour as `lookOf` reads it: lowercase hex, or null for Hermes's own. */
   color: string | null;
+  /** A picture's {@link pictureKey}, or null for none. */
+  picture: string | null;
   /** The owner's name, once the bot's memory lists an entry with it. */
   remember: string | null;
   skill: "on" | "off" | "absent";
@@ -87,7 +94,8 @@ export type ItemStatus = { status: "change" | "elsewhere" | "same"; ticked: bool
 type Proposal<K extends ItemKind> = { kind: K; key: string; name?: string; from?: string; before: ItemValues[K]; proposed: ItemValues[K] };
 
 /**
- * One row Hermes lists. `key`: unique in the plan (`persona`, `skill:<name>`). `name`: Hermes's own spelling. `from`:
+ * One row Hermes lists. `key`: unique in the plan (`persona`, `skill:<name>`). `name`: Hermes's own spelling, or for a
+ * picture the set's name for `after`, none when it is the owner's upload. `from`:
  * the bot it is copied from, as Hermes lists that bot. `before`: Hermes's value now. `proposed`: the block's value.
  * `after`: the value on the card, which the owner may have chosen instead. `over`: the values shown for the item that
  * the owner's choice on it was made over, none when no choice holds.
@@ -95,12 +103,24 @@ type Proposal<K extends ItemKind> = { kind: K; key: string; name?: string; from?
 export type ListedItem = { [K in ItemKind]: Proposal<K> & { after: ItemValues[K]; over: readonly ItemValues[K][] } & ItemStatus }[ItemKind];
 
 /**
- * A name the block gave that Hermes doesn't list, or (`why`) an MCP server Hermes lists that the card won't add. Shown
- * with the block's own spelling; never ticked, never sent.
+ * A name the block gave that Hermes doesn't list, a picture that isn't one of the set's, or (`why`) an MCP server
+ * Hermes lists that the card won't add. Shown with the block's own spelling; never ticked, never sent.
  */
-export type NotFoundItem = { kind: "model" | "skill" | "toolset" | "mcp"; key: string; name: string; from?: string; status: "notFound"; why?: McpRefusal };
+export type NotFoundItem = { kind: "model" | "skill" | "toolset" | "mcp" | "picture"; key: string; name: string; from?: string; status: "notFound"; why?: McpRefusal };
 
-export type PlanItem = ListedItem | NotFoundItem;
+/**
+ * Why this Hermes can't save a bot's picture, as Edit bot judges it (ADR 0189): it lacks `profiles.set_asset` or
+ * `profiles.configure`, or it reports no revision to check the Bot Mode block's write against.
+ */
+export type PictureCant = { kind: "noRoute"; action: "botPicture" | "botLook" } | { kind: "noCheck" };
+
+/** The Picture row on a Hermes that can't save one: shown with the reason, never ticked, never sent. */
+export type UnavailableItem = { kind: "picture"; key: "picture"; status: "unavailable"; why: PictureCant };
+
+export type PlanItem = ListedItem | NotFoundItem | UnavailableItem;
+
+/** An item Hermes lists and can take: one with a value before and after. */
+export const isListed = (item: PlanItem): item is ListedItem => item.status !== "notFound" && item.status !== "unavailable";
 
 /**
  * The card's items in the card's order: about the bot, then skills, toolsets and MCP servers. Set up again's plan also
@@ -111,13 +131,17 @@ export type Plan = { cardId: string; items: PlanItem[] };
 /**
  * What the plan is read against: the bot as Hermes has it now, and what Hermes lists. `mcp` undefined: MCP isn't
  * offered, so every MCP server the block names is not found. `mcp.refused`: why the card won't add a server Hermes
- * lists, by its `mcpSourceKey`. `memory`: the bot's memory entries, as text.
+ * lists, by its `mcpSourceKey`. `memory`: the bot's memory entries, as text. `picture`: the key of the bot's picture.
+ * `pictures`: the set the card offers, each with the key of its bytes. `pictureCant`: why no picture can be saved.
  */
 export type HermesNow = {
   persona: string;
   description: string;
   model: string | null;
   color: string | null;
+  picture: string | null;
+  pictures: readonly { name: BotPictureName; key: string }[];
+  pictureCant?: PictureCant;
   memory: readonly string[];
   skills: readonly Pick<SkillRow, "name" | "enabled">[];
   toolsets: readonly Pick<Toolset, "name" | "enabled">[];
@@ -249,7 +273,8 @@ export function readBlock(source: string, brief: BriefKind): { ok: true; checked
       throw new Bad("not JSON");
     }
     if (!isObj(raw)) throw new Bad("not a JSON object");
-    keysExactly(raw, BOT_SETUP_BLOCK_KEYS, "block");
+    // A block written before the picture key existed (#86) still reads, as one that keeps the picture.
+    keysExactly(raw, "picture" in raw ? BOT_SETUP_BLOCK_KEYS : BOT_SETUP_BLOCK_KEYS.filter((k) => k !== "picture"), "block");
     if (raw.v !== BOT_SETUP_BLOCK_VERSION) throw new Bad(`v: not ${BOT_SETUP_BLOCK_VERSION}`);
     const description = orNull(raw.description, (v) => {
       const d = text(v, "description");
@@ -282,6 +307,7 @@ export function readBlock(source: string, brief: BriefKind): { ok: true; checked
       description,
       model: orNull(raw.model, (v) => text(v, "model")),
       color,
+      picture: orNull(raw.picture ?? null, (v) => text(v, "picture")),
       callOwner: orNull(raw.callOwner, (v) => text(v, "callOwner")),
       skills: toggles(raw.skills, "skills"),
       toolsets: toggles(raw.toolsets, "toolsets"),
@@ -311,7 +337,11 @@ function fingerprint(s: string): string {
   return `${(a >>> 0).toString(16).padStart(8, "0")}${(b >>> 0).toString(16).padStart(8, "0")}`;
 }
 
-const cardIdOf = (setupId: string, block: BotSetupAgainBlock) => `${setupId}:${fingerprint(JSON.stringify(block))}`;
+/** A picture by its bytes, as `BOT_LOOK_SAME.picture` compares two: the data URL's label isn't part of it. */
+export const pictureKey = (dataUrl: string) => fingerprint(payloadOf(dataUrl));
+
+// A null picture is left out of the hash, so a card drawn from a block without the key keeps the id it had before #86.
+const cardIdOf = (setupId: string, { picture, ...rest }: BotSetupAgainBlock) => `${setupId}:${fingerprint(JSON.stringify(picture === null ? rest : { ...rest, picture }))}`;
 const setupOf = (cardId: string) => cardId.slice(0, cardId.lastIndexOf(":"));
 
 const rowText = (row: SetupRow) => textOf(row.content);
@@ -398,11 +428,24 @@ const notFound = (kind: NotFoundItem["kind"], name: string, from?: string, why?:
   ...(why && { why }),
 });
 
+/** The set's name for the picture with this key, or none: no picture, or one that isn't the set's. */
+export const pictureNamed = (now: Pick<HermesNow, "pictures">, key: string | null): BotPictureName | undefined => now.pictures.find((p) => p.key === key)?.name;
+
+/** The Picture row: the set's picture the block names, by its key. The block's own text never becomes a value. */
+function pictureItem(named: string | null, now: HermesNow): Proposal<ItemKind> | NotFoundItem | UnavailableItem {
+  if (now.pictureCant) return { kind: "picture", key: "picture", status: "unavailable", why: now.pictureCant };
+  if (named === null) return listed("picture", "picture", now.picture, now.picture);
+  const known = now.pictures.find((p) => p.name === named);
+  return known ? listed("picture", "picture", now.picture, known.key) : { kind: "picture", key: "picture", name: named, status: "notFound" };
+}
+
+type Planned = Proposal<ItemKind> | NotFoundItem | UnavailableItem;
+
 /** The block against Hermes now: one item per row the card shows. */
-function planBlock(card: Card, now: HermesNow): (Proposal<ItemKind> | NotFoundItem)[] {
+function planBlock(card: Card, now: HermesNow): Planned[] {
   const b = card.block;
-  const items: (Proposal<ItemKind> | NotFoundItem)[] = [];
-  const add = (item: Proposal<ItemKind> | NotFoundItem) => {
+  const items: Planned[] = [];
+  const add = (item: Planned) => {
     const at = items.findIndex((i) => i.key === item.key);
     if (at < 0) items.push(item);
     else if ("status" in items[at] && !("status" in item)) items[at] = item;
@@ -413,6 +456,7 @@ function planBlock(card: Card, now: HermesNow): (Proposal<ItemKind> | NotFoundIt
   const model = b.model === null ? now.model : now.models.find((m) => m === b.model);
   add(model === undefined ? notFound("model", b.model ?? "") : listed("model", "model", now.model, model, model === null ? {} : { name: model }));
   add(listed("color", "color", now.color, b.color === null ? now.color : BOT_SETUP_COLOR_HEX[b.color]));
+  add(pictureItem(b.picture, now));
   // Whether Hermes has the Remember row depends on the name the card ends up with, so planCard reads it.
   if (b.callOwner !== null) add(listed("remember", "remember", null, b.callOwner));
 
@@ -457,7 +501,8 @@ function planBlock(card: Card, now: HermesNow): (Proposal<ItemKind> | NotFoundIt
 
 const holds = (c: Choice, proposed: unknown) => [c.to, ...c.over].some((v) => same(c.kind, v, proposed));
 
-const leftAlone = (b: BotSetupAgainBlock, kind: ItemKind) => (kind === "persona" || kind === "description" || kind === "model" || kind === "color") && b[kind] === null;
+const leftAlone = (b: BotSetupAgainBlock, kind: ItemKind) =>
+  (kind === "persona" || kind === "description" || kind === "model" || kind === "color" || kind === "picture") && b[kind] === null;
 
 /**
  * The card's plan: the block against Hermes now, with each choice the owner made laid over it, `accepted` at Set it up
@@ -482,7 +527,8 @@ export function planCard(card: Card, now: HermesNow, accepted: AcceptedRecord | 
       : a?.ticked && !same(p.kind, before, a.from) && same(p.kind, after, a.to)
         ? { status: "elsewhere", ticked: chosen?.ticked ?? false }
         : { status: "change", ticked: held?.ticked ?? true };
-    return { ...p, before, after, over: held ? held.over : [], ...status } as ListedItem;
+    const name = p.kind === "picture" ? pictureNamed(now, after as string | null) : p.name;
+    return { ...p, ...(name !== undefined && { name }), before, after, over: held ? held.over : [], ...status } as ListedItem;
   });
   return { cardId: card.id, items };
 }
@@ -514,7 +560,7 @@ export function acceptedRecord(plan: Plan, previous: AcceptedRecord | null = nul
   const earlier = previous && setupOf(previous.card) === setupOf(plan.cardId) ? previous.items : [];
   const items = new Map(earlier.map((a) => [a.key, a]));
   for (const item of plan.items) {
-    if (item.status === "notFound") continue;
+    if (!isListed(item)) continue;
     const a = items.get(item.key);
     if (tickable(item) || item.over.length || !item.ticked)
       items.set(item.key, { kind: item.kind, key: item.key, over: item.over, ticked: item.ticked, from: item.before, to: item.after } as AcceptedItem);
@@ -533,6 +579,8 @@ const VALUE_OK: { [K in ItemKind]: (v: unknown) => v is ItemValues[K] } = {
   description: (v): v is string => typeof v === "string",
   model: (v): v is string | null => v === null || typeof v === "string",
   color: (v): v is string | null => v === null || (typeof v === "string" && /^#[0-9a-f]{3,8}$/i.test(v)),
+  // A key and nothing else: this row is sent to the model on every turn, so it never carries a picture.
+  picture: (v): v is string | null => v === null || (typeof v === "string" && /^[0-9a-f]{16}$/.test(v)),
   remember: (v): v is string | null => v === null || typeof v === "string",
   skill: (v): v is ItemValues["skill"] => v === "on" || v === "off" || v === "absent",
   toolset: (v): v is ItemValues["toolset"] => v === "on" || v === "off",

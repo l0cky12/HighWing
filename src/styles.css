@@ -539,6 +539,16 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
 .bot-setup-edit { width: 24px; height: 24px; align-self: center; }
 .bot-setup-swatch { display: inline-block; width: 11px; height: 11px; border-radius: 50%; vertical-align: -1px; }
 .bot-setup-sub { color: var(--text-2); font-size: calc(12.5rem / 14); overflow-wrap: anywhere; }
+/* The Picture row (ADR 0235): a picture beside its name, and the set as a strip of round buttons, the pick ringed. */
+.bot-setup-picture img { width: 20px; height: 20px; margin-right: 5px; border-radius: 50%; vertical-align: -5px; object-fit: cover; }
+.bot-setup-was .bot-setup-picture img { opacity: 0.55; }
+.bot-setup-picker { display: grid; gap: 6px; margin-top: 6px; }
+.bot-setup-pictures { display: flex; flex-wrap: wrap; gap: 8px; }
+.bot-setup-pictures [role="radio"] { width: 40px; height: 40px; padding: 0; border: none; border-radius: 50%; background: none; cursor: pointer; outline-offset: 2px; }
+.bot-setup-pictures [role="radio"] img { display: block; width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.bot-setup-pictures [role="radio"][aria-checked="true"] { outline: 2px solid var(--accent); }
+.bot-setup-pictures [role="radio"]:focus-visible { outline: 2px solid var(--text); }
+.bot-setup-picker .bot-setup-run { align-items: center; margin-top: 0; }
 .bot-setup-persona {
   margin: 6px 0 2px; padding: 8px 10px; border-radius: 8px; background: var(--raised-2); color: var(--text-2); white-space: pre-wrap;
   overflow-wrap: anywhere; font-size: calc(13rem / 14);

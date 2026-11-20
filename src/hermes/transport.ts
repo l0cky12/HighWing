@@ -151,9 +151,10 @@ import { displayMetadata, returnedItem } from "./returned";
 import { botSetupMarkerId, type BotSetupCurrent } from "./botSetupBrief";
 import { BotSetupStarts, botSetupBegin, briefTurn, lostAnswer, runStart, withSetupLine, type BotSetupRefusal, type BotSetupStart, type StartAsk, type StartIo } from "./botSetupStart";
 import { againBusy, currentSetup, runFresh, type AgainStart, type FreshEnd, type FreshIo } from "./botSetupAgain";
-import { acceptedRecord, fencedBlocks, parseSetup, readAcceptedRecord, type AcceptedRecord, type ListedItem, type ParseResult, type Plan } from "./botSetupCard";
+import { acceptedRecord, fencedBlocks, parseSetup, readAcceptedRecord, type AcceptedRecord, type ListedItem, type ParseResult, type PictureCant, type Plan } from "./botSetupCard";
 import { BOT_SETUP_FENCE } from "./botSetupBrief";
-import { applyItem, readSetupNow, readyTurn, runSetup, setupItems, type BotSetupRestart, type CardState, type SetupApis, type SetupNow } from "./botSetupApply";
+import { applyItem, readSetupNow, readyTurn, runSetup, setupItems, type BotSetupRestart, type CardState, type PictureUploads, type SetupApis, type SetupNow } from "./botSetupApply";
+import { BOT_PICTURE_URLS } from "./botPictures";
 import type { McpSecrets } from "./botSetupMcp";
 
 /**
@@ -2800,7 +2801,26 @@ export class Hermes {
       bots: () => this.bots(),
       models: async () => (this.snapshot.models?.profile === profile ? this.snapshot.models : this.readModels(profile).catch(() => undefined)),
       editBot: (name, edits) => this.editBot(name, edits),
+      picture: (name) => this.setupPicture(name),
+      pictures: () => BOT_PICTURE_URLS,
     };
+  }
+
+  /**
+   * A bot's picture for Bot setup's card, and why this Hermes can't save one, judged as Edit bot judges it: a method
+   * an earlier write found missing, or rows without the revisions the save's Bot Mode write is checked against.
+   */
+  private async setupPicture(profile: string): Promise<{ picture: string | null; cant?: PictureCant }> {
+    const read = await this.readLook(profile, true);
+    const lacks = (action: "botPicture" | "botLook") => this.capabilities.lacksAction("profiles", action);
+    const cant: PictureCant | undefined = lacks("botPicture")
+      ? { kind: "noRoute", action: "botPicture" }
+      : lacks("botLook")
+        ? { kind: "noRoute", action: "botLook" }
+        : read && read.revision === undefined
+          ? { kind: "noCheck" }
+          : undefined;
+    return { picture: read?.picture ?? null, ...(cant && { cant }) };
   }
 
   /**
@@ -2844,16 +2864,23 @@ export class Hermes {
    * interview. Once a call gets no answer, nothing more is sent: the items after it aren't tried, and the ready turn
    * waits for the next Set it up. MCP servers added are reloaded before the ready turn when no reply runs on this
    * Hermes, and otherwise wait for the owner's Reload MCP servers. `hear` learns each item's state as it changes.
-   * `secrets`: what Connect took for each MCP server, sent only now. `readyAt`: when the ready turn went.
+   * `secrets`: what Connect took for each MCP server, sent only now. `uploads`: the pictures the owner uploaded on the
+   * card. `readyAt`: when the ready turn went.
    */
-  async applyBotSetup(read: BotSetupCardRead, plan: Plan, hear: (key: string, state: CardState | { kind: "working" }) => void, secrets: McpSecrets = {}): Promise<BotSetupRun> {
+  async applyBotSetup(
+    read: BotSetupCardRead,
+    plan: Plan,
+    hear: (key: string, state: CardState | { kind: "working" }) => void,
+    secrets: McpSecrets = {},
+    uploads: PictureUploads = {},
+  ): Promise<BotSetupRun> {
     const { chatId, profile, setup } = read;
     if (this.profile !== profile) return { states: {}, readyFailed: { kind: "notShown", profile } };
     const items = setupItems(plan, read.parse.accepted);
     const record = acceptedRecord(plan, read.accepted);
     this.cache.saveSetupRecord(profile, chatId, record);
     const apis = this.setupApis(profile);
-    const run = await runSetup(items, (item) => applyItem(apis, profile, setup, item, [], secrets), hear);
+    const run = await runSetup(items, (item) => applyItem(apis, profile, setup, item, [], secrets, uploads), hear);
     this.rememberMcpReloadOwed(profile, chatId, run.states);
     if (run.unanswered !== undefined) return run;
     await this.reloadMcpIfIdle(chatId, profile, run.states, hear);
@@ -2883,10 +2910,10 @@ export class Hermes {
     return { ...run, readyAt };
   }
 
-  /** `accepted`: the cautions the owner confirmed with Apply anyway. `secrets`: what Connect took. */
-  async retryBotSetupItem(read: BotSetupCardRead, item: ListedItem, accepted: Caution[] = [], secrets: McpSecrets = {}): Promise<CardState> {
+  /** `accepted`: the cautions the owner confirmed with Apply anyway. `secrets`: what Connect took. `uploads`: the owner's pictures. */
+  async retryBotSetupItem(read: BotSetupCardRead, item: ListedItem, accepted: Caution[] = [], secrets: McpSecrets = {}, uploads: PictureUploads = {}): Promise<CardState> {
     if (this.profile !== read.profile) return { kind: "failed", miss: { kind: "notShown", profile: read.profile } };
-    const step = await applyItem(this.setupApis(read.profile), read.profile, read.setup, item, accepted, secrets);
+    const step = await applyItem(this.setupApis(read.profile), read.profile, read.setup, item, accepted, secrets, uploads);
     const states = { [item.key]: step.state };
     this.rememberMcpReloadOwed(read.profile, read.chatId, states);
     if (step.unanswered === undefined) await this.reloadMcpIfIdle(read.chatId, read.profile, states, () => {});

@@ -1,5 +1,7 @@
 # Skills are Hermes's own skill routes, checked first and read back
 
+> **Amended by [ADR 0240](0240-new-skill-writes-a-skill-by-hand-through-hermess-create-route-and-keeps-a-refused-draft.md)** (#33). New skill creates a skill written by hand, through `POST /api/skills` and Hermes's own checks, so "What reaches the server" no longer holds where it says creating a skill isn't relayed, and "Only SKILL.md" no longer holds where it says skills can't be created here. Installing skills from the Skills Hub stays out. The rest of this ADR stands.
+
 Settings → Skills lists, switches and edits the skills Hermes offers the model in the profile shown, through the dashboard's own skill routes (`hermes_cli/web_routers/skills.py`). At the deployed `bf0203a` they are `GET /api/skills?profile=` to list, `PUT /api/skills/toggle?profile=` `{name, enabled}` to turn one on or off, and `GET`/`PUT /api/skills/content` to read and replace a skill's SKILL.md. They are the same at `f0d9488`, which only adds a `locked` flag to the list and a `PUT /api/skills/lock` route. This app uses neither. Every call names its profile in the query, and Hermes scopes the skills folders and config to it (`_profile_scope`), so unlike Memory (ADR 0020) every profile's skills can be managed. Hermes has a skill registry and resources over REST, so nothing is read from this computer's skill folders, and nothing goes around Hermes to the server's files.
 
 ## Decisions

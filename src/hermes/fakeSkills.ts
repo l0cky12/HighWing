@@ -56,6 +56,11 @@ export class FakeSkills {
   createRoute = true;
   /** While set, `POST /api/skills` creates the skill, then fails this way, as a connection lost before the answer. */
   createLost?: string;
+  /**
+   * While set, `POST /api/skills` passes its checks, then refuses with this status and reason and leaves nothing: the
+   * opt-in security scan (`skills.guard_agent_created`), which removes what it blocked.
+   */
+  createRefusal?: { status: number; detail: string };
   /** Skills Hermes refuses to archive because they're pinned (`hermes curator pin`), by profile. */
   pinned: Record<string, Set<string>> = {};
   /** Each profile's archived skill folders (`skills/.archive/`), most recent last. */
@@ -208,11 +213,16 @@ export class FakeSkills {
         if (!name || name.length > 64 || !valid.test(name))
           throw answered(400, `Invalid skill name '${name}'. Use lowercase letters, numbers, hyphens, dots, and underscores. Must start with a letter or digit.`);
         if (category !== undefined && (!valid.test(category) || category.length > 64)) throw answered(400, `Invalid category '${category}'.`);
+        // `_validate_frontmatter` and `_validate_content_size`, worded as Hermes words them.
+        if (!content.trim()) throw answered(400, "Content cannot be empty.");
         const fm = frontmatter(content);
         if (!fm) throw answered(400, "SKILL.md must start with YAML frontmatter (---). See existing skills for format.");
         for (const f of ["name", "description"]) if (!(f in fm)) throw answered(400, `Frontmatter must include '${f}' field.`);
+        if (!content.replace(/^\uFEFF?---[\s\S]*?\n---\s*\n/, "").trim()) throw answered(400, "SKILL.md must have content after the frontmatter (instructions, procedures, etc.).");
+        if (content.length > 100_000) throw answered(400, `SKILL.md content is ${content.length.toLocaleString("en-US")} characters (limit: 100,000).`);
         const existing = this.find(profile, name);
         if (existing) throw answered(400, `A skill named '${name}' already exists at ${existing.dir}.`);
+        if (this.createRefusal) throw answered(this.createRefusal.status, this.createRefusal.detail);
         const dir = `${FakeSkills.home(p)}${category ? `/${category}` : ""}/${name}`;
         this.add(p, { dir, source: "agent", category }, content);
         if (this.createLost) throw new Error(this.createLost);

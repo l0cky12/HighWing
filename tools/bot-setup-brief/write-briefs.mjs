@@ -3,8 +3,8 @@
 //     node tools/bot-setup-brief/write-briefs.mjs <out dir>
 // new-mcp.txt offers MCP servers (from PR 9 on), new.txt offers none (what New bot sends until then), again.txt is Set
 // up again on the bot the interview made. again-kept.txt is Set up again on a bot whose persona is too long for the brief,
-// whose description is longer than a block's and whose colour is one the brief doesn't list, so the block must keep all
-// three.
+// whose description is longer than a block's, whose colour is one the brief doesn't list and whose picture is the
+// owner's own, so the block must keep all four.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { BOT_SETUP_CAPS, BOT_SETUP_DESCRIPTION_MAX, botSetupBrief } from "../../src/hermes/botSetupBrief.ts";
@@ -26,6 +26,7 @@ const current = {
   description: "Plans European trips, stays, day plans and packing lists.",
   model: null,
   color: "teal",
+  picture: "plane",
   skillsOn: ["find-nearby", "deep-research"],
   toolsetsOn: ["web"],
 };
@@ -39,7 +40,7 @@ write("new.txt", { inventory });
 write("again.txt", { inventory, current });
 const rules = Array.from({ length: 400 }, (_, i) => `Rule ${i + 1}: prefer trains to flights under ${i + 3} hours.`).join(" ");
 const description = "Plans European trips by train and plane, finds hotels and stays, and writes day plans and packing lists.";
-const kept = { ...current, persona: `${current.persona} ${rules}`, description, color: "#14b8a6" };
+const kept = { ...current, persona: `${current.persona} ${rules}`, description, color: "#14b8a6", picture: "own" };
 if (kept.persona.length <= BOT_SETUP_CAPS.persona) throw new Error("again-kept's persona must be over the cap");
 if (description.length <= BOT_SETUP_DESCRIPTION_MAX || description.length > BOT_SETUP_CAPS.description)
   throw new Error("again-kept's description must be longer than a block's and short enough for CURRENT to show whole");

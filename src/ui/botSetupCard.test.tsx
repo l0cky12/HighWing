@@ -11,7 +11,10 @@ import { BOT_CHAT_TITLE } from "../hermes/bots";
 import { FakeHermes, row, type TranscriptMessage } from "../hermes/fakeHermes";
 import { memoryCache } from "../hermes/memoryCache";
 import { connect, type Hermes } from "../hermes/transport";
+import { BOT_PICTURE_DATA, pictureKey } from "../hermes/botPictures";
 import { en } from "../i18n/en";
+import { LocaleContext, type Locale } from "../i18n/locale";
+import { pseudoLocale, untranslated } from "../i18n/pseudo";
 import { Main } from "../App";
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }));
@@ -37,6 +40,7 @@ const BLOCK: BotSetupNewBlock = {
   description: "Plans trips.",
   model: null,
   color: "teal",
+  picture: null,
   callOwner: "Lena",
   skills: [
     { name: "recipes", on: true },
@@ -61,7 +65,7 @@ const interview = (...replies: string[]): TranscriptMessage[] => [
 let launches = 0;
 
 /** Signed in to Hermes 0.23.2, Bots mode, Hermes's Bot Chat open with `rows`. */
-async function inBotChat(rows: TranscriptMessage[], setup: (server: FakeHermes) => void = () => {}) {
+async function inBotChat(rows: TranscriptMessage[], setup: (server: FakeHermes) => void = () => {}, locale?: Locale) {
   const server = new FakeHermes();
   server.health = { ...server.health, version: "0.23.2", displayVersion: "0.23.2" };
   server.status = { ...server.status, version: "0.23.2" };
@@ -79,7 +83,8 @@ async function inBotChat(rows: TranscriptMessage[], setup: (server: FakeHermes) 
   for (const rows of Object.values(server.transcripts)) rows.forEach((m, i) => (m.row_id ??= i + 1));
   const hermes = await connect(server.openPipe, undefined, memoryCache());
   running.push(hermes);
-  render(<Main hermes={hermes} connection={{ mode: "ssh", sshTarget: `lena@setup-${++launches}`, url: "", username: "lena" }} onSignOut={async () => {}} />);
+  const main = <Main hermes={hermes} connection={{ mode: "ssh", sshTarget: `lena@setup-${++launches}`, url: "", username: "lena" }} onSignOut={async () => {}} />;
+  render(locale ? <LocaleContext value={locale}>{main}</LocaleContext> : main);
   await waitFor(() => expect(hermes.hasListed()).toBe(true));
   const user = userEvent.setup();
   await user.click(document.querySelector<HTMLElement>('.sidebar [role=tab][data-mode="bots"]')!);
@@ -411,7 +416,7 @@ describe("MCP servers on the card", { timeout: 30_000 }, () => {
 
 describe("Set up again's card", { timeout: 30_000 }, () => {
   const AGAIN: BotSetupAgainBlock = { ...BLOCK, persona: null, description: "Plans trips by train.", color: null, callOwner: null, skills: [{ name: "recipes", on: true }], toolsets: [] };
-  const current = { persona: "You are Hermes.", description: "Helps with anything.", model: "claude-sonnet-4-5", color: null, skillsOn: ["notes"], toolsetsOn: ["web"] };
+  const current = { persona: "You are Hermes.", description: "Helps with anything.", model: "claude-sonnet-4-5", color: null, picture: null, skillsOn: ["notes"], toolsetsOn: ["web"] };
   const again = (block: BotSetupAgainBlock = AGAIN): TranscriptMessage[] => [
     { role: "user", text: "Rome to Florence?" },
     { role: "assistant", text: "The 09:10 Frecciarossa is quickest." },
@@ -444,7 +449,7 @@ describe("Set up again's card", { timeout: 30_000 }, () => {
     expect(within(group(t.skills)).getByText(t.fromTo(t.state.off, t.state.on))).toBeTruthy();
     expect(within(liveCard()!).getByText(t.changes(2))).toBeTruthy();
 
-    expect(more(t.about("Hermes")).textContent).toContain(t.unchanged(3));
+    expect(more(t.about("Hermes")).textContent).toContain(t.unchanged(4));
     expect(more(t.skills).textContent).toContain(t.unchanged(1));
     expect(within(about).queryByText(t.persona)).toBeNull();
     expect(within(liveCard()!).queryAllByRole("checkbox")).toHaveLength(2);
@@ -469,7 +474,7 @@ describe("Set up again's card", { timeout: 30_000 }, () => {
     expect(within(about).queryByRole("group", { name: t.personaNow })).toBeNull();
     await user.click(within(about).getByRole("button", { name: t.showNow }));
     expect(within(about).getByRole("group", { name: t.personaNow }).textContent).toBe("You are Hermes.");
-    expect(more(t.about("Hermes")).textContent).toContain(t.unchanged(2));
+    expect(more(t.about("Hermes")).textContent).toContain(t.unchanged(3));
   });
 
   it("starts clean when Keep history runs a new setup in a Bot Chat whose first card was set up, which kept its results", async () => {
@@ -550,5 +555,109 @@ describe("The Setup started line", { timeout: 30_000 }, () => {
     await act(async () => void (await hermes.idle()));
     expect(screen.queryByText(t.started)).toBeNull();
     expect(liveCard()).toBeNull();
+  });
+});
+
+describe("the Picture row", { timeout: 30_000 }, () => {
+  const named = (picture: string | null = "plane") => interview(card({ ...BLOCK, picture }));
+  const pictureRow = () => within(liveCard()!).getByText(t.picture, { selector: ".bot-setup-label" }).closest("li")!;
+  const strip = () => within(pictureRow()).getByRole("radiogroup", { name: t.pictureSet });
+  const radio = (name: string | RegExp) => within(strip()).getByRole("radio", { name }) as HTMLInputElement;
+  const uploadInput = () => within(pictureRow()).getByLabelText(t.pictureUpload, { selector: "input" }) as HTMLInputElement;
+  const file = (bytes: string, name: string, type: string) => new File([Uint8Array.from(bytes, (c) => c.charCodeAt(0))], name, { type });
+
+  it("shows the bot's pick ticked with why, the set as a strip with the pick marked, and a pick by keyboard is what Set it up saves", async () => {
+    const { server, user } = await inBotChat(named());
+    await waitCard();
+    expect((box(t.picture) as HTMLInputElement).checked).toBe(true);
+    expect(pictureRow().querySelector(".bot-setup-value")?.textContent).toBe(" · " + t.pictures.plane);
+    expect(within(pictureRow()).getByText(t.pictureFor.plane)).toBeTruthy();
+    expect(within(strip()).getAllByRole("radio")).toHaveLength(12);
+    expect(radio(t.botsPick(t.pictures.plane, "Hermes")).checked).toBe(true);
+    expect(within(liveCard()!).getByText(t.changes(7))).toBeTruthy();
+
+    radio(t.botsPick(t.pictures.plane, "Hermes")).focus();
+    await user.keyboard("{ArrowRight}");
+    await waitFor(() => expect(radio(t.pictures.moon).checked).toBe(true));
+    expect(pictureRow().querySelector(".bot-setup-value")?.textContent).toBe(" · " + t.pictures.moon);
+    expect(pictureRow().querySelector(".bot-setup-edited")?.textContent).toBe(` · ${t.edited}`);
+
+    await user.click(within(liveCard()!).getByRole("button", { name: t.setUp }));
+    await waitFor(() => expect(server.botAvatars.default).toBe(BOT_PICTURE_DATA.moon));
+    await waitFor(() => expect(within(pictureRow()).getByText(t.applied)).toBeTruthy());
+  });
+
+  it("takes the owner's own picture under Edit bot's rules, and Set it up saves those bytes", async () => {
+    const { server, user } = await inBotChat(named());
+    await waitCard();
+    // The file dialog offers only the accepted types; a file dropped past it is still refused.
+    await userEvent.setup({ applyAccept: false }).upload(uploadInput(), file("GIF89a", "face.gif", "image/gif"));
+    await waitFor(() => expect(within(pictureRow()).getByRole("alert").textContent).toBe(en.profiles.form.pictureFormat));
+    const big = new File([new Uint8Array(2_000_001)], "big.png", { type: "image/png" });
+    await user.upload(uploadInput(), big);
+    await waitFor(() => expect(within(pictureRow()).getByRole("alert").textContent).toBe(en.profiles.form.pictureTooBig));
+
+    const webp = "RIFF\x16\x00\x00\x00WEBPVP8 owner's own";
+    await user.upload(uploadInput(), file(webp, "face.webp", "image/webp"));
+    await waitFor(() => expect(radio(t.pictureYours).checked).toBe(true));
+    expect(within(pictureRow()).queryByRole("alert")).toBeNull();
+    expect(pictureRow().querySelector(".bot-setup-value")?.textContent).toBe(" · " + t.pictureYours);
+
+    await user.click(within(liveCard()!).getByRole("button", { name: t.setUp }));
+    const sent = `data:image/webp;base64,${btoa(webp)}`;
+    await waitFor(() => expect(server.botAvatars.default).toBe(sent));
+    const ready = server.requests.find((r) => r.method === "prompt.submit" && String(r.params.text).startsWith("[highwing:bot-setup ready"));
+    expect(String(ready?.params.text)).toContain(pictureKey(sent)!);
+    expect(String(ready?.params.text)).not.toContain("base64");
+  });
+
+  it("shows a name the set doesn't have as not found, unticked, with no strip", async () => {
+    await inBotChat(named("https://example.com/face.png"));
+    await waitCard();
+    const missing = box("https://example.com/face.png") as HTMLInputElement;
+    expect([missing.checked, missing.disabled]).toEqual([false, true]);
+    expect(within(missing.closest("li")!).getByText(t.notFound)).toBeTruthy();
+    expect(within(missing.closest("li")!).queryByRole("radiogroup")).toBeNull();
+  });
+
+  it("shows the row unavailable, with why, on a Hermes that can't save a picture, and sets up the rest", async () => {
+    const { server, user } = await inBotChat(named(), (s) => (s.uiMetaCas = false));
+    await waitCard();
+    const off = box(t.picture) as HTMLInputElement;
+    expect([off.checked, off.disabled]).toEqual([false, true]);
+    expect(within(pictureRow()).getByText(t.unavailable)).toBeTruthy();
+    expect(within(pictureRow()).getByText(t.pictureOff(en.profiles.form.noCheck))).toBeTruthy();
+    expect(within(pictureRow()).queryByRole("radiogroup")).toBeNull();
+    await user.click(within(liveCard()!).getByRole("button", { name: t.setUp }));
+    await waitFor(() => expect(server.profileMeta.default.description).toBe("Plans trips."));
+    expect(server.requests.some((r) => r.method === "profiles.set_asset")).toBe(false);
+  });
+
+  it("on Set up again, folds the picture the bot has under what doesn't change, unticked", async () => {
+    const current = { persona: "You are Hermes.", description: "Helps with anything.", model: "claude-sonnet-4-5", color: null, picture: "sun" as const, skillsOn: [], toolsetsOn: [] };
+    const block: BotSetupAgainBlock = { ...BLOCK, persona: null, description: "Plans trips by train.", color: null, picture: null, callOwner: null, skills: [], toolsets: [] };
+    const rows: TranscriptMessage[] = [
+      { role: "user", text: briefTurn(botSetupBrief({ id: ID, name: "Hermes", inventory: { models: [], skills: [], toolsets: [], bots: [] }, current }), ID), display_kind: "hidden" },
+      { role: "assistant", text: "Here's how I'm set up now. What would you like to change?" },
+      { role: "user", text: "Plan by train." },
+      { role: "assistant", text: `Here's the change.\n\n${fenced(JSON.stringify(block))}` },
+    ];
+    const { user } = await inBotChat(rows, (s) => (s.botAvatars.default = BOT_PICTURE_DATA.sun));
+    await waitCard();
+    expect(within(group(t.about("Hermes"))).queryByRole("checkbox", { name: t.picture })).toBeNull();
+    await user.click(within(group(t.about("Hermes"))).getByRole("button", { name: /more that do(es)?n't change/ }));
+    const kept = box(t.picture) as HTMLInputElement;
+    expect([kept.checked, kept.disabled]).toEqual([false, true]);
+    expect(pictureRow().querySelector(".bot-setup-value")?.textContent).toBe(" · " + t.pictures.sun);
+    expect(radio(t.pictures.sun).checked).toBe(true);
+  });
+
+  it("uses only catalogue words", async () => {
+    const p = pseudoLocale();
+    await inBotChat(named(), () => {}, p);
+    await waitCard();
+    const row = within(liveCard()!).getByRole("checkbox", { name: p.chat.botSetup.picture }).closest("li")!;
+    expect(within(row).getAllByRole("radio")).toHaveLength(12);
+    expect(untranslated(row)).toEqual([]);
   });
 });

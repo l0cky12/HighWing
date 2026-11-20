@@ -158,8 +158,8 @@ def bot_setup(body):
         if not answers:
             return f"I'm set up as: {(cur.get('description') or 'no description').rstrip('.')}. What would you like to change?"
         a = answers[-1]
-        block = {"v": 1, "persona": None, "description": re.split(r"(?<=\.)\s", a)[0][:80], "model": None, "color": None, "callOwner": None,
-                 "skills": toggles(a, inv.get("skills", [])), "toolsets": toggles(a, inv.get("toolsets", [])), "mcp": [], "copy": []}
+        block = {"v": 1, "persona": None, "description": re.split(r"(?<=\.)\s", a)[0][:80], "model": None, "color": None, "picture": None,
+                 "callOwner": None, "skills": toggles(a, inv.get("skills", [])), "toolsets": toggles(a, inv.get("toolsets", [])), "mcp": [], "copy": []}
         return "Here's the change. Everything else stays as it is." + fence(block)
     if len(answers) < len(SETUP_QUESTIONS):
         hello = "" if answers else f"Hi, I'm {name}. "
@@ -171,6 +171,7 @@ def bot_setup(body):
         "description": helps[:80],
         "model": None,
         "color": "teal",
+        "picture": "plane" if re.search(r"trip|travel", helps, re.I) else (inv.get("pictures") or [None])[0],
         "callOwner": call or None,
         "skills": [{"name": n, "on": True} for n in named(helps, inv.get("skills", []))],
         "toolsets": [{"name": n, "on": True} for n in named(helps, inv.get("toolsets", []))],

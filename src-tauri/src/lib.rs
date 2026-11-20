@@ -833,7 +833,7 @@ async fn hermes_get_limited(state: State<'_, AppState>, attempt: String, path: S
     dashboard.get_limited(&path, max_bytes).await.map_err(RelayError::from)
 }
 
-/// Settings → Approvals' read of `profile`'s `command_allowlist` (ADR 0236): only that list leaves Rust.
+/// Settings → Approvals' read of `profile`'s `command_allowlist` (ADR 0242): only that list leaves Rust.
 #[tauri::command]
 async fn hermes_command_allowlist(state: State<'_, AppState>, attempt: String, profile: String) -> Result<transport::CommandAllowlist, RelayError> {
     let dashboard = dashboard(&state, &attempt).await?;

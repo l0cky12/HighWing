@@ -104,7 +104,7 @@ describe("Removing an entry", () => {
   });
 
   it("loses an entry another client adds between the check and the write, which no read can tell", async () => {
-    // The risk that remains without a conditional write (ADR 0236): the list sent overwrites the new grant, and the read
+    // The risk that remains without a conditional write (ADR 0242): the list sent overwrites the new grant, and the read
     // back matches what was sent. Hermes then asks again before that command, the safe way to fail.
     const { server, api } = await setup();
     onCall(server, "PUT", 1, () => (server.commandAllowlist.work = ["git force push", "kill a process", "recursive delete"]));
@@ -113,7 +113,7 @@ describe("Removing an entry", () => {
   });
 
   it("puts back an entry another client removes between the check and the write, which no read can tell", async () => {
-    // The other side of that risk (ADR 0236): the list sent still has the entry the other client revoked, so the write
+    // The other side of that risk (ADR 0242): the list sent still has the entry the other client revoked, so the write
     // allows it again and the read back matches what was sent.
     const { server, api } = await setup();
     onCall(server, "PUT", 1, () => (server.commandAllowlist.work = ["recursive delete"]));

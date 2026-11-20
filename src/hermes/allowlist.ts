@@ -1,4 +1,4 @@
-// Settings → Approvals: the commands Hermes always allows for a profile, and Remove (ADR 0236, issue #27).
+// Settings → Approvals: the commands Hermes always allows for a profile, and Remove (ADR 0242, issue #27).
 //
 // What the server offers (Hermes `ae2a81c`):
 // - An "always" answer to an Approval saves the command's pattern name in the profile's `command_allowlist` in

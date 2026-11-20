@@ -306,7 +306,7 @@ export function SettingsScreen({
   modelSettings: ModelSettingsApi;
   /** The profile's toolsets on Hermes; without it there is no Toolsets tab. */
   toolsets?: ToolsetsApi;
-  /** What Hermes always allows, per profile (ADR 0236); without it there is no Approvals tab. */
+  /** What Hermes always allows, per profile (ADR 0242); without it there is no Approvals tab. */
   allowlist?: AllowlistApi;
   /** Each profile's MCP servers on Hermes (ADR 0121); without it there is no MCP servers tab. */
   mcp?: McpApi;

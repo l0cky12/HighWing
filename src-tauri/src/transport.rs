@@ -1574,7 +1574,7 @@ impl Dashboard {
     /// One dashboard REST call for the webview: `GET`, `PATCH` or `DELETE` on a path under `api/`, with a
     /// JSON body. `POST` and `PUT` reach only Settings → Model's two writes (`POST api/model/set`,
     /// `PUT api/config` with any config but `command_allowlist`), Settings → Approvals' `PUT api/config` with that list
-    /// alone (`command_allowlist_write`, ADR 0236), the scheduled-job writes (`cron_write`), the profile form's Persona save,
+    /// alone (`command_allowlist_write`, ADR 0242), the scheduled-job writes (`cron_write`), the profile form's Persona save,
     /// `PUT api/profiles/{name}/soul`, the Clone profile dialog's `POST api/profiles` (`profile_create_allowed`, ADR 0074),
     /// Settings → Profiles' description, model and written-for-me description (`profile_field_write`,
     /// `profile_describe_auto`, ADR 0156),
@@ -1751,7 +1751,7 @@ impl Dashboard {
         })
     }
 
-    /// `profile`'s `command_allowlist`, from `GET /api/config`; nothing else of the config is kept (ADR 0236).
+    /// `profile`'s `command_allowlist`, from `GET /api/config`; nothing else of the config is kept (ADR 0242).
     pub async fn command_allowlist(&self, profile: &str) -> Result<CommandAllowlist, TransportError> {
         let query = url::form_urlencoded::Serializer::new(String::new()).append_pair("profile", profile).finish();
         let body = self.request("GET", &format!("api/config?{query}"), None).await?;
@@ -2277,7 +2277,7 @@ pub fn command_allowlist(config: &serde_json::Value) -> CommandAllowlist {
 }
 
 /// Whether a `PUT api/config` body is Settings → Approvals' write: exactly `{"config": {"command_allowlist": [text,
-/// …]}}`, with no profile in the body and nothing else of the config (ADR 0236). Hermes's deep merge replaces a list
+/// …]}}`, with no profile in the body and nothing else of the config (ADR 0242). Hermes's deep merge replaces a list
 /// whole (`_deep_merge` in `hermes_cli/config.py`), so this writes the profile's list and nothing else.
 pub fn command_allowlist_write(body: Option<&str>) -> bool {
     let Some(body) = body.and_then(|b| serde_json::from_str::<serde_json::Value>(b).ok()) else {
@@ -2289,7 +2289,7 @@ pub fn command_allowlist_write(body: Option<&str>) -> bool {
     config.len() == 1 && config.get("command_allowlist").and_then(|l| l.as_array()).is_some_and(|l| l.iter().all(serde_json::Value::is_string))
 }
 
-/// Whether a `PUT api/config` body touches `command_allowlist`, which only `command_allowlist_write` may (ADR 0236).
+/// Whether a `PUT api/config` body touches `command_allowlist`, which only `command_allowlist_write` may (ADR 0242).
 fn names_command_allowlist(body: Option<&str>) -> bool {
     body.and_then(|b| serde_json::from_str::<serde_json::Value>(b).ok()).is_some_and(|b| b["config"].get("command_allowlist").is_some())
 }

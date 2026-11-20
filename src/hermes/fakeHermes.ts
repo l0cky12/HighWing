@@ -2115,7 +2115,7 @@ export class FakeHermes {
   toolsetGuardsFailure?: string | Error;
   /**
    * Each profile's `command_allowlist` as config.yaml holds it, any value; a profile not here has Hermes's default, `[]`.
-   * An "always" answer to an Approval adds its pattern name, and `PUT /api/config` replaces the list whole (ADR 0236).
+   * An "always" answer to an Approval adds its pattern name, and `PUT /api/config` replaces the list whole (ADR 0242).
    */
   commandAllowlist: Record<string, unknown> = {};
   /**

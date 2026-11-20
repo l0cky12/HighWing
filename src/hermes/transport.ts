@@ -1304,7 +1304,7 @@ export class Hermes {
     send: (method, pathAndQuery, body) => this.rest(method, pathAndQuery, body),
   });
   /**
-   * Settings → Approvals' list of what Hermes always allows, and Remove (allowlist.ts, ADR 0236). Each call names its
+   * Settings → Approvals' list of what Hermes always allows, and Remove (allowlist.ts, ADR 0242). Each call names its
    * profile, and goes only over a connection that is up.
    */
   readonly allowlist = new AllowlistApi(

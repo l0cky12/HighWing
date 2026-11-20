@@ -1,4 +1,4 @@
-// Settings → Approvals: the commands Hermes always allows for the profile picked, each with Remove (ADR 0236). Reads and
+// Settings → Approvals: the commands Hermes always allows for the profile picked, each with Remove (ADR 0242). Reads and
 // writes: allowlist.ts.
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw, ShieldCheck } from "lucide-react";

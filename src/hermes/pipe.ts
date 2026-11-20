@@ -115,7 +115,7 @@ export type ToolsetGuards = { noMcp: string[]; noMcpUnclear: string[]; savedList
 
 /**
  * A profile's `command_allowlist`, the pattern names Hermes runs without asking (src-tauri `Dashboard::command_allowlist`,
- * ADR 0236). `unreadable`: Hermes ignores it, or reads it only from an old text form, so this app doesn't write it.
+ * ADR 0242). `unreadable`: Hermes ignores it, or reads it only from an old text form, so this app doesn't write it.
  */
 export type CommandAllowlist = { kind: "list"; entries: string[] } | { kind: "unreadable"; why: string };
 

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// Settings → Approvals on screen (AllowlistSettings.tsx, ADR 0236), against the fake dashboard: the list for the profile
+// Settings → Approvals on screen (AllowlistSettings.tsx, ADR 0242), against the fake dashboard: the list for the profile
 // picked, Remove with its check and read back, a change on the server meanwhile, and a list Hermes can't use.
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";

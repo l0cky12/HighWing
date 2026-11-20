@@ -389,7 +389,7 @@ How Hermes decides, in a chat, whether to ask for an Approval before a command i
 _Avoid_: permission mode, auto-approve, safe mode
 
 **Always allowed**:
-A kind of command Hermes runs without an Approval in every chat of a profile, because an Approval was answered **Always allow**. Hermes keeps each one's pattern name, such as `recursive delete`, in the profile's `command_allowlist` on the server. Settings → Approvals lists them for any profile, and **Remove** takes one back: Hermes asks again from its next command like it, except in the chat that answered Always allow, which keeps its own grant until Hermes closes it (ADR 0236). Nothing in the app adds one by hand.
+A kind of command Hermes runs without an Approval in every chat of a profile, because an Approval was answered **Always allow**. Hermes keeps each one's pattern name, such as `recursive delete`, in the profile's `command_allowlist` on the server. Settings → Approvals lists them for any profile, and **Remove** takes one back: Hermes asks again from its next command like it, except in the chat that answered Always allow, which keeps its own grant until Hermes closes it (ADR 0242). Nothing in the app adds one by hand.
 _Avoid_: whitelist, trusted commands, permanent approval
 
 **Toolset**:

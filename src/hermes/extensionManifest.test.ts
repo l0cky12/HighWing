@@ -177,6 +177,7 @@ describe("parseManifest", () => {
         "workReclaim",
         "workReassign",
         "botMode",
+        "botSetup",
         "subagents",
         "subagentRoster",
         "modelUsage",

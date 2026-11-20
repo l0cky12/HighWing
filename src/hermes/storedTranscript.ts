@@ -51,7 +51,8 @@ function toolContext(name: string, args: Record<string, unknown> | undefined): s
   return line.length > CONTEXT_MAX ? `${line.slice(0, CONTEXT_MAX - 3)}...` : line || undefined;
 }
 
-function textOf(content: unknown): string {
+/** A stored row's text: its `content`, or the text parts of a multimodal one, with `[image]` for each image part. */
+export function textOf(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   return content

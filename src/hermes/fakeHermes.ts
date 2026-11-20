@@ -463,6 +463,8 @@ export class FakeHermes {
    * it first, so its history has it. `lost`: the frame never reached Hermes. Applies once.
    */
   dropOnPrompt?: "stored" | "lost";
+  /** The next `session.create` drops the connection before Hermes answers: `stored` made the session first, with its seeded rows, `lost` never arrived. */
+  dropOnCreate?: "stored" | "lost";
   /**
    * What the model answers every `llm.oneshot` call with, unless `oneshotFailure` says why it failed. A function answers
    * each call from what it was told and given, and the task and model it ran on.
@@ -911,6 +913,9 @@ export class FakeHermes {
     "profiles.configure": (r) => this.configureProfile(r),
     "profiles.set_asset": (r) => this.setProfileAsset(r),
     "session.create": (r) => {
+      const drop = this.dropOnCreate;
+      this.dropOnCreate = undefined;
+      if (drop === "lost") return this.drop();
       const n = this.requests.filter((q) => q.method === "session.create").length;
       const runtimeId = `rt-${n}`;
       const stored = `20261031_12000${n}_abc123`;
@@ -937,6 +942,7 @@ export class FakeHermes {
         store.push(row(stored, 0, { source: pending.source, title, preview, message_count: seed.length, ...(pending.hidden && { hidden: true }) }));
         for (const m of seed) this.storeMessage(stored, m);
       } else this.created.set(runtimeId, pending);
+      if (drop === "stored") return this.drop();
       this.buildAgent(runtimeId, (r.params.profile as string | undefined) || "default");
       // `SessionCreateParams` `model` / `provider` / `reasoning_effort` / `fast`: the session's own overrides.
       const base = this.defaultModel(r.params.profile as string | undefined);

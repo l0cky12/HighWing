@@ -6,6 +6,7 @@
 // doesn't give it back. So the steps before the archive stop the run with Hermes as it was, and the steps after it that
 // only tidy up are noted and passed over, since stopping there would leave the bot with no Bot Chat for nothing.
 import { BOT_SETUP_COLORS, type BotSetupCurrent } from "./botSetupBrief";
+import { setPicture } from "./botPictures";
 import { BOT_SETUP_COLOR_HEX, type HermesNow } from "./botSetupCard";
 import type { BotSetupRefusal, BotSetupStart } from "./botSetupStart";
 import type { MemoryEntry } from "./memory";
@@ -20,6 +21,7 @@ export function currentSetup(now: HermesNow): BotSetupCurrent {
     description: now.description,
     model: now.model,
     color: BOT_SETUP_COLORS.find((c) => BOT_SETUP_COLOR_HEX[c] === now.color) ?? now.color,
+    picture: now.picture === null ? null : (setPicture(now.picture) ?? "own"),
     skillsOn: on(now.skills),
     toolsetsOn: on(now.toolsets),
     ...(now.mcp && { mcp: now.mcp.servers }),

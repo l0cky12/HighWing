@@ -8,7 +8,7 @@ import { getUIPrefs, setUIPrefs, subscribe } from "../hermes/uiPrefs";
 import { errorText } from "../hermes/values";
 import type { BotWriting, WritingDesk, WritingPick } from "../hermes/writingModel";
 import { useLocale } from "../i18n/locale";
-import { ModelSelect, ProviderSelect } from "./ModelSettings";
+import { HiddenProviderNote, ModelSelect, ProviderSelect } from "./ModelSettings";
 import { SettingNote, SettingRow, SettingsSection } from "./SettingRows";
 import { modelName } from "./writingWords";
 
@@ -106,6 +106,7 @@ export function WritingModelSettings({
             </>
           }
         >
+          {provider && <HiddenProviderNote provider={provider} providers={providers} />}
           {unsaved && (
             <div className="sign-in-error" role="alert">
               {w.saveFailed}

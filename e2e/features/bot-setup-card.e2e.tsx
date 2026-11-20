@@ -1,4 +1,6 @@
+import { userEvent } from "vitest/browser";
 import { expect, it } from "vitest";
+import { BOT_PICTURE_DATA } from "../../src/hermes/botPictures";
 import { BOT_SETUP_FENCE, botSetupBrief, type BotSetupNewBlock } from "../../src/hermes/botSetupBrief";
 import { botSetupBegin } from "../../src/hermes/botSetupStart";
 import { BOT_CHAT_TITLE } from "../../src/hermes/bots";
@@ -14,6 +16,7 @@ const BLOCK: BotSetupNewBlock = {
   description: "Plans trips: trains, places to stay and day plans.",
   model: null,
   color: "teal",
+  picture: "plane",
   callOwner: "Lena",
   skills: [
     { name: "recipes", on: true },
@@ -65,9 +68,23 @@ async function setUp(scheme: "dark" | "light") {
   const shown = app.getByRole("region", { name: "About Hermes" });
   await expect.element(shown).toBeVisible();
   await expect.element(app.getByText("Setup started")).toBeVisible();
-  await expect.element(app.getByText("7 changes. Nothing changes until you press Set it up.")).toBeVisible();
+  await expect.element(app.getByText("8 changes. Nothing changes until you press Set it up.")).toBeVisible();
   shown.element().closest(".msg.returned")!.scrollIntoView({ block: "start" });
   await shot(`${scheme}-before`);
+
+  // The bot's pick is ticked with why, over the set as a strip. A pick by keyboard replaces it, and the bot's goes back.
+  const strip = app.getByRole("radiogroup", { name: "Pictures" });
+  await expect.element(app.getByText("For travel and trips.")).toBeVisible();
+  await expect.element(strip.getByRole("radio", { name: "Plane, Hermes's pick" })).toBeChecked();
+  strip.element().scrollIntoView({ block: "center" });
+  await shot(`${scheme}-picture`);
+  // The radio itself is hidden under its picture, which takes the click.
+  await strip.getByRole("radio", { name: "Plane, Hermes's pick" }).click({ force: true });
+  await userEvent.keyboard("{ArrowRight}");
+  await expect.element(strip.getByRole("radio", { name: "Moon" })).toBeChecked();
+  await expect.element(app.getByText("For evenings, sleep and quiet thinking.")).toBeVisible();
+  await userEvent.keyboard("{ArrowLeft}");
+  await expect.element(strip.getByRole("radio", { name: "Plane, Hermes's pick" })).toBeChecked();
 
   await app.getByRole("button", { name: "Set it up", exact: true }).click();
   await expect.element(app.getByRole("button", { name: "Apply anyway" })).toBeVisible();
@@ -76,6 +93,8 @@ async function setUp(scheme: "dark" | "light") {
   await shot(`${scheme}-during`);
   expect(server.souls.default).toBe(BLOCK.persona);
   expect(server.profileMeta.default.description).toBe(BLOCK.description);
+  expect(server.botAvatars.default).toBe(BOT_PICTURE_DATA.plane);
+  expect(server.profileMeta.default.ui_meta?.["hermes-bots"]).toMatchObject({ custom: true, imageKind: "photo" });
 
   server.skills.toggleRefusal = undefined;
   await app.getByRole("button", { name: "Try again" }).click();
@@ -92,7 +111,7 @@ async function setUp(scheme: "dark" | "light") {
   server.storeMessage("hermes-bot", { role: "assistant", text: "I'm set up, Lena. Ask me to plan a trip whenever you like." });
   server.event(sid, "message.complete", { status: "complete" });
   await expect.element(app.getByText("Hermes already remembers it.")).toBeVisible();
-  await expect.element(app.getByText("6 of 6 applied and read back.")).toBeVisible();
+  await expect.element(app.getByText("7 of 7 applied and read back.")).toBeVisible();
   // The chat was resumed before the ready turn, and Hermes rebuilds a Bot Chat's agent only from its second turn on.
   await expect.element(app.getByText("Restart not confirmed yet: Hermes's chat doesn't list its new tools.")).toBeVisible();
   shown.element().closest(".msg.returned")!.scrollIntoView({ block: "start" });

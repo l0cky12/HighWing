@@ -33,6 +33,7 @@ const block = (over: Partial<BotSetupNewBlock> = {}): BotSetupNewBlock => ({
   description: "Plans trips: flights, trains, places to stay.",
   model: null,
   color: "teal",
+  picture: null,
   callOwner: "Liam",
   skills: [{ name: "find-nearby", on: true }],
   toolsets: [{ name: "browser", on: true }],
@@ -46,6 +47,7 @@ const now = (over: Partial<HermesNow> = {}): HermesNow => ({
   description: "",
   model: "claude-sonnet-4.5",
   color: null,
+  picture: null,
   memory: [],
   skills: [
     { name: "find-nearby", enabled: false },
@@ -67,7 +69,7 @@ const brief = (id: string): SetupRow => ({ role: "user", display_kind: "hidden",
 const briefAgain = (id: string, persona: string): SetupRow => ({
   role: "user",
   display_kind: "hidden",
-  content: botSetupBrief({ id, name: "Travel Buddy", inventory, current: { persona, description: "Plans trips.", model: null, color: "#14b8a6", skillsOn: [], toolsetsOn: [] } }),
+  content: botSetupBrief({ id, name: "Travel Buddy", inventory, current: { persona, description: "Plans trips.", model: null, color: "#14b8a6", picture: null, skillsOn: [], toolsetsOn: [] } }),
 });
 const keeping = (over: Partial<BotSetupAgainBlock> = {}): BotSetupAgainBlock => ({ ...block(), persona: null, description: null, color: null, ...over });
 const fenced = (lang: string, body: string) => `\`\`\`${lang}\n${body}\n\`\`\``;
@@ -87,7 +89,7 @@ const item = (plan: Plan, key: string): PlanItem => {
 };
 const listedItem = (plan: Plan, key: string): ListedItem => {
   const i = item(plan, key);
-  if (i.status === "notFound") throw new Error(`${key} is not found`);
+  if (i.status === "notFound" || i.status === "unavailable") throw new Error(`${key} is ${i.status}`);
   return i;
 };
 /** The card's plan once the owner made `changes` on the card as shown, each keyed by its item. */
@@ -282,6 +284,7 @@ describe("the plan", () => {
       "description change",
       "model same",
       "color change",
+      "picture same",
       "remember change",
       "skill:find-nearby change",
       "skill:deep-research change",
@@ -494,6 +497,83 @@ describe("colours", () => {
       expect(lookOf({ ui_meta: { "hermes-bots": { color: hex } } }).color).toBe(hex);
     }
     expect(BOT_SETUP_COLOR_HEX.teal).toBe("#14b8a6");
+  });
+});
+
+describe("the picture", () => {
+  const card = (b: BotSetupNewBlock | BotSetupAgainBlock = block(), again = false) =>
+    cardOf([again ? briefAgain("s1", "You are Travel Buddy.") : brief("s1"), reply(2, JSON.stringify(b))]).card;
+
+  it("offers the set's picture the block names, ticked, by its key and never its bytes", () => {
+    const plan = planCard(card(block({ picture: "plane" })), now());
+    expect(listedItem(plan, "picture")).toMatchObject({ kind: "picture", name: "plane", before: null, proposed: "set:plane", after: "set:plane", status: "change", ticked: true });
+    expect(tickedCount(plan)).toBe(tickedCount(planCard(card(), now())) + 1);
+    expect(acceptedRecord(plan).items.find((i) => i.kind === "picture")).toMatchObject({ from: null, to: "set:plane", ticked: true });
+  });
+
+  it("shows a name the set doesn't have as not found, never ticked: a URL, a data URL, a path or another name", () => {
+    for (const picture of ["https://example.com/face.png", "data:image/png;base64,iVBORw0KGgo=", "/home/owner/face.png", "Plane", "dragon"]) {
+      const plan = planCard(card(block({ picture })), now());
+      const i = item(plan, "picture:" + picture);
+      expect(i).toMatchObject({ kind: "picture", name: picture, status: "notFound" });
+      expect(tickable(i)).toBe(false);
+      expect(acceptedRecord(plan).items.some((a) => a.kind === "picture")).toBe(false);
+    }
+  });
+
+  it("refuses a picture that isn't a name, so no image data or object rides in the block", () => {
+    for (const picture of [{ url: "https://example.com/face.png" }, ["plane"], 5, ""]) expect(readBlock(JSON.stringify({ ...block(), picture }), "new").ok).toBe(false);
+  });
+
+  it("reads a block drawn before the picture was added as keeping the picture", () => {
+    const { picture: _, ...old } = block({ picture: "plane" });
+    const read = readBlock(JSON.stringify(old), "new");
+    expect(read.ok && read.checked.block.picture).toBeNull();
+    const plan = planCard(card({ ...old, picture: null }), now({ picture: "set:moon" }));
+    expect(listedItem(plan, "picture")).toMatchObject({ before: "set:moon", after: "set:moon", status: "same", ticked: true });
+    expect(tickable(item(plan, "picture"))).toBe(false);
+  });
+
+  it("is unavailable, with why, where Hermes can't save a picture, and the other items still apply", () => {
+    const off = { kind: "noCheck" } as const;
+    const plan = planCard(card(block({ picture: "plane" })), now({ pictureOff: off }));
+    expect(item(plan, "picture")).toEqual({ kind: "picture", key: "picture", name: "plane", status: "unavailable", off });
+    expect(tickable(item(plan, "picture"))).toBe(false);
+    expect(acceptedRecord(plan).items.some((a) => a.kind === "picture")).toBe(false);
+    expect(tickedCount(plan)).toBe(tickedCount(planCard(card(block({ picture: "plane" })), now())) - 1);
+  });
+
+  it("on Set up again, shows a picture the bot keeps as it is, unticked, with nothing to write", () => {
+    for (const has of ["set:moon", "photo:0123456789abcdef", null] as const) {
+      const plan = planCard(card(keeping(), true), now({ picture: has }));
+      const i = listedItem(plan, "picture");
+      expect(i).toMatchObject({ before: has, after: has, status: "same" });
+      expect(tickable(i) && i.ticked).toBe(false);
+      expect(acceptedRecord(plan).items.some((a) => a.kind === "picture")).toBe(false);
+    }
+  });
+
+  it("on Set up again, offers a picture the bot changes as before → after", () => {
+    const plan = planCard(card(keeping({ picture: "sun" }), true), now({ picture: "photo:0123456789abcdef" }));
+    expect(listedItem(plan, "picture")).toMatchObject({ before: "photo:0123456789abcdef", after: "set:sun", status: "change", ticked: true });
+  });
+
+  it("keeps the owner's choice of another picture, or their upload, through a redraw that leaves the picture alone", () => {
+    const first = planCard(card(block({ picture: "plane" })), now());
+    for (const to of ["set:moon", "photo:fedcba9876543210"] as const) {
+      const chosen = choose(listedItem(first, "picture"), { to });
+      expect(listedItem(planCard(card(block({ picture: "plane", color: "blue" })), now(), null, [chosen]), "picture")).toMatchObject({ after: to, status: "change" });
+    }
+  });
+
+  it("records pictures by key, and refuses a record whose picture is anything else", () => {
+    const plan = planCard(card(block({ picture: "plane" })), now());
+    const record = acceptedRecord(plan);
+    expect(readAcceptedRecord(JSON.stringify(record))).toEqual(record);
+    for (const to of ["https://example.com/face.png", "data:image/png;base64,iVBORw0KGgo=", "set:Plane", "photo:12"]) {
+      const bad = { ...record, items: record.items.map((i) => (i.kind === "picture" ? { ...i, to } : i)) };
+      expect(readAcceptedRecord(JSON.stringify(bad))).toBeNull();
+    }
   });
 });
 

@@ -11,6 +11,7 @@ import { FakeHermes } from "../hermes/fakeHermes";
 import { memoryCache } from "../hermes/memoryCache";
 import { connect, type Hermes } from "../hermes/transport";
 import { Main } from "../App";
+import { setProviderHidden } from "../hermes/uiPrefs";
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: async () => null }));
@@ -79,6 +80,25 @@ describe("Settings → Profiles", { timeout: 30_000 }, () => {
     expect(screen.queryByRole("tab", { name: "Profiles" })).toBeNull();
     expect(server.restRequests.filter((r) => r.method === "POST" && r.path === "/api/profiles").map((r) => r.body)).toEqual([{ name: "work-2" }]);
     expect(server.requests.filter((r) => r.method === "session.create" && Array.isArray(r.params.messages)).map((r) => r.params.profile)).toEqual(["work-2"]);
+  });
+
+  it("starts a new bot's Bot setup offering no model of a provider hidden in Highwing's model lists (ADR 0235)", async () => {
+    const { server, hermes, user, connection } = await launch((s) => {
+      s.health = { ...s.health, version: "0.23.2", displayVersion: "0.23.2" };
+      s.status = { ...s.status, version: "0.23.2" };
+    });
+    act(() => void setProviderHidden(connectionScope(connection), "openai", true));
+    await act(async () => void (await hermes.capabilities.refresh()));
+    await user.click(screen.getByRole("button", { name: "New profile" }));
+    const dialog = screen.getByRole("dialog", { name: "New profile" });
+    await user.type(within(dialog).getByLabelText("Name"), "Work");
+    await waitFor(() => expect(within(dialog).getByText("work-2")).toBeTruthy());
+    await user.click(within(dialog).getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(server.requests.some((r) => r.method === "prompt.submit" && r.params.display_kind === "hidden")).toBe(true));
+    // The brief is seeded into the new Bot Chat, with the models it may offer.
+    const brief = JSON.stringify(server.requests.find((r) => r.method === "session.create" && Array.isArray(r.params.messages))!.params.messages);
+    expect(brief).toContain("claude-sonnet-4-5");
+    expect(brief).not.toContain("gpt-4.1");
   });
 
   it("without Bot Mode, makes the profile from the name, selects it and offers to open it, switching nothing", async () => {
@@ -164,6 +184,26 @@ describe("Settings → Profiles", { timeout: 30_000 }, () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: /Edit profile/ })).toBeNull());
     expect(writes(server)).toEqual(["POST /api/profiles/research/describe-auto", "PUT /api/profiles/research/model"]);
     expect(server.profileModel.research).toMatchObject({ provider: provider.options[1].value, model: "some-model" });
+  });
+
+  it("Edit offers no hidden provider (ADR 0235), and keeps a model already on one, saying why its models aren't listed", async () => {
+    const { server, user, list, connection } = await launch((s) => {
+      s.profileModel.work = { model: "deepseek/deepseek-v4-flash", provider: "openrouter", reasoning_effort: "medium", fast: false };
+    });
+    act(() => void setProviderHidden(connectionScope(connection), "openrouter", true));
+    await user.click(within(option(list, "work")).getByRole("button", { name: "Edit work" }));
+    const dialog = screen.getByRole("dialog", { name: "Edit profile: work" });
+    const provider = within(dialog).getByLabelText<HTMLSelectElement>("Provider");
+    await waitFor(() => expect([...provider.options].map((o) => o.textContent)).toEqual(["OpenRouter (hidden in Highwing)", "Nous Portal", "ChatGPT or Codex Subscription"]));
+    expect(provider.value).toBe("openrouter");
+    expect(within(dialog).getByLabelText<HTMLInputElement>("Model name").value).toBe("deepseek/deepseek-v4-flash");
+    expect(dialog.querySelector("datalist")!.children.length).toBe(0);
+    expect(within(dialog).getByText(/^OpenRouter is hidden in Highwing's model lists, so its models aren't offered for a new pick\. Settings → Providers shows it again\.$/)).toBeTruthy();
+    // Another provider's models are offered as before, and the hidden one isn't offered back.
+    await user.selectOptions(provider, "nous");
+    expect([...dialog.querySelector("datalist")!.children].map((o) => o.getAttribute("value"))).toEqual(["hermes-5-405b", "hermes-5-70b", "anthropic/claude-fable-5.1"]);
+    expect([...provider.options].map((o) => o.value)).toEqual(["nous", "openai-codex"]);
+    expect(writes(server)).toEqual([]);
   });
 
   it("Edit keeps a description changed elsewhere since it opened, shows Hermes's, and replaces it only on a second Save", async () => {

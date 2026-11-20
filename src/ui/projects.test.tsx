@@ -8,7 +8,8 @@ import { FakeHermes, row, type FakeProject } from "../hermes/fakeHermes";
 import { connect, type Hermes } from "../hermes/transport";
 import { PROJECTS_KEY, PROJECTS_VERSION, projectLinks, projectScope } from "../hermes/projectLinks";
 import { savedDefaults, type DefaultsDraft } from "../hermes/projectDefaults";
-import { setUIPrefs } from "../hermes/uiPrefs";
+import { setProviderHidden, setUIPrefs } from "../hermes/uiPrefs";
+import { connectionScope } from "../hermes/connections";
 import { Main } from "../App";
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }));
@@ -544,6 +545,26 @@ describe("a project's defaults for new chats", () => {
     expect(onScreen()).toBe("New chat");
     expect(s.requests.some((r) => r.method === "prompt.submit")).toBe(false);
     expect(s.requests.some((r) => r.method === "session.close")).toBe(true);
+  });
+
+  it("keeps a default model whose provider is hidden in Highwing's model lists (ADR 0235), and offers none of that provider's others", async () => {
+    const s = server();
+    await seed("p_budget", { model: opus });
+    setProviderHidden(connectionScope({ mode: "ssh", sshTarget: "lena@hermes", url: "", username: "lena" }), "anthropic", true);
+    const { user } = await launch(s);
+    await pick(user, "Budget Tracker");
+    await user.click(screen.getByTitle("Project settings for Budget Tracker"));
+    await openPart(user, "Defaults for new chats");
+    const field = screen.getByRole("group", { name: "Model and reasoning effort" });
+    await user.click(within(field).getByRole("button", { name: "Model: claude-opus-4-5" }));
+    const list = within(field).getByRole("dialog", { name: "Choose a model" });
+    expect([...list.querySelectorAll(".model-section")].map((g) => g.getAttribute("aria-label"))).toEqual(["OpenAI"]);
+    expect(within(list).getByRole("note").textContent).toBe(
+      "claude-opus-4-5 stays as it is. Anthropic is hidden in Highwing's model lists, so its models aren't offered for a new pick.",
+    );
+    await user.keyboard("{Escape}");
+    expect(screen.queryByText("Unsaved changes")).toBeNull();
+    expect((await savedDefaults.read(SCOPE)).p_budget.model).toEqual(opus);
   });
 
   it("refuses a project model Hermes doesn't offer, rather than swapping it", async () => {

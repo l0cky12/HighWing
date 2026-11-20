@@ -3,10 +3,11 @@
 // question and guard. Every word comes from the catalogue (ADR 0100).
 import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { Brain, Copy, FolderOpen, Keyboard, MoreHorizontal, Pencil, Plus, Puzzle, RefreshCw, Sparkles, Trash2, TriangleAlert, Wand2 } from "lucide-react";
-import { BOT_LOOK_SAME, BOT_PICTURE_MAX_BYTES, type BotLook } from "../hermes/bots";
+import { BOT_LOOK_SAME, type BotLook } from "../hermes/bots";
 import type { CapabilityStore } from "../hermes/capabilities";
 import { allSaved, editsOf, rebase, type EditResult, type Edits, type FieldOutcome } from "../hermes/fieldMerge";
 import type { CatalogProvider } from "../hermes/modelSettings";
+import { offeredProviders } from "../hermes/models";
 import { asReadBack, type PersonaApi, type Soul } from "../hermes/persona";
 import type { ProfileCloneApi } from "../hermes/profileClone";
 import type { BotSetupRefusal } from "../hermes/botSetupStart";
@@ -28,10 +29,12 @@ import {
 import { errorText } from "../hermes/values";
 import { useLocale, type Locale } from "../i18n/locale";
 import { Spinner, composing } from "./bits";
+import { useHiddenProviders } from "./modelLists";
 import { Menu } from "./ChatMenu";
 import { CloneProfileDialog } from "./CloneProfile";
 import { NewBot } from "./NewBot";
 import { failureText } from "./profileFailure";
+import { PICTURE_TYPES, readPictureFile } from "./pictureFile";
 import { useModal } from "./modal";
 import { RephraseButton, RephrasePanel, usePersonaRephrase } from "./PersonaRephrase";
 import type { Writer } from "../hermes/writingModel";
@@ -721,7 +724,6 @@ type FormStates = { name?: FieldState; soul?: FieldState<string> } & { [K in key
  */
 export type BotSection = { look: BotLook; edit: (profile: string, edits: Edits<BotLook>) => Promise<EditResult<BotLook>> };
 
-const PICTURE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 /** What the colour box shows for a bot with Hermes's own colour, or one the box can't show. */
 const NO_COLOR = "#888888";
 
@@ -746,19 +748,22 @@ function ModelPicker({
   const l = useLocale();
   const f = l.profiles.form;
   const listId = useId();
+  const hidden = useHiddenProviders();
   const providers = catalog ?? [];
-  const known = providers.some((p) => p.slug === provider);
-  const models = providers.find((p) => p.slug === provider)?.models ?? [];
+  const offered = offeredProviders(providers, hidden);
+  const known = offered.some((p) => p.slug === provider);
+  const hiddenName = hidden.has(provider) ? (providers.find((p) => p.slug === provider)?.name ?? provider) : undefined;
+  const models = hiddenName === undefined ? (providers.find((p) => p.slug === provider)?.models ?? []) : [];
   return (
     <div className="profile-model" role="group" aria-labelledby={labelId}>
       <select aria-label={f.provider} value={provider} disabled={disabled} onChange={(e) => onChange(e.target.value, "")}>
         {optional && <option value="">{f.noProvider}</option>}
         {provider && !known && (
           <option value={provider} translate="no">
-            {provider}
+            {hiddenName === undefined ? provider : f.hiddenProvider(hiddenName)}
           </option>
         )}
-        {providers.map((p) => (
+        {offered.map((p) => (
           <option key={p.slug} value={p.slug} translate="no">
             {p.name}
           </option>
@@ -770,6 +775,7 @@ function ModelPicker({
           <option key={m} value={m} />
         ))}
       </datalist>
+      {hiddenName !== undefined && <div className="small muted profile-model-note">{f.hiddenProviderNote(hiddenName)}</div>}
     </div>
   );
 }
@@ -986,18 +992,13 @@ export function ProfileForm({
     }
   };
 
-  const pickPicture = (file: File | undefined) => {
+  const pickPicture = async (file: File | undefined) => {
     if (!file) return;
-    if (!PICTURE_TYPES.includes(file.type)) return setPictureNote(f.pictureFormat);
-    if (file.size > BOT_PICTURE_MAX_BYTES) return setPictureNote(f.pictureTooBig);
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (!live.current || typeof reader.result !== "string") return;
-      setPicture(reader.result);
-      setPictureNote(undefined);
-    };
-    reader.onerror = () => live.current && setPictureNote(f.pictureUnread);
-    reader.readAsDataURL(file);
+    const read = await readPictureFile(file);
+    if (!live.current) return;
+    if (read.kind !== "read") return setPictureNote(read.kind === "format" ? f.pictureFormat : read.kind === "tooBig" ? f.pictureTooBig : f.pictureUnread);
+    setPicture(read.dataUrl);
+    setPictureNote(undefined);
   };
 
   const save = async () => {
@@ -1247,7 +1248,7 @@ export function ProfileForm({
                       accept={PICTURE_TYPES.join(",")}
                       aria-label={f.pictureChoose}
                       onChange={(e) => {
-                        pickPicture(e.target.files?.[0]);
+                        void pickPicture(e.target.files?.[0]);
                         e.target.value = "";
                       }}
                     />

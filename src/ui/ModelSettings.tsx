@@ -31,10 +31,11 @@ import {
   type PinnedWarning,
   type SubagentRoute,
 } from "../hermes/modelSettings";
-import { isEffort, type ModelCatalog, type ModelPick } from "../hermes/models";
+import { hiddenNote, isEffort, offeredProviders, type ModelCatalog, type ModelPick } from "../hermes/models";
 import { getUIPrefs, subscribe as subscribeUIPrefs, toggleModelFavorite } from "../hermes/uiPrefs";
 import { ModelCombobox } from "./ModelCombobox";
 import { ModelControls } from "./ModelPicker";
+import { useHiddenProviders } from "./modelLists";
 import { SettingNote, SettingRow, SettingsSection } from "./SettingRows";
 import { AppliesBox, AppliesPart, HeadPart } from "./SettingsPage";
 import { errorText } from "../hermes/values";
@@ -69,9 +70,28 @@ const askPart = (a: Ask): Part => (a.kind === "pinned" ? "main" : a.part);
 const list = (names: string[]) => (names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`);
 const providerName = (providers: CatalogProvider[], slug: string) => providers.find((p) => p.slug === slug)?.name ?? slug;
 
-/** The catalog's providers; one Hermes has that the catalog no longer lists stays on offer. */
+/**
+ * A provider select's options: the providers the model lists show (ADR 0235), and `value` when it's another one, as
+ * set: a provider the catalog no longer lists, or one hidden here, which stays chosen until something else is.
+ */
+export function ProviderOptions({ value, providers }: { value: string; providers: CatalogProvider[] }) {
+  const hidden = useHiddenProviders();
+  const offered = offeredProviders(providers, hidden);
+  const kept = value && !offered.some((p) => p.slug === value) ? value : undefined;
+  return (
+    <>
+      {kept && <option value={kept}>{hidden.has(kept) ? `${providerName(providers, kept)} (hidden in Highwing)` : kept}</option>}
+      {offered.map((p) => (
+        <option key={p.slug} value={p.slug}>
+          {p.name}
+        </option>
+      ))}
+    </>
+  );
+}
+
+/** The providers the model lists show; one already chosen that they don't stays on offer. */
 export function ProviderSelect({ label, value, providers, onChange }: { label: string; value: string; providers: CatalogProvider[]; onChange: (slug: string) => void }) {
-  const listed = providers.some((p) => p.slug === value);
   return (
     <select className="select" aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}>
       {!value && (
@@ -79,19 +99,18 @@ export function ProviderSelect({ label, value, providers, onChange }: { label: s
           Choose a provider…
         </option>
       )}
-      {value && !listed && <option value={value}>{value}</option>}
-      {providers.map((p) => (
-        <option key={p.slug} value={p.slug}>
-          {p.name}
-        </option>
-      ))}
+      <ProviderOptions value={value} providers={providers} />
     </select>
   );
 }
 
-/** The provider's models. Empty until one is picked: switching provider never keeps the old provider's model. */
+/**
+ * The provider's models. Empty until one is picked: switching provider never keeps the old provider's model. A
+ * hidden provider's model stays shown as chosen, with none of its others offered.
+ */
 export function ModelSelect({ label, value, provider, providers, onChange }: { label: string; value: string; provider: string; providers: CatalogProvider[]; onChange: (m: string) => void }) {
-  const models = providers.find((p) => p.slug === provider)?.models ?? [];
+  const hidden = useHiddenProviders().has(provider);
+  const models = hidden ? [] : (providers.find((p) => p.slug === provider)?.models ?? []);
   return (
     <ModelCombobox
       label={label}
@@ -99,9 +118,17 @@ export function ModelSelect({ label, value, provider, providers, onChange }: { l
       models={models}
       disabled={!provider}
       placeholder={provider ? "Choose a model…" : "Choose a provider first"}
+      unlisted={hidden ? "Provider hidden in Highwing" : undefined}
       onChange={onChange}
     />
   );
+}
+
+/** The note under a model field whose chosen provider is hidden in the model lists, if it is. */
+export function HiddenProviderNote({ provider, providers }: { provider: string; providers: CatalogProvider[] }) {
+  const hidden = useHiddenProviders();
+  if (!hidden.has(provider)) return null;
+  return <SettingNote tone="warn">{hiddenNote(providerName(providers, provider))}</SettingNote>;
 }
 
 function EffortSelect({ label, value, first, disabled, onChange }: { label: string; value: string; first: [string, string]; disabled?: boolean; onChange: (e: string) => void }) {
@@ -639,7 +666,9 @@ export function ModelSettings({
               />
             </div>
           }
-        />
+        >
+          <HiddenProviderNote provider={m.provider} providers={providers} />
+        </SettingRow>
         <SettingRow
           name="Reasoning effort"
           hint={caps && !caps.reasoning ? "This model doesn't reason." : undefined}
@@ -755,7 +784,9 @@ export function ModelSettings({
               )}
             </div>
           }
-        />
+        >
+          {sub.route === "provider" && <HiddenProviderNote provider={sub.provider} providers={providers} />}
+        </SettingRow>
         <SettingRow
           name="Reasoning effort"
           control={
@@ -826,12 +857,7 @@ export function ModelSettings({
                       }
                     >
                       <option value={AUX_AUTO}>auto · use main model</option>
-                      {!auto && !providers.some((p) => p.slug === a.provider) && <option value={a.provider}>{a.provider}</option>}
-                      {providers.map((p) => (
-                        <option key={p.slug} value={p.slug}>
-                          {p.name}
-                        </option>
-                      ))}
+                      <ProviderOptions value={auto ? "" : a.provider} providers={providers} />
                     </select>
                     {auto ? (
                       <ModelCombobox label={`${t.label} model`} value="" models={[]} placeholder={saved.main.model || "main model"} disabled />
@@ -852,7 +878,9 @@ export function ModelSettings({
                     />
                   </div>
                 }
-              />
+              >
+                {!auto && <HiddenProviderNote provider={a.provider} providers={providers} />}
+              </SettingRow>
             );
           })}
         <ApplyRow

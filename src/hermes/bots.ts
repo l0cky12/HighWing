@@ -174,7 +174,7 @@ export type BotBlockLook = Pick<BotLook, (typeof BOT_BLOCK_FIELDS)[number]>;
 export const BOT_PICTURE_MAX_BYTES = 2_000_000;
 
 /** A data URL's base64, without its label. */
-const payloadOf = (dataUrl: string) => dataUrl.slice(dataUrl.indexOf(",") + 1);
+export const payloadOf = (dataUrl: string) => dataUrl.slice(dataUrl.indexOf(",") + 1);
 
 export const BOT_LOOK_SAME: Same<BotLook> = {
   title: (a, b) => a.trim() === b.trim(),

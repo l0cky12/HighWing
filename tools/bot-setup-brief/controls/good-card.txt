@@ -7,6 +7,7 @@ Here’s your proposed setup, including the requested copies from Research Assis
   "description": "Plan European trips, stays, day plans and packing lists.",
   "model": null,
   "color": "blue",
+  "picture": "plane",
   "callOwner": "Liam",
   "skills": [
     {"name": "google-workspace", "on": true},

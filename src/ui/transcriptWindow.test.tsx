@@ -259,6 +259,36 @@ describe("A long transcript's window", { timeout: 30_000 }, () => {
     expect(item("u-0")).toBeNull();
   });
 
+  it("goes to the real end of a long chat from its top, by the button or the shortcut, and follows the reply from there", async () => {
+    blockHeight = (id) => (id === "a-live" ? 100 + 40 * reply.length : 100);
+    let reply = "word ";
+    const items = [...longChat(400), { kind: "user", id: "u-live", text: "Stream something." } as Item];
+    const live = () => chatOf([...items, { kind: "assistant", id: "a-live", text: reply }], { running: true });
+    const { scroller, again } = pane(live());
+    const atEnd = () => {
+      expect(inView(item("a-live")!)).toBe(true);
+      expect(scroller.scrollTop).toBe(scroller.scrollHeight - VIEW);
+      expect(document.querySelector(".transcript-inner > .transcript-gap:last-child")).toBeNull();
+    };
+
+    for (const go of [() => fireEvent.click(screen.getByRole("button", { name: "New reply below" })), () => fireEvent.keyDown(window, { key: "End", code: "End", altKey: true })]) {
+      await scrollTo(scroller, 0);
+      expect(item("a-live")).toBeNull();
+      reply += "word ";
+      again({ chat: live() });
+      go();
+      atEnd();
+      await scrollTo(scroller, scroller.scrollTop);
+      atEnd();
+      expect(item("u-0")).toBeNull();
+      reply += "word ";
+      again({ chat: live() });
+      await scrollTo(scroller, scroller.scrollTop);
+      atEnd();
+      expect(document.querySelector(".to-newest")).toBeNull();
+    }
+  });
+
   it("renders a chat of a few chunks whole, however tall", () => {
     const items = longChat(60);
     expect(chunkBlocks(items).length).toBeGreaterThan(1);

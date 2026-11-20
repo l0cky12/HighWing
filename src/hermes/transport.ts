@@ -33,7 +33,7 @@ import { ProfileCloneApi } from "./profileClone";
 import { ProfilesApi, profileFailure, toProfileRows, type ProfileFailure } from "./profiles";
 import { FILTER_SEARCH_LIMIT } from "./chatFilter";
 import { APPROVAL_CHOICES, endedNote, isBroadGrant, isOutgoing, isQuestion, isStoredPrompt, isWaiting, offeredChoices, sameFields, sendNowRoute, turnFrom, turnStart, type ApprovalChoice, type ApprovalItem, type AttachCheck, type ClarifyQuestion, type QuestionAnswer, type QuestionItem, type QuestionKind, type Attachment, type Chat, type ChatQueue, type ConnectionStatus, type ContextUse, type Found, type Hit, type Item, type ListedChat, type LiveSession, type LiveSessions, type OtherProfiles, type Outgoing, type OutgoingItem, type Queued, type SavedSend, type SeenFailure, type SentImage, type SentImagePath, type SentReference, type SessionLive, type SideQuestion, type Source, QUEUE_LIMIT } from "./model";
-import { catalogFromServer, fallbackCatalog, isEffort, modelKey, pickFromInfo, type ModelCatalog, type ModelPick } from "./models";
+import { NO_HIDDEN, catalogFromServer, fallbackCatalog, isEffort, modelKey, offeredCatalog, pickFromInfo, type HiddenProviders, type ModelCatalog, type ModelPick } from "./models";
 import { approvalsOf, isApprovalMode, writesFor, type ApprovalPick } from "./approvals";
 import { CheckTimesStore, noOthers, OtherProfilesCheck } from "./otherProfiles";
 import { failureMark } from "./inbox";
@@ -153,7 +153,7 @@ import { BotSetupStarts, botSetupBegin, briefTurn, lostAnswer, runStart, withSet
 import { againBusy, currentSetup, runFresh, type AgainStart, type FreshEnd, type FreshIo } from "./botSetupAgain";
 import { acceptedRecord, fencedBlocks, parseSetup, readAcceptedRecord, type AcceptedRecord, type ListedItem, type ParseResult, type Plan } from "./botSetupCard";
 import { BOT_SETUP_FENCE } from "./botSetupBrief";
-import { applyItem, readSetupNow, readyTurn, runSetup, setupItems, type BotSetupRestart, type CardState, type SetupApis, type SetupNow } from "./botSetupApply";
+import { applyItem, readSetupNow, readyTurn, runSetup, setupItems, type BotSetupRestart, type CardState, type PictureUploads, type SetupApis, type SetupNow } from "./botSetupApply";
 import type { McpSecrets } from "./botSetupMcp";
 
 /**
@@ -773,6 +773,8 @@ export class Hermes {
   private listeners = new Set<() => void>();
   private sendListeners = new Set<(profile: string, chatId: string) => void>();
   private snapshot: Snapshot;
+  /** The providers hidden from Highwing's model lists on this connection (ADR 0235); Main sets it. Bot setup offers none of their models. */
+  hiddenProviders: () => HiddenProviders = () => NO_HIDDEN;
   /** Chats this app moved between Active and Settled that Hermes hasn't stored yet: the `pinned` flag each should
    * have (ADR 0002). While a chat is here, this flag beats the one the server lists. */
   private pinWanted = new PerProfile<boolean>();
@@ -2798,8 +2800,15 @@ export class Hermes {
       memory: this.memory,
       mcp: this.mcp,
       bots: () => this.bots(),
-      models: async () => (this.snapshot.models?.profile === profile ? this.snapshot.models : this.readModels(profile).catch(() => undefined)),
+      models: async () =>
+        offeredCatalog(this.snapshot.models?.profile === profile ? this.snapshot.models : await this.readModels(profile).catch(() => undefined), this.hiddenProviders()),
       editBot: (name, edits) => this.editBot(name, edits),
+      picture: async (name) => {
+        const read = await this.readLook(name, true);
+        const lacks = (["botPicture", "botLook"] as const).find((a) => this.capabilities.lacksAction("profiles", a));
+        const off: ProfileFailure | undefined = lacks ? { kind: "noRoute", action: lacks } : read && read.revision === undefined ? { kind: "noCheck" } : undefined;
+        return { data: read?.picture ?? null, ...(off && { off }) };
+      },
     };
   }
 
@@ -2844,16 +2853,23 @@ export class Hermes {
    * interview. Once a call gets no answer, nothing more is sent: the items after it aren't tried, and the ready turn
    * waits for the next Set it up. MCP servers added are reloaded before the ready turn when no reply runs on this
    * Hermes, and otherwise wait for the owner's Reload MCP servers. `hear` learns each item's state as it changes.
-   * `secrets`: what Connect took for each MCP server, sent only now. `readyAt`: when the ready turn went.
+   * `secrets`: what Connect took for each MCP server, sent only now. `uploads`: the owner's pictures on the card.
+   * `readyAt`: when the ready turn went.
    */
-  async applyBotSetup(read: BotSetupCardRead, plan: Plan, hear: (key: string, state: CardState | { kind: "working" }) => void, secrets: McpSecrets = {}): Promise<BotSetupRun> {
+  async applyBotSetup(
+    read: BotSetupCardRead,
+    plan: Plan,
+    hear: (key: string, state: CardState | { kind: "working" }) => void,
+    secrets: McpSecrets = {},
+    uploads: PictureUploads = {},
+  ): Promise<BotSetupRun> {
     const { chatId, profile, setup } = read;
     if (this.profile !== profile) return { states: {}, readyFailed: { kind: "notShown", profile } };
     const items = setupItems(plan, read.parse.accepted);
     const record = acceptedRecord(plan, read.accepted);
     this.cache.saveSetupRecord(profile, chatId, record);
     const apis = this.setupApis(profile);
-    const run = await runSetup(items, (item) => applyItem(apis, profile, setup, item, [], secrets), hear);
+    const run = await runSetup(items, (item) => applyItem(apis, profile, setup, item, [], secrets, uploads), hear);
     this.rememberMcpReloadOwed(profile, chatId, run.states);
     if (run.unanswered !== undefined) return run;
     await this.reloadMcpIfIdle(chatId, profile, run.states, hear);
@@ -2883,10 +2899,10 @@ export class Hermes {
     return { ...run, readyAt };
   }
 
-  /** `accepted`: the cautions the owner confirmed with Apply anyway. `secrets`: what Connect took. */
-  async retryBotSetupItem(read: BotSetupCardRead, item: ListedItem, accepted: Caution[] = [], secrets: McpSecrets = {}): Promise<CardState> {
+  /** `accepted`: the cautions the owner confirmed with Apply anyway. `secrets`: what Connect took. `uploads`: the owner's pictures. */
+  async retryBotSetupItem(read: BotSetupCardRead, item: ListedItem, accepted: Caution[] = [], secrets: McpSecrets = {}, uploads: PictureUploads = {}): Promise<CardState> {
     if (this.profile !== read.profile) return { kind: "failed", miss: { kind: "notShown", profile: read.profile } };
-    const step = await applyItem(this.setupApis(read.profile), read.profile, read.setup, item, accepted, secrets);
+    const step = await applyItem(this.setupApis(read.profile), read.profile, read.setup, item, accepted, secrets, uploads);
     const states = { [item.key]: step.state };
     this.rememberMcpReloadOwed(read.profile, read.chatId, states);
     if (step.unanswered === undefined) await this.reloadMcpIfIdle(read.chatId, read.profile, states, () => {});

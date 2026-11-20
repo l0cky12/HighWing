@@ -133,7 +133,7 @@ describe("Keep history", () => {
     expect((await hermes.botSetupCurrent(await me())).mcp).toEqual(["airbnb"]);
     const started = await keep();
     if (started.kind !== "waiting") throw new Error(started.kind);
-    const block: BotSetupAgainBlock = { v: BOT_SETUP_BLOCK_VERSION, persona: null, description: "Plans trips by train.", model: null, color: null, callOwner: null, skills: [], toolsets: [], mcp: [], copy: [] };
+    const block: BotSetupAgainBlock = { v: BOT_SETUP_BLOCK_VERSION, persona: null, description: "Plans trips by train.", model: null, color: null, picture: null, callOwner: null, skills: [], toolsets: [], mcp: [], copy: [] };
     const text = `Here's the change.\n\n\`\`\`${BOT_SETUP_FENCE}\n${JSON.stringify(block)}\n\`\`\``;
     const sid = String(server.last("prompt.submit")!.params.session_id);
     server.event(sid, "message.start");

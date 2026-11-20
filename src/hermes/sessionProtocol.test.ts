@@ -4,7 +4,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { APP_METHODS, APP_VERBS, CANONICAL_READY, type AppMethod } from "./canonicalVerbs";
+import { APP_METHODS, APP_VERBS, CANONICAL_METHODS, CANONICAL_READY, type AppMethod, type WireMethod } from "./canonicalVerbs";
 import { protocolOf } from "./capabilities";
 import { FakeHermes } from "./fakeHermes";
 import type { QuestionItem } from "./model";
@@ -70,7 +70,8 @@ describe("the canonical session protocol", () => {
 
 describe("the map of what the canonical protocol does with the app's JSON-RPC methods", () => {
   it("has a row for every method the app sends", () => {
-    expectTypeOf<Parameters<Port["call"]>[0]>().toEqualTypeOf<AppMethod>();
+    expectTypeOf<Parameters<Port["call"]>[0]>().toEqualTypeOf<WireMethod>();
+    expect(CANONICAL_METHODS.filter((m) => (APP_METHODS as readonly string[]).includes(m))).toEqual([]);
     expect(APP_METHODS.filter((m) => !mapped.includes(m)), "add a row to APP_VERBS in canonicalVerbs.ts (ADR 0174)").toEqual([]);
   });
 

@@ -72,7 +72,7 @@ import {
 import { parseCheckpointList, type RelPath } from "./fileChanges";
 import type { Restored, RollbackIO } from "./fileUndo";
 import { ConnectionLostError, FILE_MARK, echoesInflight, LIMITS, LegacyProtocol, PromptUnconfirmedError, ProtocolMismatchError, RpcError, negotiate, type Admitted, type AnswerOutcome, type BranchAnswer, type GoingOut, type Inbound, type PlainMethod, type Port, type RpcFrame, type ServerRequest, type SessionProtocol } from "./sessionProtocol";
-import type { AppMethod } from "./canonicalVerbs";
+import type { WireMethod } from "./canonicalVerbs";
 import { policyOf } from "./chatKind";
 import { askFirstBlocks, askFirstRule } from "./askFirst";
 import { getUIPrefs } from "./uiPrefs";
@@ -6581,7 +6581,7 @@ export class Hermes {
   }
 
   /** With a `file`, the pipe swaps its base64 in for the `FILE_MARK` in `params`. */
-  private egress<T = unknown>(method: AppMethod, params: Record<string, unknown>, file?: { path: string; maxBytes: number }, observe = true, read?: (result: unknown) => T): Promise<T> {
+  private egress<T = unknown>(method: WireMethod, params: Record<string, unknown>, file?: { path: string; maxBytes: number }, observe = true, read?: (result: unknown) => T): Promise<T> {
     const pipe = this.pipe;
     if (!pipe || this.snapshot.status !== "connected") return Promise.reject(new Error("Not connected to Hermes."));
     // A method that changes something, for a capability Hermes lacks, isn't sent.

@@ -205,9 +205,9 @@ export function PicturePicker({ anchor, picked, tab, onUse, onClose }: { anchor:
     return () => document.removeEventListener("paste", paste, true);
   }, []);
 
-  // Focus goes into the picker when it opens, and to the crop step and back as a file comes and goes. A tab pressed
-  // keeps it.
-  const cropping = step.kind === "crop";
+  // Focus goes into the picker when it opens, and to the crop step and back as a file comes and goes, including a
+  // second file, whose crop step is a new one. A tab pressed keeps it.
+  const cropping = step.kind === "crop" ? step.picture.url : undefined;
   const stepKind = useRef(step.kind);
   stepKind.current = step.kind;
   useEffect(() => {

@@ -227,6 +227,7 @@ describe("The picture picker", () => {
     await user.keyboard("{ArrowLeft}{ArrowLeft}");
     fireEvent.paste(document.body, { clipboardData: { types: ["Files"], files: [png("next.png")], getData: () => "" } });
     await waitFor(() => expect((within(dialog()).getByLabelText(p.zoom) as HTMLInputElement).value).toBe("1"));
+    expect(document.activeElement).toBe(within(dialog()).getByRole("group", { name: p.move }));
     await user.click(within(dialog()).getByRole("button", { name: p.use }));
     expect(used.mock.calls).toEqual([[MIDDLE]]);
   });

@@ -5,17 +5,24 @@
 // rendered. Installing skills from elsewhere isn't done here.
 //
 // Any profile's skills can be shown (the picker Settings passes in), and in Select mode several can be copied or moved to
-// another profile, or archived, one at a time, each read back from Hermes (ADR 0118).
+// another profile, or archived, one at a time, each read back from Hermes (ADR 0118). New skill writes one by hand: a name,
+// a category and its SKILL.md, created through Hermes's own checks; a draft Hermes refuses stays on screen (ADR 0235).
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, ArrowLeft, ArrowRightLeft, Check, CheckSquare, Copy, GitMerge, History, Info, RefreshCw, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRightLeft, Check, CheckSquare, Copy, GitMerge, History, Info, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import type { ConnectionStatus } from "../hermes/model";
 import { merge3 } from "../hermes/textEdit";
+import { skillSlug } from "../hermes/skillCommands";
 import {
   ESSENTIAL_SKILLS,
   SkillsError,
   archivable,
+  creatableName,
   declaredName,
+  newSkillProblems,
+  newSkillText,
+  renamedInFrontmatter,
   skillProblems,
+  type NewSkill,
   type ReferenceCheck,
   type SkillFile,
   type SkillRow,
@@ -29,6 +36,9 @@ import { clockTime, errorText } from "../hermes/values";
 
 /** The skill open in the editor: its row, SKILL.md as last read from Hermes, and the owner's text. */
 type Editing = { row: SkillRow; base: SkillFile; draft: string };
+/** A new skill being written: the fields as typed, the category empty for none. */
+type Creating = Required<NewSkill>;
+const BLANK: Creating = { name: "", category: "", content: newSkillText("") };
 type Notice = { kind: "ok" | "error" | "conflict" | "unsure"; text: string };
 type LoadProblem = { kind: "unsupported" | "permission" | "error"; text: string };
 type RowNote = { name: string; kind: "ok" | "failed"; text: string };
@@ -43,6 +53,9 @@ const SOURCE: Record<string, string> = { hub: "Skills Hub", bundled: "Built in",
 const sourceLabel = (s: string) => SOURCE[s] ?? s;
 /** An element id for a skill's row: one per name, without spaces (ids go in `aria-labelledby` lists). */
 const domId = (name: string) => `skill-${encodeURIComponent(name)}`;
+
+/** New skill's button, where focus goes back to when a draft is dropped. */
+const NEW_ID = "skills-new";
 
 /** What happens after an edit is saved, for the notice and the screen's note. */
 const EDIT_EFFECT =
@@ -108,7 +121,8 @@ export function SkillSettings({
   const [conflict, setConflict] = useState<SkillFile>();
   // The referenced files a Save found missing, for the text it checked; another edit makes it lapse.
   const [refs, setRefs] = useState<ReferenceCheck & { draft: string }>();
-  const [busy, setBusy] = useState<"save" | "reload">();
+  const [creating, setCreating] = useState<Creating>();
+  const [busy, setBusy] = useState<"save" | "reload" | "create">();
   const [notice, setNotice] = useState<Notice>();
   // A question before the open edit is dropped or replaced: what it says, and what it would do.
   const [leaving, setLeaving] = useState<{ text: string; go: () => void }>();
@@ -122,9 +136,12 @@ export function SkillSettings({
   const alive = useRef(true);
   const reads = useRef(0);
   const opens = useRef(0);
+  // The element id to focus once the list is back: the skill's Edit button, or New skill.
   const focusAfter = useRef<string | undefined>(undefined);
 
-  const dirty = !!editing && editing.draft !== editing.base.content;
+  const dirty =
+    (!!editing && editing.draft !== editing.base.content) ||
+    (!!creating && (creating.name !== BLANK.name || creating.category !== BLANK.category || creating.content !== BLANK.content));
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
   const discards = useRef(discardSignal);
   useEffect(() => {
@@ -141,12 +158,12 @@ export function SkillSettings({
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- once per mount: on unmount it reports clean; running again for a new `onDirtyChange` would report clean while an edit is open
   }, []);
-  // Back in the list, focus returns to the skill's Edit button.
+  // Back in the list, focus returns to the skill's Edit button, or to New skill.
   useEffect(() => {
-    if (editing || !focusAfter.current) return;
-    document.getElementById(`${domId(focusAfter.current)}-edit`)?.focus();
+    if (editing || creating || !focusAfter.current) return;
+    document.getElementById(focusAfter.current)?.focus();
     focusAfter.current = undefined;
-  }, [editing]);
+  }, [editing, creating]);
 
   const names = view?.skills.map((s) => s.name) ?? [];
 
@@ -176,8 +193,10 @@ export function SkillSettings({
   }, [connected]);
 
   function close() {
-    if (editing) focusAfter.current = editing.row.name;
+    if (editing) focusAfter.current = `${domId(editing.row.name)}-edit`;
+    else if (creating) focusAfter.current = NEW_ID;
     setEditing(undefined);
+    setCreating(undefined);
     setConflict(undefined);
     setRefs(undefined);
     setNotice(undefined);
@@ -311,6 +330,66 @@ export function SkillSettings({
         ? `Merged. In ${m.conflicts === 1 ? "one place" : `${m.conflicts} places`} both versions changed the same lines; both are kept between markers. Settle ${m.conflicts === 1 ? "it" : "each"}, then Save.`
         : "Merged the server's changes into your edit. Check it, then Save.",
     });
+  };
+
+  const startNew = () => {
+    setCreating(BLANK);
+    setRowNote(undefined);
+    setNotice(undefined);
+  };
+
+  /** Renames the draft, keeping its front matter `name:` in step while it still says the name typed before. */
+  const editNew = (next: Partial<Creating>) => {
+    if (!creating || busy) return;
+    const content = next.name !== undefined && next.content === undefined ? renamedInFrontmatter(creating.content, creating.name, next.name) : creating.content;
+    setCreating({ ...creating, content, ...next });
+    if (notice?.kind === "ok") setNotice(undefined);
+  };
+
+  /** Sends the draft to Hermes. Once created and read back, the list shows it; a refusal keeps the draft with Hermes's reason. */
+  const create = async () => {
+    if (!creating || busy || !connected || newSkillProblems(creating).length) return;
+    const at = creating;
+    setBusy("create");
+    setNotice(undefined);
+    setLeaving(undefined);
+    try {
+      const file = await api.create(profile, { name: at.name, content: at.content, ...(at.category && { category: at.category }) });
+      if (!alive.current) return;
+      let next: SkillsView | undefined;
+      try {
+        next = await api.list(profile);
+      } catch {
+        // The skill is there, read back; the list is read again below.
+      }
+      if (!alive.current) return;
+      const row = next?.skills.find((r) => r.name === at.name);
+      const after =
+        next && !row
+          ? " The skill list read back doesn't show it yet; Reload to check."
+          : row && !row.enabled
+            ? ` It's off: the profile's skills.disabled list already names ${at.name}. Turn it on with its switch.`
+            : "";
+      setRowNote({
+        name: next && !row ? "" : at.name,
+        kind: "ok",
+        text: `Created ${at.name} at ${file.path}, and read back from Hermes. New chats list it, and the composer runs it as /${skillSlug(at.name)}.${after}`,
+      });
+      setCreating(undefined);
+      setNotice(undefined);
+      setQuery("");
+      // Back to New skill, not the new row: focus in a row shows its description over the note.
+      focusAfter.current = NEW_ID;
+      if (next) {
+        reads.current++; // A list read still under way is older than this one.
+        setView(next);
+        setLoading(false);
+      } else void load();
+    } catch (e) {
+      if (alive.current) setNotice({ kind: "error", text: `${errorText(e)} Your draft is still here.` });
+    } finally {
+      if (alive.current) setBusy(undefined);
+    }
   };
 
   /**
@@ -573,19 +652,7 @@ export function SkillSettings({
                       </div>
                     </div>
                   )}
-                  {leaving && (
-                    <div className="confirm memory-leave" role="alertdialog" aria-label="Discard your edit?">
-                      <span className="confirm-msg">{leaving.text}</span>
-                      <div className="confirm-actions">
-                        <button className="btn" autoFocus onClick={() => setLeaving(undefined)}>
-                          Keep editing
-                        </button>
-                        <button className="btn danger" onClick={leaving.go}>
-                          Discard edit
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                  {leaving && <LeaveQuestion leaving={leaving} onKeep={() => setLeaving(undefined)} />}
                   <div className="memory-actions">
                     <div className="confirm-actions">
                       <RestoreButton api={api} profile={profile} editing={editing} disabled={!!busy} onRestore={(content, when) =>
@@ -612,14 +679,22 @@ export function SkillSettings({
                       </button>
                     </div>
                   </div>
-                  {notice && (
-                    <div className={`memory-notice ${notice.kind}`} role={notice.kind === "ok" ? "status" : "alert"}>
-                      {notice.kind === "ok" ? <Check size={14} /> : <AlertTriangle size={14} />}
-                      <span>{notice.text}</span>
-                    </div>
-                  )}
+                  {notice && <NoticeLine notice={notice} />}
                 </div>
               </>
+            ) : creating ? (
+              <NewSkillEditor
+                draft={creating}
+                categories={[...new Set(view.skills.flatMap((r) => (r.category && creatableName(r.category) ? [r.category] : [])))].sort()}
+                creating={busy === "create"}
+                connected={connected}
+                notice={notice}
+                leaving={leaving}
+                onEdit={editNew}
+                onKeep={() => setLeaving(undefined)}
+                onCancel={() => unlessDirty("Discard this new skill? Nothing of it has been sent to Hermes.", close)}
+                onCreate={() => void create()}
+              />
             ) : (
               <>
                 <div className="set-block skills-toolbar">
@@ -632,6 +707,17 @@ export function SkillSettings({
                     {off > 0 && `, ${off} off`}
                   </span>
                   {!inPage && reloadBtn}
+                  {!selecting && (
+                    <button
+                      className="btn"
+                      id={NEW_ID}
+                      disabled={!connected || !!toggling || !!opening || busyBulk}
+                      onClick={startNew}
+                      title="Write a new skill for this profile: a name, a category and its SKILL.md."
+                    >
+                      <Plus size={14} /> New skill
+                    </button>
+                  )}
                   {selecting ? (
                     <button className="btn" disabled={busyBulk} onClick={endSelect}>
                       Done
@@ -707,7 +793,7 @@ export function SkillSettings({
                   </SettingNote>
                 )}
                 {!view.skills.length ? (
-                  <SettingNote>This profile has no skills yet. The agent can write one during a chat. Installing skills from elsewhere isn't done from Highwing.</SettingNote>
+                  <SettingNote>This profile has no skills yet. Write one with New skill, or the agent can write one during a chat. Installing skills from elsewhere isn't done from Highwing.</SettingNote>
                 ) : !filtered.length ? (
                   <SettingNote>No skills match “{query.trim()}”.</SettingNote>
                 ) : (
@@ -798,6 +884,7 @@ const effectRows = (
       }
     />
     <SettingRow name="Turning a skill on" hint="New chats list it; one already going can still load it by name." />
+    <SettingRow name="Creating a skill" hint="New chats list it, and the composer can run it at once. A chat already going can load it by name." />
     <SettingRow
       name="Undoing a saved edit"
       hint="Restore previous version, until you sign out or close Highwing; earlier versions aren't kept on the server or on this computer."
@@ -1016,5 +1103,148 @@ function RestoreButton({
     <button className="btn" disabled={disabled} onClick={() => onRestore(version.content, version.replacedAt)} title={`The text your save at ${clockTime(version.replacedAt)} replaced.`}>
       <History size={14} /> Restore previous version
     </button>
+  );
+}
+
+/** The question before an unsaved edit or draft is dropped. */
+function LeaveQuestion({ leaving, onKeep }: { leaving: { text: string; go: () => void }; onKeep: () => void }) {
+  return (
+    <div className="confirm memory-leave" role="alertdialog" aria-label="Discard your edit?">
+      <span className="confirm-msg">{leaving.text}</span>
+      <div className="confirm-actions">
+        <button className="btn" autoFocus onClick={onKeep}>
+          Keep editing
+        </button>
+        <button className="btn danger" onClick={leaving.go}>
+          Discard edit
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function NoticeLine({ notice }: { notice: Notice }) {
+  return (
+    <div className={`memory-notice ${notice.kind}`} role={notice.kind === "ok" ? "status" : "alert"}>
+      {notice.kind === "ok" ? <Check size={14} /> : <AlertTriangle size={14} />}
+      <span>{notice.text}</span>
+    </div>
+  );
+}
+
+/**
+ * New skill: its name, an optional category, and SKILL.md, seeded with the front matter Hermes writes. The front matter
+ * `name:` follows the name typed. What Hermes would refuse is listed before sending; what it refuses anyway (a name it
+ * has, a security scan) is shown as it words it, and the draft stays.
+ */
+function NewSkillEditor({
+  draft,
+  categories,
+  creating,
+  connected,
+  notice,
+  leaving,
+  onEdit,
+  onKeep,
+  onCancel,
+  onCreate,
+}: {
+  draft: Creating;
+  /** The categories the profile's skills are in, to pick from. */
+  categories: string[];
+  creating: boolean;
+  connected: boolean;
+  notice?: Notice;
+  leaving?: { text: string; go: () => void };
+  onEdit: (next: Partial<Creating>) => void;
+  onKeep: () => void;
+  onCancel: () => void;
+  onCreate: () => void;
+}) {
+  const problems = newSkillProblems(draft);
+  // Nothing to fix is shown before the owner has typed a name.
+  const shown = draft.name ? problems : [];
+  return (
+    <div className="set-block memory-editor skills-editor skills-new" role="group" aria-label="New skill">
+      <button className="back" disabled={creating} onClick={onCancel}>
+        <ArrowLeft size={15} /> All skills
+      </button>
+      <p className="muted small skills-note">
+        <Info size={12} /> Hermes writes SKILL.md in this profile&apos;s skills folder, or the folder its <span className="mono">skills.create_dir</span> names,
+        after its own name, front matter, size and security checks. Keep the description to one sentence: newer Hermes servers refuse one longer than 60
+        characters for a new skill.
+      </p>
+      <div className="skills-new-fields">
+        <label className="field">
+          <span className="field-label">Name</span>
+          <input
+            className="mono"
+            value={draft.name}
+            autoFocus
+            spellCheck={false}
+            autoComplete="off"
+            maxLength={64}
+            placeholder="release-notes"
+            disabled={creating}
+            onChange={(e) => onEdit({ name: e.target.value })}
+          />
+        </label>
+        <label className="field">
+          <span className="field-label">
+            Category <span className="muted small">(optional)</span>
+          </span>
+          <input
+            className="mono"
+            value={draft.category}
+            list="skills-new-categories"
+            spellCheck={false}
+            autoComplete="off"
+            maxLength={64}
+            placeholder="None"
+            disabled={creating}
+            onChange={(e) => onEdit({ category: e.target.value })}
+          />
+          <datalist id="skills-new-categories">
+            {categories.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
+        </label>
+      </div>
+      <label className="field">
+        <span className="field-label">SKILL.md</span>
+        <textarea
+          className="memory-text skills-text"
+          value={draft.content}
+          spellCheck={false}
+          rows={Math.min(24, Math.max(12, draft.content.split("\n").length + 1))}
+          disabled={creating}
+          onChange={(e) => onEdit({ content: e.target.value })}
+        />
+      </label>
+      {shown.length > 0 && (
+        <div className="skills-problems" role="alert" aria-label="Fix before creating">
+          <div className="field-label">Fix before creating</div>
+          <ul>
+            {shown.map((p) => (
+              <li key={p}>{p}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {leaving && <LeaveQuestion leaving={leaving} onKeep={onKeep} />}
+      <div className="memory-actions">
+        <span />
+        <div className="confirm-actions">
+          <button className="btn" disabled={creating} onClick={onCancel}>
+            Cancel
+          </button>
+          <button className="btn primary" disabled={!connected || creating || problems.length > 0} onClick={onCreate}>
+            {creating ? "Creating…" : "Create skill"}
+          </button>
+        </div>
+      </div>
+      {notice && <NoticeLine notice={notice} />}
+    </div>
   );
 }

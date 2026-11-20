@@ -2706,6 +2706,8 @@ label.memory-pick { cursor: pointer; }
 .set-block.skills-editor { margin-top: 0; }
 .skills-editor > .back { align-self: flex-start; }
 .skills-text { min-height: 240px; }
+.skills-new-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.skills-new .memory-notice > span { white-space: pre-wrap; overflow-wrap: anywhere; }
 .settings p.skills-note { margin: 0; line-height: 1.5; }
 .skills-note svg { vertical-align: -2px; margin-right: 4px; }
 .skills-problems { padding: 10px 12px; border: 1px solid var(--line-2); border-left: 3px solid var(--bad); border-radius: var(--radius); font-size: calc(12.5rem / 14); line-height: 1.5; }

@@ -11,7 +11,8 @@
 // - `PUT /api/skills/content?profile=` `{name, content}` → `_edit_skill`: Hermes's own front matter and size check
 //   (400 with its reason), then an atomic whole-file write that keeps the file's mode. No revision or If-Match.
 //
-// Copying a skill to another profile and archiving one (ADR 0118) use two routes the deployed `f0d94882` has:
+// Writing a new skill (ADR 0235), copying one to another profile, and archiving one (ADR 0118) use two routes the
+// deployed `f0d94882` has:
 // - `POST /api/skills?profile=` `{name, content, category}` → `_create_skill`: Hermes's own name, front matter, size and
 //   security checks, and a refusal (400) when the profile already has a skill by that name. It writes SKILL.md only.
 // - `DELETE /api/learning/node?profile=` `{id: <skill name>}` → `skill_usage.archive_skill`: the skill's folder moves to
@@ -45,6 +46,12 @@ export type SkillsView = { profile: string; skills: SkillRow[]; offFor: Record<s
 
 /** One skill's SKILL.md as Hermes has it: the name it was asked for, the file on the server, and its text. */
 export type SkillFile = { name: string; path: string; content: string };
+
+/**
+ * A skill the owner writes from scratch: its folder name, the category folder it goes in (none: the top of the skills
+ * folder), and its SKILL.md. Hermes's front matter `name:` has to be `name`, as chats and the list know a skill by it.
+ */
+export type NewSkill = { name: string; category?: string; content: string };
 
 /** The text a save of this skill replaced, kept while this sign-in lasts, so the edit can be undone from here. */
 export type SkillVersion = { content: string; replacedAt: number };
@@ -162,22 +169,24 @@ const murkyYaml = (yaml: string) =>
  * its last, as PyYAML's `safe_load` reads it. `murky`: the front matter has a form `murkyYaml` names, so no key can be
  * read for certain.
  */
-function field(yaml: string, key: string): { value?: string; murky?: boolean } | undefined {
+function field(yaml: string, key: string): { value?: string; murky?: boolean; blank?: boolean } | undefined {
   if (murkyYaml(yaml)) return { murky: true };
   const re = new RegExp(`^(["']?)${key}\\1[ \\t]*:(.*)$`);
   const lines = yaml.split("\n");
-  let found: { value?: string } | undefined;
+  let found: { value?: string; blank?: boolean } | undefined;
   lines.forEach((line, i) => {
     const m = re.exec(line);
     if (!m) return;
     let v: string | undefined = m[2].replace(/[ \t]+#.*$/, "").trim();
     // An indented line after it continues the value over several lines.
     const continued = /^[ \t]+\S/.test(lines[i + 1] ?? "");
+    // Nothing after the colon is YAML's null, which Hermes would take as the text "None".
+    const blank = !v && !continued;
     // Block scalars, anchors, aliases, tags and flow values aren't read here, nor a double-quoted value with an escape.
     if (!v || continued || /^[|>&*!{[]/.test(v)) v = undefined;
     else if (v.startsWith('"')) v = /^"([^"\\]*)"$/.exec(v)?.[1];
     else if (v.startsWith("'")) v = /^'((?:[^']|'')*)'$/.exec(v)?.[1]?.replace(/''/g, "'");
-    found = { value: v };
+    found = { value: v, blank };
   });
   return found;
 }
@@ -204,7 +213,7 @@ export function declaredName(file: SkillFile): string {
  * last word, and its refusal is shown as it words it. `name`: the front matter name the file had when opened
  * (`declaredName`), which an edit here can't change. It can differ from the list's name, such as `writing/example`.
  */
-export function skillProblems(content: string, name: string): string[] {
+export function skillProblems(content: string, name: string, fresh = false): string[] {
   if (!pyStrip(content)) return ["SKILL.md can't be empty. It needs front matter with name and description, then the skill's instructions."];
   const out: string[] = [];
   const fm = splitFrontmatter(content);
@@ -213,16 +222,21 @@ export function skillProblems(content: string, name: string): string[] {
   else {
     const n = field(fm.yaml, "name");
     const d = field(fm.yaml, "description");
+    const check = fresh ? "matches the skill's name" : "isn't changed";
     if (n?.murky)
       out.push(
-        "The front matter uses a YAML form Highwing doesn't read (a tagged, anchored, merged, complex or escaped key, or a flow mapping), so it can't check the name isn't changed. Write each field as a plain key: value line.",
+        `The front matter uses a YAML form Highwing doesn't read (a tagged, anchored, merged, complex or escaped key, or a flow mapping), so it can't check the name ${check}. Write each field as a plain key: value line.`,
       );
     else if (!n) out.push(`The front matter needs a name: field. This skill's is name: ${name}`);
-    else if (n.value === undefined)
-      out.push(`Write the name as one plain line, name: ${name}, so Highwing can check it isn't changed.`);
+    else if (n.value === undefined) out.push(`Write the name as one plain line, name: ${name}, so Highwing can check it ${check}.`);
     else if (n.value !== name)
-      out.push(`The name is "${n.value}" here but "${name}" on the server. Renaming a skill isn't supported here, as its chats and settings know it by name; change it back to name: ${name}`);
+      out.push(
+        fresh
+          ? `The front matter says name: ${n.value}, but the skill is named "${name}". Chats run a skill by the name its front matter gives, so make them the same.`
+          : `The name is "${n.value}" here but "${name}" on the server. Renaming a skill isn't supported here, as its chats and settings know it by name; change it back to name: ${name}`,
+      );
     if (!d) out.push("The front matter needs a description: field, which the agent reads to decide when to use the skill.");
+    else if (fresh && d.blank) out.push("Write the description after description: as one sentence saying when to use the skill. The agent reads it to decide.");
     else if (!d.murky && d.value !== undefined && chars(d.value) > MAX_DESCRIPTION_CHARS)
       out.push(`The description is ${chars(d.value).toLocaleString("en-US")} characters; Hermes takes at most ${MAX_DESCRIPTION_CHARS.toLocaleString("en-US")}. Move detail into the body.`);
     if (!pyStrip(fm.body)) out.push("There's nothing after the front matter. Hermes needs the skill's instructions there.");
@@ -233,6 +247,43 @@ export function skillProblems(content: string, name: string): string[] {
   if (lines.some((l) => l === MINE_MARK || l === THEIRS_MARK) && lines.includes(SPLIT_MARK))
     out.push(`Merge markers are still in the text (${MINE_MARK}). Settle each one, keeping the lines you want, then save.`);
   return out;
+}
+
+/** The words Hermes's rule for a new skill's folder name or category comes to (`VALID_NAME_RE`, at most 64 characters). */
+const NAME_RULE = "at most 64 lowercase letters, digits, dots, dashes and underscores, starting with a letter or digit";
+
+/**
+ * The SKILL.md a new skill starts from: the front matter fields Hermes writes for its own skills (`agent/learn_prompt.py`)
+ * and the first sections of its body, for the owner to fill in.
+ */
+export const newSkillText = (name: string) => `---\nname: ${name}\ndescription: \nversion: 0.1.0\n---\n\n## When to Use\n\n- \n\n## Procedure\n\n1. \n`;
+
+/**
+ * `content` with its front matter `name:` changed from `from` to `to`, so the name field and the file stay one name while
+ * the owner types it. Text whose front matter names something else is left as the owner wrote it.
+ */
+export function renamedInFrontmatter(content: string, from: string, to: string): string {
+  const fm = splitFrontmatter(content);
+  if (!fm) return content;
+  const lines = fm.yaml.split("\n");
+  const at = lines.findIndex((l) => /^name[ \t]*:/.test(l));
+  if (at < 0 || lines[at].replace(/^name[ \t]*:/, "").trim() !== from) return content;
+  lines[at] = `name: ${to}`;
+  const start = content.indexOf(fm.yaml);
+  return content.slice(0, start) + lines.join("\n") + content.slice(start + fm.yaml.length);
+}
+
+/**
+ * Why Hermes would refuse `skill` as a new skill, or this screen won't send it, each as something to fix: Hermes's rules
+ * for the folder name and category (`_validate_name`, `_validate_category`), then the same front matter and size checks
+ * as an edit, with the front matter `name:` the skill's own name and a description written in.
+ */
+export function newSkillProblems(skill: NewSkill): string[] {
+  const out: string[] = [];
+  if (!skill.name) out.push("Give the skill a name. Chats run it as /name.");
+  else if (!creatableName(skill.name)) out.push(`Hermes takes a skill name of ${NAME_RULE}.`);
+  if (skill.category && !creatableName(skill.category)) out.push(`Hermes takes a category of ${NAME_RULE}: one folder name. Leave it empty for none.`);
+  return [...out, ...skillProblems(skill.content, skill.name, true)];
 }
 
 /**
@@ -255,7 +306,7 @@ export function referencedPaths(content: string): string[] {
 const DENIED = /permission denied|errno 13\b|errno 1\b|operation not permitted|read-only file system|errno 30\b/i;
 
 /** Sorts an error from a skills call. `doing`: what was asked, for the message. */
-export function skillsError(e: unknown, doing: "list" | "read" | "save" | "toggle" | "copy" | "archive", name?: string): SkillsError {
+export function skillsError(e: unknown, doing: "list" | "read" | "save" | "toggle" | "copy" | "create" | "archive", name?: string): SkillsError {
   if (e instanceof SkillsError) return e;
   const message = errorText(e);
   const what = {
@@ -264,6 +315,7 @@ export function skillsError(e: unknown, doing: "list" | "read" | "save" | "toggl
     save: `save ${name ?? "the skill"}`,
     toggle: `change ${name ?? "the skill"}`,
     copy: `copy ${name ?? "the skill"}`,
+    create: `create ${name ?? "the skill"}`,
     archive: `archive ${name ?? "the skill"}`,
   }[doing];
   if (/^Not connected to Hermes|^The chat connection is closed/.test(message)) return new SkillsError("disconnected", "Not connected to Hermes.", undefined, true);
@@ -279,6 +331,7 @@ export function skillsError(e: unknown, doing: "list" | "read" | "save" | "toggl
     save: "PUT /api/skills/content",
     toggle: "PUT /api/skills/toggle",
     copy: "POST /api/skills",
+    create: "POST /api/skills",
     archive: "DELETE /api/learning/node",
   }[doing];
   // A route the server doesn't have: `bf0203a` answers `404 No such API endpoint: <path>`, plain FastAPI `404 Not Found`,
@@ -288,7 +341,7 @@ export function skillsError(e: unknown, doing: "list" | "read" | "save" | "toggl
   if (a.status === 404) return new SkillsError("not-found", `Hermes has no skill named ${name ?? "that"} in this profile now. It may have been removed or renamed.${said}`, a.status);
   if (a.status === 403 || a.status === 401 || DENIED.test(a.detail)) return new SkillsError("permission", `Hermes isn't allowed to ${what}.${said}`, a.status);
   if (a.status === 400 || a.status === 422)
-    return new SkillsError("refused", `Hermes didn't ${{ save: "save it", copy: "copy it", archive: "archive it" }[doing as string] ?? "do it"}:${said || " it gave no reason."}`, a.status);
+    return new SkillsError("refused", `Hermes didn't ${{ save: "save it", copy: "copy it", create: "create it", archive: "archive it" }[doing as string] ?? "do it"}:${said || " it gave no reason."}`, a.status);
   return new SkillsError("error", `Couldn't ${what} (Hermes answered ${a.status}).${said}`, a.status);
 }
 
@@ -545,11 +598,26 @@ export class SkillsApi {
         undefined,
         true,
       );
-    const category = row.category || undefined;
-    const sent = asReadBack(source.content);
+    return this.post(to, { name, content: source.content, category: row.category || undefined }, "copy");
+  }
+
+  /**
+   * Creates `skill` in `profile` as a new Local skill, then reads it back. Rejects with a SkillsError when Hermes didn't
+   * create it (its reason, such as a name the profile has or a security scan), or when it can't be told whether it did.
+   */
+  async create(profile: string, skill: NewSkill): Promise<SkillFile> {
+    const problems = newSkillProblems(skill);
+    if (problems.length) throw new SkillsError("refused", problems.join(" "), undefined, true);
+    return this.post(profile, skill, "create");
+  }
+
+  /** `POST /api/skills` for a copy or a new skill, its answer settled by reading the skill back from `profile`. */
+  private async post(profile: string, { name, content, category }: NewSkill, doing: "copy" | "create"): Promise<SkillFile> {
+    const sent = asReadBack(content);
+    const verb = doing === "copy" ? `copied to ${profile}` : `created in ${profile}`;
     const there = async () => {
       try {
-        return await this.read(to, name, [name]);
+        return await this.read(profile, name, [name]);
       } catch (e) {
         if (e instanceof SkillsError && e.kind === "not-found") return undefined;
         throw e;
@@ -557,32 +625,32 @@ export class SkillsApi {
     };
     try {
       const res = await deadline(
-        this.rest("POST", `api/skills?${new URLSearchParams({ profile: to })}`, { name, content: source.content, ...(category && { category }) }),
+        this.rest("POST", `api/skills?${new URLSearchParams({ profile })}`, { name, content, ...(category && { category }) }),
         this.timeouts.writeMs,
-        "the copy",
+        doing === "copy" ? "the copy" : "creating the skill",
       );
       if (!isObj(res) || res.success !== true) throw new SkillsError("error", "Hermes didn't say it created the skill.");
     } catch (e) {
-      const err = skillsError(e, "copy", name);
+      const err = skillsError(e, doing, name);
       if (certainlyUnwritten(err)) throw err;
       let now: SkillFile | undefined;
       try {
         now = await there();
       } catch (again) {
-        throw new SkillsError("error", `Couldn't tell whether ${name} was copied to ${to}: ${err.message} Reading it back also failed: ${skillsError(again, "read", name).message}`, err.status);
+        throw new SkillsError("error", `Couldn't tell whether ${name} was ${verb}: ${err.message} Reading it back also failed: ${skillsError(again, "read", name).message}`, err.status);
       }
       if (now && asReadBack(now.content) === sent) return now;
       if (!now) throw err;
-      throw new SkillsError("error", `${to} has a skill named ${name} now, but its SKILL.md isn't the one sent: ${err.message}`, err.status);
+      throw new SkillsError("error", `${profile} has a skill named ${name} now, but its SKILL.md isn't the one sent: ${err.message}`, err.status);
     }
     let after: SkillFile | undefined;
     try {
       after = await there();
     } catch (e) {
-      throw new SkillsError("error", `Hermes said it created ${name} in ${to}, but reading it back failed: ${skillsError(e, "read", name).message}`);
+      throw new SkillsError("error", `Hermes said it created ${name} in ${profile}, but reading it back failed: ${skillsError(e, "read", name).message}`);
     }
-    if (!after) throw new SkillsError("error", `Hermes said it created ${name} in ${to}, but ${to} doesn't list it when read back.`);
-    if (asReadBack(after.content) !== sent) throw new SkillsError("error", `Hermes created ${name} in ${to}, but its SKILL.md reads back differently from what was sent.`);
+    if (!after) throw new SkillsError("error", `Hermes said it created ${name} in ${profile}, but ${profile} doesn't list it when read back.`);
+    if (asReadBack(after.content) !== sent) throw new SkillsError("error", `Hermes created ${name} in ${profile}, but its SKILL.md reads back differently from what was sent.`);
     return after;
   }
 

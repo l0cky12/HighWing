@@ -354,6 +354,112 @@ describe("Settings → Skills editor", () => {
   });
 });
 
+describe("Settings → Skills New skill (ADR 0235)", () => {
+  const TRIAGE = skill("triage", "Sort a new ticket by area and urgency.", "## Procedure\n\n1. Read the ticket.\n");
+  const draft = () => screen.getByRole("group", { name: "New skill" });
+  const nameBox = () => within(draft()).getByRole<HTMLInputElement>("textbox", { name: "Name" });
+  const categoryBox = () => within(draft()).getByRole<HTMLInputElement>("combobox", { name: /Category/ });
+  const posts = (s: FakeHermes) => s.restRequests.filter((r) => r.method === "POST" && r.path === "/api/skills");
+
+  async function startNew(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(button("New skill"));
+    await waitFor(() => expect(document.activeElement).toBe(nameBox()));
+  }
+
+  it("writes a skill whose front matter follows the name typed, creates it, and lists it switched on", async () => {
+    const { s, hermes, user } = await shown();
+    await startNew(user);
+    expect(editor().value).toMatch(/^---\nname: \ndescription: \nversion: 0\.1\.0\n---\n/);
+    await user.type(nameBox(), "triage");
+    expect(editor().value).toMatch(/^---\nname: triage\n/);
+    // Hermes would take the seed's empty description as the text "None", so it has to be written first.
+    expect(within(screen.getByRole("alert", { name: "Fix before creating" })).getByText(/Write the description/)).toBeTruthy();
+    expect((button("Create skill") as HTMLButtonElement).disabled).toBe(true);
+    await user.type(categoryBox(), "support");
+    await setText(user, TRIAGE);
+    expect(screen.queryByRole("alert", { name: "Fix before creating" })).toBeNull();
+    await user.click(button("Create skill"));
+    const note = await screen.findByText(/^Created triage at/);
+    expect(note.textContent).toBe(`Created triage at ${HOME}/skills/support/triage/SKILL.md, and read back from Hermes. New chats list it, and the composer runs it as /triage.`);
+    expect(posts(s).map((r) => [r.query.get("profile"), r.body])).toEqual([["default", { name: "triage", content: TRIAGE, category: "support" }]]);
+    expect(within(rowOf("triage")).getByRole("switch", { name: "triage" }).getAttribute("aria-checked")).toBe("true");
+    expect(within(rowOf("triage")).getByText("Local")).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(button("New skill")));
+    expect((await hermes.skillCommands())?.offered.map((c) => c.key)).toContain("triage");
+  });
+
+  it("keeps the draft with Hermes's reason when it refuses a name it has, or its security scan blocks the text", async () => {
+    const { s, user } = await shown();
+    await startNew(user);
+    await user.type(nameBox(), "github");
+    await setText(user, skill("github", "My own GitHub steps.", "Use gh.\n"));
+    await user.click(button("Create skill"));
+    const refusal = await within(draft()).findByRole("alert");
+    expect(refusal.textContent).toBe(`Hermes didn't create it: Hermes said: A skill named 'github' already exists at ${HOME}/skills/github. Your draft is still here.`);
+    expect(nameBox().value).toBe("github");
+    expect(editor().value).toBe(skill("github", "My own GitHub steps.", "Use gh.\n"));
+
+    // Renaming the draft renames its front matter too.
+    await user.clear(nameBox());
+    await user.type(nameBox(), "gh-steps");
+    expect(editor().value).toBe(skill("gh-steps", "My own GitHub steps.", "Use gh.\n"));
+    s.skills.createRefusal = { status: 400, detail: "Security scan blocked this skill (dangerous findings):\n- curl piped to sh" };
+    await user.click(button("Create skill"));
+    expect((await within(draft()).findByText(/Security scan blocked this skill/)).textContent).toContain("- curl piped to sh. Your draft is still here.");
+    expect(editor().value).toBe(skill("gh-steps", "My own GitHub steps.", "Use gh.\n"));
+    expect(s.skills.folders.default.map((f) => f.dir)).not.toContain(`${HOME}/skills/gh-steps`);
+
+    s.skills.createRefusal = undefined;
+    await user.click(button("Create skill"));
+    expect(await screen.findByText(/^Created gh-steps at/)).toBeTruthy();
+  });
+
+  it("says when the profile's skills.disabled list already keeps the new name off, and leaves the switch to the owner", async () => {
+    const s = server();
+    s.skills.disabled.default = new Set(["triage"]);
+    const { user } = await shown({ s });
+    await startNew(user);
+    await user.type(nameBox(), "triage");
+    await setText(user, TRIAGE);
+    await user.click(button("Create skill"));
+    expect((await screen.findByText(/^Created triage at/)).textContent).toMatch(/It's off: the profile's skills\.disabled list already names triage\. Turn it on with its switch\.$/);
+    expect(within(rowOf("triage")).getByRole("switch", { name: "triage" }).getAttribute("aria-checked")).toBe("false");
+    expect(s.restRequests.some((r) => r.path === "/api/skills/toggle")).toBe(false);
+  });
+
+  it("asks before dropping a draft, and goes straight back when nothing was written", async () => {
+    const { s, user } = await shown();
+    await startNew(user);
+    await user.click(within(draft()).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(document.activeElement).toBe(button("New skill")));
+    await startNew(user);
+    await user.type(nameBox(), "triage");
+    await user.click(within(draft()).getByRole("button", { name: /All skills/ }));
+    await user.click(within(screen.getByRole("alertdialog", { name: "Discard your edit?" })).getByRole("button", { name: "Keep editing" }));
+    expect(nameBox().value).toBe("triage");
+    await user.click(within(draft()).getByRole("button", { name: "Cancel" }));
+    await user.click(within(screen.getByRole("alertdialog", { name: "Discard your edit?" })).getByRole("button", { name: "Discard edit" }));
+    await waitFor(() => expect(document.activeElement).toBe(button("New skill")));
+    expect(posts(s)).toEqual([]);
+  });
+
+  it("can't create while disconnected, and keeps the draft", async () => {
+    const s = server();
+    const hermes = await connect(s.openPipe, "default");
+    running.push(hermes);
+    const user = userEvent.setup();
+    const view = render(<Shell hermes={hermes} profile="default" status="connected" />);
+    await user.click(screen.getByRole("tab", { name: /Skills/ }));
+    await screen.findByRole("list", { name: "Skills" });
+    await startNew(user);
+    await user.type(nameBox(), "triage");
+    await setText(user, TRIAGE);
+    view.rerender(<Shell hermes={hermes} profile="default" status="offline" />);
+    expect((button("Create skill") as HTMLButtonElement).disabled).toBe(true);
+    expect(editor().value).toBe(TRIAGE);
+  });
+});
+
 describe("An unsaved skill edit in the app", () => {
   it("asks before leaving Settings, and stays on Keep editing", async () => {
     const s = server();
@@ -405,11 +511,11 @@ describe("Settings → Skills as cards of rows (#174, ADR 0059)", () => {
     expect(within(control).getByRole("switch", { name: "github" })).toBeTruthy();
     // The description is the row's one-line hint.
     expect(rowOf("github").querySelector(".set-hint")!.textContent).toContain("Work with GitHub.");
-    // When changes take effect is the header's summary box: one line, and its four rows behind it.
+    // When changes take effect is the header's summary box: one line, and its five rows behind it.
     expect(screen.queryByRole("heading", { name: "When changes take effect" })).toBeNull();
     const effect = head.querySelector("section.applies-box")!;
     expect(effect.querySelector("summary")!.textContent).toMatch(/Changes reach new chats at once\. Turning a skill off also stops chats already going from loading it\./);
-    expect(effect.querySelectorAll(":scope > details > .set-card > .set-row")).toHaveLength(4);
+    expect(effect.querySelectorAll(":scope > details > .set-card > .set-row")).toHaveLength(5);
   });
 
   it("opens the editor in a block of the card, under the skill's own row", async () => {

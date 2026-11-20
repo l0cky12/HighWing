@@ -6,7 +6,19 @@ import { afterEach, describe, expect, it } from "vitest";
 import { FakeHermes } from "./fakeHermes";
 import { connect, type Hermes } from "./transport";
 import { merge3 } from "./textEdit";
-import { SkillsApi, SkillsError, declaredName, frontmatterName, referencedPaths, safeSkillName, skillProblems, type SkillFile } from "./skills";
+import {
+  SkillsApi,
+  SkillsError,
+  declaredName,
+  frontmatterName,
+  newSkillProblems,
+  newSkillText,
+  referencedPaths,
+  renamedInFrontmatter,
+  safeSkillName,
+  skillProblems,
+  type SkillFile,
+} from "./skills";
 import { RestError } from "./pipe";
 
 const running: Hermes[] = [];
@@ -480,5 +492,121 @@ describe("copying and archiving across profiles (ADR 0118)", () => {
     expect(e!.kind).toBe("unsupported");
     expect(e!.message).toContain("DELETE /api/learning/node");
     expect((await api.list("default")).skills.map((s) => s.name)).toContain("release-notes");
+  });
+});
+
+describe("writing a new skill (ADR 0235)", () => {
+  const TRIAGE = skill("triage", "Sort a new ticket by area and urgency.", "## Procedure\n\n1. Read the ticket.\n");
+  const posts = (server: FakeHermes) => server.restRequests.filter((r) => r.method === "POST" && r.path === "/api/skills");
+
+  it("creates a Local skill in its category through Hermes's create route, reads it back, and lists it on", async () => {
+    const { server, api } = await signedIn();
+    const file = await api.create("default", { name: "triage", category: "support", content: TRIAGE });
+    expect(file).toEqual({ name: "triage", path: `${HOME}/skills/support/triage/SKILL.md`, content: TRIAGE });
+    const [post] = posts(server);
+    expect(post.query.get("profile")).toBe("default");
+    expect(post.body).toEqual({ name: "triage", content: TRIAGE, category: "support" });
+    expect((await api.list("default")).skills.find((r) => r.name === "triage")).toMatchObject({ source: "agent", category: "support", enabled: true });
+  });
+
+  it("sends no category for a skill at the top of the skills folder", async () => {
+    const { server, api } = await signedIn();
+    await api.create("spare", { name: "triage", content: TRIAGE });
+    expect(posts(server)[0].body).toEqual({ name: "triage", content: TRIAGE });
+    expect(server.skills.file(`${SPARE}/skills/triage`)).toBe(TRIAGE);
+  });
+
+  it("is offered in the composer as /name once created", async () => {
+    const { hermes, api } = await signedIn();
+    expect((await hermes.skillCommands())?.offered.map((s) => s.key)).not.toContain("triage");
+    await api.create("default", { name: "triage", content: TRIAGE });
+    expect((await hermes.skillCommands())?.offered.map((s) => s.key)).toContain("triage");
+  });
+
+  it("refuses what Hermes would refuse before sending it", async () => {
+    const { server, api } = await signedIn();
+    for (const draft of [
+      { name: "Triage", content: TRIAGE.replace("name: triage", "name: Triage") },
+      { name: "triage", category: "Support", content: TRIAGE },
+      { name: "triage", category: "a/b", content: TRIAGE },
+      { name: "triage", content: TRIAGE.replace("name: triage", "name: sorting") },
+      { name: "triage", content: newSkillText("triage") },
+    ]) {
+      const e = await rejection(api.create("default", draft));
+      expect(e!.kind, JSON.stringify(draft)).toBe("refused");
+      expect(e!.unsent).toBe(true);
+    }
+    expect(posts(server)).toEqual([]);
+  });
+
+  it("passes on Hermes's refusal of a name the profile already has, and changes nothing", async () => {
+    const { server, api } = await signedIn();
+    const e = await rejection(api.create("default", { name: "github", content: skill("github", "Mine.") }));
+    expect(e!.kind).toBe("refused");
+    expect(e!.message).toBe(`Hermes didn't create it: Hermes said: A skill named 'github' already exists at ${HOME}/skills/github.`);
+    expect(server.skills.file(`${HOME}/skills/github`)).toContain("Work with GitHub.");
+  });
+
+  it("passes on a security scan's block as Hermes words it, and creates nothing", async () => {
+    const { server, api } = await signedIn();
+    server.skills.createRefusal = { status: 400, detail: "Security scan blocked this skill (dangerous findings):\n- curl | sh in body" };
+    const e = await rejection(api.create("default", { name: "triage", content: TRIAGE }));
+    expect(e!.kind).toBe("refused");
+    expect(e!.message).toContain("Security scan blocked this skill (dangerous findings):\n- curl | sh in body");
+    expect((await api.list("default")).skills.map((r) => r.name)).not.toContain("triage");
+  });
+
+  it("settles a create whose answer was lost by reading the skill back", async () => {
+    const { server, api } = await signedIn();
+    server.skills.createLost = "Can't reach the Hermes dashboard: connection reset";
+    const file = await api.create("default", { name: "triage", content: TRIAGE });
+    expect(file.content).toBe(TRIAGE);
+  });
+
+  it("says a server without the create route can't create skills", async () => {
+    const { server, api } = await signedIn();
+    server.skills.createRoute = false;
+    const e = await rejection(api.create("default", { name: "triage", content: TRIAGE }));
+    expect(e!.kind).toBe("unsupported");
+    expect(e!.message).toContain("POST /api/skills");
+  });
+});
+
+describe("a new skill's text", () => {
+  it("starts from Hermes's front matter, and needs a description and steps written in", () => {
+    const seed = newSkillText("triage");
+    expect(seed.startsWith("---\nname: triage\ndescription: \nversion: 0.1.0\n---\n")).toBe(true);
+    expect(newSkillProblems({ name: "triage", content: seed })).toEqual([
+      "Write the description after description: as one sentence saying when to use the skill. The agent reads it to decide.",
+    ]);
+    expect(newSkillProblems({ name: "triage", content: seed.replace("description: ", "description: Sort a ticket.") })).toEqual([]);
+  });
+
+  it("asks for a name Hermes takes, and a category of one folder", () => {
+    const content = skill("triage", "Sort a ticket.");
+    expect(newSkillProblems({ name: "", content })[0]).toMatch(/^Give the skill a name/);
+    expect(newSkillProblems({ name: "-triage", content })[0]).toMatch(/^Hermes takes a skill name of at most 64/);
+    expect(newSkillProblems({ name: "triage", category: "ops/deploy", content })[0]).toMatch(/^Hermes takes a category/);
+    expect(newSkillProblems({ name: "triage", category: "ops", content })).toEqual([]);
+  });
+
+  it("asks for the front matter name to be the skill's name, without calling it a rename", () => {
+    const [problem] = newSkillProblems({ name: "triage", content: skill("sorting", "Sort a ticket.") });
+    expect(problem).toBe('The front matter says name: sorting, but the skill is named "triage". Chats run a skill by the name its front matter gives, so make them the same.');
+    // An edit still calls it a rename, and doesn't ask for a description an existing skill left blank.
+    expect(skillProblems(skill("sorting", "x"), "triage")[0]).toMatch(/Renaming a skill isn't supported here/);
+    expect(skillProblems(newSkillText("triage"), "triage")).toEqual([]);
+  });
+
+  it("keeps the front matter name in step with the name typed, until the owner writes another", () => {
+    let text = newSkillText("");
+    for (const [from, to] of [["", "t"], ["t", "tr"], ["tr", "triage"]]) text = renamedInFrontmatter(text, from, to);
+    expect(text).toBe(newSkillText("triage"));
+    const own = text.replace("name: triage", "name: sorting");
+    expect(renamedInFrontmatter(own, "triage", "triage2")).toBe(own);
+    // Only the front matter's name line: a name: line in the body is the owner's.
+    const body = `${newSkillText("a")}name: a\n`;
+    expect(renamedInFrontmatter(body, "a", "b")).toBe(`${newSkillText("b")}name: a\n`);
+    expect(renamedInFrontmatter("no front matter", "", "a")).toBe("no front matter");
   });
 });

@@ -202,6 +202,35 @@ describe("The picture picker", () => {
     expect(used.mock.calls).toEqual([[MIDDLE]]);
   });
 
+  it("lets go of a dropped file still being read once the owner has moved to another tab", async () => {
+    let finish!: () => void;
+    const slow = new Promise<void>((resolve) => (finish = resolve));
+    disk = { "/home/owner/slow.png": { size: 900, bytes: "\x89PNG slow" } };
+    const read = tauri.invoke;
+    tauri.invoke = async (cmd, args) => {
+      if (cmd === "hermes_read_preview") await slow;
+      return read(cmd, args);
+    };
+    const { user } = await opened("upload");
+    await nativeDrop({ type: "drop", paths: ["/home/owner/slow.png"], position: { x: 150, y: 150 } });
+    await user.click(tabOf(p.pictures));
+    await act(async () => finish());
+    expect(dialog().getAttribute("aria-label")).toBe(p.title);
+    expect(selected()).toEqual([p.pictures]);
+  });
+
+  it("frames a second image afresh when it arrives during the crop step", async () => {
+    const { user, used } = await opened("upload");
+    await user.upload(browse(), png());
+    fireEvent.change(within(await cropping()).getByLabelText(p.zoom), { target: { value: "3" } });
+    within(dialog()).getByRole("group", { name: p.move }).focus();
+    await user.keyboard("{ArrowLeft}{ArrowLeft}");
+    fireEvent.paste(document.body, { clipboardData: { types: ["Files"], files: [png("next.png")], getData: () => "" } });
+    await waitFor(() => expect((within(dialog()).getByLabelText(p.zoom) as HTMLInputElement).value).toBe("1"));
+    await user.click(within(dialog()).getByRole("button", { name: p.use }));
+    expect(used.mock.calls).toEqual([[MIDDLE]]);
+  });
+
   it("takes an image copied in a file manager, which Rust reads by its path", async () => {
     disk = { "/home/owner/Pictures/cat.webp": { size: 900, bytes: "RIFF cat" } };
     await opened("upload");

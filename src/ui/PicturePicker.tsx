@@ -85,20 +85,26 @@ export function PicturePicker({ anchor, picked, tab, onUse, onClose }: { anchor:
   const [note, setNote] = useState<string>();
   const [dragging, setDragging] = useState(false);
   const held = useRef<LoadedPicture | undefined>(undefined);
-  const open = useRef(true);
+  // Counts every file taken and every step shown, so only the newest file reaches the crop step: an earlier one that
+  // is slower to read, or one still reading when the owner moved on, is dropped.
+  const latest = useRef(0);
 
   const show = (next: Step) => {
+    latest.current++;
     held.current?.release();
     held.current = next.kind === "crop" ? next.picture : undefined;
     setStep(next);
   };
   const refuse = (why: PictureFileProblem) => setNote(pictureProblemText(f, why));
-  const take = async (file: File | PictureFileProblem | undefined) => {
-    if (!file) return;
+  type Taken = File | PictureFileProblem | undefined;
+  const take = async (source: Taken | Promise<Taken>) => {
+    const mine = ++latest.current;
+    const file = await source;
+    if (!file || mine !== latest.current) return;
     if (typeof file === "string") return refuse(file);
     const why = pictureFileProblem(file);
     const picture = why ? undefined : await loadPicture(file);
-    if (!open.current) return picture?.release();
+    if (mine !== latest.current) return picture?.release();
     if (!picture) return refuse(why ?? "unread");
     setNote(undefined);
     show({ kind: "crop", picture });
@@ -108,13 +114,13 @@ export function PicturePicker({ anchor, picked, tab, onUse, onClose }: { anchor:
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
-  useEffect(() => {
-    open.current = true;
-    return () => {
-      open.current = false;
+  useEffect(
+    () => () => {
+      latest.current++;
       held.current?.release();
-    };
-  }, []);
+    },
+    [],
+  );
 
   // Not `useDismiss`: that closes when the window loses focus, which Browse files' own dialog makes it do.
   useEffect(() => {
@@ -137,7 +143,7 @@ export function PicturePicker({ anchor, picked, tab, onUse, onClose }: { anchor:
       const here = over(payload.position.x / scale, payload.position.y / scale);
       if (payload.type !== "drop") return setDragging(here);
       setDragging(false);
-      if (here && payload.paths[0]) void readPicturePath(payload.paths[0]).then((file) => takeRef.current(file));
+      if (here && payload.paths[0]) void takeRef.current(readPicturePath(payload.paths[0]));
     });
     return () => {
       release();
@@ -187,14 +193,13 @@ export function PicturePicker({ anchor, picked, tab, onUse, onClose }: { anchor:
       e.preventDefault();
       e.stopPropagation();
       if (got.kind === "files") void takeRef.current(got.files[0]);
-      else if (got.kind === "clipboard images") void clipboardImages().then((files) => takeRef.current(files[0]));
+      else if (got.kind === "clipboard images") void takeRef.current(clipboardImages().then((files) => files[0]));
       else
-        void invoke<string[]>("attach_copied_files")
-          .then((paths) => (paths[0] ? readPicturePath(paths[0]) : undefined))
-          .then(
-            (file) => takeRef.current(file),
-            () => takeRef.current("unread"),
-          );
+        void takeRef.current(
+          invoke<string[]>("attach_copied_files")
+            .then((paths) => (paths[0] ? readPicturePath(paths[0]) : undefined))
+            .catch(() => "unread" as const),
+        );
     };
     document.addEventListener("paste", paste, true);
     return () => document.removeEventListener("paste", paste, true);
@@ -241,6 +246,7 @@ export function PicturePicker({ anchor, picked, tab, onUse, onClose }: { anchor:
     <div ref={box} className="status-popover picture-picker" role="dialog" aria-label={step.kind === "crop" ? p.fit : p.title} tabIndex={-1} onKeyDown={keys}>
       {step.kind === "crop" ? (
         <CropStep
+          key={step.picture.url}
           picture={step.picture}
           note={alert}
           onCancel={() => show({ kind: "upload" })}

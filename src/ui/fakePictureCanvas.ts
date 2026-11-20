@@ -3,6 +3,7 @@
 import type { LoadedPicture } from "./pictureCanvas";
 
 export const FAKE_PICTURE = { width: 400, height: 300 };
+let loaded = 0;
 
 /** The data URL `drawCrop` gives for the square at `x`, `y` of side `size`. */
 export const fakeCrop = (source: { x: number; y: number; size: number }) =>
@@ -10,7 +11,7 @@ export const fakeCrop = (source: { x: number; y: number; size: number }) =>
 
 export async function loadPicture(file: Blob): Promise<LoadedPicture | undefined> {
   if ((await file.slice(0, 12).text()) === "not an image") return undefined;
-  return { ...FAKE_PICTURE, url: "blob:fake-picture", image: {} as CanvasImageSource, release: () => {} };
+  return { ...FAKE_PICTURE, url: `blob:fake-picture-${++loaded}`, image: {} as CanvasImageSource, release: () => {} };
 }
 
 export const drawCrop = (_picture: LoadedPicture, source: { x: number; y: number; size: number }) => fakeCrop(source);

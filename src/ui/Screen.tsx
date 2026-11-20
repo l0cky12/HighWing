@@ -83,12 +83,21 @@ export function ScreenTab({
   screen,
   system,
   clipboard = tauriClipboard,
+  who,
+  activity,
 }: {
   api: ScreenApi;
   /** Who holds the screen, as the connection knows it (the snapshot's `screen`). */
   screen?: ScreenState;
   shown: boolean;
   connected: boolean;
+  /** The bot, or the profile, whose screen this is, for saying whose screen Hermes couldn't start. */
+  who: string;
+  /**
+   * Changes each time a computer_use call ends in the chat on screen. Hermes starts a stopped screen inside the call,
+   * so a screen read as stopped is asked about again.
+   */
+  activity?: string;
   /** Installs the terminal and the text editor through the connection's ssh; undefined without an SSH target. */
   system?: InstallSystem;
   loadRfb?: () => Promise<RfbConstructor>;
@@ -98,6 +107,8 @@ export function ScreenTab({
   const [status, setStatus] = useState<DisplayStatus>();
   const [unavailable, setUnavailable] = useState(false);
   const [error, setError] = useState<string>();
+  /** Hermes's own reason the last Start failed, until a start goes through or the screen is found running. */
+  const [startFailed, setStartFailed] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [conn, setConn] = useState<Conn>({ kind: "idle" });
   const [evicted, setEvicted] = useState(false);
@@ -128,6 +139,7 @@ export function ScreenTab({
       const s = await api.status();
       setStatus(s);
       setError(undefined);
+      if (s.running) setStartFailed(undefined);
       return s;
     } catch (e) {
       if (isUnavailable(e)) setUnavailable(true);
@@ -193,7 +205,10 @@ export function ScreenTab({
       });
       rfb.current = client;
     } catch (e) {
-      if (gen === generation.current) setConn({ kind: "lost", why: errorText(e) });
+      if (gen !== generation.current) return;
+      setConn({ kind: "lost", why: errorText(e) });
+      // A screen that stopped since the last read shows as stopped, with Start, rather than as a stream to reconnect.
+      void refresh();
     }
   }, [api, bridge, detach, loadRfb, refresh]);
 
@@ -207,6 +222,17 @@ export function ScreenTab({
     }
     else setupRun.current++;
   }, [connected, refresh]);
+
+  // The tab is made once and kept, and the agent's computer use starts the screen on its own. So it asks again when it
+  // is shown again (Watch live, follow mode, the tab), and after each computer_use call while it last read a stopped one.
+  const seen = useRef({ shown, activity });
+  const running = !!status?.running;
+  useEffect(() => {
+    const before = seen.current;
+    seen.current = { shown, activity };
+    if (!shown || !connected) return;
+    if (!before.shown || (activity !== before.activity && !running)) void refresh();
+  }, [shown, activity, connected, running, refresh]);
 
   /** For a setup run that starts now. */
   const setupDeps = (): SetupDeps => {
@@ -278,9 +304,20 @@ export function ScreenTab({
       setBusy(false);
     }
   };
+  /** Starts the screen, unless Hermes says it runs now: a running screen is watched, never started again. */
   const start = () =>
     act(async () => {
-      setStatus(await api.start());
+      const now = await api.status();
+      setStatus(now);
+      if (!now.running) {
+        try {
+          setStatus(await api.start());
+        } catch (e) {
+          setStartFailed(errorText(e));
+          return;
+        }
+      }
+      setStartFailed(undefined);
       setConn({ kind: "idle" });
     });
   const checkAgain = () =>
@@ -353,6 +390,17 @@ export function ScreenTab({
       </Note>
     );
   else if (phase?.kind === "blocked") body = <Note title="The screen can't start now">{phase.why}</Note>;
+  else if (phase?.kind === "stopped" && startFailed)
+    body = (
+      <Note title={`Hermes couldn't start ${who}'s screen`} bad>
+        <div>{startFailed}</div>
+        <div className="preview-state-actions">
+          <button className="btn" disabled={busy || !connected} onClick={() => void start()} title="Asks Hermes again, and starts the screen only if it still isn't running">
+            {busy ? <Spinner /> : <RefreshCw size={14} />} Try again
+          </button>
+        </div>
+      </Note>
+    );
   else if (phase?.kind === "stopped")
     body = (
       <div className="screen-start">

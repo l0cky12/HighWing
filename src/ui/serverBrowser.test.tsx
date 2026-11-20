@@ -51,7 +51,7 @@ describe("The Screen tab", () => {
     s.display = botDesktop({ browser: null });
     const hermes = await hermesFor(s);
     const user = userEvent.setup();
-    render(<ScreenTab api={hermes.screen} shown connected />);
+    render(<ScreenTab api={hermes.screen} who="default" shown connected />);
 
     const note = (await screen.findByText(NO_BROWSER)).closest(".preview-state") as HTMLElement;
     expect(note.textContent).toMatch(/the agent can't open a browser on its screen/);
@@ -76,7 +76,7 @@ describe("The Screen tab", () => {
     const s = new FakeHermes();
     s.display = botDesktop({ browser: null });
     const hermes = await hermesFor(s);
-    render(<ScreenTab api={hermes.screen} shown connected />);
+    render(<ScreenTab api={hermes.screen} who="default" shown connected />);
     const note = (await screen.findByText(NO_BROWSER)).closest(".preview-state") as HTMLElement;
     fireEvent.click(within(note).getByRole("button", { name: "Copy the command" }));
     expect((await within(note).findByRole("alert")).textContent).toBe("Couldn't copy it. Select the command and copy it yourself.");
@@ -91,7 +91,7 @@ describe("The Screen tab", () => {
     const s = new FakeHermes();
     s.display = botDesktop(status);
     const hermes = await hermesFor(s);
-    render(<ScreenTab api={hermes.screen} shown connected />);
+    render(<ScreenTab api={hermes.screen} who="default" shown connected />);
     await screen.findByRole("button", { name: /Start the screen/ });
     expect(screen.queryByText(NO_BROWSER)).toBeNull();
   });
@@ -100,7 +100,7 @@ describe("The Screen tab", () => {
     const s = new FakeHermes();
     s.display = botDesktop({ supported: false, browser: null });
     const hermes = await hermesFor(s);
-    render(<ScreenTab api={hermes.screen} shown connected />);
+    render(<ScreenTab api={hermes.screen} who="default" shown connected />);
     await screen.findByText("This server can't run a screen");
     expect(screen.queryByText(NO_BROWSER)).toBeNull();
   });

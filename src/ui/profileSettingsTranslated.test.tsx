@@ -28,7 +28,6 @@ it("drops an older list answer that arrives after a newer one", async () => {
   const answers: ((rows: { name: string; description: string }[]) => void)[] = [];
   const api = {
     list: () => new Promise((resolve) => answers.push(resolve)),
-    create: async () => ({ name: "notes", answered: true, modelSet: true }),
   } as unknown as ProfilesWiring["api"];
   const wiring = {
     api,
@@ -43,7 +42,8 @@ it("drops an older list answer that arrives after a newer one", async () => {
     local: { pending: () => undefined, note: () => {}, clear: () => {}, renamed: async () => {}, deleted: async () => {} },
     showTab: () => {},
     copyText: async () => {},
-    notify: () => {},
+    makeBot: async () => ({ profile: "notes", visited: false }),
+    botSetupOff: () => undefined,
   } satisfies ProfilesWiring;
   const user = userEvent.setup();
   render(
@@ -52,12 +52,13 @@ it("drops an older list answer that arrives after a newer one", async () => {
     </LocaleContext>,
   );
   await waitFor(() => expect(answers).toHaveLength(1));
-  // The first read is still out when a profile is made, and the read after it answers first.
+  // The first read is still out when a profile is made, and the read after it answers first. The name dialog's own
+  // read is the second.
   await user.click(screen.getByRole("button", { name: p.profiles.newProfile }));
-  await user.type(screen.getByLabelText(p.profiles.form.name), "notes");
-  await user.click(screen.getByRole("button", { name: p.profiles.form.create }));
-  await waitFor(() => expect(answers).toHaveLength(2));
-  await act(async () => answers[1]([{ name: "default", description: "" }, { name: "notes", description: "" }]));
+  await user.type(screen.getByLabelText(p.bots.make.name), "notes");
+  await user.click(screen.getByRole("button", { name: p.bots.make.create }));
+  await waitFor(() => expect(answers).toHaveLength(3));
+  await act(async () => answers[2]([{ name: "default", description: "" }, { name: "notes", description: "" }]));
   await act(async () => answers[0]([{ name: "default", description: "" }]));
   expect(within(screen.getByRole("listbox")).getAllByRole("option").map((o) => o.getAttribute("data-profile"))).toEqual(["default", "notes"]);
 });
@@ -86,7 +87,8 @@ it("shows only catalogue words in the list, its menu, New, Edit and Delete", asy
     local: { pending: () => ({ from: "old", to: "work" }), note: () => {}, clear: () => {}, renamed: async () => {}, deleted: async () => {} },
     showTab: () => {},
     copyText: async () => {},
-    notify: () => {},
+    makeBot: async () => ({ profile: "work-2", visited: false }),
+    botSetupOff: () => "tooOld",
   };
   const user = userEvent.setup();
   render(
@@ -109,11 +111,13 @@ it("shows only catalogue words in the list, its menu, New, Edit and Delete", asy
 
   await user.click(screen.getByRole("button", { name: p.profiles.newProfile }));
   const create = screen.getByRole("dialog");
-  await user.type(within(create).getByLabelText(p.profiles.form.name), "work");
+  await user.type(within(create).getByLabelText(p.bots.make.name), "work");
+  await waitFor(() => expect(within(create).getByText("work-2")).toBeTruthy());
   expect(untranslated(document.body)).toEqual([]);
+  await user.click(within(create).getByRole("button", { name: new RegExp(p.bots.make.skip) }));
+  expect(untranslated(document.body)).toEqual([]);
+  await user.keyboard("{Escape}");
   await user.click(within(create).getByRole("button", { name: p.common.cancel }));
-  expect(untranslated(document.body)).toEqual([]);
-  await user.click(screen.getByRole("button", { name: p.profiles.form.discard }));
 
   await user.click(within(list).getByRole("button", { name: p.profiles.editOf("work") }));
   const edit = screen.getByRole("dialog");

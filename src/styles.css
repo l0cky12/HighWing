@@ -4314,3 +4314,11 @@ div.export-preview.export-page { height: auto; padding: 10px 12px; background: v
 button.budget-chat:hover { text-decoration: underline; }
 .budget-chat-amount { grid-column: 2; grid-row: 1; font-variant-numeric: tabular-nums; color: var(--text-2); text-align: right; }
 .budget-notes ul { padding-left: 18px; display: grid; gap: 4px; }
+
+/* New bot's name dialog (NewBot.tsx, ADR 0231): the name box with Skip beside it, and Skip's menu of two choices. */
+.new-bot-name { display: flex; gap: 8px; }
+.new-bot-name input { flex: 1; min-width: 0; }
+.menu-item.new-bot-skip { width: 288px; display: grid; grid-template-columns: 16px 1fr; gap: 2px 9px; align-items: start; padding: 7px 8px; }
+.new-bot-skip .menu-icon { margin-top: 1px; }
+.new-bot-skip .menu-label { white-space: normal; color: var(--text); }
+.new-bot-skip-what { grid-column: 2; font-size: calc(12rem / 14); line-height: 1.45; color: var(--muted); }

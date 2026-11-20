@@ -133,7 +133,7 @@ Hermes's way of treating each profile as a bot with a lasting identity, each wit
 _Avoid_: agents mode, roster (Hermes's desktop calls its list that, but here it is Bots mode), Bots view (the screen Bots mode replaced, ADR 0203)
 
 **Bot**:
-A profile as the chat list's Bots mode shows it: its name, picture and description, from Hermes. The profile switcher, a Bot Chat's header and the message box name a profile by its bot (ADR 0195). Its row shows its Bot Chat's last message, and whether it is Replying or Needs you; its name's tip is its description. Clicking the row opens its Bot Chat, a Bot visit when the bot is in another profile; the pen beside it starts an ordinary chat in that profile. New bot (+) above the bots makes one: a new profile, through the New profile form (ADR 0164, ADR 0203). That form can rewrite a rough persona with AI and choose the built-in skills and toolsets the bot starts with, each read back after the create (ADR 0197). The row's menu (a right-click, Shift+F10 or the Menu key) has Chat, Settings (Edit bot), Edit persona… (Edit bot with focus in Persona, ADR 0206), Clone, Pin, Hide and Delete (ADR 0189, ADR 0194, ADR 0203).
+A profile as the chat list's Bots mode shows it: its name, picture and description, from Hermes. The profile switcher, a Bot Chat's header and the message box name a profile by its bot (ADR 0195). Its row shows its Bot Chat's last message, and whether it is Replying or Needs you; its name's tip is its description. Clicking the row opens its Bot Chat, a Bot visit when the bot is in another profile; the pen beside it starts an ordinary chat in that profile. New bot (+) above the bots makes one from a name alone, and opens its Bot Chat as a Bot visit, where Bot setup sets it up (ADR 0231). The row's menu (a right-click, Shift+F10 or the Menu key) has Chat, Settings (Edit bot), Edit persona… (Edit bot with focus in Persona, ADR 0206), Clone, Pin, Hide and Delete (ADR 0189, ADR 0194, ADR 0203).
 _Avoid_: agent (Hermes's own word for what runs the chat), assistant, persona (that is the profile's SOUL.md)
 
 **Bot look**:
@@ -157,7 +157,7 @@ What a field in Edit bot or Edit profile says when Hermes's value moved since th
 _Avoid_: conflict (in the interface), out of date, stale
 
 **Bot Chat**:
-A bot's one chat that always continues: the profile's chat titled exactly "Bot Chat". Hermes finds it by that title each time it opens, never by a remembered id or by which chat is newest. It is created only when the bot has none, with no message sent. It stays out of the chat list's sections and search: its bot's row in Bots mode and Alt+B are the ways to it (ADR 0195). Alt+B opens the shown profile's, and from it goes back to the chat before. `/new` in it compacts it instead of starting a new chat (ADR 0066).
+A bot's one chat that always continues: the profile's chat titled exactly "Bot Chat". Hermes finds it by that title each time it opens, never by a remembered id or by which chat is newest. It is created only when the bot has none: with no message sent when the owner opens it, or with Bot setup's brief stored hidden in it when New bot's Create starts Bot setup (ADR 0231). It stays out of the chat list's sections and search: its bot's row in Bots mode and Alt+B are the ways to it (ADR 0195). Alt+B opens the shown profile's, and from it goes back to the chat before. `/new` in it compacts it instead of starting a new chat (ADR 0066).
 _Avoid_: forever chat, canonical chat, DM, main chat
 
 **Chats mode** / **Bots mode** (of the chat list):

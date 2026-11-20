@@ -1,56 +1,38 @@
 # New bot
 
-Bots mode's New bot (the New profile form) makes a profile from a name, a description, a model and a persona. Write with AI beside Persona rewrites the rough persona the owner typed in the field itself, with Undo to put the owner's text back. Edit bot has the same Persona field, read from the bot's SOUL.md, and Edit persona… in a bot's right-click menu opens it there. Skills and Tools keep Hermes's defaults unless the owner picks Choose and ticks what the new bot starts with; after the create each choice is read back from the new profile, and the dialog stays open on anything not applied, with Delete or Keep it as is. MCP servers show a note that they can't be added while creating.
+Bots mode's New bot, and Settings → Profiles' New profile, open the name dialog (ADR 0231): one name box, Create, Skip and Cancel. A faint line under the box names the id Hermes's own clients will show. Create makes the profile with the profile in use's model (only when that profile has its own), writes the typed name as the bot's name in Bot Mode, and opens the new bot's Bot Chat as a Bot visit, where Bot setup's brief is seeded hidden and a hidden begin turn starts the bot's first reply. Below Hermes 0.23.2, or without Bot Mode, Create makes the bot from the name and model only and sends no brief. Skip has Start blank (the bot, its Bot Chat empty, no brief) and Copy a bot… (Clone profile with the name filled in). Edit bot and Edit profile keep their Persona field and its Write with AI; Edit persona… in a bot's right-click menu opens Edit bot there.
 
 ## Sub-features
 
-- `new-bot-empty-persona`: Write with AI is off on an empty persona, with the reason under the field.
-- `new-bot-rewrite`: a rough persona, Write with AI, the field holding the rewrite, Undo, and Write with AI again.
-- `new-bot-rewrite-error`: a rewrite that fails says why and leaves the persona as typed.
-- `new-bot-skills`: Choose, filter, untick built-in skills; the create body is plain, and only the unticked skills are off in the new profile.
-- `new-bot-tools`: Choose, untick and tick toolsets; the new profile has them set, and the profile in use doesn't change.
-- `new-bot-mcp-note`: the MCP servers note.
-- `new-bot-partial`: a toolset with a caution leaves the dialog open on what isn't applied, with Apply anyway, Delete and Keep it as is.
-- `new-bot-progress`: while the choices are applied, the line under the form counts them; only the count, "n of m done…", is the live region.
-- `new-bot-outcome-scrolled`: a form scrolled down to Tools shows its outcome, and the leave question, from the top.
-- `new-bot-settling`: Delete from the outcome, when Hermes is still settling the profile, says so with its command.
-- `new-bot-set-model`: a create with Choose whose model Hermes didn't set offers Set model… (Settings → Profiles' New profile only).
-- `new-bot-narrow`: the form at 760 px wide scrolls, with no horizontal scroll.
+- `new-bot-dialog`: the dialog empty, then with a name and the id line, then with Skip's menu open.
+- `new-bot-id`: a taken or reserved id gets `-2` in the id line and in the create.
+- `new-bot-create`: Create sends one `POST /api/profiles` with the name's id alone (or with the model in use), writes the name in Bot Mode, and opens the Bot Chat with the brief seeded hidden and one hidden begin turn.
+- `new-bot-old-hermes`: below 0.23.2 the dialog says why there's no interview, and Create sends no brief.
+- `new-bot-blank`: Start blank opens the Bot Chat empty, with no brief.
+- `new-bot-copy`: Copy a bot… opens Clone profile with the id filled in.
+- `edit-persona-rewrite`: Edit bot's Persona, Write with AI, the field holding the rewrite, Undo, and a failed rewrite that leaves the persona as typed.
 
 ## How to get to it (user POV)
 
 - The chat list's **Bots** tab → **New bot** (+) above the bots.
-- Settings → Profiles → **New profile** shows the same form.
+- Settings → Profiles → **New profile** shows the same dialog.
 - A right-click on a bot's row in the **Bots** tab → **Settings** opens Edit bot, and → **Edit persona…** opens it with focus in Persona.
 
 ## Driving it with wd.mjs
 
-Preconditions:
+Preconditions: `hv up`, signed in per [sign-in.md](sign-in.md). A stand-in that reports a version older than 0.23.2 takes the no-interview path; the real-Hermes sandbox (`RH_VENV=~/.cache/hermes-v0232/venv real-hermes up`) reports 0.23.2.
 
-- `hv up` with `HV_BUNDLED=1` (built-in skills on `default`) and `HV_PERSONA_REPLY=<file>` (the rewrite's answer), then signed in per [sign-in.md](sign-in.md).
-- `F1='fieldset.bot-setup:nth-of-type(1)'` is Skills and `F2='fieldset.bot-setup:nth-of-type(2)'` is Tools.
-
-- **Open it.** `$S/wd.mjs click '[role=tab][data-mode=bots]'`, `$S/wd.mjs click button "New bot"`, `$S/wd.mjs wait '[role=dialog]' "Create bot"`. The Persona hint reads "Type a rough persona first…" and Write with AI looks off.
-- **Rewrite.** `$S/wd.mjs fill input "Name" -- bc-synth-1`, `$S/wd.mjs fill textarea "Persona (optional)" -- "<rough text>"`, `$S/wd.mjs wait .set-hint "writes"` (the hint names the model that writes: a pin, the Writing model, or the bot's own model), `$S/wd.mjs click button "Write with AI"`, `$S/wd.mjs wait button "Undo"`. `$S/wd.mjs value textarea "Persona (optional)"` prints the file's text.
-- **Undo.** `$S/wd.mjs click button "Undo"`, `$S/wd.mjs gone button "Undo"`. `$S/wd.mjs value textarea "Persona (optional)"` prints the rough text again. Write with AI once more before Create.
-- **Skills.** `$S/wd.mjs click "$F1 input[type=radio]" "Choose"`, `$S/wd.mjs wait "$F1 .bot-setup-item" "recipes"`, `$S/wd.mjs fill "$F1 input[type=search]" -- re`, `$S/wd.mjs click "$F1 .bot-setup-item input" "recipes"`. Clear the filter with a click on it, `press Control+a`, `press Backspace`. `$S/wd.mjs text "$F1 [aria-live]"` prints the count.
-- **Tools.** `$S/wd.mjs click "$F2 input[type=radio]" "Choose"`, `$S/wd.mjs wait "$F2 .bot-setup-item" "Terminal"`, then click the toolsets to change.
-- **Create.** `$S/wd.mjs click button "Create bot"`, `$S/wd.mjs gone .profile-dialog`, `$S/wd.mjs wait .toast "with the skills and tools you chose"`. `$S/hv state` shows the create body under `profileCreates`, the SOUL.md under `souls`, `skillsOff` and `toolsetsOn` for the new profile, and `oneshots` with `profile: default`, `task: title_generation`.
-- **Persistence.** `$S/wd.mjs rightclick '.sb-bots .bots-row[data-profile=<name>] .bots-open'`, `$S/wd.mjs click '[role=menuitem]' "Edit persona…"`: Edit bot opens with the SOUL.md in `textarea "Persona"`, focused. **Settings** in the same menu opens Edit bot without moving focus to Persona; Settings → Skills with `select "Profile whose skills are shown" -- <name>` shows the skills off.
-- **Error.** Empty the `HV_PERSONA_REPLY` file, then Write with AI: `wait '[role=alert]' "couldn't rewrite"`, and the persona keeps what was typed.
-- **Double Create.** Click Create bot twice quickly: `hv state` `profileCreates` holds one body.
-- **Partial.** Tools → Choose → tick **Computer Use**, Create: `wait .bot-setup-outcome`. **Apply anyway** sets it and lists "Hermes started installing…" under Hermes also; **Done** repeats it in the notice. **Delete <name>** removes it (`hv state` `profiles`), **Keep it as is** closes with a notice naming what isn't applied.
-- **Progress.** With `HV_DELAY_MS=1500`, Tools → Choose → untick two toolsets, Create: `wait '[role=dialog] [role=status]' " of "` reads "n of m done…", and the line around it "Created. Applying … then reading them back: n of m done…".
-- **Outcome after scrolling.** `wheel .profile-dialog -- 500` before Create, as reaching Tools needs: the outcome (and Escape's leave question) shows from its top, not a blank box.
-- **Settling.** With `HV_SETTLING='hermes profile delete <name>'`, reach the outcome as in Partial, then **Delete <name>**: the toast reads "Hermes hasn't finished cleaning up after it; run this on the server:" with the command and Copy.
-- **Set model.** With `HV_MODEL_ERROR=<text>`, open Settings → Profiles → **New profile**, pick a provider and model name, Tools → Choose → untick one, Create: the outcome shows "Profile created, but Hermes didn't set the model: <text>" and **Set model…**, which opens Edit. Bots mode's New bot has no Set model.
-- **Narrow.** `$S/hv x search --name Highwing`, then `$S/hv x windowsize <id> 760 820`; `wd.mjs wheel .profile-dialog -- 600` scrolls the form.
+- **Open it.** `$S/wd.mjs click '[role=tab][data-mode=bots]'`, `$S/wd.mjs click button "New bot"`, `$S/wd.mjs wait '[role=dialog]' "New bot"`. The name box has focus.
+- **Name.** `$S/wd.mjs fill input "Name" -- "Travel Buddy"`, `$S/wd.mjs wait .set-hint "travel-buddy"`.
+- **Skip.** `$S/wd.mjs click button "Skip"`, `$S/wd.mjs wait '[role=menu]' "Start blank"`. Escape closes the menu only; a second Escape closes the dialog.
+- **Create.** `$S/wd.mjs click button "Create"`, `$S/wd.mjs gone .profile-dialog`. The app is on the new bot's profile with its Bot Chat open. `$S/hv state` shows the create body under `profileCreates`; the real sandbox's stored rows (`GET /api/sessions/<id>/messages`) hold the brief and the begin turn, both `display_kind: hidden`.
+- **Start blank.** Open it, name it, **Skip** → **Start blank**: the Bot Chat opens empty and no `prompt.submit` is sent.
+- **Copy a bot.** Open it, name it, **Skip** → **Copy a bot…**: Clone profile opens with the id in "New profile's name".
+- **Edit persona.** `$S/wd.mjs rightclick '.sb-bots .bots-row[data-profile=<name>] .bots-open'`, `$S/wd.mjs click '[role=menuitem]' "Edit persona…"`: Edit bot opens with the SOUL.md in `textarea "Persona"`, focused. Type a rough persona, `$S/wd.mjs wait .set-hint "writes"`, `$S/wd.mjs click button "Write with AI"`, `$S/wd.mjs wait button "Undo"`. With an empty `HV_PERSONA_REPLY` file, Write with AI shows `[role=alert]` "couldn't rewrite" and keeps the text.
 
 ## Gotchas
 
-- `fill … -- ""` fails with "Missing text parameter"; clear a field with Control+a and Backspace.
-- A toolset row below the fold answers `element not interactable`: `wheel .profile-dialog -- 500` (and `wheel "$F2 .bot-setup-list" -- 300` for the last rows) first.
-- While the form runs or shows its outcome, it covers the window, and Escape does nothing. The toast with Copy command for a settling delete, and the note after a profile switch, are covered by `src/ui/bots.test.tsx` and `src/ui/botCreation.test.tsx`.
-- Both areas have a radio named Choose; scope it with `$F1` or `$F2`.
-- New's rewrite runs on the model that writes for the profile in use, and Edit's on the one for the edited bot (ADR 0209): its Text generation model when pinned on the server, else the Writing model from Settings → Model, else its own main model. Switching profile changes what the hint names. With a Writing model and no pin, `hv state` `oneshots` shows `task: highwing_writing`.
+- Throwaway bots made on a real Hermes are deleted through `DELETE /api/profiles/<id>` after the run.
+- The app reads Hermes's version a few seconds after connecting. A Create before then is treated as a Hermes that runs Bot setup.
+- Edit's rewrite runs on the model that writes for the edited bot (ADR 0209): its Text generation model when pinned on the server, else the Writing model from Settings → Model, else its own main model.
 - A deterministic stand-in answer proves the app's path, not a provider's rewrite.

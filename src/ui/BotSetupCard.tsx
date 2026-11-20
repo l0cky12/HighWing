@@ -101,7 +101,6 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
     setStart(undefined);
     setSecrets({});
     setMcpReload(undefined);
-    setBusy(false);
   }, []);
   useEffect(() => {
     shown.current = { chatId, reads: 0, started: false, readOnce: false, holds: false, afterSetUp: false, setupId: null };
@@ -224,9 +223,9 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
       const setupId = r.parse.card.setupId;
       api.applyBotSetup(r, plan, hearFor(setupId), secrets).then(
         (out) => {
+          setBusy(false);
           if (!ours(setupId)) return;
           setOutcome(out);
-          setBusy(false);
           dropSecretsOfAdded(out.states);
           shown.current.afterSetUp = true;
           const applied = items.filter((i) => out.states[i.key]?.kind === "applied");
@@ -235,9 +234,9 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
           if (out.readyAt === undefined) load();
         },
         (e: unknown) => {
+          setBusy(false);
           if (!ours(setupId)) return;
           setOutcome({ states: {}, readyFailed: { kind: "said", text: errorText(e) } });
-          setBusy(false);
         },
       );
     },

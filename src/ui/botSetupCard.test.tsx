@@ -491,7 +491,7 @@ describe("Set up again's card", { timeout: 30_000 }, () => {
     expect(within(group(t.about("Hermes"))).getByRole("checkbox", { name: t.description })).toHaveProperty("checked", true);
   });
 
-  it("leaves the new setup's card alone when Keep history starts one while Set it up still writes", async () => {
+  it("leaves the new setup's card alone when Keep history starts one while Set it up still writes, and ends no interview", async () => {
     const { server, hermes, user } = await inBotChat(interview(card({ ...BLOCK, toolsets: [{ name: "web", on: false }] })));
     await waitCard();
     let release!: () => void;
@@ -504,14 +504,15 @@ describe("Set up again's card", { timeout: 30_000 }, () => {
     const answer = (text: string) => reply(server, hermes, text);
     await answer(`Here's the change.\n\n${fenced(JSON.stringify(AGAIN))}`);
     await waitFor(() => expect(within(liveCard()!).getByText(t.againTitle("Hermes"))).toBeTruthy(), { timeout: 5000 });
-    const setUp = () => within(liveCard()!).getByRole("button", { name: t.setUp }) as HTMLButtonElement;
-    await waitFor(() => expect(setUp().disabled).toBe(false));
-    await user.click(within(group(t.about("Hermes"))).getByRole("checkbox", { name: t.description }));
+    const setUp = () => liveCard()!.querySelector<HTMLButtonElement>(".bot-setup-foot .btn.primary")!;
+    expect(setUp().disabled).toBe(true);
 
     const submits = server.requests.filter((r) => r.method === "prompt.submit").length;
     release();
-    await waitFor(() => expect(server.requests.filter((r) => r.method === "prompt.submit").length).toBe(submits + 1), { timeout: 5000 });
-    await answer("Thanks, I'm set up.");
+    await waitFor(() => expect(setUp().disabled).toBe(false), { timeout: 5000 });
+    await user.click(within(group(t.about("Hermes"))).getByRole("checkbox", { name: t.description }));
+    await act(async () => void (await hermes.idle()));
+    expect(server.requests.filter((r) => r.method === "prompt.submit")).toHaveLength(submits);
     expect(within(group(t.about("Hermes"))).getByRole("checkbox", { name: t.description })).toHaveProperty("checked", false);
     expect(within(liveCard()!).queryAllByText(t.applied)).toEqual([]);
   });

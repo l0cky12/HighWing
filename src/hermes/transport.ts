@@ -2863,8 +2863,10 @@ export class Hermes {
       // A ready turn already stored with this record has told the bot all this one would, unless this run applied
       // something that one couldn't: the bot must rebuild for it.
       const appliedNow = Object.values(run.states).some((s) => s.kind === "applied");
-      const stored = appliedNow ? undefined : parseSetup(await this.storedRows(chatId, profile));
-      if (stored?.kind === "card" && JSON.stringify(stored.accepted) === JSON.stringify(record)) return run;
+      const stored = parseSetup(await this.storedRows(chatId, profile));
+      // Set up again may have started another setup in this Bot Chat meanwhile, whose interview this turn would end.
+      if ((stored.kind === "card" ? stored.card.setupId : stored.setupId) !== read.parse.card.setupId) return run;
+      if (!appliedNow && stored.kind === "card" && JSON.stringify(stored.accepted) === JSON.stringify(record)) return run;
       const runtimeId = await this.resume(chatId);
       const was = this.snapshot.chats.find((c) => c.id === chatId)?.running;
       this.patchChat(chatId, (c) => ({ ...c, running: true, updatedAt: readyAt }));

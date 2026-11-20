@@ -153,6 +153,7 @@ import { BotSetupStarts, botSetupBegin, lostAnswer, runStart, withSetupLine, typ
 import { acceptedRecord, fencedBlocks, parseSetup, readAcceptedRecord, type AcceptedRecord, type ListedItem, type ParseResult, type Plan } from "./botSetupCard";
 import { BOT_SETUP_FENCE } from "./botSetupBrief";
 import { applyItem, readSetupNow, readyTurn, runSetup, setupItems, type BotSetupRestart, type CardState, type SetupApis, type SetupNow } from "./botSetupApply";
+import type { McpSecrets } from "./botSetupMcp";
 
 /**
  * The `source` this app stamps on chats it starts. Legacy `session.create` stores any string as-is, but the gateway
@@ -2672,6 +2673,7 @@ export class Hermes {
       persona: this.persona,
       profiles: this.manageProfiles,
       memory: this.memory,
+      mcp: this.mcp,
       bots: () => this.bots(),
       models: async () => (this.snapshot.models?.profile === profile ? this.snapshot.models : this.readModels(profile).catch(() => undefined)),
       editBot: (name, edits) => this.editBot(name, edits),
@@ -2716,17 +2718,20 @@ export class Hermes {
    * Set it up on a Bot Chat's card (ADR 0231): records what the owner accepted on this computer first, writes each
    * ticked item one at a time and reads it back, then sends the hidden ready turn that carries the record and ends the
    * interview. Once a call gets no answer, nothing more is sent: the items after it aren't tried, and the ready turn
-   * waits for the next Set it up. `hear` learns each item's state as it changes. `readyAt`: when the ready turn went.
+   * waits for the next Set it up. MCP servers added are reloaded before the ready turn when no reply runs on this
+   * Hermes, and otherwise wait for the owner's Reload MCP servers. `hear` learns each item's state as it changes.
+   * `secrets`: what Connect took for each MCP server, sent only now. `readyAt`: when the ready turn went.
    */
-  async applyBotSetup(read: BotSetupCardRead, plan: Plan, hear: (key: string, state: CardState | { kind: "working" }) => void): Promise<BotSetupRun> {
+  async applyBotSetup(read: BotSetupCardRead, plan: Plan, hear: (key: string, state: CardState | { kind: "working" }) => void, secrets: McpSecrets = {}): Promise<BotSetupRun> {
     const { chatId, profile, setup } = read;
     if (this.profile !== profile) return { states: {}, readyFailed: { kind: "notShown", profile } };
     const items = setupItems(plan, read.parse.accepted);
     const record = acceptedRecord(plan, read.accepted);
     this.cache.saveSetupRecord(profile, chatId, record);
     const apis = this.setupApis(profile);
-    const run = await runSetup(items, (item) => applyItem(apis, profile, setup, item), hear);
+    const run = await runSetup(items, (item) => applyItem(apis, profile, setup, item, [], secrets), hear);
     if (run.unanswered !== undefined) return run;
+    await this.reloadMcpIfIdle(chatId, profile, run.states, hear);
     if (this.profile !== profile) return { ...run, readyFailed: { kind: "notShown", profile } };
     const readyAt = Date.now();
     try {
@@ -2750,10 +2755,43 @@ export class Hermes {
     return { ...run, readyAt };
   }
 
-  /** `accepted`: the cautions the owner confirmed with Apply anyway. */
-  async retryBotSetupItem(read: BotSetupCardRead, item: ListedItem, accepted: Caution[] = []): Promise<CardState> {
+  /** `accepted`: the cautions the owner confirmed with Apply anyway. `secrets`: what Connect took. */
+  async retryBotSetupItem(read: BotSetupCardRead, item: ListedItem, accepted: Caution[] = [], secrets: McpSecrets = {}): Promise<CardState> {
     if (this.profile !== read.profile) return { kind: "failed", miss: { kind: "notShown", profile: read.profile } };
-    return (await applyItem(this.setupApis(read.profile), read.profile, read.setup, item, accepted)).state;
+    const states = { [item.key]: (await applyItem(this.setupApis(read.profile), read.profile, read.setup, item, accepted, secrets)).state };
+    await this.reloadMcpIfIdle(read.chatId, read.profile, states, () => {});
+    return states[item.key];
+  }
+
+  /**
+   * Hermes's `reload.mcp` on a Bot Chat (ADR 0231, "MCP servers need reload.mcp"), so a server Set it up added reaches
+   * the bot. The dashboard's handler shuts down every MCP server in its process and connects again those of each
+   * profile with a live session (`tui_gateway/methods_tools.py` at ae2a81cc). Rejects unless Hermes says it reloaded.
+   */
+  async reloadBotSetupMcp(chatId: string): Promise<void> {
+    const res = obj(await this.request("reload.mcp", { session_id: await this.resume(chatId), confirm: true })) ?? {};
+    if (res.status !== "reloaded") throw new Error(textOf(res.message) ?? `Hermes didn't reload its MCP servers (${String(res.status ?? "no status")}).`);
+  }
+
+  private async anyReplyRunningOrWaiting(): Promise<boolean> {
+    const res = obj(await this.request("session.active_list", {}));
+    return (Array.isArray(res?.sessions) ? res.sessions : []).some((r) => ["starting", "working", "waiting"].includes(String(obj(r)?.status)));
+  }
+
+  /** Only while no reply runs anywhere on this Hermes (#85 owner call 1). */
+  private async reloadMcpIfIdle(chatId: string, profile: string, states: Record<string, CardState>, hear: (key: string, state: CardState) => void) {
+    const waiting = Object.keys(states).filter((k) => states[k].kind === "reload");
+    if (!waiting.length || this.profile !== profile) return;
+    try {
+      if (await this.anyReplyRunningOrWaiting()) return;
+      await this.reloadBotSetupMcp(chatId);
+    } catch {
+      return;
+    }
+    for (const k of waiting) {
+      states[k] = { kind: "applied" };
+      hear(k, states[k]);
+    }
   }
 
   /**

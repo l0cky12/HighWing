@@ -2403,7 +2403,7 @@ export function Main({
     };
     const others = hermes.getSnapshot().bots?.roster ?? [];
     const brief = async (id: string) =>
-      botSetupBrief({ id, name, inventory: await newBotInventory({ models, skills: (p) => hermes.skills.rows(p), toolsets: (p) => hermes.toolsets.list(p) }, bot.profile, others) });
+      botSetupBrief({ id, name, inventory: await newBotInventory({ models, skills: (p) => hermes.skills.rows(p), toolsets: (p) => hermes.toolsets.list(p), mcp: hermes.mcp }, bot.profile, others) });
     const started = await hermes.startBotSetup(bot, brief);
     return started.kind === "refused" ? hermes.openBotChat(bot) : started.chatId;
   };

@@ -37,9 +37,9 @@ describe("Settings → Profiles' calls", () => {
       s.skills.add("work", { dir: "/home/lena/.hermes/profiles/work/skills/a", source: "agent" }, "---\nname: a\ndescription: A\n---\n");
     });
     expect(await api.list()).toEqual([
-      { name: "default", isDefault: true, displayName: "Main", description: "", skillCount: 0 },
-      { name: "work", model: "gpt-6.1", provider: "openai", description: "Writes code", descriptionAuto: true, skillCount: 1, gatewayRunning: true },
-      { name: "research", description: "", skillCount: 0, distribution: "papers" },
+      { name: "default", isDefault: true, displayName: "Main", description: "", skillCount: 0, path: "/home/lena/.hermes" },
+      { name: "work", model: "gpt-6.1", provider: "openai", description: "Writes code", descriptionAuto: true, skillCount: 1, gatewayRunning: true, path: "/home/lena/.hermes/profiles/work" },
+      { name: "research", description: "", skillCount: 0, distribution: "papers", path: "/home/lena/.hermes/profiles/research" },
     ]);
   });
 

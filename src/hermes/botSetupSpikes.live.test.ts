@@ -14,9 +14,12 @@
 //   HERMES_LIVE_PASSWORD=verify-pass HERMES_LIVE_MODEL_LOG=/tmp/bs-live/model-requests.jsonl npx vitest run src/hermes/botSetupSpikes.live.test.ts
 //
 // HERMES_LIVE_SKIP_SEED=1 makes the seeded Bot Chat open as the control does, unseeded: its check must then fail.
+// HERMES_LIVE_SKIP_RELOAD=1 leaves out Set it up's reload.mcp in the MCP copy test: its tool call must then fail.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { RestError, type RestMethod } from "./pipe";
+import { addMcp, mcpOffer, type McpSources } from "./botSetupMcp";
 import { removeAttempted, sandboxRefusal } from "./liveSandbox";
+import { McpApi } from "./mcp";
 import { ProfilesApi } from "./profiles";
 import { APP_SOURCE, RpcError } from "./transport";
 
@@ -29,6 +32,7 @@ const readText = async (path: string): Promise<string> => (await fs()).readFileS
 const BASE = process.env.HERMES_LIVE_DASHBOARD;
 const MODEL_LOG = process.env.HERMES_LIVE_MODEL_LOG ?? "";
 const SKIP_SEED = process.env.HERMES_LIVE_SKIP_SEED === "1";
+const SKIP_RELOAD = process.env.HERMES_LIVE_SKIP_RELOAD === "1";
 const RUN = Date.now().toString(36);
 
 type Event = { type: string; session_id?: string; payload?: Record<string, unknown> };
@@ -307,11 +311,45 @@ describe.skipIf(!BASE)("Bot setup's spikes against a throwaway Hermes", () => {
     const theirs = String((await ws.rpc("session.create", { profile: other, source: APP_SOURCE, messages: [{ role: "user", content: "x", display_kind: "hidden" }] })).session_id);
     expect(await call(theirs, other, "echo-leak")).toContain(unknown);
   }, 300_000);
+
+  it("a copied stdio server's tool runs in the Bot Chat after Set it up's reload, with the key typed at Connect (MCP copy)", async () => {
+    const TOOL = "mcp__keyed__probe_echo";
+    const mcp = new McpApi(hermes.rest, () => Promise.reject(new Error("Not used here.")), async () => []);
+    const source = await newProfile("mcp-src");
+    await hermes.rest("POST", `api/mcp/servers?profile=${source}`, { name: "keyed", command: "python3", args: ["-I", "-c", KEYED_SERVER], env: { PROBE_KEY: "source-secret-1234" } });
+    const folder = (await profiles.list()).find((p) => p.name === source)?.path;
+    expect(folder).toMatch(/\/profiles\//);
+    await hermes.rest("POST", `api/mcp/servers?profile=${source}`, { name: "inside", command: `${folder}/mcp-installs/inside/run` });
+    const listed = await mcp.list(source);
+    expect(JSON.stringify(await hermes.rest("GET", `api/mcp/servers?profile=${source}`))).not.toContain("source-secret-1234");
+    const sources: McpSources = { catalog: [], bots: { Source: { path: folder, servers: listed.servers } } };
+    expect(mcpOffer(sources, "inside", "Source")).toMatchObject({ kind: "refused", why: "path" });
+    const offer = mcpOffer(sources, "keyed", "Source");
+    if (offer?.kind !== "copy") throw new Error(`keyed isn't offered as a copy: ${JSON.stringify(offer)}`);
+    expect(offer.secrets).toEqual([{ key: "PROBE_KEY", required: true }]);
+
+    const bot = await newProfile("mcp-bot");
+    const sid = await botChat(bot, "[highwing:bot-setup v1]");
+    const call = async (text: string) => replyOf(await ws.turn(sid, bot, `calltool:${TOOL} {"text": "${text}"}`));
+    expect(await call("before-setup")).toContain(`'${TOOL}' is not a known tool name`);
+
+    expect(await addMcp(mcp, bot, "keyed", offer, {})).toEqual({ state: { kind: "connect" } });
+    expect(await addMcp(mcp, bot, "keyed", offer, { PROBE_KEY: "fresh-7731" })).toEqual({ state: { kind: "reload" } });
+    const live = (await ws.rpc("session.active_list", {})).sessions as { status: string }[];
+    expect(live.filter((s) => ["starting", "working", "waiting"].includes(s.status))).toEqual([]);
+    if (!SKIP_RELOAD) expect(await ws.rpc("reload.mcp", { session_id: sid, confirm: true })).toMatchObject({ status: "reloaded" });
+    const after = await call("echo-5");
+    console.log("after Set it up:", after);
+    expect(after).toBe('TOOL RESULT: {"result": "fresh-7731:echo-5"}');
+  }, 300_000);
 });
 
-/** A stdio MCP server with one tool, `probe_echo`, that answers its `text` (spikes/echo_mcp.py). */
-const ECHO_SERVER = `
-import json, sys
+/**
+ * A stdio MCP server with one tool, `probe_echo`, that answers its `text` (spikes/echo_mcp.py), after `before`, a Python
+ * expression.
+ */
+const echoServer = (before = '""') => `
+import json, os, sys
 TOOL = {"name": "probe_echo", "description": "Echo text back.", "inputSchema": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}}
 for line in sys.stdin:
     try:
@@ -326,7 +364,7 @@ for line in sys.stdin:
     elif meth == "tools/list":
         r = {"tools": [TOOL]}
     elif meth == "tools/call":
-        r = {"content": [{"type": "text", "text": m["params"]["arguments"].get("text", "")}]}
+        r = {"content": [{"type": "text", "text": ${before} + m["params"]["arguments"].get("text", "")}]}
     elif meth == "ping":
         r = {}
     else:
@@ -334,3 +372,6 @@ for line in sys.stdin:
         continue
     print(json.dumps({"jsonrpc": "2.0", "id": m["id"], "result": r}), flush=True)
 `;
+
+const ECHO_SERVER = echoServer();
+const KEYED_SERVER = echoServer('os.environ.get("PROBE_KEY", "") + ":"');

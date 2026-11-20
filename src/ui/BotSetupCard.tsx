@@ -2,17 +2,20 @@
 // block that doesn't parse, and the Setup started line. Which block is which comes from the Bot Chat's stored rows,
 // read on open and after each reply (`useBotSetup`); what the card offers and what a choice does, from botSetupCard.ts;
 // what Set it up writes, from botSetupApply.ts. The pane keeps the pending edits above the transcript, so a card
-// scrolled out of the rendered window keeps them.
+// scrolled out of the rendered window keeps them. What Connect takes for an MCP server is kept there too, in memory
+// only, until Set it up sends it; leaving the Bot Chat drops it (#85 owner call 4).
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Check, ChevronRight, CircleAlert, FileText, Hourglass, Pencil, RotateCcw, Sparkles, TriangleAlert } from "lucide-react";
+import { Check, ChevronRight, CircleAlert, FileText, Hourglass, Pencil, Plug, RotateCcw, Sparkles, TriangleAlert } from "lucide-react";
 import { BOT_SETUP_COLORS, BOT_SETUP_DESCRIPTION_MAX, BOT_SETUP_FENCE } from "../hermes/botSetupBrief";
 import { BOT_SETUP_COLOR_HEX, choose, fencedBlocks, planCard, tickable, type Choice, type ListedItem, type Plan, type PlanItem } from "../hermes/botSetupCard";
 import { rememberAsked, restartState, setupItems, type CardMiss, type CardState } from "../hermes/botSetupApply";
+import { connected, mcpOffer, type McpOffer, type McpSecrets } from "../hermes/botSetupMcp";
 import type { Note } from "../hermes/botSetup";
 import type { BotSetupStart } from "../hermes/botSetupStart";
 import type { Chat, Item } from "../hermes/model";
 import type { BotSetupCardRead, BotSetupRead, BotSetupRun, Hermes } from "../hermes/transport";
 import { ProfileError } from "../hermes/profiles";
+import type { Caution } from "../hermes/toolsets";
 import { errorText } from "../hermes/values";
 import { useLocale, type Locale } from "../i18n/locale";
 import { composing, Spinner } from "./bits";
@@ -20,7 +23,7 @@ import { failureText } from "./profileFailure";
 import { cautionText } from "./ToolsetSettings";
 import { TurnCard } from "./TurnCard";
 
-export type BotSetupApi = Pick<Hermes, "readBotSetup" | "applyBotSetup" | "retryBotSetupItem" | "botSetupRestart" | "resumeBotSetup">;
+export type BotSetupApi = Pick<Hermes, "readBotSetup" | "applyBotSetup" | "retryBotSetupItem" | "reloadBotSetupMcp" | "botSetupRestart" | "resumeBotSetup">;
 
 type ItemRun = CardState | { kind: "working" };
 
@@ -43,6 +46,12 @@ export type SetupHost = {
   blocked?: "offline" | "replying";
   setUp(): void;
   retry(item: ListedItem, accept: boolean): void;
+  /** What Connect took for each MCP server, by item key. Never shown again. */
+  secrets: McpSecrets;
+  /** Keeps `values` for an MCP server; one waiting on Connect after Set it up is added at once. */
+  connect(item: ListedItem, values: Record<string, string>): void;
+  reloadMcp(): void;
+  mcpReload?: "working" | { failed: string };
   reload(): void;
   send(text: string): void;
   restart?: Restart;
@@ -73,6 +82,8 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
   const [busy, setBusy] = useState(false);
   const [restart, setRestart] = useState<Restart>();
   const [start, setStart] = useState<BotSetupStart>();
+  const [secrets, setSecrets] = useState<McpSecrets>({});
+  const [mcpReload, setMcpReload] = useState<SetupHost["mcpReload"]>();
   const shown = useRef({ chatId, reads: 0, started: false, readOnce: false, holds: false, afterSetUp: false });
   // What the last Set it up ran on: a retry compares against what the card read then, not against a later reload.
   const ranOn = useRef<{ read: BotSetupCardRead; items: ReadonlyMap<string, ListedItem> }>(undefined);
@@ -87,6 +98,8 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
     setOutcome(undefined);
     setRestart(undefined);
     setStart(undefined);
+    setSecrets({});
+    setMcpReload(undefined);
   }, [chatId]);
 
   const here = (id: string) => shown.current.chatId === id;
@@ -150,6 +163,20 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
 
   if (!api) return undefined;
   const hear = (key: string, state: ItemRun) => here(chatId) && setRuns((p) => ({ ...p, [key]: state }));
+  const dropSecretsOfAdded = (states: Readonly<Record<string, ItemRun>>) =>
+    setSecrets((was) => Object.fromEntries(Object.entries(was).filter(([k]) => states[k]?.kind !== "reload" && states[k]?.kind !== "applied")));
+  const retry = (item: ListedItem, cautions: Caution[], using: McpSecrets) => {
+    const on = ranOn.current;
+    if (!on) return;
+    hear(item.key, { kind: "working" });
+    api.retryBotSetupItem(on.read, on.items.get(item.key) ?? item, cautions, using).then(
+      (state) => {
+        hear(item.key, state);
+        if (here(chatId)) dropSecretsOfAdded({ [item.key]: state });
+      },
+      (e: unknown) => hear(item.key, { kind: "failed", miss: { kind: "said", text: errorText(e) } }),
+    );
+  };
   return {
     bot,
     read,
@@ -176,13 +203,15 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
       setOutcome(undefined);
       setRestart(undefined);
       setRuns({});
+      setMcpReload(undefined);
       const items = setupItems(plan, r.parse.accepted);
       ranOn.current = { read: r, items: new Map(items.map((i) => [i.key, i])) };
-      api.applyBotSetup(r, plan, hear).then(
+      api.applyBotSetup(r, plan, hear, secrets).then(
         (out) => {
           if (!here(chatId)) return;
           setOutcome(out);
           setBusy(false);
+          dropSecretsOfAdded(out.states);
           shown.current.afterSetUp = true;
           const applied = items.filter((i) => out.states[i.key]?.kind === "applied");
           const toolsets = applied.flatMap((i) => (i.kind === "toolset" ? [{ name: i.name ?? i.key, on: i.after === "on" }] : []));
@@ -197,13 +226,25 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
       );
     },
     retry(item, accept) {
-      const on = ranOn.current;
-      if (!on) return;
       const was = runs[item.key];
-      hear(item.key, { kind: "working" });
-      api.retryBotSetupItem(on.read, on.items.get(item.key) ?? item, accept && was?.kind === "confirm" ? was.cautions : []).then(
-        (state) => hear(item.key, state),
-        (e: unknown) => hear(item.key, { kind: "failed", miss: { kind: "said", text: errorText(e) } }),
+      retry(item, accept && was?.kind === "confirm" ? was.cautions : [], secrets);
+    },
+    secrets,
+    connect(item, values) {
+      const next = { ...secrets, [item.key]: values };
+      setSecrets(next);
+      if (runs[item.key]?.kind === "connect") retry(item, [], next);
+    },
+    mcpReload,
+    reloadMcp() {
+      setMcpReload("working");
+      api.reloadBotSetupMcp(chatId).then(
+        () => {
+          if (!here(chatId)) return;
+          setMcpReload(undefined);
+          setRuns((p) => Object.fromEntries(Object.entries(p).map(([k, s]) => [k, s.kind === "reload" ? { kind: "applied" } : s])));
+        },
+        (e: unknown) => here(chatId) && setMcpReload({ failed: errorText(e) }),
       );
     },
     reload: load,
@@ -383,6 +424,7 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
   const l = loc.chat.botSetup;
   const id = useId();
   const [editing, setEditing] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [whole, setWhole] = useState(false);
   const editButton = useRef<HTMLButtonElement>(null);
   const refocus = useRef(false);
@@ -399,21 +441,30 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
   const run = host.runs[item.key];
   // The Remember row is applied once the bot's memory lists the name, which the card reads back as nothing to change.
   const done = item.status === "same" && (run?.kind === "applied" || run?.kind === "waiting");
+  const addedAwaitingReload = item.status === "same" && run?.kind === "reload";
   // An item changed elsewhere since Set it up shows its tick, not its run, so only a tick writes over the change.
   const shownRun: ItemRun | undefined = done
     ? { kind: "applied" }
-    : item.status === "same" || item.status === "elsewhere"
-      ? undefined
-      : (run ?? (rememberAsked(read.parse.accepted, item) ? { kind: "waiting" } : undefined));
+    : addedAwaitingReload
+      ? run
+      : item.status === "same" || item.status === "elsewhere"
+        ? undefined
+        : (run ?? (rememberAsked(read.parse.accepted, item) ? { kind: "waiting" } : undefined));
+  const offer = listed?.kind === "mcp" && read.setup.mcp && listed.name !== undefined ? mcpOffer(read.setup.mcp, listed.name, listed.from) : undefined;
   const label = labelOf(l, read, item);
   const value = listed && valueOf(l, listed);
   const edited = listed && listed.over.length > 0 && listed.after !== listed.proposed;
-  const badge = item.status === "notFound" ? l.notFound : item.from !== undefined ? l.from(item.from) : (item.kind === "skill" || item.kind === "toolset") && item.status === "change" ? l.suggested : undefined;
+  const refused = item.status === "notFound" ? item.why : undefined;
+  const badge = refused ? l.mcpCantAdd : item.status === "notFound" ? l.notFound : item.from !== undefined ? l.from(item.from) : (item.kind === "skill" || item.kind === "toolset") && item.status === "change" ? l.suggested : undefined;
   const editable = listed && !host.busy && !shownRun && (item.kind === "persona" || item.kind === "description" || item.kind === "color" || (item.kind === "model" && read.setup.now.models.length > 1));
   const ticked = tickable(item) && item.ticked;
   const sub =
     item.status === "notFound"
-      ? l.notFoundWhy
+      ? refused
+        ? refused === "path"
+          ? l.mcpRefused.path(item.from ?? "")
+          : l.mcpRefused[refused]
+        : l.notFoundWhy
       : item.status === "same" && !done
         ? item.kind === "model"
           ? l.inUse
@@ -473,7 +524,19 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
           </>
         )}
         {sub && <div className="bot-setup-sub">{sub}</div>}
-        {shownRun && <RunText host={host} item={item} run={shownRun} locale={loc} />}
+        {listed && offer && offer.kind !== "refused" && !shownRun && tickable(item) && <McpDetail host={host} item={listed} offer={offer} onConnect={() => setConnecting(true)} />}
+        {shownRun && <RunText host={host} item={item} run={shownRun} locale={loc} onConnect={() => setConnecting(true)} />}
+        {connecting && listed && offer && offer.kind !== "refused" && (
+          <ConnectEditor
+            name={listed.name ?? ""}
+            offer={offer}
+            onCancel={() => setConnecting(false)}
+            onDone={(values) => {
+              setConnecting(false);
+              host.connect(listed, values);
+            }}
+          />
+        )}
         {editing && listed && (
           <Editor
             item={listed}
@@ -554,11 +617,14 @@ function RunIcon({ run }: { run: ItemRun }) {
     case "confirm":
       return <TriangleAlert size={14} className="bot-setup-warn" aria-hidden />;
     case "waiting":
+    case "reload":
       return <Hourglass size={14} className="bot-setup-warn" aria-hidden />;
+    case "connect":
+      return <Plug size={14} className="bot-setup-warn" aria-hidden />;
   }
 }
 
-function RunText({ host, item, run, locale: loc }: { host: SetupHost; item: PlanItem; run: ItemRun; locale: Locale }) {
+function RunText({ host, item, run, locale: loc, onConnect }: { host: SetupHost; item: PlanItem; run: ItemRun; locale: Locale; onConnect: () => void }) {
   const l = loc.chat.botSetup;
   const listed = item.status !== "notFound" ? item : undefined;
   const again = (accept: boolean) => listed && host.retry(listed, accept);
@@ -574,11 +640,44 @@ function RunText({ host, item, run, locale: loc }: { host: SetupHost; item: Plan
           </button>
         </div>
       );
+    case "connect":
+      return (
+        <div className="bot-setup-run">
+          <div className="bot-setup-sub bot-setup-warn">{l.waitingConnect}</div>
+          <button className="btn" disabled={host.blocked === "offline"} onClick={onConnect}>
+            <Plug size={13} aria-hidden /> {l.connect}
+          </button>
+        </div>
+      );
+    case "reload": {
+      const r = host.mcpReload;
+      return (
+        <div className="bot-setup-run">
+          <div className="bot-setup-sub bot-setup-warn">
+            {l.waitingReload(host.bot)}
+            {typeof r === "object" && (
+              <div className="bot-setup-bad" role="alert" translate="no">
+                {l.reloadFailed(r.failed)}
+              </div>
+            )}
+          </div>
+          <button className="btn" disabled={!!host.blocked || r === "working"} onClick={host.reloadMcp}>
+            {r === "working" ? <Spinner /> : <RotateCcw size={13} aria-hidden />} {l.reloadMcp}
+          </button>
+        </div>
+      );
+    }
     case "applied": {
       const label = listed?.kind === "toolset" ? labelOf(l, cardRead(host)!, item) : (listed?.name ?? "");
       return (
         <div className="bot-setup-sub">
-          {item.kind === "remember" ? l.remembered(host.bot) : item.kind === "skill" && item.from !== undefined ? l.copied(item.from) : l.applied}
+          {item.kind === "remember"
+            ? l.remembered(host.bot)
+            : item.kind === "mcp"
+              ? l.mcpReloaded
+              : item.kind === "skill" && item.from !== undefined
+                ? l.copied(item.from)
+                : l.applied}
           {run.notes?.map((n, i) => (
             <div key={i}>{noteText(loc, n, label)}</div>
           ))}
@@ -638,9 +737,89 @@ function MissText({ miss: m, profile, locale: loc }: { miss: CardMiss; profile: 
       return l.noProvider(m.model);
     case "notShown":
       return l.notShown(m.profile);
+    case "mcpRefused":
+      return m.why === "path" ? l.mcpRefused.path(m.from ?? "") : l.mcpRefused[m.why];
     default:
       return l[m.kind];
   }
+}
+
+function McpDetail({ host, item, offer, onConnect }: { host: SetupHost; item: ListedItem; offer: Exclude<McpOffer, { kind: "refused" }>; onConnect: () => void }) {
+  const l = useLocale().chat.botSetup;
+  const url = offer.kind === "copy" ? offer.server.transport === "http" : !!offer.entry.url;
+  const given = host.secrets[item.key];
+  const needs = offer.secrets.filter((s) => s.required).map((s) => (s.bearer ? l.bearer : s.key));
+  return (
+    <>
+      <div className="bot-setup-sub">
+        {offer.kind === "catalog" ? l.mcpCatalog : l.mcpCopy(item.from ?? "")} {url ? l.mcpUrl : l.mcpRuns}{" "}
+        {offer.runs.map((r, i) => (
+          <code key={i} className="bot-setup-runs" translate="no">
+            {r}
+          </code>
+        ))}
+      </div>
+      {offer.kind === "copy" && <div className="bot-setup-sub">{l.mcpNotCopied(offer.toolFilter)}</div>}
+      {offer.secrets.length > 0 && (
+        <div className="bot-setup-run">
+          <div className="bot-setup-sub">{given && connected(offer, given) ? l.mcpReady : needs.length > 0 && l.mcpNeeds(needs.join(", "))}</div>
+          <button className="btn" disabled={host.busy} onClick={onConnect}>
+            <Plug size={13} aria-hidden /> {l.connect}
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+function ConnectEditor({ name, offer, onDone, onCancel }: { name: string; offer: Exclude<McpOffer, { kind: "refused" }>; onDone: (values: Record<string, string>) => void; onCancel: () => void }) {
+  const l = useLocale().chat.botSetup;
+  const [values, setValues] = useState<Record<string, string>>({});
+  const filled = Object.fromEntries(Object.entries(values).flatMap(([k, v]) => (v.trim() ? [[k, v.trim()]] : [])));
+  const ok = connected(offer, filled);
+  return (
+    <div className="bot-setup-editor bot-setup-connect" role="group" aria-label={`${l.connect} ${name}`}>
+      <p className="bot-setup-sub">{l.connectIntro}</p>
+      {offer.secrets.map((s) => (
+        <label key={s.key} className="bot-setup-secret">
+          <span>
+            <span className="mono" translate="no">
+              {s.bearer ? l.bearer : s.key}
+            </span>
+            {!s.required && ` (${l.connectOptional})`}
+            {s.prompt && <span className="bot-setup-sub"> · {s.prompt}</span>}
+          </span>
+          <input
+            className="bot-setup-field"
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            value={values[s.key] ?? ""}
+            onChange={(e) => setValues((v) => ({ ...v, [s.key]: e.target.value }))}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                e.stopPropagation();
+                onCancel();
+              } else if (e.key === "Enter" && !composing(e) && ok) {
+                e.preventDefault();
+                onDone(filled);
+              }
+            }}
+          />
+        </label>
+      ))}
+      <p className="bot-setup-sub">{l.connectWriteOnly}</p>
+      <div className="bot-setup-editor-actions">
+        <button className="btn" disabled={!ok} onClick={() => onDone(filled)}>
+          {l.connect}
+        </button>
+        <button className="btn" onClick={onCancel}>
+          {l.cancel}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function Editor({ item, label, models, onDone, onCancel }: { item: ListedItem; label: string; models: readonly string[]; onDone: (to: string | null) => void; onCancel: () => void }) {

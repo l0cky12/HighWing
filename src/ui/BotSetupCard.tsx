@@ -6,19 +6,20 @@
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Check, ChevronRight, CircleAlert, FileText, Hourglass, Pencil, RotateCcw, Sparkles, TriangleAlert } from "lucide-react";
 import { BOT_SETUP_COLORS, BOT_SETUP_DESCRIPTION_MAX, BOT_SETUP_FENCE } from "../hermes/botSetupBrief";
-import { BOT_SETUP_COLOR_HEX, choose, fencedBlocks, planCard, tickable, tickedCount, type Choice, type ListedItem, type Plan, type PlanItem } from "../hermes/botSetupCard";
-import { restartState, tickedItems, type CardState } from "../hermes/botSetupApply";
+import { BOT_SETUP_COLOR_HEX, choose, fencedBlocks, planCard, tickable, type Choice, type ListedItem, type Plan, type PlanItem } from "../hermes/botSetupCard";
+import { rememberAsked, restartState, setupItems, type CardMiss, type CardState } from "../hermes/botSetupApply";
 import type { Note } from "../hermes/botSetup";
 import type { BotSetupStart } from "../hermes/botSetupStart";
 import type { Chat, Item } from "../hermes/model";
 import type { BotSetupCardRead, BotSetupRead, BotSetupRun, Hermes } from "../hermes/transport";
+import { ProfileError } from "../hermes/profiles";
 import { errorText } from "../hermes/values";
 import { useLocale, type Locale } from "../i18n/locale";
 import { composing, Spinner } from "./bits";
+import { failureText } from "./ProfileSettings";
 import { cautionText } from "./ToolsetSettings";
 import { TurnCard } from "./TurnCard";
 
-/** What a Bot Chat's pane asks of the transport for Bot setup. */
 export type BotSetupApi = Pick<Hermes, "readBotSetup" | "applyBotSetup" | "retryBotSetupItem" | "botSetupRestart" | "resumeBotSetup">;
 
 type ItemRun = CardState | { kind: "working" };
@@ -29,10 +30,9 @@ type Restart = { since: number; toolsets: { name: string; on: boolean }[]; state
 /** What a setup block in the transcript is: the live card, an earlier draft, the unreadable newest, or none of Bot setup's. */
 type BlockRole = "live" | "draft" | "unreadable" | "pending" | "failed" | "plain";
 
-/** One Bot Chat's Bot setup, for the blocks and lines its transcript draws. */
 export type SetupHost = {
   bot: string;
-  read?: { kind: "read"; read: BotSetupRead } | { kind: "failed"; why: string };
+  read?: { kind: "read"; read: BotSetupRead } | { kind: "failed"; error: unknown };
   plan?: Plan;
   roleOf(itemId: string, source: string): BlockRole;
   choose(c: Choice): void;
@@ -52,7 +52,6 @@ export type SetupHost = {
 };
 
 export const SetupContext = createContext<SetupHost | undefined>(undefined);
-/** The transcript item a setup block is in. */
 export const SetupItemContext = createContext<string | undefined>(undefined);
 
 const setupIdOf = (r: BotSetupRead) => (r.parse.kind === "card" ? r.parse.card.setupId : r.parse.setupId);
@@ -75,10 +74,13 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
   const [restart, setRestart] = useState<Restart>();
   const [start, setStart] = useState<BotSetupStart>();
   const shown = useRef({ chatId, reads: 0, started: false, readOnce: false, holds: false, afterSetUp: false });
+  // What the last Set it up ran on: a retry compares against what the card read then, not against a later reload.
+  const ranOn = useRef<{ read: BotSetupCardRead; items: ReadonlyMap<string, ListedItem> }>(undefined);
   const mentions = chat.items.some((i) => i.kind === "assistant" && i.text.includes(BOT_SETUP_FENCE));
 
   useEffect(() => {
     shown.current = { chatId, reads: 0, started: false, readOnce: false, holds: false, afterSetUp: false };
+    ranOn.current = undefined;
     setRead(undefined);
     setPending([]);
     setRuns({});
@@ -109,7 +111,7 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
           );
         }
       },
-      (e: unknown) => here(chatId) && n === shown.current.reads && setRead({ kind: "failed", why: errorText(e) }),
+      (e: unknown) => here(chatId) && n === shown.current.reads && setRead({ kind: "failed", error: e }),
     );
   }, [api, chatId]);
 
@@ -173,7 +175,8 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
       setOutcome(undefined);
       setRestart(undefined);
       setRuns({});
-      const items = tickedItems(plan);
+      const items = setupItems(plan, r.parse.accepted);
+      ranOn.current = { read: r, items: new Map(items.map((i) => [i.key, i])) };
       api.applyBotSetup(r, plan, hear).then(
         (out) => {
           if (!here(chatId)) return;
@@ -183,21 +186,21 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
           const applied = items.filter((i) => out.states[i.key]?.kind === "applied");
           const toolsets = applied.flatMap((i) => (i.kind === "toolset" ? [{ name: i.name ?? i.key, on: i.after === "on" }] : []));
           if (out.readyAt !== undefined && (toolsets.length || applied.some((i) => i.kind === "persona"))) setRestart({ since: out.readyAt, toolsets, state: "waiting" });
-          // With a ready turn, the rows are read once its reply ends.
           if (out.readyAt === undefined) load();
         },
         (e: unknown) => {
           if (!here(chatId)) return;
-          setOutcome({ states: {}, readyFailed: errorText(e) });
+          setOutcome({ states: {}, readyFailed: { kind: "said", text: errorText(e) } });
           setBusy(false);
         },
       );
     },
     retry(item, accept) {
-      if (!r) return;
+      const on = ranOn.current;
+      if (!on) return;
       const was = runs[item.key];
       hear(item.key, { kind: "working" });
-      api.retryBotSetupItem(r, item, accept && was?.kind === "confirm" ? was.cautions : []).then(
+      api.retryBotSetupItem(on.read, on.items.get(item.key) ?? item, accept && was?.kind === "confirm" ? was.cautions : []).then(
         (state) => hear(item.key, state),
         (e: unknown) => hear(item.key, { kind: "failed", miss: { kind: "said", text: errorText(e) } }),
       );
@@ -215,14 +218,14 @@ export function useBotSetup(chat: Chat, api: BotSetupApi | undefined, bot: strin
   };
 }
 
-/** Draws Bot setup's fenced block in its place in the transcript, and every other block as code. */
 export const setupFence = (language: string, source: string, plain: ReactNode): ReactNode =>
   language === BOT_SETUP_FENCE ? <SetupBlock source={source} plain={plain} /> : plain;
 
 function SetupBlock({ source, plain }: { source: string; plain: ReactNode }) {
   const host = useContext(SetupContext);
   const itemId = useContext(SetupItemContext);
-  const l = useLocale().chat.botSetup;
+  const loc = useLocale();
+  const l = loc.chat.botSetup;
   if (!host || !itemId) return plain;
   const role = host.roleOf(itemId, source);
   const title = l.title(host.bot);
@@ -243,7 +246,7 @@ function SetupBlock({ source, plain }: { source: string; plain: ReactNode }) {
             </p>
           ) : (
             <div className="bot-setup-note" role="alert">
-              {l.readFailed(host.read.why)}{" "}
+              {l.readFailed(host.read.error instanceof ProfileError ? failureText(loc, host.read.error.failure, host.bot) : errorText(host.read.error))}{" "}
               <button className="btn" onClick={host.reload}>
                 <RotateCcw size={13} aria-hidden /> {l.tryAgain}
               </button>
@@ -302,7 +305,7 @@ const GROUPS = [
 function Card({ host, read, plan }: { host: SetupHost; read: BotSetupCardRead; plan: Plan }) {
   const l = useLocale().chat.botSetup;
   const ran = Object.keys(host.runs).length > 0;
-  const count = tickedCount(plan);
+  const count = setupItems(plan, read.parse.accepted).length;
   const owed = read.readyOwed;
   const out = host.outcome;
   // Try again and Apply anyway change an item after Set it up, so the count is read from each item's state now.
@@ -320,7 +323,7 @@ function Card({ host, read, plan }: { host: SetupHost; read: BotSetupCardRead; p
       {GROUPS.map((g) => {
         const items = plan.items.filter((i) => (g.kinds as readonly string[]).includes(i.kind));
         if (!items.length) return null;
-        const offered = items.filter(tickable);
+        const offered = items.filter(tickable).filter((i) => !rememberAsked(read.parse.accepted, i));
         return (
           <section key={g.id} className="bot-setup-group" aria-label={g.id === "about" ? l.about(host.bot) : l[g.id]}>
             <h4 className="bot-setup-group-head">
@@ -356,7 +359,7 @@ function Card({ host, read, plan }: { host: SetupHost; read: BotSetupCardRead; p
       </div>
       {out?.readyFailed && (
         <p className="bot-setup-bad small" role="alert">
-          {l.readyFailed(host.bot, out.readyFailed)}
+          {l.readyFailed(host.bot, out.readyFailed.kind === "notShown" ? l.notShown(out.readyFailed.profile) : out.readyFailed.text)}
         </p>
       )}
     </TurnCard>
@@ -380,11 +383,27 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
   const id = useId();
   const [editing, setEditing] = useState(false);
   const [whole, setWhole] = useState(false);
+  const editButton = useRef<HTMLButtonElement>(null);
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (editing || !refocus.current) return;
+    refocus.current = false;
+    editButton.current?.focus();
+  }, [editing]);
+  const closeEditor = () => {
+    refocus.current = true;
+    setEditing(false);
+  };
   const listed = item.status !== "notFound" ? item : undefined;
   const run = host.runs[item.key];
   // The Remember row is applied once the bot's memory lists the name, which the card reads back as nothing to change.
   const done = item.status === "same" && (run?.kind === "applied" || run?.kind === "waiting");
-  const shownRun: ItemRun | undefined = done ? { kind: "applied" } : item.status === "same" ? undefined : run;
+  // An item changed elsewhere since Set it up shows its tick, not its run, so only a tick writes over the change.
+  const shownRun: ItemRun | undefined = done
+    ? { kind: "applied" }
+    : item.status === "same" || item.status === "elsewhere"
+      ? undefined
+      : (run ?? (rememberAsked(read.parse.accepted, item) ? { kind: "waiting" } : undefined));
   const label = labelOf(l, read, item);
   const value = listed && valueOf(l, listed);
   const edited = listed && listed.over.length > 0 && listed.after !== listed.proposed;
@@ -435,7 +454,7 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
           <span className="bot-setup-spacer" />
           {badge && <span className={`badge${item.status === "notFound" ? " warn" : ""}`}>{badge}</span>}
           {editable && !editing && (
-            <button className="icon-btn bot-setup-edit" title={l.edit(label)} aria-label={l.edit(label)} onClick={() => setEditing(true)}>
+            <button ref={editButton} className="icon-btn bot-setup-edit" title={l.edit(label)} aria-label={l.edit(label)} onClick={() => setEditing(true)}>
               <Pencil size={13} aria-hidden />
             </button>
           )}
@@ -459,10 +478,10 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
             item={listed}
             label={label}
             models={read.setup.now.models}
-            onCancel={() => setEditing(false)}
+            onCancel={closeEditor}
             onDone={(to) => {
               host.choose(choose(listed, { to } as { to: ListedItem["after"] }));
-              setEditing(false);
+              closeEditor();
             }}
           />
         )}
@@ -546,7 +565,14 @@ function RunText({ host, item, run, locale: loc }: { host: SetupHost; item: Plan
     case "working":
       return <div className="bot-setup-sub">{l.working}</div>;
     case "waiting":
-      return <div className="bot-setup-sub bot-setup-warn">{l.waitingMemory(host.bot)}</div>;
+      return (
+        <div className="bot-setup-run">
+          <div className="bot-setup-sub bot-setup-warn">{l.waitingMemory(host.bot)}</div>
+          <button className="btn" disabled={host.blocked === "offline"} onClick={host.reload}>
+            {l.checkAgain}
+          </button>
+        </div>
+      );
     case "applied": {
       const label = listed?.kind === "toolset" ? labelOf(l, cardRead(host)!, item) : (listed?.name ?? "");
       return (
@@ -563,17 +589,7 @@ function RunText({ host, item, run, locale: loc }: { host: SetupHost; item: Plan
       return (
         <div className="bot-setup-run">
           <div className="bot-setup-sub bot-setup-bad" role="alert">
-            {m.kind === "said" ? (
-              <span translate="no">{m.text}</span>
-            ) : m.kind === "unsent" ? (
-              <>
-                {l.unsent} <span translate="no">{m.text}</span>
-              </>
-            ) : m.kind === "changed" ? (
-              l.changedElsewhere
-            ) : (
-              l[m.kind]
-            )}
+            <MissText miss={m} profile={cardRead(host)?.profile ?? host.bot} locale={loc} />
           </div>
           {m.kind !== "changed" && (
             <button className="btn" disabled={host.blocked === "offline"} onClick={() => again(false)}>
@@ -599,6 +615,30 @@ function RunText({ host, item, run, locale: loc }: { host: SetupHost; item: Plan
           </button>
         </div>
       );
+  }
+}
+
+function MissText({ miss: m, profile, locale: loc }: { miss: CardMiss; profile: string; locale: Locale }) {
+  const l = loc.chat.botSetup;
+  switch (m.kind) {
+    case "said":
+      return <span translate="no">{m.text}</span>;
+    case "unsent":
+      return (
+        <>
+          {l.unsent} <span translate="no">{m.text}</span>
+        </>
+      );
+    case "changed":
+      return l.changedElsewhere;
+    case "profile":
+      return failureText(loc, m.failure, profile);
+    case "noProvider":
+      return l.noProvider(m.model);
+    case "notShown":
+      return l.notShown(m.profile);
+    default:
+      return l[m.kind];
   }
 }
 

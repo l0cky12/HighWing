@@ -4,15 +4,16 @@
 // Every write goes through the route Settings already uses for it, checked against what the card read, so a change
 // made elsewhere since isn't overwritten: SOUL.md by its content, the description and the model by `ProfilesApi.edit`,
 // the colour by the Bot Mode block's revision (ADR 0189). Description and model are two writes, since `edit` still
-// sends the model after a description write that got no answer.
-import { settleItem, noAnswer, type ItemState, type SetupApis as CapabilityApis, type SetupItem } from "./botSetup";
-import { acceptedRecordBlock, tickable, type AcceptedRecord, type Card, type HermesNow, type ListedItem, type Plan } from "./botSetupCard";
+// sends the model after a description write that got no answer. A field counts as applied only once Hermes answered
+// the read that follows its write.
+import { settleItem, noAnswer, type ItemState, type Miss, type SetupApis as CapabilityApis, type SetupItem } from "./botSetup";
+import { acceptedRecordBlock, tickable, type AcceptedRecord, type Card, type HermesNow, type ListedItem, type Plan, type PlanItem } from "./botSetupCard";
 import type { Bot, BotLook } from "./bots";
 import type { EditResult, FieldOutcome } from "./fieldMerge";
 import type { MemoryApi } from "./memory";
 import type { ModelCatalog } from "./models";
 import { PersonaError, type PersonaApi, type Soul } from "./persona";
-import { ProfileError, type ProfileFields, type ProfilesApi } from "./profiles";
+import { ProfileError, type ProfileFailure, type ProfileFields, type ProfilesApi } from "./profiles";
 import type { SkillsApi } from "./skills";
 import type { Caution, Toolset } from "./toolsets";
 import { errorText } from "./values";
@@ -23,7 +24,6 @@ export type SetupApis = CapabilityApis & {
   persona: Pick<PersonaApi, "read" | "save">;
   profiles: Pick<ProfilesApi, "list" | "edit">;
   memory: Pick<MemoryApi, "load">;
-  /** The server's bots, as the roster reads them. */
   bots(): Promise<Bot[]>;
   /** The models the bot's profile can switch to, when Hermes lists them. */
   models(): Promise<ModelCatalog | undefined>;
@@ -59,7 +59,7 @@ export async function readSetupNow(apis: SetupApis, profile: string, card: Card)
     apis.memory.load(profile).catch(() => undefined),
   ]);
   const row = rows.find((r) => r.name === profile);
-  if (!row) throw new Error(`Hermes lists no profile named ${profile}.`);
+  if (!row) throw new ProfileError({ kind: "gone", detail: `Hermes lists no profile named ${profile}.` });
   const providers: Record<string, string> = {};
   for (const p of catalog?.providers ?? []) for (const m of p.models) providers[m.model] ??= p.slug;
   const sources = card.block.copy.flatMap((c) => roster.filter((b) => b.name.trim() === c.from && b.profile !== profile));
@@ -90,22 +90,40 @@ export async function readSetupNow(apis: SetupApis, profile: string, card: Card)
   };
 }
 
+/**
+ * Why an item wasn't applied: ADR 0197's misses, and those only the card has. `profile`: a profile call failed.
+ * `noProvider`: Hermes lists no provider for the model. `mcpLater`: MCP servers aren't set up from the card yet.
+ * `notShown`: the bot's profile isn't the one shown, which every write goes through.
+ */
+export type CardMiss = Miss | { kind: "profile"; failure: ProfileFailure } | { kind: "noProvider"; model: string | null } | { kind: "mcpLater" } | { kind: "notShown"; profile: string };
+
 /** Where an item stands at Set it up: ADR 0197's states, and `waiting` for the Remember row, which the bot saves. */
-export type CardState = ItemState | { kind: "waiting" };
+export type CardState = Exclude<ItemState, { kind: "failed" }> | { kind: "failed"; miss: CardMiss } | { kind: "waiting" };
 
 /** One item's write judged. `unanswered`: why its call got no answer from Hermes, after which nothing more is sent. */
 export type Step = { state: CardState; unanswered?: string };
 
 const APPLIED: Step = { state: { kind: "applied" } };
-const said = (text: string, unanswered = false): Step => ({ state: { kind: "failed", miss: { kind: "said", text } }, ...(unanswered && { unanswered: text }) });
-const ELSEWHERE: Step = { state: { kind: "failed", miss: { kind: "changed" } } };
+const missed = (miss: CardMiss): Step => ({ state: { kind: "failed", miss } });
+const said = (text: string, unanswered = false): Step => ({ ...missed({ kind: "said", text }), ...(unanswered && { unanswered: text }) });
+const ELSEWHERE = missed({ kind: "changed" });
 
-/** A field `ProfilesApi.edit` or `Hermes.editBot` wrote, judged. */
-function fieldStep<V>(o: FieldOutcome<V> | undefined): Step {
-  if (!o) return said("Hermes didn't say what became of it.");
-  if (o.kind === "saved") return APPLIED;
-  if (o.kind === "changedElsewhere") return ELSEWHERE;
-  return said(new ProfileError(o.failure).message, o.failure.kind === "lost" || o.failure.kind === "unsent");
+const noReply = (f: ProfileFailure) => f.kind === "lost" || f.kind === "unsent";
+
+/** A profile call failed with `failure`; `unread`, why the read after it failed. Either one unanswered stops Set it up. */
+const profileStep = (failure: ProfileFailure, unread?: ProfileFailure): Step => {
+  const silent = [failure, unread].find((f) => f && noReply(f));
+  return { ...missed({ kind: "profile", failure }), ...(silent && { unanswered: new ProfileError(silent).message }) };
+};
+
+/** The field `key` of a save through `ProfilesApi.edit` or `Hermes.editBot`, judged with the read that followed it. */
+function fieldStep<F, K extends keyof F>(result: EditResult<F>, key: K): Step {
+  const o: FieldOutcome<F[K]> | undefined = result.fields[key];
+  if (o?.kind === "failed") return profileStep(o.failure, result.unread);
+  if (result.unread) return profileStep(result.unread);
+  // Read back without the profile: deleted since.
+  if (!o || !result.now || !(key in result.now)) return profileStep({ kind: "gone", detail: "" });
+  return o.kind === "saved" ? APPLIED : ELSEWHERE;
 }
 
 const personaFailed = (e: unknown): Step =>
@@ -116,7 +134,7 @@ async function persona(apis: SetupApis, profile: string, base: Soul, to: string)
     const r = await apis.persona.save(profile, base, to);
     if (r.kind === "saved") return APPLIED;
     if (r.kind === "unverified") return personaFailed(r.problem);
-    // `changed`: written, then read back as other text, so another client wrote it too.
+    // Written, then read back as other text: another client wrote it too.
     return ELSEWHERE;
   } catch (e) {
     return personaFailed(e);
@@ -130,7 +148,7 @@ async function copySkill(apis: SetupApis, profile: string, from: string, item: S
   try {
     const theirs = await apis.skills.rows(from);
     const row = theirs.find((r) => r.name === item.name);
-    if (!row) return { state: { kind: "failed", miss: { kind: "missing" } } };
+    if (!row) return missed({ kind: "missing" });
     await apis.skills.copy(from, profile, row, named(theirs));
   } catch (e) {
     return said(errorText(e), noAnswer(e));
@@ -138,7 +156,7 @@ async function copySkill(apis: SetupApis, profile: string, from: string, item: S
   return judged(await settleItem(apis, profile, item));
 }
 
-/** Writes one item of the card and reads it back. `accepted`: the cautions the owner confirmed with Apply anyway. */
+/** `accepted`: the cautions the owner confirmed with Apply anyway. */
 export async function applyItem(apis: SetupApis, profile: string, read: SetupNow, item: ListedItem, accepted: Caution[] = []): Promise<Step> {
   const capability = (area: SetupItem["area"], want: boolean): SetupItem => {
     const name = item.name ?? item.key;
@@ -148,14 +166,14 @@ export async function applyItem(apis: SetupApis, profile: string, read: SetupNow
     case "persona":
       return persona(apis, profile, read.soul, item.after);
     case "description":
-      return fieldStep((await apis.profiles.edit(profile, { description: { from: item.before, to: item.after } })).fields.description);
+      return fieldStep(await apis.profiles.edit(profile, { description: { from: item.before, to: item.after } }), "description");
     case "model": {
       const provider = item.after === null ? undefined : read.providers[item.after];
-      if (item.after === null || provider === undefined) return said(`Hermes doesn't list a provider for ${item.after ?? "no model"}.`);
-      return fieldStep((await apis.profiles.edit(profile, { model: { from: read.model, to: { provider, model: item.after } } })).fields.model);
+      if (item.after === null || provider === undefined) return missed({ kind: "noProvider", model: item.after });
+      return fieldStep(await apis.profiles.edit(profile, { model: { from: read.model, to: { provider, model: item.after } } }), "model");
     }
     case "color":
-      return fieldStep((await apis.editBot(profile, { color: { from: item.before, to: item.after } })).fields.color);
+      return fieldStep(await apis.editBot(profile, { color: { from: item.before, to: item.after } }), "color");
     case "remember":
       return { state: { kind: "waiting" } };
     case "skill": {
@@ -167,12 +185,19 @@ export async function applyItem(apis: SetupApis, profile: string, read: SetupNow
     case "toolset":
       return judged(await settleItem(apis, profile, capability("toolset", item.after === "on"), accepted));
     case "mcp":
-      return said("MCP servers can't be set up from the card yet.");
+      return missed({ kind: "mcpLater" });
   }
 }
 
-/** The items Set it up writes, in the card's order: those ticked. */
-export const tickedItems = (plan: Plan) => plan.items.filter((i): i is ListedItem => tickable(i) && i.ticked);
+/**
+ * Whether a ready turn the Bot Chat stores already asked the bot to remember this Remember row's name: the record it
+ * carried, `stored`, holds the row ticked with that name. Set it up doesn't ask again; the row waits for the memory.
+ */
+export const rememberAsked = (stored: AcceptedRecord | null, item: PlanItem) =>
+  item.kind === "remember" && !!stored?.items.some((a) => a.kind === "remember" && a.ticked && a.to === item.after);
+
+/** The items Set it up writes, in the card's order: those ticked, less a Remember row a stored ready turn asked for. */
+export const setupItems = (plan: Plan, stored: AcceptedRecord | null) => plan.items.filter((i): i is ListedItem => tickable(i) && i.ticked && !rememberAsked(stored, i));
 
 /**
  * Runs Set it up over `items`, one at a time, each through `apply`. The Remember row is never a call: it waits for the
@@ -203,7 +228,6 @@ export async function runSetup(
   return { states, ...(unanswered !== undefined && { unanswered }) };
 }
 
-/** The ready turn's first line, for the setup with this id. */
 export const botSetupReady = (id: string) => `[highwing:bot-setup ready id=${id}]`;
 
 const ITEM_WORDS: { [K in ListedItem["kind"]]: (i: Extract<ListedItem, { kind: K }>) => string } = {
@@ -227,6 +251,7 @@ export function readyTurn(setupId: string, items: readonly ListedItem[], states:
   const applied = items.filter((i) => states[i.key]?.kind === "applied");
   const missed = items.filter((i) => i.kind !== "remember" && states[i.key]?.kind !== "applied");
   const remember = items.find((i): i is Extract<ListedItem, { kind: "remember" }> => i.kind === "remember");
+  const askedBefore = record.items.some((a) => a.kind === "remember" && a.ticked);
   return [
     botSetupReady(setupId),
     "This message comes from the Highwing app, not from the owner, and the owner doesn't see it. The owner pressed Set it up on your card, so Bot setup is over: don't ask the setup questions again, and draw a new card only if the owner asks to change your setup.",
@@ -234,7 +259,9 @@ export function readyTurn(setupId: string, items: readonly ListedItem[], states:
     ...(missed.length ? [`Not applied, so the card still offers it: ${missed.map(words).join("; ")}.`] : []),
     ...(remember?.after
       ? [`Save one memory entry now with your memory tool, and nothing else: "The owner wants to be called ${remember.after}."`]
-      : ["Don't save anything to memory for Bot setup."]),
+      : askedBefore
+        ? []
+        : ["Don't save anything to memory for Bot setup."]),
     "Then tell the owner in one short sentence that you're set up.",
     "",
     "The block below is Highwing's record of what the owner accepted. Don't repeat it or act on it.",
@@ -242,7 +269,6 @@ export function readyTurn(setupId: string, items: readonly ListedItem[], states:
   ].join("\n");
 }
 
-/** What `Hermes.botSetupRestart` found. */
 export type BotSetupRestart = { kind: "rebuilt" } | { kind: "unchecked" } | { kind: "read"; tools: ReadonlySet<string>; toolsets: readonly Toolset[] };
 
 /**

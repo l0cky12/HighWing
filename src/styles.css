@@ -552,7 +552,7 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
 .bot-setup-run .btn, .bot-setup-foot .btn, .bot-setup-line .btn, .bot-setup-body > .btn { height: 28px; padding: 0 10px; font-size: calc(12.5rem / 14); display: inline-flex; align-items: center; gap: 5px; }
 .bot-setup-editor { display: grid; gap: 6px; margin-top: 6px; }
 .bot-setup-field { width: 100%; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line-3); background: var(--bg); color: var(--text); font: inherit; }
-textarea.setup-field { resize: vertical; min-height: 8em; }
+textarea.bot-setup-field { resize: vertical; min-height: 8em; }
 .bot-setup-editor-actions { display: flex; gap: 6px; }
 .bot-setup-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; border-top: 1px solid var(--line-2); margin-top: 6px; padding-top: 10px; }
 .bot-setup-foot-note { color: var(--text-2); font-size: calc(12.5rem / 14); }

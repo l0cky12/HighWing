@@ -160,11 +160,13 @@ describe("Bot setup's card, in a Bot Chat", { timeout: 30_000 }, () => {
     await user.keyboard("{Control>}a{/Control}Books nothing.{Enter}");
     await waitFor(() => expect(within(liveCard()!).getByText(/Books nothing\./)).toBeTruthy());
     expect(within(liveCard()!).getByText(new RegExp(t.edited))).toBeTruthy();
+    const editDescription = () => within(liveCard()!).getByRole("button", { name: t.edit(t.description) });
+    expect(document.activeElement).toBe(editDescription());
 
-    within(liveCard()!).getByRole("button", { name: t.edit(t.description) }).focus();
     await user.keyboard("{Enter}{Control>}a{/Control}Never mind{Escape}");
     expect(within(liveCard()!).queryByRole("textbox", { name: t.description })).toBeNull();
     expect(within(liveCard()!).getByText(/Books nothing\./)).toBeTruthy();
+    expect(document.activeElement).toBe(editDescription());
   });
 
   it("sets up what's ticked, then shows a failure with Try again and a toolset caution with Apply anyway", async () => {
@@ -182,6 +184,26 @@ describe("Bot setup's card, in a Bot Chat", { timeout: 30_000 }, () => {
     await waitFor(() => expect(within(group(t.skills)).getByText(t.applied)).toBeTruthy());
     await user.click(within(liveCard()!).getByRole("button", { name: t.applyAnyway }));
     await waitFor(() => expect(server.enabledToolsets("default").has("computer_use")).toBe(true));
+  });
+});
+
+describe("Bot setup's card after Set it up", { timeout: 30_000 }, () => {
+  it("offers no Try again on an item changed elsewhere since, until the owner ticks it", async () => {
+    const { server, user } = await inBotChat(interview(card()));
+    await waitCard();
+    // The description's write gets no answer, and meanwhile the dashboard changes it.
+    server.restTap = (r) => {
+      if (r.method !== "PUT" || !r.path.endsWith("/description")) return;
+      server.restTap = undefined;
+      server.profileMeta.default = { ...server.profileMeta.default, description: "Edited in the dashboard." };
+      throw new Error("The connection dropped.");
+    };
+    await user.click(within(liveCard()!).getByRole("button", { name: t.setUp }));
+    const row = () => within(group(t.about("Hermes"))).getByRole("checkbox", { name: t.description }).closest<HTMLElement>(".bot-setup-item")!;
+    await waitFor(() => expect(within(row()).getByText(t.elsewhere)).toBeTruthy(), { timeout: 5000 });
+    expect(within(row()).queryByRole("button", { name: t.tryAgain })).toBeNull();
+    expect((box(t.description) as HTMLInputElement).checked).toBe(false);
+    expect(server.profileMeta.default?.description).toBe("Edited in the dashboard.");
   });
 });
 

@@ -127,13 +127,16 @@ const TableRow = memo(function TableRow({ cells, row, width, cols }: { cells: st
  * Shift+arrow keys select a range of cells, which Ctrl+C copies as tab-separated text. Open as text shows the file's text.
  */
 export function TableView({ table, text, size, truncated }: { table: Table; text: string; size: number; truncated: boolean }) {
-  const [asText, setAsText] = useState(false);
+  const [textChosen, setAsText] = useState(false);
   const [sel, setSel] = useState<Selection>();
   const grid = useRef<HTMLTableElement>(null);
   const width = Math.max(table.width, 1);
   const drawn = table.rows.slice(0, 1 + Math.max(1, Math.floor(TABLE_MAX_CELLS / width)));
   const records = table.rows.length - 1;
   const shown = drawn.length - 1;
+  // The header and one row must fit in the cells drawn, or the file shows only as text.
+  const tooWide = width * 2 > TABLE_MAX_CELLS;
+  const asText = textChosen || tooWide;
 
   const focus = sel?.focus;
   useEffect(() => {
@@ -199,16 +202,20 @@ export function TableView({ table, text, size, truncated }: { table: Table; text
           {DELIMITED[table.delimiter]} · {formatBytes(size)} · {count(Math.max(records, 0), "row", "rows")}
           {truncated && " read"} · {count(table.width, "column", "columns")}
         </span>
-        {truncated ? (
+        {tooWide ? (
+          <span className="preview-truncated">This file has {count(width, "column", "columns")}, too many to draw as a table.</span>
+        ) : truncated ? (
           <span className="preview-truncated">
             Showing the first {count(shown, "row", "rows")}, from the first {formatBytes(text.length)} of {formatBytes(size)}.
           </span>
         ) : (
           shown < records && <span className="preview-truncated">Showing the first {count(shown, "row", "rows")} of {records.toLocaleString("en-US")}.</span>
         )}
-        <button className="link-btn preview-table-switch" aria-pressed={asText} onClick={() => setAsText(!asText)}>
-          {asText ? "Open as table" : "Open as text"}
-        </button>
+        {!tooWide && (
+          <button className="link-btn preview-table-switch" aria-pressed={asText} onClick={() => setAsText(!asText)}>
+            {asText ? "Open as table" : "Open as text"}
+          </button>
+        )}
       </div>
       {asText ? (
         <pre className="preview-pre">{text}</pre>

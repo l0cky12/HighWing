@@ -236,6 +236,7 @@ async function signedIn({ local = localDisk({}), web = theWeb(), pages = theServ
     "/home/lena/app/.env": "SECRET=1",
     "/home/lena/app/sales.csv": SALES,
     "/home/lena/app/wide.csv": WIDE,
+    "/home/lena/app/widest.csv": `id,value\n1,2\n${",".repeat(20_000)}\n`,
   };
   const hermes = await connect(server.openPipe);
   const user = userEvent.setup();
@@ -498,6 +499,15 @@ describe("A CSV file as a table (issue #30)", () => {
     expect(button("Open as table").getAttribute("aria-pressed")).toBe("true");
     await user.click(button("Open as table"));
     expect(within(pane()).getByRole("grid")).toBeTruthy();
+  });
+
+  it("shows a file too wide for even one row of the table as text, and says why", async () => {
+    await openCsv("/home/lena/app/sales.csv");
+    await userEvent.setup().type(address(), "{Control>}a{/Control}/home/lena/app/widest.csv{Enter}");
+    expect(await within(pane()).findByText("This file has 20,001 columns, too many to draw as a table.")).toBeTruthy();
+    expect(within(pane()).queryByRole("grid")).toBeNull();
+    expect(pane().querySelector("pre")!.textContent).toMatch(/^id,value\n1,2\n,{20000}\n$/);
+    expect(within(pane()).queryByRole("button", { name: /Open as/ })).toBeNull();
   });
 
   it("copies a range of cells dragged across as tab-separated text, quoting a cell with a quote or line break", async () => {

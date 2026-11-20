@@ -103,22 +103,25 @@ export type Table = { delimiter: Delimiter; rows: string[][]; width: number; cut
 /**
  * The rows of delimited text, read as RFC 4180 says: a field in double quotes holds delimiters, line breaks and quotes
  * written twice. It is lenient where a bot's file breaks the rules: a quote inside an unquoted field is kept as it is,
- * text after a closing quote joins the field, and a quote never closed runs to the end. A blank line is no row, and a
- * leading byte-order mark is no text. `ended`: the text stops at the end of a row, not part way through one.
+ * text after a closing quote joins the field, and a quote never closed runs to the end. A blank line is no row, but a
+ * line of `""` is a row of one empty field, as a one-column file writes one. A leading byte-order mark is no text. `ended`: the text stops at the end of a row, not part way through one.
  */
 export function parseDelimited(text: string, delimiter: Delimiter, maxRows = Infinity): { rows: string[][]; ended: boolean } {
   const rows: string[][] = [];
   let row: string[] = [];
   let field = "";
+  let quoted = false;
   let at = text.charCodeAt(0) === 0xfeff ? 1 : 0;
   const endRow = () => {
     row.push(field);
-    if (row.length > 1 || row[0] !== "") rows.push(row);
+    if (row.length > 1 || row[0] !== "" || quoted) rows.push(row);
     row = [];
     field = "";
+    quoted = false;
   };
   while (at < text.length && rows.length < maxRows) {
     if (text[at] === '"' && field === "") {
+      quoted = true;
       for (at++; ; ) {
         const close = text.indexOf('"', at);
         if (close < 0) {
@@ -148,7 +151,7 @@ export function parseDelimited(text: string, delimiter: Delimiter, maxRows = Inf
     at += text[at] === "\r" && text[at + 1] === "\n" ? 2 : 1;
     endRow();
   }
-  const ended = row.length === 0 && field === "";
+  const ended = row.length === 0 && field === "" && !quoted;
   if (!ended && rows.length < maxRows) endRow();
   return { rows, ended };
 }
@@ -166,9 +169,10 @@ export function delimiterOf(name: string, text: string): Delimiter {
   let best: Delimiter = ",";
   let bestScore = 0;
   for (const d of [",", "\t", ";"] as const) {
-    const { rows, ended } = parseDelimited(text.slice(0, 64 * 1024), d, SAMPLE_ROWS);
-    // The sample can stop part way through its last row.
-    if (!ended && rows.length > 1) rows.pop();
+    const sample = text.slice(0, 64 * 1024);
+    const { rows, ended } = parseDelimited(sample, d, SAMPLE_ROWS);
+    // A sample shorter than the file can stop part way through its last row.
+    if (!ended && sample.length < text.length && rows.length > 1) rows.pop();
     const width = rows[0]?.length ?? 0;
     const score = width < 2 ? 0 : width + (rows.every((r) => r.length === width) ? 1e6 : 0);
     if (score > bestScore) [best, bestScore] = [d, score];

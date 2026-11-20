@@ -70,6 +70,8 @@ describe("CSV and TSV files (issue #30)", () => {
     expect(rows('"ab"cd,e')).toEqual([["abcd", "e"]]);
     expect(rows('x,"never closed\nstill here')).toEqual([["x", "never closed\nstill here"]]);
     expect(rows("\ufeffa,b\n\n\n1,2\n\n")).toEqual([["a", "b"], ["1", "2"]]);
+    // A one-column file writes an empty field as "", which is a row; a blank line isn't.
+    expect(rows('name\n""\n\nnext\n""')).toEqual([["name"], [""], ["next"], [""]]);
   });
 
   it("says whether the text stops at the end of a row", () => {
@@ -88,6 +90,8 @@ describe("CSV and TSV files (issue #30)", () => {
     // Every row the same width beats a header that splits further.
     expect(delimiterOf("x.csv", "a,b;c;d\n1,2;3\n4,5;6\n")).toBe(",");
     expect(delimiterOf("one column.csv", "name\nJo\n")).toBe(",");
+    // A whole file's last row counts though no line break ends it.
+    expect(delimiterOf("x.csv", "Name, as entered;Score\nAlice;10")).toBe(";");
     expect(delimiterOf("data.tsv", "a,b,c\n1,2,3\n")).toBe("\t");
   });
 

@@ -86,10 +86,13 @@ export type Port = {
   track(work: Promise<unknown>): void;
 };
 
-/** What starting a session asks for. `seeded`: hidden messages stored before the owner's first (ADR 0017). */
+/**
+ * What starting a session asks for. `seeded`: hidden messages stored before the owner's first (ADR 0017), or, in a Bot
+ * Chat, Bot setup's brief (ADR 0231).
+ */
 export type OpenRequest =
   | { kind: "chat"; profile: string; source: string; folder?: string; model?: ModelPick; seeded: readonly string[] }
-  | { kind: "bot"; profile: string; source: string; title: string };
+  | { kind: "bot"; profile: string; source: string; title: string; seeded: readonly string[] };
 
 /**
  * A session attached on this connection, by `open` or `resume`. `runtimeId`: what this connection's frames call it.
@@ -152,6 +155,11 @@ export interface SessionProtocol {
   leave(runtimeId: string): Promise<unknown>;
   /** Stages the attachments and submits. Rejects `PromptUnconfirmedError` when the connection drops before the answer. */
   submit(runtimeId: string, m: Message, goingOut: GoingOut): Promise<Admitted>;
+  /**
+   * Starts a turn with a message Hermes stores hidden, which no client shows as the owner's (ADR 0231). Rejects
+   * `PromptUnconfirmedError` when the connection drops before the answer.
+   */
+  submitHidden(runtimeId: string, profile: string, text: string): Promise<Admitted>;
   /** Resolves whether Hermes stopped the turn. */
   stop(runtimeId: string): Promise<boolean>;
   command(runtimeId: string, name: string, arg: string): Promise<unknown>;
@@ -172,6 +180,21 @@ export function negotiate(ready: Record<string, unknown>, port: Port): SessionPr
 }
 
 const obj = (v: unknown) => (isObj(v) ? v : undefined);
+
+const hiddenRows = (seeded: readonly string[]) => seeded.length > 0 && { messages: seeded.map((content) => ({ role: "user", content, display_kind: "hidden" })) };
+
+const unconfirmed = (e: unknown) => {
+  throw e instanceof ConnectionLostError ? new PromptUnconfirmedError(e.message) : e;
+};
+
+/**
+ * `status` `queued`: Hermes holds the message until a turn it is running ends. `user_row_id`: the message's stored row,
+ * when its turn started at once (`tui_gateway/methods_prompt.py` at `bf0203a`).
+ */
+const admitted = (res: unknown): Admitted => {
+  const { status, user_row_id } = (obj(res) ?? {}) as { status?: unknown; user_row_id?: unknown };
+  return { held: status === "queued", ...(typeof user_row_id === "number" && { userRowId: user_row_id }) };
+};
 
 type LegacySession = { session_id: string; stored_session_id: string; messages?: unknown; running?: boolean; inflight?: { assistant?: unknown; user?: unknown }; open_requests?: ServerRequest[]; info?: unknown; usage?: unknown };
 
@@ -200,7 +223,7 @@ export class LegacyProtocol implements SessionProtocol {
 
   open(req: OpenRequest): Promise<Attached> {
     if (req.kind === "bot") {
-      const params = { profile: req.profile, title: req.title, hidden: true, follow_profile_config: true, source: req.source };
+      const params = { profile: req.profile, title: req.title, hidden: true, follow_profile_config: true, source: req.source, ...hiddenRows(req.seeded) };
       return this.port.call("session.create", params, { read: (made) => attached((obj(made) ?? {}) as LegacySession) });
     }
     const { profile, source, folder, model, seeded } = req;
@@ -209,7 +232,7 @@ export class LegacyProtocol implements SessionProtocol {
       source,
       // `cwd_explicit`: a deliberate pick, which beats a profile's configured `terminal.cwd` (`_completion_cwd`).
       ...(folder && { cwd: folder, cwd_explicit: true }),
-      ...(seeded.length && { messages: seeded.map((content) => ({ role: "user", content, display_kind: "hidden" })) }),
+      ...hiddenRows(seeded),
       // `SessionCreateParams`: each is this session's own override. `fast` left out keeps the profile's.
       ...(model && {
         model: model.model,
@@ -258,16 +281,15 @@ export class LegacyProtocol implements SessionProtocol {
       }
       const prompt = [refs.join("\n"), text].filter(Boolean).join("\n\n") || (queued.length ? IMAGE_ONLY_PROMPT : "");
       goingOut(prompt, images);
-      // `status` `queued`: Hermes holds the message until a turn it is running ends. `user_row_id`: the message's stored
-      // row, when its turn started at once (`tui_gateway/methods_prompt.py` at `bf0203a`).
-      const res = (await this.port.call("prompt.submit", { session_id: runtimeId, profile, text: withContext(prompt, context), ...(hold && { queued: true }) }).catch((e) => {
-        throw e instanceof ConnectionLostError ? new PromptUnconfirmedError(e.message) : e;
-      })) as { status?: string; user_row_id?: number | null };
-      return { held: res.status === "queued", ...(typeof res.user_row_id === "number" && { userRowId: res.user_row_id }) };
+      return admitted(await this.port.call("prompt.submit", { session_id: runtimeId, profile, text: withContext(prompt, context), ...(hold && { queued: true }) }).catch(unconfirmed));
     } catch (e) {
       for (const path of queued) this.port.track(this.port.call("image.detach", { session_id: runtimeId, path }));
       throw e;
     }
+  }
+
+  async submitHidden(runtimeId: string, profile: string, text: string): Promise<Admitted> {
+    return admitted(await this.port.call("prompt.submit", { session_id: runtimeId, profile, text, display_kind: "hidden" }).catch(unconfirmed));
   }
 
   stop(runtimeId: string): Promise<boolean> {

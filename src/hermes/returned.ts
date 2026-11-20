@@ -21,7 +21,16 @@ export function agentTurnOf(v: unknown): AgentTurn | undefined {
   return { kind: "from", ...(isObj(t) && typeof t.name === "string" && typeof t.handle === "string" && { teammate: { name: t.name, handle: t.handle } }) };
 }
 
-export type Returned = { title?: string; body: string; process: boolean; agent?: AgentTurn };
+/**
+ * Bot setup on a Returned result (ADR 0231): the row stands for a setup's hidden brief and begin turn, shown as one
+ * Setup started line. `id`: the setup's id, from the brief's marker.
+ */
+export type SetupLine = { id: string };
+
+/** A `SetupLine` read back from the Saved copy, or undefined for anything else. */
+export const setupLineOf = (v: unknown): SetupLine | undefined => (isObj(v) && typeof v.id === "string" ? { id: v.id } : undefined);
+
+export type Returned = { title?: string; body: string; process: boolean; agent?: AgentTurn; setup?: SetupLine };
 
 const KINDS: Record<string, boolean> = { async_delegation_complete: false, process_complete: true, internal_notification: false };
 

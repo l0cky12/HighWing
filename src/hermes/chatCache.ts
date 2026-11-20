@@ -17,7 +17,7 @@ import { persist } from "./unsaved";
 import { NO_BRANCHES, type BranchAttempt, type BranchLink, type BranchPoint, type BranchStore, type BranchVariant } from "./branch";
 import { pickOf } from "./models";
 import { optionalText } from "./values";
-import { agentTurnOf } from "./returned";
+import { agentTurnOf, setupLineOf } from "./returned";
 import { isServerPath } from "./preview";
 import { sentHereOf, sentImage, withSentHere } from "./sentImages";
 
@@ -182,10 +182,11 @@ function toItem(v: unknown): Item | undefined {
       const body = optionalText(i.body);
       const title = optionalText(i.title);
       const agent = agentTurnOf(i.agent);
+      const setup = setupLineOf(i.setup);
       const rowId = Number.isSafeInteger(i.rowId) ? (i.rowId as number) : undefined;
       return body === undefined
         ? undefined
-        : { kind: "returned", id, body, process: i.process === true, ...(title && { title }), ...(agent && { agent }), ...(at !== undefined && { at }), ...(rowId !== undefined && { rowId }) };
+        : { kind: "returned", id, body, process: i.process === true, ...(title && { title }), ...(agent && { agent }), ...(setup && { setup }), ...(at !== undefined && { at }), ...(rowId !== undefined && { rowId }) };
     }
     case "assistant": {
       const rowId = Number.isSafeInteger(i.rowId) ? (i.rowId as number) : undefined;

@@ -11,6 +11,8 @@ import {
   approvalsFrom,
   failureOf,
   sharesChats,
+  predatesBotSetup,
+  BOT_SETUP_SINCE,
   flagsFrom,
   healthFacts,
   redact,
@@ -178,6 +180,7 @@ describe("a check of a new Hermes (upstream 74b2ed6)", () => {
       workReclaim: "unknown",
       workReassign: "unknown",
       botMode: "supported",
+      botSetup: "unknown",
       // Only a chat's own subagent.list can learn this.
       subagents: "unknown",
       subagentRoster: "supported",
@@ -228,6 +231,7 @@ describe("a check of an old Hermes (0.16.0)", () => {
       serverFiles: "unsupported",
       outputs: "unsupported",
       botMode: "unsupported",
+      botSetup: "unknown",
       subagentRoster: "unsupported",
       standingMissions: "unsupported",
       toolsets: "supported",
@@ -301,6 +305,14 @@ describe("partial and malformed answers", () => {
     expect(approvalsFrom(null).state).toBe("unknown");
     expect(approvalsFailed(new RpcError(4000, "bad params")).state).toBe("unknown");
     expect(approvalsFailed(new Error("Connection closed: x")).state).toBe("unreachable");
+  });
+
+  it("knows a Hermes older than Bot setup's floor only by a version it names", () => {
+    expect(predatesBotSetup({ version: "0.23.1" })).toBe(true);
+    expect(predatesBotSetup({ version: "0.21.6" })).toBe(true);
+    expect(predatesBotSetup({ version: BOT_SETUP_SINCE })).toBe(false);
+    expect(predatesBotSetup({ build: "v0.24.0-12-gae2a81c" })).toBe(false);
+    expect(predatesBotSetup({})).toBe(false);
   });
 
   it("knows a Hermes that shares chats by declines_not_shown or by a version from 0.21.3", () => {

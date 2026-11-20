@@ -13,18 +13,26 @@ VENV=${RH_VENV:-$HOME/.cache/hermes-venv-168}
 die() { echo "real-hermes: $*" >&2; exit 1; }
 free_port() { python3 -c 'import socket,sys; s=socket.socket(); s.bind((sys.argv[1],0)); print(s.getsockname()[1])' "$1"; }
 hermes_env() { env -i PATH=/usr/bin:/bin HOME="$RH_DIR/home" HERMES_HOME="$RH_DIR/home/.hermes" "$@"; }
+# 127.0.0.1 would turn Hermes's password gate off, and any other address leaves this computer.
+loopback() {
+  [[ $2 =~ ^127\.0\.0\.([0-9]{1,3})$ ]] && ((BASH_REMATCH[1] >= 2 && BASH_REMATCH[1] <= 255)) ||
+    die "$1 must be 127.0.0.N with N from 2 to 255, not '$2'"
+}
 
 up() {
   [ -n "${1:-}" ] || die "usage: real-hermes up <dir>"
   [ -x "$VENV/bin/hermes" ] || die "no Hermes at $VENV/bin/hermes; build the venv the SKILL names"
+  local model_host=${RH_MODEL_HOST:-127.0.0.12} dash_host=${RH_DASH_HOST:-127.0.0.13} model_port dash_port
+  loopback RH_MODEL_HOST "$model_host"
+  loopback RH_DASH_HOST "$dash_host"
   RH_DIR=$(realpath -m "$1")
+  case "$RH_DIR/" in "$(realpath -m "$HOME/.hermes")"/* | "$(realpath -m "$HOME")/") die "$RH_DIR is the owner's Hermes or home; pick a throwaway dir" ;; esac
   [ ! -f "$RH_DIR/dashboard.pid" ] || ! kill -0 "$(cat "$RH_DIR/dashboard.pid")" 2>/dev/null || die "$RH_DIR is still running; real-hermes down first"
   rm -rf "${RH_DIR:?}"
   mkdir -p "$RH_DIR/home/.hermes" "$RH_DIR/web"
   echo '<!doctype html><title>stub</title>' >"$RH_DIR/web/index.html"
-  local model_host=${RH_MODEL_HOST:-127.0.0.12} dash_host=${RH_DASH_HOST:-127.0.0.13} model_port dash_port
-  model_port=$(free_port $model_host)
-  dash_port=$(free_port $dash_host)
+  model_port=$(free_port "$model_host")
+  dash_port=$(free_port "$dash_host")
   cat >"$RH_DIR/home/.hermes/config.yaml" <<EOF
 model:
   provider: custom
@@ -36,7 +44,7 @@ EOF
   for p in "ada:Plans the work" "bram:Reviews code" "cleo:Writes the docs"; do
     hermes_env "$VENV/bin/hermes" profile create "${p%%:*}" --clone --no-alias --description "${p#*:}" >>"$RH_DIR/setup.log" 2>&1
   done
-  setsid python3 -I "$HERE/model-stub.py" $model_host "$model_port" "$RH_DIR/model-requests.jsonl" >"$RH_DIR/stub.log" 2>&1 </dev/null &
+  setsid python3 -I "$HERE/model-stub.py" "$model_host" "$model_port" "$RH_DIR/model-requests.jsonl" >"$RH_DIR/stub.log" 2>&1 </dev/null &
   echo $! >"$RH_DIR/stub.pid"
   local stub_started=$SECONDS
   # Ask for the stub's own model, so another process on the port never passes for it.
@@ -49,7 +57,7 @@ EOF
     ${RH_PYTHONPATH:+PYTHONPATH="$RH_PYTHONPATH"} \
     HERMES_DASHBOARD_BASIC_AUTH_USERNAME=verify HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=verify-pass \
     HERMES_DASHBOARD_BASIC_AUTH_SECRET="real-hermes-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')" \
-    "$VENV/bin/hermes" dashboard --isolated --host $dash_host --port "$dash_port" --no-open --skip-build \
+    "$VENV/bin/hermes" dashboard --isolated --host "$dash_host" --port "$dash_port" --no-open --skip-build \
     >"$RH_DIR/dashboard.log" 2>&1 </dev/null &
   echo $! >"$RH_DIR/dashboard.pid"
   local started=$SECONDS limit=${RH_READY_S:-180}

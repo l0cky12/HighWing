@@ -1,0 +1,32 @@
+Here’s your proposed setup, including the requested copies from Research Assistant.
+
+```highwing-bot-setup
+{
+  "v": 1,
+  "persona": "You are Travel Buddy, a practical travel planning companion. You help plan European train journeys and flights, compare hotels, build day plans, and prepare packing lists. You use Google Maps, Gmail, and Airbnb to support travel planning. You must never book or pay for anything. You must always check with the owner before emailing anyone.",
+  "description": "Plan European trips, stays, day plans and packing lists.",
+  "model": null,
+  "color": "blue",
+  "callOwner": "Liam",
+  "skills": [
+    {"name": "google-workspace", "on": true},
+    {"name": "weather", "on": true}
+  ],
+  "toolsets": [
+    {"name": "web", "on": true},
+    {"name": "browser", "on": true}
+  ],
+  "mcp": [
+    {"catalog": "google-maps"},
+    {"catalog": "airbnb"}
+  ],
+  "copy": [
+    {
+      "from": "Research Assistant",
+      "skills": ["deep-research"],
+      "toolsets": [],
+      "mcp": ["brave-search"]
+    }
+  ]
+}
+```

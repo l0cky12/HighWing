@@ -70,6 +70,17 @@ describe.each(MODES)("the transport's session core on a %s server", (mode) => {
     }
   });
 
+  it("lists a chat that has run a turn under this app's Source on a legacy server, and Hermes Desktop's on a canonical one", async () => {
+    const { server, hermes, chat, runtime } = await signedIn();
+    const id = await hermes.newChat();
+    await hermes.send(id, "hi");
+    server.event(runtime(id), "message.start");
+    server.event(runtime(id), "message.complete", { text: "Hello", status: "complete" });
+    server.broadcast("sessions.changed");
+    await hermes.idle();
+    expect(chat(id).source).toBe(mode === "legacy" ? "app" : "desktop");
+  });
+
   it("shows an Approval as a card, and the owner's answer reaches Hermes", async () => {
     const { server, hermes, id, runtime, chat, card } = await replying();
     const { id: asked } = server.askApproval(runtime, { command: "rm -rf /var/log/old", description: "recursive delete" });

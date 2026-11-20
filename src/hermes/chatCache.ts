@@ -17,7 +17,7 @@ import { persist } from "./unsaved";
 import { NO_BRANCHES, type BranchAttempt, type BranchLink, type BranchPoint, type BranchStore, type BranchVariant } from "./branch";
 import { pickOf } from "./models";
 import { optionalText } from "./values";
-import { agentTurnOf } from "./returned";
+import { agentTurnOf, setupLineOf } from "./returned";
 import { isServerPath } from "./preview";
 import { sentHereOf, sentImage, withSentHere } from "./sentImages";
 
@@ -39,7 +39,6 @@ export const BRANCH_PREFIX = "hermes-chat.branches.";
 export const REPLY_TIMES_PREFIX = "hermes-chat.reply-times.";
 /** The images this app sent, per connection and profile (sentImages.ts `SentHere`). */
 export const SENT_HERE_PREFIX = "hermes-chat.sent-images.";
-/** The asks made from each profile's Bot Chat, per connection and profile (asks.ts, ADR 0233). Clearing the cache keeps them. */
 export const ASKS_PREFIX = "hermes-chat.asks.";
 /** Where drafts.ts kept a chat's sent messages Hermes didn't take, or may not have, before the outbox: moved into it. */
 export const HELD_PREFIX = "hermes-chat.undelivered.";
@@ -183,10 +182,11 @@ function toItem(v: unknown): Item | undefined {
       const body = optionalText(i.body);
       const title = optionalText(i.title);
       const agent = agentTurnOf(i.agent);
+      const setup = setupLineOf(i.setup);
       const rowId = Number.isSafeInteger(i.rowId) ? (i.rowId as number) : undefined;
       return body === undefined
         ? undefined
-        : { kind: "returned", id, body, process: i.process === true, ...(title && { title }), ...(agent && { agent }), ...(at !== undefined && { at }), ...(rowId !== undefined && { rowId }) };
+        : { kind: "returned", id, body, process: i.process === true, ...(title && { title }), ...(agent && { agent }), ...(setup && { setup }), ...(at !== undefined && { at }), ...(rowId !== undefined && { rowId }) };
     }
     case "assistant": {
       const rowId = Number.isSafeInteger(i.rowId) ? (i.rowId as number) : undefined;

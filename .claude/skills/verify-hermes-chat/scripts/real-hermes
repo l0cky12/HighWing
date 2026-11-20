@@ -4,6 +4,7 @@
 # `hermes dashboard` from the venv the SKILL names. See ../SKILL.md.
 #   real-hermes up <dir>     make <dir> fresh, start the stub and the dashboard, print `export RH_DIR=<dir>` and the URL
 #   real-hermes down         stop what `up` started in $RH_DIR (by PID); the dir and its logs stay
+# RH_PYTHONPATH=<dir> puts extra packages on the dashboard's path, such as the `mcp` SDK a venv without it lacks.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -44,6 +45,7 @@ EOF
     sleep 0.1
   done
   setsid env -i PATH=/usr/bin:/bin HOME="$RH_DIR/home" HERMES_HOME="$RH_DIR/home/.hermes" HERMES_WEB_DIST="$RH_DIR/web" \
+    ${RH_PYTHONPATH:+PYTHONPATH="$RH_PYTHONPATH"} \
     HERMES_DASHBOARD_BASIC_AUTH_USERNAME=verify HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=verify-pass \
     HERMES_DASHBOARD_BASIC_AUTH_SECRET="real-hermes-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')" \
     "$VENV/bin/hermes" dashboard --isolated --host $dash_host --port "$dash_port" --no-open --skip-build \

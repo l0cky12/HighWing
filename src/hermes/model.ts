@@ -4,7 +4,7 @@ import type { ModelPick } from "./models";
 import type { ChatUsage, ReplyUsage } from "./usage";
 import type { SubagentTree } from "./subagents";
 import type { DispatchedTask, RosterWork } from "./dispatched";
-import type { AgentTurn } from "./returned";
+import type { AgentTurn, SetupLine } from "./returned";
 import type { CuAsk } from "./computerUse";
 
 /**
@@ -89,8 +89,9 @@ export type Item =
    * Hermes's one line for it, when it sent one. `body`: the result without Hermes's notice around it (`returned.ts`).
    * `process`: a background process's output, shown as a log; otherwise a subagent's answer, shown as Markdown.
    * `agent`: Bot messaging (ADR 0207): the row is a teammate's message to this bot, or the answer to one it sent.
+   * `setup`: Bot setup (ADR 0231): the row is a setup's hidden begin turn, shown as one Setup started line.
    */
-  | { kind: "returned"; id: string; title?: string; body: string; process: boolean; agent?: AgentTurn; rowId?: number; at?: number }
+  | { kind: "returned"; id: string; title?: string; body: string; process: boolean; agent?: AgentTurn; setup?: SetupLine; rowId?: number; at?: number }
   /** The model's reasoning before a reply or a tool call, as Hermes streams or stores it. */
   | { kind: "thinking"; id: string; text: string }
   | {

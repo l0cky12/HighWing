@@ -47,7 +47,7 @@ export const exportFileName = (title: string, extension = "md") =>
   }.${extension}`;
 
 /** The owner's messages, Hermes's replies and its thinking: picked one by one. Tool calls and Approvals go in all or none. */
-export const isMessage = (i: Item) => i.kind === "user" || i.kind === "returned" || i.kind === "assistant" || i.kind === "thinking";
+export const isMessage = (i: Item) => i.kind === "user" || (i.kind === "returned" && !i.setup) || i.kind === "assistant" || i.kind === "thinking";
 
 /** What goes into an export. */
 export type ExportChoice = {
@@ -77,9 +77,12 @@ export function chatJson(chat: Chat, exportedAt: Date, choice: ExportChoice = WH
   return render("json", chat, exportedAt, choice);
 }
 
-/** The chosen items: messages not left out, tool calls and Approvals only when chosen, and never the app's errors. */
+/**
+ * The chosen items: messages not left out, tool calls and Approvals only when chosen, and never the app's errors or a
+ * Setup started line, which stands for hidden rows.
+ */
 const chosen = (chat: Chat, choice: Omit<ExportChoice, "redact">) =>
-  chat.items.filter((i) => (isMessage(i) ? !choice.leftOut.has(i.id) : i.kind !== "error" && choice.toolCalls));
+  chat.items.filter((i) => (isMessage(i) ? !choice.leftOut.has(i.id) : i.kind !== "error" && i.kind !== "returned" && choice.toolCalls));
 
 const oneLine = (title: string) => title.replace(/\s+/g, " ").trim();
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { atQuery } from "./chatReferences";
-import { completeMention, matchBots, mentionsIn } from "./mentionPicker";
+import { PICK_MARK, completeMention, matchBots, mentionsFor, mentionsIn, withPicks, withoutPick } from "./mentionPicker";
 
 type Bot = { handle: string; name: string };
 
@@ -83,19 +83,30 @@ describe("what the @ menu reads, matched", () => {
 
 describe("completeMention", () => {
   it("replaces the typed word with the handle and a space, and puts the caret after it", () => {
-    expect(completeMention("hi @br", 3, 6, "bram")).toEqual({ text: "hi @bram ", caret: 9 });
+    expect(completeMention("hi @br", 3, 6, "bram")).toEqual({ text: `hi @${PICK_MARK}bram `, caret: 10 });
   });
 
   it("adds no second space before words that follow, and leaves the caret after the one there", () => {
-    expect(completeMention("hi @br there", 3, 6, "bram")).toEqual({ text: "hi @bram there", caret: 9 });
+    expect(completeMention("hi @br there", 3, 6, "bram")).toEqual({ text: `hi @${PICK_MARK}bram there`, caret: 10 });
   });
 
   it("adds a space before a new line rather than taking the line break for one", () => {
-    expect(completeMention("@br\nnext", 0, 3, "bram")).toEqual({ text: "@bram \nnext", caret: 6 });
+    expect(completeMention("@br\nnext", 0, 3, "bram")).toEqual({ text: `@${PICK_MARK}bram \nnext`, caret: 7 });
   });
 
   it("keeps what is after the caret, even the rest of a word", () => {
-    expect(completeMention("@bXXX", 0, 2, "bram")).toEqual({ text: "@bram XXX", caret: 6 });
+    expect(completeMention("@bXXX", 0, 2, "bram")).toEqual({ text: `@${PICK_MARK}bram XXX`, caret: 7 });
+  });
+
+  it("writes the pick mark right after the @, so the pill it makes is a picked one", () => {
+    const done = completeMention("what does @br", 10, 13, "bram");
+    expect(done.text).toBe("what does @\u200Dbram ");
+    expect(mentionsIn(done.text, [BRAM]).map((m) => m.picked)).toEqual([true]);
+  });
+
+  it("adds no step for the caret: the @ and the mark are one grapheme, so @bram is as many stops as it has letters", () => {
+    const graphemes = (s: string) => [...new Intl.Segmenter().segment(s)].length;
+    expect(graphemes(`@${PICK_MARK}bram`)).toBe(graphemes("@bram"));
   });
 });
 
@@ -138,5 +149,73 @@ describe("mentionsIn", () => {
 
   it("names nobody where the handle runs on into a longer token, as Hermes reads @bram.com as one handle", () => {
     expect(named("see @bram.com @ada's @ada) @bram.:x @ada\u{1f600} @bram/ @ada\"")).toEqual([]);
+  });
+});
+
+describe("a picked mention and a typed one", () => {
+  const roster = [ADA, BRAM];
+  const marked = (handle: string) => `@${PICK_MARK}${handle}`;
+
+  it("tells them apart by the mark after the @, and takes the mark into the mention's range", () => {
+    const text = `${marked("bram")} and @ada`;
+    const found = mentionsIn(text, roster);
+    expect(found.map((m) => [m.bot.handle, m.picked])).toEqual([
+      ["bram", true],
+      ["ada", false],
+    ]);
+    expect([found[0].start, found[0].end]).toEqual([0, marked("bram").length]);
+    expect(text.slice(found[0].start, found[0].end)).toBe(marked("bram"));
+  });
+
+  it("reads a marked handle by the same rules as a typed one", () => {
+    expect(mentionsIn(`see ${marked("BRAM")}, ${marked("ada")}?! me${marked("ada")} ${marked("cleo")} ${marked("bramble")}`, roster).map((m) => [m.bot.handle, m.picked])).toEqual([
+      ["bram", true],
+      ["ada", true],
+    ]);
+  });
+
+  it("counts a doubled mark, or a mark with no @, as no mention", () => {
+    expect(mentionsIn(`@${PICK_MARK}${PICK_MARK}bram ${PICK_MARK}@bram x${PICK_MARK}`, roster)).toEqual([]);
+  });
+
+  it.each([
+    ["named", ["bram", "ada"]],
+    ["picked", ["bram"]],
+    ["none", []],
+  ] as const)("counts, under the rule %s, these of a typed and a picked mention: %j", (rule, handles) => {
+    expect(mentionsFor(`${marked("bram")} @ada`, roster, rule).map((m) => m.bot.handle)).toEqual(handles);
+  });
+
+  it("strips the mark from every @ that has one and from nothing else", () => {
+    expect(withoutPick(`${marked("bram")} hi ${marked("ada")}, a family \u{1F468}\u200D\u{1F469}\u200D\u{1F467} and a@${PICK_MARK}b`)).toBe(
+      "@bram hi @ada, a family \u{1F468}\u200D\u{1F469}\u200D\u{1F467} and a@b",
+    );
+    expect(withoutPick("plain @bram")).toBe("plain @bram");
+  });
+
+  it("puts the mark on a typed mention and leaves a picked one alone", () => {
+    expect(withPicks(`@bram hi ${marked("ada")} @ada me@bram.org`, [BRAM, ADA])).toBe(`${marked("bram")} hi ${marked("ada")} ${marked("ada")} me@bram.org`);
+    expect(withPicks("@bram @ada", [BRAM])).toBe(`${marked("bram")} @ada`);
+  });
+
+  describe("an ordinary sentence with an @handle in it", () => {
+    const bots = [
+      { handle: "bram", name: "Bram" },
+      { handle: "hermes", name: "Hermes" },
+      { handle: "work", name: "Work" },
+    ];
+    const probes = ["What did @bram say about the budget?", "Rewrite this tweet: thanks @hermes for the help!", "@work is my job profile, explain it"];
+
+    it.each(probes)("asks nobody in an ordinary chat, where only a picked bot asks: %s", (text) => {
+      expect(mentionsFor(text, bots, "picked")).toEqual([]);
+    });
+
+    it.each(probes)("asks the bot in a Bot Chat, where a typed one does too: %s", (text) => {
+      expect(mentionsFor(text, bots, "named")).toHaveLength(1);
+    });
+
+    it("asks the bot when the owner picked it in the same sentence", () => {
+      expect(mentionsFor(`What did ${marked("bram")} say about the budget?`, bots, "picked").map((m) => m.bot.handle)).toEqual(["bram"]);
+    });
   });
 });

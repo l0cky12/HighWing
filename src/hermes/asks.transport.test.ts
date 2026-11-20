@@ -241,7 +241,7 @@ describe("An @ in a Bot Chat asks the named bot", () => {
     server.rejectPrompt = { code: 4010, message: "no" };
     hermes.asks.send("alpha-bot", [bot("beta")], WORDS, [SELF]);
     await until(hermes, () => target(hermes)?.state === "failed");
-    expect(hermes.asks.takeBack(hermes.asks.list()[0].id)).toEqual({ text: WORDS, references: [SELF] });
+    expect(hermes.asks.takeBack(hermes.asks.list()[0].id)).toEqual({ text: WORDS, profiles: ["beta"], references: [SELF] });
     expect(hermes.asks.list()).toEqual([]);
 
     hermes.asks.send("alpha-bot", [bot("beta")], WORDS, [SELF]);

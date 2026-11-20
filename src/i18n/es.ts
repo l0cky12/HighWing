@@ -23,7 +23,7 @@ export const es: Catalogue = {
       chats: "Chats",
       menu: "Bots y chats",
       keys: "↑↓ para elegir · Intro o Tab para ponerlo · Esc para cerrar",
-      button: "Nombrar un bot o citar un chat",
+      button: "Elegir un bot o citar un chat",
     },
     returned: {
       work: "Terminó un trabajo en segundo plano",

@@ -54,6 +54,7 @@ export type CapabilityId =
   | "workReclaim"
   | "workReassign"
   | "botMode"
+  | "botSetup"
   | "subagents"
   | "subagentRoster"
   | "modelUsage"
@@ -605,6 +606,15 @@ export const CAPABILITIES: readonly CapabilitySpec[] = [
     methods: ["profiles.list"],
   },
   {
+    id: "botSetup",
+    label: "Bot setup",
+    usedBy: "New bot's interview in the bot's Bot Chat",
+    needs: "Hermes 0.23.2 or later with Bot Mode, where a new profile gets the launch profile's keys and session.create stores a seeded row hidden.",
+    without: "New bot makes the bot from its name and model only, with no interview.",
+    anchor: "bot-setup",
+    notChecked: "Known once a new bot's interview starts on this connection.",
+  },
+  {
     id: "subagents",
     label: "Subagents",
     usedBy: "The Subagents panel in a chat",
@@ -868,6 +878,16 @@ export function sharesChats(f: ServerFacts): boolean {
 }
 
 export const predatesBotMessaging = (f: ServerFacts) => atLeast(f, BOT_MESSAGING_SINCE) === false;
+
+/**
+ * Bot setup's one floor (ADR 0231): the first release whose fresh profile gets the launch profile's keys
+ * (`mirror_credentials`), so a new bot can answer its brief. Hidden seeded rows (0.21.2) and the hidden
+ * `prompt.submit` (0.20.4) are older.
+ */
+export const BOT_SETUP_SINCE = "0.23.2";
+
+/** Whether Hermes says it is older than Bot setup's floor. A Hermes that names no version isn't treated as older. */
+export const predatesBotSetup = (f: ServerFacts) => atLeast(f, BOT_SETUP_SINCE.split(".").map(Number)) === false;
 
 /** What a failed `client.capabilities` means for Approvals. A Hermes without it is older than the requests this app reads. */
 export function approvalsFailed(e: unknown): Pick<Capability, "state" | "why"> {

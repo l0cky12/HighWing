@@ -294,7 +294,7 @@ describe("the plan", () => {
   // Owner call 6: on a new bot the model row is greyed "Already in use" and not counted, unless the bot proposes another.
   it("shows the model already in use as a row that isn't counted, unless the block proposes another model", () => {
     const keep = planCard(card(), now());
-    expect(listedItem(keep, "model")).toEqual({ kind: "model", key: "model", name: "claude-sonnet-4.5", proposed: "claude-sonnet-4.5", before: "claude-sonnet-4.5", after: "claude-sonnet-4.5", over: [], status: "same" });
+    expect(listedItem(keep, "model")).toEqual({ kind: "model", key: "model", name: "claude-sonnet-4.5", proposed: "claude-sonnet-4.5", before: "claude-sonnet-4.5", after: "claude-sonnet-4.5", over: [], status: "same", ticked: true });
     expect(tickable(item(keep, "model"))).toBe(false);
     expect(tickedCount(keep)).toBe(10);
     const sameNamed = planCard(card(block({ model: "claude-sonnet-4.5" })), now());
@@ -653,6 +653,17 @@ describe("what the owner accepted", () => {
     expect(listedItem(planCard(card, now(), null, [edit, untick]), "persona")).toMatchObject({ status: "change", ticked: false, after: "You are B." });
   });
 
+  it("keeps an untick through a Set it up that found Hermes already had the bot's value", () => {
+    const { card } = cardOf(rowsWith(block()));
+    const off = now();
+    const untick = choose(listedItem(planCard(card, off), "skill:find-nearby"), { ticked: false });
+    const on = now({ skills: [{ name: "find-nearby", enabled: true }] });
+    const record = acceptedRecord(planCard(card, on, null, [untick]));
+    const row = listedItem(planCard(card, off, record), "skill:find-nearby");
+    expect(row).toMatchObject({ before: "off", after: "on" });
+    expect(tickable(row) && row.ticked).toBe(false);
+  });
+
   // Persona B is applied, a toolset fails, and Try again sets up only the toolset.
   it("keeps what an earlier Set it up applied in the record a retry leaves", () => {
     const { card } = cardOf(rowsWith(block()));
@@ -735,6 +746,11 @@ describe("the owner's choices, over generated runs", () => {
       { op: "block", persona: A, skill: "on" },
     ],
   };
+  const untickedThenSame: Run = {
+    start: { persona: A, skill: "off" },
+    first: { persona: A, skill: "on" },
+    steps: [{ op: "choose", key: "skill", ticked: false }, { op: "hermes", key: "skill", to: "on" }, { op: "setItUp" }, { op: "hermes", key: "skill", to: "off" }],
+  };
 
   const cardFor = (b: Shown) =>
     cardOf([briefAgain("s1", "You are Z."), reply(2, JSON.stringify(keeping({ persona: b.persona, callOwner: null, skills: [{ name: "find-nearby", on: b.skill === "on" }], toolsets: [], mcp: [], copy: [] })))]).card;
@@ -799,7 +815,7 @@ describe("the owner's choices, over generated runs", () => {
           check(trail.join(" → "));
         }
       }),
-      { numRuns: 3000, examples: [[caughtUp], [untickedWhenKept]] },
+      { numRuns: 3000, seed: 1511, examples: [[caughtUp], [untickedWhenKept], [untickedThenSame]] },
     );
   });
 });

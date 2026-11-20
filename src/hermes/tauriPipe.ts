@@ -3,7 +3,7 @@
 // webview.
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type { CustomEndpoint, EndpointSave, ProviderSignIn } from "./accounts";
-import { RefusedError, RestError, type LocalFile, type OpenPipe, type Pipe, type PipeEvent, type Route, type ToolsetGuards, type Transcript, type VoiceSetup } from "./pipe";
+import { RefusedError, RestError, type LocalFile, type OpenPipe, type Pipe, type PipeEvent, type Route, type ToolsetGuards, type CommandAllowlist, type Transcript, type VoiceSetup } from "./pipe";
 import type { GitExclude } from "./projectContextFiles";
 import type { Downloaded, PickedUpload, TransferProgress } from "./remoteFiles";
 import { SignInFailure, type Probe, type Probed, type ProbeFailure, type SavedKey } from "./setup";
@@ -168,6 +168,7 @@ function routePipe(
       },
       voiceSetup: (profile) => invoke<VoiceSetup>("hermes_voice_setup", { attempt, profile }).catch(asError),
       toolsetGuards: (profile) => invoke<ToolsetGuards>("hermes_toolset_guards", { attempt, profile }).catch(asError),
+      commandAllowlist: (profile) => invoke<CommandAllowlist>("hermes_command_allowlist", { attempt, profile }).catch(asError),
       mcpEdit: (profile, edit) => invoke<void>("hermes_mcp_edit", { attempt, profile, edit }).catch(asError),
       download: (id, path, name, onProgress) => {
         const channel = new Channel<TransferProgress>();

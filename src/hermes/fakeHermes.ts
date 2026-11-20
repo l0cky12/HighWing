@@ -1,7 +1,7 @@
 // A fake Hermes dashboard for tests: it sits where the Rust pipe does and speaks wire-shaped legacy
 // JSON-RPC frames and dashboard REST bodies (shapes from the deployed contracts, see the research doc).
 import golden from "./commandsCatalogGolden.json";
-import { RestError, type LocalFile, type OpenPipe, type PipeEvent, type RestMethod, type Route, type Speech, type ToolsetGuards, type VoiceSetup } from "./pipe";
+import { RestError, type LocalFile, type OpenPipe, type PipeEvent, type RestMethod, type Route, type Speech, type ToolsetGuards, type VoiceSetup, type CommandAllowlist } from "./pipe";
 import type { SavedKey } from "./setup";
 import type { ApprovalMode } from "./model";
 import { FakeMemoryProviders } from "./fakeMemoryProviders";
@@ -1399,6 +1399,7 @@ export class FakeHermes {
       const settled = r.params.request_id ? open.filter(([, q]) => q.params.request_id === r.params.request_id) : open.slice(0, 1);
       for (const [id] of settled) {
         this.approvalAnswers.push({ id, choice: r.params.choice, via: "approval.respond" });
+        this.grantAlways(id, r.params.choice);
         this.cancelRequest(id, "resolved");
       }
       this.respond(r.id, { resolved: settled.length });
@@ -1915,6 +1916,7 @@ export class FakeHermes {
       ...(this.cron.zoneSetting(query.get("profile") || "default") && { timezone: this.cron.zoneSetting(query.get("profile") || "default") }),
       // The raw map, as `include_defaults=false` reads it: what Rust's MCP edit starts from (fakeMcp.ts).
       ...(this.mcp.servers[query.get("profile") || "default"] && { mcp_servers: this.mcp.servers[query.get("profile") || "default"] }),
+      command_allowlist: structuredClone(this.commandAllowlist[query.get("profile") || "default"] ?? []),
     }),
     // `PUT /api/env` for an MCP server's bearer token, which Rust's edit saves first (`Dashboard::mcp_edit`).
     "PUT /api/env": ({ body, query }) => this.mcp.saveEnv(query.get("profile") || "default", String(body?.key ?? ""), String(body?.value ?? "")),
@@ -1944,6 +1946,8 @@ export class FakeHermes {
         else mc.unslottedAuxiliary[task] = { ...mc.unslottedAuxiliary[task], ...block };
       }
       await this.voiceProviders.mergeConfig(query.get("profile") || "default", config as Record<string, unknown>);
+      // `_deep_merge` replaces a list whole.
+      if ("command_allowlist" in config) this.commandAllowlist[query.get("profile") || "default"] = structuredClone((config as Record<string, unknown>).command_allowlist);
       return { ok: true };
     },
   };
@@ -2110,6 +2114,11 @@ export class FakeHermes {
   /** While set, reading the config for the toolset guards fails with this. */
   toolsetGuardsFailure?: string | Error;
   /**
+   * Each profile's `command_allowlist` as config.yaml holds it, any value; a profile not here has Hermes's default, `[]`.
+   * An "always" answer to an Approval adds its pattern name, and `PUT /api/config` replaces the list whole (ADR 0236).
+   */
+  commandAllowlist: Record<string, unknown> = {};
+  /**
    * Each toolset's provider rows, as `GET /api/tools/toolsets/{name}/config` answers them (`provider_readiness_status`).
    * A toolset not here has no provider category. Checked live: web's keyless Exa row is ready and its ddgs row isn't.
    */
@@ -2237,7 +2246,10 @@ export class FakeHermes {
       const req = JSON.parse(text) as Request | Response;
       if (!("method" in req)) {
         this.responses.push(req);
-        if (this.openRequests.get(req.id)?.method === "approval" && req.result) this.approvalAnswers.push({ id: req.id, choice: req.result.choice, via: "response" });
+        if (this.openRequests.get(req.id)?.method === "approval" && req.result) {
+          this.approvalAnswers.push({ id: req.id, choice: req.result.choice, via: "response" });
+          this.grantAlways(req.id, req.result.choice);
+        }
         if (req.result) this.settle(req.id, req.result, "response");
         this.openRequests.delete(req.id);
         return;
@@ -2290,6 +2302,17 @@ export class FakeHermes {
       fsSaveText: (_id, profile, path, text, session) => this.fsWriteText(profile, path, text, session),
       cancelTransfer: async (id) => this.managedFiles.cancel(id),
       context: this.context.pipe(),
+      // Mirrors `Dashboard::command_allowlist`: the config read through the relay, only the list kept.
+      commandAllowlist: async (profile): Promise<CommandAllowlist> => {
+        const raw = (JSON.parse(await restCall("GET", `api/config?profile=${encodeURIComponent(profile)}`)) as { command_allowlist?: unknown }).command_allowlist;
+        if (raw === undefined || raw === null) return { kind: "list", entries: [] };
+        if (Array.isArray(raw))
+          return raw.every((e) => typeof e === "string")
+            ? { kind: "list", entries: [...raw] }
+            : { kind: "unreadable", why: "it has an item that isn't text, so Hermes ignores the whole list" };
+        if (typeof raw === "string") return { kind: "unreadable", why: "it's written as text in an old form, not as a list" };
+        return { kind: "unreadable", why: "it isn't a list, so Hermes ignores it" };
+      },
       // Mirrors `Dashboard::toolset_guards`: only these two facts of the config.
       toolsetGuards: async (profile): Promise<ToolsetGuards> => {
         if (this.toolsetGuardsFailure) throw thrown(this.toolsetGuardsFailure);
@@ -3171,6 +3194,20 @@ export class FakeHermes {
   /** A `secret` request as `agent_callbacks.secret_cb` sends it, for a skill's missing env var. */
   askSecret(sid: string, over: Record<string, unknown> = {}) {
     return this.ask(sid, "secret", { prompt: "Enter your OpenWeather API key", env_var: "OPENWEATHER_API_KEY", metadata: { skill_name: "weather" }, ...over });
+  }
+
+  /**
+   * `tools/approval.py` `_persist_choice`: an "always" answer saves the request's pattern name in its profile's
+   * `command_allowlist`. Computer use keeps its own grants (`cuGrants`), so its approvals aren't saved here.
+   */
+  private grantAlways(id: string, choice: unknown) {
+    const q = this.openRequests.get(id);
+    const name = q?.params.description;
+    if (choice !== "always" || !q || typeof name !== "string" || String(q.params.request_id ?? "").startsWith("cua-")) return;
+    const profile = this.runtimeProfile.get(q.sid) ?? "default";
+    const now = this.commandAllowlist[profile];
+    const list = Array.isArray(now) ? now.filter((e): e is string => typeof e === "string") : [];
+    this.commandAllowlist[profile] = [...new Set([...list, name])].sort();
   }
 
   /** An `approval` request as `server._approval_request_payload` renders it: the command redacted, the choices set. */

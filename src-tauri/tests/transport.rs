@@ -317,6 +317,7 @@ async fn config(headers: HeaderMap, Query(q): Query<HashMap<String, String>>) ->
         },
         // `true` is YAML for a typo'd number: Hermes's `_numeric_or` drops it, and so does the app.
         "voice": {"silence_threshold": 350, "silence_duration": 1.5, "max_recording_seconds": true, "gpt_live": {"api_key": "sk-live-SECRET"}},
+        "command_allowlist": ["recursive delete", "git force push"],
     }))
     .into_response()
 }
@@ -725,6 +726,57 @@ async fn relays_the_model_settings_writes() {
         got,
         json!({"uri": "/api/config?profile=default", "content_type": "application/json", "body": {"config": {"agent": {"reasoning_effort": "low"}}}})
     );
+}
+
+#[tokio::test]
+async fn reads_only_the_command_allowlist_of_the_config() {
+    let dashboard = signed_in().await;
+    let got = dashboard.command_allowlist("work").await.unwrap();
+    assert_eq!(got, transport::CommandAllowlist::List { entries: vec!["recursive delete".into(), "git force push".into()] });
+    assert_eq!(serde_json::to_value(&got).unwrap(), json!({"kind": "list", "entries": ["recursive delete", "git force push"]}));
+}
+
+#[test]
+fn the_command_allowlist_is_read_as_hermes_reads_it() {
+    let list = |v: Value| transport::command_allowlist(&json!({ "command_allowlist": v }));
+    let entries = |e: &[&str]| transport::CommandAllowlist::List { entries: e.iter().map(|s| s.to_string()).collect() };
+    assert_eq!(transport::command_allowlist(&json!({})), entries(&[]), "no list is an empty one");
+    assert_eq!(list(Value::Null), entries(&[]));
+    assert_eq!(list(json!([])), entries(&[]));
+    assert_eq!(list(json!(["a", "a", "b"])), entries(&["a", "a", "b"]), "kept as written");
+    for bad in [json!(["a", 1]), json!("['a']"), json!({"a": true}), json!(7)] {
+        assert!(matches!(list(bad.clone()), transport::CommandAllowlist::Unreadable { .. }), "{bad}");
+    }
+}
+
+#[tokio::test]
+async fn relays_a_config_write_of_the_command_allowlist_alone() {
+    let dashboard = signed_in().await;
+    for list in [json!(["recursive delete"]), json!([])] {
+        let body = json!({"config": {"command_allowlist": list}});
+        let got: Value = serde_json::from_str(&dashboard.request("PUT", "api/config?profile=work", Some(body.to_string())).await.unwrap()).unwrap();
+        assert_eq!(got, json!({"uri": "/api/config?profile=work", "content_type": "application/json", "body": body}));
+    }
+}
+
+#[tokio::test]
+async fn refuses_a_config_write_that_puts_the_command_allowlist_beside_anything_else() {
+    let dashboard = signed_in().await;
+    for body in [
+        json!({"config": {"command_allowlist": [], "approvals": {"mode": "off"}}}),
+        json!({"config": {"command_allowlist": ["a"], "agent": {"reasoning_effort": "low"}}}),
+        json!({"config": {"command_allowlist": ["a"]}, "profile": "other"}),
+        json!({"config": {"command_allowlist": ["a", 1]}}),
+        json!({"config": {"command_allowlist": [null]}}),
+        json!({"config": {"command_allowlist": "a"}}),
+        json!({"config": {"command_allowlist": {"a": true}}}),
+        json!({"config": {"command_allowlist": null}}),
+    ] {
+        let err = dashboard.request("PUT", "api/config?profile=work", Some(body.to_string())).await.unwrap_err();
+        assert!(matches!(err, TransportError::NotRelayed(_)), "{body}: {err:?}");
+    }
+    // Other config writes still go, and never carry the list.
+    assert!(dashboard.request("PUT", "api/config?profile=work", Some(json!({"config": {"agent": {"reasoning_effort": "low"}}}).to_string())).await.is_ok());
 }
 
 #[tokio::test]

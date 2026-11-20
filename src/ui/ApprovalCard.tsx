@@ -207,7 +207,7 @@ export function ConfirmGrant({
   const words = cua
     ? (always ? l.confirmAlways : l.confirmSession)(what, otherScope(cua.scope))
     : always
-      ? `Always allow ${what}? Hermes won't ask again before running them, in any chat.`
+      ? `Always allow ${what}? Hermes won't ask again before running them, in any chat. Settings → Approvals lists what is always allowed, and can take it back.`
       : `Allow ${what} for the rest of this chat? Hermes won't ask again before running them here.`;
   return (
     <div className="approval-confirm">

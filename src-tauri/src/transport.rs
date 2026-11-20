@@ -1573,7 +1573,8 @@ impl Dashboard {
 
     /// One dashboard REST call for the webview: `GET`, `PATCH` or `DELETE` on a path under `api/`, with a
     /// JSON body. `POST` and `PUT` reach only Settings → Model's two writes (`POST api/model/set`,
-    /// `PUT api/config`), the scheduled-job writes (`cron_write`), the profile form's Persona save,
+    /// `PUT api/config` with any config but `command_allowlist`), Settings → Approvals' `PUT api/config` with that list
+    /// alone (`command_allowlist_write`, ADR 0236), the scheduled-job writes (`cron_write`), the profile form's Persona save,
     /// `PUT api/profiles/{name}/soul`, the Clone profile dialog's `POST api/profiles` (`profile_create_allowed`, ADR 0074),
     /// Settings → Profiles' description, model and written-for-me description (`profile_field_write`,
     /// `profile_describe_auto`, ADR 0156),
@@ -1602,7 +1603,8 @@ impl Dashboard {
             ("PATCH", _) => Method::PATCH,
             ("DELETE", _) => Method::DELETE,
             ("POST", "api/model/set") => Method::POST,
-            ("PUT", "api/config") => Method::PUT,
+            ("PUT", "api/config") if command_allowlist_write(body.as_deref()) => Method::PUT,
+            ("PUT", "api/config") if !names_command_allowlist(body.as_deref()) => Method::PUT,
             ("POST", _) if cron_write("POST", path) => Method::POST,
             ("PUT", _) if cron_write("PUT", path) => Method::PUT,
             ("PUT", _) if toolset_toggle_allowed(path, body.as_deref()) => Method::PUT,
@@ -1747,6 +1749,15 @@ impl Dashboard {
             stt_settings: settings("stt"),
             tts_settings: settings("tts"),
         })
+    }
+
+    /// `profile`'s `command_allowlist`, from `GET /api/config`; nothing else of the config is kept (ADR 0236).
+    pub async fn command_allowlist(&self, profile: &str) -> Result<CommandAllowlist, TransportError> {
+        let query = url::form_urlencoded::Serializer::new(String::new()).append_pair("profile", profile).finish();
+        let body = self.request("GET", &format!("api/config?{query}"), None).await?;
+        let config: serde_json::Value =
+            serde_json::from_str(&body).map_err(|_| TransportError::Unexpected { status: 200, body: "the profile's config isn't JSON".into() })?;
+        Ok(command_allowlist(&config))
     }
 
     /// `ToolsetGuards` for `profile`, from `GET /api/config`; nothing else of the config is kept.
@@ -2238,6 +2249,49 @@ pub struct ToolsetGuards {
     /// `agent.disabled_toolsets` is a string this can't read for certain the way Hermes does (`ast.literal_eval`, with
     /// its escapes and literal forms), so any toolset may be on it.
     pub disabled_unclear: bool,
+}
+
+/// A profile's `command_allowlist`: what Hermes runs without asking, the pattern names its "always" answers saved
+/// (`tools/approval.py` `_read_permanent_allowlist` at `ae2a81c`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum CommandAllowlist {
+    /// A list of text, as Hermes writes it. No list at all, or `null`, is an empty one to Hermes.
+    List { entries: Vec<String> },
+    /// Hermes ignores it (not a list of text), or reads it only through its fallback for an old text form. This app
+    /// shows why and doesn't write it.
+    Unreadable { why: String },
+}
+
+/// `CommandAllowlist` from a profile's config as `GET /api/config` answers it.
+pub fn command_allowlist(config: &serde_json::Value) -> CommandAllowlist {
+    match config.get("command_allowlist") {
+        None | Some(serde_json::Value::Null) => CommandAllowlist::List { entries: Vec::new() },
+        Some(serde_json::Value::Array(items)) => match items.iter().map(|i| i.as_str().map(str::to_owned)).collect::<Option<Vec<_>>>() {
+            Some(entries) => CommandAllowlist::List { entries },
+            None => CommandAllowlist::Unreadable { why: "it has an item that isn't text, so Hermes ignores the whole list".into() },
+        },
+        Some(serde_json::Value::String(_)) => CommandAllowlist::Unreadable { why: "it's written as text in an old form, not as a list".into() },
+        Some(_) => CommandAllowlist::Unreadable { why: "it isn't a list, so Hermes ignores it".into() },
+    }
+}
+
+/// Whether a `PUT api/config` body is Settings → Approvals' write: exactly `{"config": {"command_allowlist": [text,
+/// …]}}`, with no profile in the body and nothing else of the config (ADR 0236). Hermes's deep merge replaces a list
+/// whole (`_deep_merge` in `hermes_cli/config.py`), so this writes the profile's list and nothing else.
+pub fn command_allowlist_write(body: Option<&str>) -> bool {
+    let Some(body) = body.and_then(|b| serde_json::from_str::<serde_json::Value>(b).ok()) else {
+        return false;
+    };
+    let Some(config) = body.as_object().filter(|o| o.len() == 1).and_then(|o| o.get("config")).and_then(|c| c.as_object()) else {
+        return false;
+    };
+    config.len() == 1 && config.get("command_allowlist").and_then(|l| l.as_array()).is_some_and(|l| l.iter().all(serde_json::Value::is_string))
+}
+
+/// Whether a `PUT api/config` body touches `command_allowlist`, which only `command_allowlist_write` may (ADR 0236).
+fn names_command_allowlist(body: Option<&str>) -> bool {
+    body.and_then(|b| serde_json::from_str::<serde_json::Value>(b).ok()).is_some_and(|b| b["config"].get("command_allowlist").is_some())
 }
 
 /// `ToolsetGuards` from a profile's config as `GET /api/config` answers it.

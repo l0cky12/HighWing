@@ -113,6 +113,12 @@ export type VoiceSetup = {
  */
 export type ToolsetGuards = { noMcp: string[]; noMcpUnclear: string[]; savedLists: string[]; codingFocus: boolean; disabledEverywhere: string[]; disabledUnclear: boolean };
 
+/**
+ * A profile's `command_allowlist`, the pattern names Hermes runs without asking (src-tauri `Dashboard::command_allowlist`,
+ * ADR 0236). `unreadable`: Hermes ignores it, or reads it only from an old text form, so this app doesn't write it.
+ */
+export type CommandAllowlist = { kind: "list"; entries: string[] } | { kind: "unreadable"; why: string };
+
 export type PipeEvent = { kind: "frame"; text: string } | { kind: "closed"; reason: string };
 
 /**
@@ -183,6 +189,8 @@ export interface Pipe {
   speak(profile: string, text: string): Promise<Speech>;
   voiceSetup(profile: string): Promise<VoiceSetup>;
   toolsetGuards(profile: string): Promise<ToolsetGuards>;
+  /** Settings → Approvals' read: only `profile`'s `command_allowlist` leaves Rust. */
+  commandAllowlist(profile: string): Promise<CommandAllowlist>;
   /**
    * Settings → MCP servers' edit of one server for `profile` (src-tauri `Dashboard::mcp_edit`, ADR 0121): Rust reads the
    * profile's raw config, changes that one server and writes Hermes's whole map back. Optional: without it, servers can

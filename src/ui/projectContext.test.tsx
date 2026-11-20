@@ -11,6 +11,7 @@ import { savedDefaults } from "../hermes/projectDefaults";
 import { DEFAULT_LIMIT_TOKENS } from "../hermes/projectContext";
 import { Main } from "../App";
 import { RestError } from "../hermes/pipe";
+import { claimDrops } from "./dropClaim";
 import { setUIPrefs } from "../hermes/uiPrefs";
 
 type DropEvent = { payload: { type: "drop"; paths: string[]; position: { x: number; y: number } } };
@@ -454,6 +455,24 @@ describe("the Context card", () => {
     });
     await waitFor(() => expect(cards()).toEqual(["notes.md", "plan.md"]));
     expect(s.managedFiles.nodes[`${DIR}/plan.md`]).toMatchObject({ bytes: "Save more." });
+  });
+
+  it("leaves a drop that something above it claimed", async () => {
+    const s = server();
+    s.files["/home/me/plan.md"] = "Save more.";
+    s.files["/home/me/notes2.md"] = "More notes.";
+    const app = await launch(s);
+    await app.openPage();
+    const release = claimDrops(() => true);
+    await act(async () => {
+      for (const drop of dropListeners) drop({ payload: { type: "drop", paths: ["/home/me/plan.md"], position: { x: 0, y: 0 } } });
+    });
+    release();
+    await act(async () => {
+      for (const drop of dropListeners) drop({ payload: { type: "drop", paths: ["/home/me/notes2.md"], position: { x: 0, y: 0 } } });
+    });
+    await waitFor(() => expect(cards()).toContain("notes2.md"));
+    expect(cards()).not.toContain("plan.md");
   });
 
   it("makes a folder for a project that has none with the first file, and it becomes the main folder", async () => {

@@ -21,6 +21,7 @@ import {
 import { ContextExistsError, asEntry, mainFolder, type AddTarget, type ContextProject, type Picked, type ProjectContextFiles } from "../hermes/projectContextFiles";
 import type { RemoteFiles } from "../hermes/remoteFiles";
 import { PreviewPane, type Preview } from "./FileBrowser";
+import { dropClaimed } from "./dropClaim";
 import { Spinner, composing, menuArrows, useDismiss } from "./bits";
 import { useModal } from "./modal";
 import { errorText, formatBytes } from "../hermes/values";
@@ -233,7 +234,7 @@ export function ContextCard({
     const over = (p: { x: number; y: number }) => {
       const box = card.current?.getBoundingClientRect();
       const scale = window.devicePixelRatio || 1;
-      return !!box && p.x / scale >= box.left && p.x / scale <= box.right && p.y / scale >= box.top && p.y / scale <= box.bottom;
+      return !!box && !dropClaimed(p.x / scale, p.y / scale) && p.x / scale >= box.left && p.x / scale <= box.right && p.y / scale >= box.top && p.y / scale <= box.bottom;
     };
     const unlisten = getCurrentWebview().onDragDropEvent(({ payload }) => {
       if (payload.type === "enter" || payload.type === "over") return setDragging(over(payload.position));

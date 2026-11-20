@@ -1,4 +1,4 @@
-// Bot setup's picture set (botPictures.ts, ADR 0235): the files the app ships, and the keys the card compares by.
+// Bot setup's picture set (botPictures.ts, ADR 0236): the files the app ships, and the keys the card compares by.
 import { readFileSync, statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { BOT_PICTURE_DATA, pictureData, pictureKey, setPicture } from "./botPictures";

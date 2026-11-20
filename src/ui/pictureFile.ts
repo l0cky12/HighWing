@@ -1,5 +1,5 @@
 // A bot picture the owner picks from a file, under Edit bot's rules (ADR 0189), which Bot setup's Upload your own…
-// shares (ADR 0235): PNG, JPEG or WebP, up to the 2 MB Hermes stores.
+// shares (ADR 0236): PNG, JPEG or WebP, up to the 2 MB Hermes stores.
 import { BOT_PICTURE_MAX_BYTES } from "../hermes/bots";
 
 export const PICTURE_TYPES = ["image/png", "image/jpeg", "image/webp"];

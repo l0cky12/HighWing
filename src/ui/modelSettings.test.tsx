@@ -10,8 +10,13 @@ import { FakeHermes } from "../hermes/fakeHermes";
 import { connect, type Hermes } from "../hermes/transport";
 import { appearanceStore } from "./appearance";
 import { SettingsScreen } from "./Settings";
+import { ModelListScope } from "./modelLists";
+import { setProviderHidden } from "../hermes/uiPrefs";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
 
 function memoryStorage() {
   const items = new Map<string, string>();
@@ -24,6 +29,7 @@ function Shell({ hermes }: { hermes: Hermes }) {
   const [appearance] = useState(() => appearanceStore(memoryStorage(), document.createElement("html")));
   if (!open) return <button onClick={() => setOpen(true)}>Open Settings</button>;
   return (
+    <ModelListScope value={SCOPE}>
     <SettingsScreen
       status="connected"
       unsecure={false}
@@ -40,8 +46,11 @@ function Shell({ hermes }: { hermes: Hermes }) {
       onSignOut={async () => {}}
       onClose={() => setOpen(false)}
     />
+    </ModelListScope>
   );
 }
+
+const SCOPE = "test-connection";
 
 /** `setup` changes what the fake dashboard has before Settings reads it. */
 async function shown(setup?: (server: FakeHermes) => void) {
@@ -564,5 +573,45 @@ describe("Project instructions model (ADR 0177)", () => {
     await waitFor(() => expect(server.modelConfig.auxiliary.title_generation.model).toBe("google/gemini-3.7-flash"));
     expect(server.modelConfig.unslottedAuxiliary.project_instructions).toEqual({ provider: "nous", model: "hermes-5-70b", reasoning_effort: "low" });
     expect(within(card()).getByRole("button", { name: "Model: hermes-5-70b" })).toBeTruthy();
+  });
+});
+
+describe("A provider hidden in Highwing's model lists (ADR 0235)", () => {
+  const options = (name: string) => [...select(name).options].map((o) => o.textContent);
+
+  it("is offered by no provider field, while what's already set to it stays shown, with a note, and nothing is written", async () => {
+    setProviderHidden(SCOPE, "openrouter", true);
+    const { server, user } = await shown();
+    // The main model stays on OpenRouter, shown as set.
+    expect(select("Main provider").value).toBe("openrouter");
+    expect(options("Main provider")).toEqual(["OpenRouter (hidden in Highwing)", "Nous Portal", "ChatGPT or Codex Subscription"]);
+    expect(select("Main model").value).toBe("z-ai/glm-5.3-flash");
+    await user.click(select("Main model"));
+    const list = screen.getByRole("listbox", { name: "Main model" });
+    expect(within(list).getAllByRole("option").map((o) => o.textContent)).toEqual(["z-ai/glm-5.3-flashProvider hidden in Highwing"]);
+    await user.keyboard("{Escape}");
+    expect(screen.getAllByText("OpenRouter is hidden in Highwing's model lists, so its models aren't offered for a new pick.").length).toBeGreaterThan(0);
+    // A helper task pinned to it, the same.
+    expect(options("Compression provider")).toEqual(["auto · use main model", "OpenRouter (hidden in Highwing)", "Nous Portal", "ChatGPT or Codex Subscription"]);
+    // Once another provider is chosen, the hidden one isn't offered again.
+    await user.selectOptions(select("Compression provider"), "nous");
+    expect(options("Compression provider")).toEqual(["auto · use main model", "Nous Portal", "ChatGPT or Codex Subscription"]);
+    // A subagent on a provider of its own lists none of its models.
+    await user.selectOptions(select("Subagent route"), "provider");
+    expect(options("Subagent provider")).toEqual(["Choose a provider…", "Nous Portal", "ChatGPT or Codex Subscription"]);
+    expect(writes(server)).toEqual([]);
+  });
+
+  it("leaves the Text generation list, which keeps its pinned model and says why", async () => {
+    setProviderHidden(SCOPE, "openrouter", true);
+    await shown();
+    const card = screen.getByRole("group", { name: "Text generation model" });
+    const user = userEvent.setup();
+    await user.click(within(card).getByRole("button", { name: "Model: deepseek/deepseek-v4-flash" }));
+    const dialog = within(card).getByRole("dialog", { name: "Choose a model" });
+    expect([...dialog.querySelectorAll(".model-section")].map((g) => g.getAttribute("aria-label"))).toEqual(["Nous Portal", "ChatGPT or Codex Subscription"]);
+    expect(within(dialog).getByRole("note").textContent).toBe(
+      "deepseek-v4-flash stays as it is. OpenRouter is hidden in Highwing's model lists, so its models aren't offered for a new pick.",
+    );
   });
 });

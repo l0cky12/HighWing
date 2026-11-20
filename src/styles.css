@@ -538,7 +538,7 @@ mark.hit.current { background: var(--warn); color: #1a1205; box-shadow: 0 0 0 2p
 .bot-setup-head .badge { align-self: center; }
 .bot-setup-edit { width: 24px; height: 24px; align-self: center; }
 .bot-setup-swatch { display: inline-block; width: 11px; height: 11px; border-radius: 50%; vertical-align: -1px; }
-/* The Picture row (ADR 0235): a thumbnail beside a picture's name, and the set as a strip of radio buttons. */
+/* The Picture row (ADR 0236): a thumbnail beside a picture's name, and the set as a strip of radio buttons. */
 .bot-setup-thumb { width: 18px; height: 18px; margin-right: 4px; border-radius: 50%; object-fit: cover; vertical-align: -4px; }
 .bot-setup-pictures { display: grid; gap: 8px; margin-top: 8px; }
 .bot-setup-strip { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -3923,6 +3923,7 @@ div.export-preview.export-page { height: auto; padding: 10px 12px; background: v
 .profile-conflict-picture { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; vertical-align: middle; }
 .profile-model select { flex: 0 1 200px; min-width: 0; background: var(--raised); border: 1px solid var(--line-2); border-radius: 9px; padding: 8px 10px; color: var(--text); }
 .profile-model input { flex: 1 1 220px; background: var(--raised); border: 1px solid var(--line-2); border-radius: 9px; padding: 9px 12px; outline: none; font-size: calc(13rem / 14); color: var(--text); }
+.profile-model-note { flex-basis: 100%; }
 .profile-soul { min-height: 90px; }
 .profile-dialog .confirm-actions { flex-wrap: wrap; align-items: center; }
 .profile-clone-link { align-self: flex-start; font-size: calc(12.5rem / 14); }

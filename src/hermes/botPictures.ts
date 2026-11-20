@@ -1,4 +1,4 @@
-// Bot setup's picture set (ADR 0235) as bytes, and the keys the card compares pictures by. A key names a picture
+// Bot setup's picture set (ADR 0236) as bytes, and the keys the card compares pictures by. A key names a picture
 // without carrying it, so a plan, the accepted record and the ready turn never hold image data: `set:<name>` for one
 // of the set, `photo:<hash>` for any other bytes, such as an upload or a picture another client gave the bot. Hermes
 // labels a picture by the format it sniffs (ADR 0189), so a key is made from the bytes alone.

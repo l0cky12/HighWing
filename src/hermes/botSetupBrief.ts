@@ -15,7 +15,7 @@ export const BOT_SETUP_COLORS = ["red", "orange", "amber", "green", "teal", "blu
 export type BotSetupColor = (typeof BOT_SETUP_COLORS)[number];
 
 /**
- * The pictures Highwing ships for a bot (ADR 0235), by the name a block gives one. The bytes are in
+ * The pictures Highwing ships for a bot (ADR 0236), by the name a block gives one. The bytes are in
  * src/assets/bot-pictures/, drawn from scripts/bot-pictures/. A new bot's block always names one.
  */
 export const BOT_SETUP_PICTURES = ["plane", "moon", "book", "leaf", "rocket", "compass", "music", "chart", "code", "paw", "pot", "sun"] as const;

@@ -5,7 +5,8 @@
 // computer (AppearanceSettings.tsx). Keyboard Shortcuts: every command and its keys, changed here (KeyboardSettings.tsx).
 // Snapshots: the bucket Share snapshot publishes to, and the snapshots in it (SnapshotSettings.tsx, ADR 0123).
 // Model: the profile's models on Hermes (ModelSettings.tsx), and Idle compaction on this computer
-// (IdleCompactSettings.tsx). Providers: the profile's model provider API keys on Hermes, listed, added, replaced and removed
+// (IdleCompactSettings.tsx). Providers: which providers Highwing's model lists show (ProviderVisibility.tsx, ADR 0235), the
+// profile's model provider API keys on Hermes, listed, added, replaced and removed
 // (ProviderSettings.tsx, ADR 0095), its subscription sign-ins (SignInSettings.tsx) and custom endpoints
 // (EndpointSettings.tsx, ADR 0133). Voice: Dictation, Read aloud and voice
 // conversations, and the profile's speech providers on Hermes (VoiceProviderSettings.tsx). Toolsets: which tools
@@ -37,6 +38,7 @@ import type { AppearanceStore, Fonts } from "./appearance";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { KeyboardSettings } from "./KeyboardSettings";
 import type { ModelSettingsApi } from "../hermes/modelSettings";
+import { ProviderVisibility } from "./ProviderVisibility";
 import { ModelSettings } from "./ModelSettings";
 import { IdleCompactSettings } from "./IdleCompactSettings";
 import { WritingModelSettings } from "./WritingModelSettings";
@@ -963,6 +965,7 @@ export function SettingsScreen({
         return (
           providers && (
             <>
+              <ProviderVisibility key={`model-lists-${profile}`} catalog={() => modelSettings.providers()} connected={status === "connected"} />
               <ProviderSettings key={profile} hermes={providers} profile={profile} connected={status === "connected"} openModel={() => pick("model")} />
               {accounts && (
                 <>

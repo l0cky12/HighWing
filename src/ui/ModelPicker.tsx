@@ -4,10 +4,13 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Brain, Check, ChevronDown, Columns2, Search, Star, Zap } from "lucide-react";
 import {
+  ALL_HIDDEN,
   EFFORT_LABEL,
+  allHidden,
   capabilitiesOf,
   carryOptions,
   effortsFor,
+  hiddenNote,
   modelKey,
   shortName,
   type Effort,
@@ -17,6 +20,7 @@ import {
   pickerRows,
 } from "../hermes/models";
 import { useDismiss, useReturnFocus } from "./bits";
+import { useHiddenProviders } from "./modelLists";
 
 /** The effort's name in menus. */
 const EFFORT_NAME: Record<Effort, string> = {
@@ -119,7 +123,8 @@ function ModelPopover({
   // Compare turns the same list into a pick of the second model; the pane's own model stays as it is.
   const [comparing, setComparing] = useState(false);
   const search = useRef<HTMLInputElement>(null);
-  const sections = pickerRows(catalog, favorites, query);
+  const hidden = useHiddenProviders();
+  const sections = pickerRows(catalog, favorites, query, hidden);
   const rows = sections.flatMap((s) => s.rows);
   const currentKey = current && modelKey(current);
   // The row whose options show beside the list: the hovered one, or the one the arrow keys moved to.
@@ -185,7 +190,9 @@ function ModelPopover({
       </div>
       <div className="model-list" ref={list}>
         {!catalog && <div className="model-empty">Loading models…</div>}
-        {catalog && !rows.length && <div className="model-empty">{query ? "No model matches." : "Hermes listed no models."}</div>}
+        {catalog && !rows.length && (
+          <div className="model-empty">{query ? "No model matches." : allHidden(catalog, hidden) ? ALL_HIDDEN : "Hermes listed no models."}</div>
+        )}
         {sections.map((s) => (
           <div key={s.title} className="model-section" role="group" aria-label={s.title}>
             <div className="model-section-title">{s.title}</div>
@@ -236,6 +243,11 @@ function ModelPopover({
           </div>
         ))}
       </div>
+      {current && hidden.has(current.provider) && (
+        <div className="model-note" role="note">
+          {shortName(current.model)} stays as it is. {hiddenNote(catalog?.providers.find((p) => p.slug === current.provider)?.name ?? current.provider)}
+        </div>
+      )}
       {catalog?.source === "fallback" && (
         <div className="model-note" title={catalog.reason}>
           Hermes didn't list its models, so these are common ones. A model the server isn't set up for is refused when the chat starts.

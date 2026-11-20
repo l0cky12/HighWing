@@ -224,6 +224,14 @@ describe("forgetting a deleted profile on this computer", () => {
     await forgetConnectionData(home as never);
     expect(getUIPrefs().writingModels).toEqual({ [connectionScope(other)]: pick });
   });
+
+  it("keeps a connection's hidden providers through a profile's delete, and drops them with the connection, leaving another's", async () => {
+    setUIPrefs({ hiddenProviders: { [connectionScope(home)]: ["openrouter"], [connectionScope(other)]: ["nous"] } });
+    await forgetProfileLocally(home, "work");
+    expect(Object.keys(getUIPrefs().hiddenProviders)).toEqual([connectionScope(home), connectionScope(other)]);
+    await forgetConnectionData(home as never);
+    expect(getUIPrefs().hiddenProviders).toEqual({ [connectionScope(other)]: ["nous"] });
+  });
 });
 
 describe("what a removed screen kept", () => {

@@ -130,7 +130,7 @@ export type HermesNow = {
   model: string | null;
   color: string | null;
   picture: PictureKey | null;
-  /** Why this Hermes can't save a picture, when it can't (ADR 0235). */
+  /** Why this Hermes can't save a picture, when it can't (ADR 0236). */
   pictureOff?: ProfileFailure;
   memory: readonly string[];
   skills: readonly Pick<SkillRow, "name" | "enabled">[];

@@ -1,4 +1,4 @@
-// Renders Bot setup's picture set (ADR 0235): each SVG here becomes a 256×256 PNG in src/assets/bot-pictures/, with
+// Renders Bot setup's picture set (ADR 0236): each SVG here becomes a 256×256 PNG in src/assets/bot-pictures/, with
 // no metadata, so the same source always gives the same bytes. Needs rsvg-convert and ImageMagick.
 //
 //     node scripts/bot-pictures/render.mjs

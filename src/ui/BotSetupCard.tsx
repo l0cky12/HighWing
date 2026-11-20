@@ -4,7 +4,7 @@
 // what Set it up writes, from botSetupApply.ts. The pane keeps the pending edits above the transcript, so a card
 // scrolled out of the rendered window keeps them. What Connect takes for an MCP server is kept there too, in memory
 // only, until Set it up sends it, and so is a picture the owner uploads; leaving the Bot Chat drops both (#85 owner
-// call 4, ADR 0235). Set up again's card shows each change as before → after, and folds what stays as it is under one
+// call 4, ADR 0236). Set up again's card shows each change as before → after, and folds what stays as it is under one
 // line per group.
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Check, ChevronRight, CircleAlert, FileText, Hourglass, ImagePlus, Pencil, Plug, RotateCcw, Sparkles, TriangleAlert } from "lucide-react";

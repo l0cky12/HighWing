@@ -21,6 +21,8 @@ import {
 import type { CapabilityId } from "../hermes/capabilities";
 import { errorText } from "../hermes/values";
 import { Spinner } from "./bits";
+import { useHiddenProviders } from "./modelLists";
+import { offeredProviders } from "../hermes/models";
 
 /** The parts of the page that each need a route an older kanban plugin may lack. */
 export type WorkFeature = "links" | "pickers" | "estimate" | "dispatch" | "reclaim" | "reassign";
@@ -477,6 +479,7 @@ type Choices = { bots: string[]; profiles: BotProfile[]; models: ModelProvider[]
  */
 export function BotModelSection({ task, api, onRead, onSaved, onWriting, assignees }: SheetLink & { assignees: string[] }) {
   const [choices, setChoices] = useState<Choices>();
+  const hidden = useHiddenProviders();
   const [typed, setTyped] = useState("");
   const [w, setW] = useState<Write<BotModelChange>>({ kind: "idle" });
   const live = useRef(true);
@@ -531,7 +534,9 @@ export function BotModelSection({ task, api, onRead, onSaved, onWriting, assigne
   const bots = choices ? [...new Set([...(task.assignee ? [task.assignee] : []), ...choices.bots])] : [];
   const botModel = (name: string) => choices?.profiles.find((p) => p.name === name)?.model;
   const current = modelOf(task);
-  const listed = !!current && !!choices?.models.some((p) => p.slug === current.provider && p.models.includes(current.model));
+  const offered = offeredProviders(choices?.models ?? [], hidden);
+  const listed = !!current && offered.some((p) => p.slug === current.provider && p.models.includes(current.model));
+  const hiddenLabel = current?.provider && hidden.has(current.provider) ? (choices?.models.find((p) => p.slug === current.provider)?.label ?? current.provider) : undefined;
 
   return (
     <section className="work-plan" aria-label="Bot and model">
@@ -581,8 +586,10 @@ export function BotModelSection({ task, api, onRead, onSaved, onWriting, assigne
               }}
             >
               <option value="">Bot's default model</option>
-              {current && !listed && <option value={`${current.provider ?? ""}${SEP}${current.model}`}>{current.model}</option>}
-              {choices?.models.map((p) => (
+              {current && !listed && (
+                <option value={`${current.provider ?? ""}${SEP}${current.model}`}>{hiddenLabel ? `${current.model} (${hiddenLabel}, hidden in Highwing)` : current.model}</option>
+              )}
+              {offered.map((p) => (
                 <optgroup key={p.slug} label={p.label}>
                   {p.models.map((m) => (
                     <option key={m} value={`${p.slug}${SEP}${m}`}>

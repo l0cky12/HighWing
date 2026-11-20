@@ -284,6 +284,11 @@ describe("The picture picker", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
 
     await user.click(opener);
+    await user.click(within(dialog()).getByText(p.drop));
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    await user.click(opener);
     fireEvent.mouseDown(within(dialog()).getByText(p.drop));
     expect(screen.queryByRole("dialog")).toBeTruthy();
     fireEvent.mouseDown(screen.getByRole("button", { name: "Elsewhere" }));
@@ -300,6 +305,16 @@ describe("The picture picker", () => {
     }
     await user.tab({ shift: true });
     expect(inside()).toBe(true);
+  });
+
+  it("keeps Tab inside it from a picture the arrow keys reached", async () => {
+    const { user } = await opened("pictures", { picked: pictureKey(BOT_PICTURE_URLS.moon) });
+    await user.keyboard("{ArrowRight}");
+    expect(document.activeElement).toBe(radio("sun"));
+    await user.tab();
+    expect(dialog().contains(document.activeElement)).toBe(true);
+    await user.tab({ shift: true });
+    expect(document.activeElement).toBe(radio("sun"));
   });
 
   it("shows only catalogue words, on both tabs, with a note, and in the crop step", async () => {

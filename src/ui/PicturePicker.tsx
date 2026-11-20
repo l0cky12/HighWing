@@ -43,7 +43,9 @@ const STEP: Record<string, (at: number, n: number, columns?: number) => number> 
 export function PictureSet({ set, picked, columns, className, onPick }: { set: readonly SetPicture[]; picked: string | null; columns?: number; className: string; onPick: (picture: SetPicture) => void }) {
   const l = useLocale().chat.botSetup;
   const group = useRef<HTMLDivElement>(null);
-  const stop = Math.max(0, set.findIndex((p) => p.key === picked));
+  // The tab stop follows focus, so Tab leaves from the picture the arrow keys reached.
+  const [focused, setFocused] = useState<number>();
+  const stop = focused ?? Math.max(0, set.findIndex((p) => p.key === picked));
   const move = (e: KeyboardEvent, at: number) => {
     const step = STEP[e.key];
     if (!step) return;
@@ -55,7 +57,7 @@ export function PictureSet({ set, picked, columns, className, onPick }: { set: r
       {set.map((p, i) => {
         const words = l.pictureNamed(l.pictures[p.name], l.pictureFor[p.name]);
         return (
-          <button key={p.name} type="button" role="radio" aria-checked={p.key === picked} aria-label={words} title={words} tabIndex={i === stop ? 0 : -1} onClick={() => onPick(p)} onKeyDown={(e) => move(e, i)}>
+          <button key={p.name} type="button" role="radio" aria-checked={p.key === picked} aria-label={words} title={words} tabIndex={i === stop ? 0 : -1} onFocus={() => setFocused(i)} onClick={() => onPick(p)} onKeyDown={(e) => move(e, i)}>
             <img src={p.url} alt="" />
           </button>
         );
@@ -176,7 +178,7 @@ export function PicturePicker({ anchor, set = SET_PICTURES, picked, tab, onUse, 
     };
   }, []);
 
-  // A paste anywhere while the picker is open, since a press on its background leaves focus on nothing.
+  // A paste anywhere while the picker is open, wherever focus is.
   useEffect(() => {
     const paste = (e: ClipboardEvent) => {
       const got = e.clipboardData && pasteAttaches(e.clipboardData);
@@ -235,7 +237,7 @@ export function PicturePicker({ anchor, set = SET_PICTURES, picked, tab, onUse, 
     </div>
   );
   return (
-    <div ref={box} className="status-popover picture-picker" role="dialog" aria-label={step.kind === "crop" ? p.fit : p.title} onKeyDown={keys}>
+    <div ref={box} className="status-popover picture-picker" role="dialog" aria-label={step.kind === "crop" ? p.fit : p.title} tabIndex={-1} onKeyDown={keys}>
       {step.kind === "crop" ? (
         <CropStep
           picture={step.picture}

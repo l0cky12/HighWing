@@ -18,8 +18,11 @@ import { en } from "../i18n/en";
 import { LocaleContext, localeFor, type Locale } from "../i18n/locale";
 import { pseudoLocale, untranslated } from "../i18n/pseudo";
 import { Main } from "../App";
+import { FAKE_PICTURE, fakeCrop } from "./fakePictureCanvas";
+import { CENTERED, CROP_FRAME_PX, sourceRect } from "./pictureCrop";
 
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }) }));
+vi.mock("./pictureCanvas", () => import("./fakePictureCanvas"));
 
 beforeAll(() => {
   Element.prototype.scrollIntoView = () => {};
@@ -575,6 +578,16 @@ describe("The Picture row", { timeout: 30_000 }, () => {
     await waitFor(() => expect(server.requests.some((r) => r.method === "prompt.submit" && String(r.params.text).startsWith("[highwing:bot-setup ready"))).toBe(true));
   };
   const png = (name: string, bytes = "\x89PNG\r\n\x1a\nthe owner's own picture") => new File([Uint8Array.from(bytes, (c) => c.charCodeAt(0))], name, { type: "image/png" });
+  const pk = en.profiles.form.picker;
+  /** The PNG the crop step makes of an upload left as it opens: the middle square (`fakePictureCanvas.ts`). */
+  const CROPPED = fakeCrop(sourceRect(FAKE_PICTURE, CROP_FRAME_PX, CENTERED));
+  const picker = (l = pk) => within(row()).getByRole("dialog", { name: l.title });
+  /** Upload your own…, Browse files with `file`, then Use picture. */
+  const uploadOwn = async (user: ReturnType<typeof userEvent.setup>, file: File, l: Locale = localeFor("en", []), inRow = row) => {
+    await user.click(within(inRow()).getByRole("button", { name: l.chat.botSetup.pictureUpload }));
+    await user.upload(within(inRow()).getByLabelText(l.profiles.form.picker.browse, { selector: "input" }), file);
+    await user.click(await within(inRow()).findByRole("button", { name: l.profiles.form.picker.use }));
+  };
 
   it("shows the bot's pick ticked with its name and what it suits, the whole set with the pick marked, and Upload your own…", async () => {
     await inBotChat(named("moon"));
@@ -586,7 +599,7 @@ describe("The Picture row", { timeout: 30_000 }, () => {
     expect(within(strip()).getAllByRole("radio").map((r) => r.getAttribute("aria-label"))).toEqual(BOT_PICTURES.map(words));
     expect(within(strip()).getAllByRole("radio").filter((r) => r.getAttribute("aria-checked") === "true")).toEqual([radio("moon")]);
     expect(within(row()).getByRole("button", { name: t.pictureUpload })).toBeTruthy();
-    expect(within(row()).getByText(en.profiles.form.pictureHint)).toBeTruthy();
+    expect(within(row()).queryByRole("dialog")).toBeNull();
     expect(within(group(t.about("Hermes"))).getByText(t.ticked(5, 5))).toBeTruthy();
   });
 
@@ -651,26 +664,44 @@ describe("The Picture row", { timeout: 30_000 }, () => {
     expect(server.botAvatars.default).toBeUndefined();
   });
 
-  it("takes the owner's own picture under Edit bot's rules, and Set it up saves its bytes", async () => {
+  it("Upload your own… opens the picture picker on its Upload tab, and Use picture records a choice that Set it up sends", async () => {
     const { server, user } = await inBotChat(named("moon"));
     await waitCard();
-    const input = () => within(row()).getByLabelText(t.pictureUpload, { selector: "input" });
-    await user.upload(input(), new File(["x".repeat(2_000_001)], "huge.png", { type: "image/png" }));
-    expect((await within(row()).findByRole("alert")).textContent).toBe(en.profiles.form.pictureTooBig);
-    await userEvent.setup({ applyAccept: false }).upload(input(), new File(["GIF89a"], "face.gif", { type: "image/gif" }));
-    await waitFor(() => expect(within(row()).getByRole("alert").textContent).toBe(en.profiles.form.pictureFormat));
+    await user.click(within(row()).getByRole("button", { name: t.pictureUpload }));
+    expect(within(picker()).getAllByRole("tab").map((tab) => [tab.textContent, tab.getAttribute("aria-selected")])).toEqual([
+      [pk.pictures, "false"],
+      [pk.upload, "true"],
+    ]);
+    const browse = () => within(picker()).getByLabelText(pk.browse, { selector: "input" });
+    await userEvent.setup({ applyAccept: false }).upload(browse(), new File(["GIF89a"], "face.gif", { type: "image/gif" }));
+    expect((await within(picker()).findByRole("alert")).textContent).toBe(en.profiles.form.pictureFormat);
     expect(radio("moon").getAttribute("aria-checked")).toBe("true");
 
-    await user.upload(input(), png("me.png"));
+    // Over the 2 MB Hermes stores: the crop step makes it a small PNG.
+    await user.upload(browse(), png("me.png", `\x89PNG\r\n\x1a\n${"x".repeat(2_000_001)}`));
+    await user.click(await within(row()).findByRole("button", { name: pk.use }));
     await waitFor(() => expect(within(row()).getByText(new RegExp(t.pictureYours))).toBeTruthy());
-    expect(within(row()).queryByRole("alert")).toBeNull();
+    expect(within(row()).queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(within(row()).getByRole("button", { name: t.pictureUpload }));
     expect(within(strip()).getAllByRole("radio").filter((r) => r.getAttribute("aria-checked") === "true")).toEqual([]);
-    const uploaded = row().querySelector<HTMLImageElement>(".bot-setup-value img")!.getAttribute("src")!;
-    expect(atob(uploaded.slice(uploaded.indexOf(",") + 1))).toBe("\x89PNG\r\n\x1a\nthe owner's own picture");
+    expect(row().querySelector<HTMLImageElement>(".bot-setup-value img")!.getAttribute("src")).toBe(CROPPED);
+    expect((box(t.picture) as HTMLInputElement).checked).toBe(true);
 
     await setItUp(user, server);
-    await waitFor(() => expect(server.botAvatars.default).toBe(uploaded));
-    expect(setAssets(server)).toEqual([{ name: "default", asset: "avatar", data: uploaded }]);
+    await waitFor(() => expect(server.botAvatars.default).toBe(CROPPED));
+    expect(setAssets(server)).toEqual([{ name: "default", asset: "avatar", data: CROPPED }]);
+  });
+
+  it("a picture chosen on the picker's Pictures tab is the set's, as one pressed on the strip", async () => {
+    const { server, user } = await inBotChat(named("moon"));
+    await waitCard();
+    await user.click(within(row()).getByRole("button", { name: t.pictureUpload }));
+    await user.click(within(picker()).getByRole("tab", { name: pk.pictures }));
+    await user.click(within(picker()).getByRole("radio", { name: words("sun") }));
+    expect(radio("sun").getAttribute("aria-checked")).toBe("true");
+    expect(within(row()).getByText(new RegExp(words("sun")))).toBeTruthy();
+    await setItUp(user, server);
+    expect(setAssets(server)).toEqual([{ name: "default", asset: "avatar", data: BOT_PICTURE_URLS.sun }]);
   });
 
   it("says to upload a picture again when a reload dropped it, and saves the one uploaded then", async () => {
@@ -695,7 +726,7 @@ describe("The Picture row", { timeout: 30_000 }, () => {
     await act(async () => void (await hermes.idle()));
     await waitFor(() => expect((within(liveCard()!).getByRole("button", { name: t.setUp }) as HTMLButtonElement).disabled).toBe(false));
 
-    await user.upload(within(row()).getByLabelText(t.pictureUpload, { selector: "input" }), png("me.png"));
+    await uploadOwn(user, png("me.png"));
     await waitFor(() => expect(row().querySelector(".bot-setup-value img")).toBeTruthy());
     await user.click(within(liveCard()!).getByRole("button", { name: t.setUp }));
     await waitFor(() => expect(setAssets(server)).toHaveLength(1));
@@ -724,9 +755,7 @@ describe("The Picture row", { timeout: 30_000 }, () => {
     const { user } = await inBotChat(named("moon"), undefined, p);
     await waitCard();
     expect(untranslated(pictureRow())).toEqual([]);
-    await user.upload(within(pictureRow()).getByLabelText(l.pictureUpload, { selector: "input" }), new File(["x".repeat(2_000_001)], "huge.png", { type: "image/png" }));
-    await within(pictureRow()).findByRole("alert");
-    await user.upload(within(pictureRow()).getByLabelText(l.pictureUpload, { selector: "input" }), png("me.png"));
+    await uploadOwn(user, png("me.png"), p, pictureRow);
     await waitFor(() => expect(pictureRow().textContent).toContain(l.pictureYours));
     expect(untranslated(pictureRow())).toEqual([]);
     cleanup();

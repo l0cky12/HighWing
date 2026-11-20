@@ -21,7 +21,7 @@ import type { Caution } from "../hermes/toolsets";
 import { errorText } from "../hermes/values";
 import { useLocale, type Locale } from "../i18n/locale";
 import { composing, Spinner } from "./bits";
-import { Picture, PicturePicker, type ShownPicture } from "./BotSetupPicture";
+import { Picture, PictureStrip, type ShownPicture } from "./BotSetupPicture";
 import { failureText } from "./profileFailure";
 import { cautionText } from "./ToolsetSettings";
 import { TurnCard } from "./TurnCard";
@@ -585,13 +585,13 @@ function Row({ host, read, item }: { host: SetupHost; read: BotSetupCardRead; it
         )}
         {sub && <div className={`bot-setup-sub${pictureLost && !shownRun ? " bot-setup-warn" : ""}`}>{sub}</div>}
         {pictureRow && pickPicture && (
-          <PicturePicker
+          <PictureStrip
             set={now.pictures.map((p) => ({ ...p, url: read.setup.pictures[p.key] }))}
             picked={pictureRow.after}
-            onPick={(key) => host.choose(choose(pictureRow, { to: key }))}
-            onUpload={(dataUrl) => {
+            onPick={(dataUrl) => {
               const key = pictureKey(dataUrl);
-              host.upload(key, dataUrl);
+              // The set's bytes are the app's own; only the owner's upload has to be kept until Set it up sends it.
+              if (!pictureNamed(now, key)) host.upload(key, dataUrl);
               host.choose(choose(pictureRow, { to: key }));
             }}
           />

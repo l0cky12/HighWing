@@ -1,22 +1,37 @@
-// A picture file the owner chooses for a bot, under Hermes's rules for `profiles.set_asset`: PNG, JPEG or WebP, up to
-// 2 MB. Edit bot's picker and Bot setup's card (ADR 0235) both read one here, and say why with the same words.
-import { BOT_PICTURE_MAX_BYTES } from "../hermes/bots";
+// A file the owner gives the picture picker for a bot (ADR 0235): PNG, JPEG or WebP. The crop step turns it into a
+// 256 px PNG, far under the 2 MB Hermes stores, so the file itself may be much larger, up to what Rust reads of a
+// dropped image (`PREVIEW_MAX_BYTES` in transport.rs). A drop and Browse files then refuse the same files.
+import { invoke } from "@tauri-apps/api/core";
+import type { LocalFile } from "../hermes/pipe";
 import type { Locale } from "../i18n/locale";
+import { readPreview } from "./previews";
 
 export const PICTURE_TYPES = ["image/png", "image/jpeg", "image/webp"];
+export const PICTURE_INPUT_MAX_BYTES = 25 * 1024 * 1024;
 
 export type PictureFileProblem = "format" | "tooBig" | "unread";
 
-/** The file as a data URL, or why it can't be a bot's picture. Never rejects. */
-export function readPictureFile(file: File): Promise<{ ok: true; dataUrl: string } | { ok: false; why: PictureFileProblem }> {
-  if (!PICTURE_TYPES.includes(file.type)) return Promise.resolve({ ok: false, why: "format" });
-  if (file.size > BOT_PICTURE_MAX_BYTES) return Promise.resolve({ ok: false, why: "tooBig" });
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? { ok: true, dataUrl: reader.result } : { ok: false, why: "unread" });
-    reader.onerror = () => resolve({ ok: false, why: "unread" });
-    reader.readAsDataURL(file);
-  });
+/** Why a file can't be a bot's picture, judged before its bytes are read. */
+export const pictureFileProblem = (file: { type: string; size: number }): PictureFileProblem | undefined =>
+  !PICTURE_TYPES.includes(file.type) ? "format" : file.size > PICTURE_INPUT_MAX_BYTES ? "tooBig" : undefined;
+
+const TYPE_OF: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp" };
+
+/**
+ * A file the owner dropped or copied, which the webview knows only by its path: Rust reads it, as it does for the
+ * composer's thumbnail of a dropped image. Its type is its name's, which is all Rust goes by too.
+ */
+export async function readPicturePath(path: string): Promise<File | PictureFileProblem> {
+  const name = path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1);
+  const type = TYPE_OF[name.slice(name.lastIndexOf(".") + 1).toLowerCase()];
+  if (!type) return "format";
+  try {
+    const [stat] = await invoke<LocalFile[]>("hermes_stat_files", { paths: [path] });
+    if ((stat?.size ?? 0) > PICTURE_INPUT_MAX_BYTES) return "tooBig";
+    return new File([await readPreview(path)], name, { type });
+  } catch {
+    return "unread";
+  }
 }
 
 export const pictureProblemText = (f: Locale["profiles"]["form"], why: PictureFileProblem) =>

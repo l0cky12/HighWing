@@ -2767,9 +2767,10 @@ export class Hermes {
   /** `accepted`: the cautions the owner confirmed with Apply anyway. `secrets`: what Connect took. */
   async retryBotSetupItem(read: BotSetupCardRead, item: ListedItem, accepted: Caution[] = [], secrets: McpSecrets = {}): Promise<CardState> {
     if (this.profile !== read.profile) return { kind: "failed", miss: { kind: "notShown", profile: read.profile } };
-    const states = { [item.key]: (await applyItem(this.setupApis(read.profile), read.profile, read.setup, item, accepted, secrets)).state };
+    const step = await applyItem(this.setupApis(read.profile), read.profile, read.setup, item, accepted, secrets);
+    const states = { [item.key]: step.state };
     this.rememberMcpReloadOwed(read.profile, read.chatId, states);
-    await this.reloadMcpIfIdle(read.chatId, read.profile, states, () => {});
+    if (step.unanswered === undefined) await this.reloadMcpIfIdle(read.chatId, read.profile, states, () => {});
     return states[item.key];
   }
 
@@ -2808,6 +2809,8 @@ export class Hermes {
   private async reloadMcpIfIdle(chatId: string, profile: string, states: Record<string, CardState>, hear: (key: string, state: CardState) => void) {
     const waiting = Object.keys(states).filter((k) => states[k].kind === "reload");
     if (!waiting.length || this.profile !== profile) return;
+    // A reload already sent may predate these servers' writes, so it can't stand for them.
+    await this.mcpReloading?.catch(() => undefined);
     if ((await this.reloadBotSetupMcp(chatId).catch(() => undefined)) !== "reloaded") return;
     for (const k of waiting) {
       states[k] = { kind: "applied" };

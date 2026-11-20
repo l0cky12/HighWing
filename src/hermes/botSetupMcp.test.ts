@@ -101,6 +101,33 @@ describe("mcpOffer", () => {
     expect(judged("C:\\Users\\lena\\.hermes\\profiles\\research", "C:\\Users\\lena\\.hermes\\profiles\\research-2\\run.py")).toBe("copy");
   });
 
+  it("reads a path with spaces to its quote or the argument's end, POSIX or Windows, quoted or not", () => {
+    const judged = (folder: string, ...args: string[]) => {
+      const s: McpSources = { catalog: [], bots: { Research: { path: folder, servers: [server("x", { command: "python3", args })] } } };
+      return mcpOffer(s, "x", "Research")?.kind;
+    };
+    const posix = "/home/lena/My Bots/profiles/research";
+    const windows = "C:\\Users\\John Doe\\.hermes\\profiles\\research";
+    const refused: [string, string][] = [
+      [posix, "/home/lena/My Bots/profiles/research/run"],
+      [posix, '--dir="/home/lena/My Bots/profiles/./research/x"'],
+      [posix, "/opt/tools /home/lena/My Bots/profiles/research/run"],
+      [posix, "cd /home/lena/My Bots/profiles/research && ./run"],
+      [windows, "C:\\Users\\John Doe\\.hermes\\profiles\\research\\run"],
+      [windows, '"c:\\users\\john doe\\.hermes\\profiles\\research\\run.py" --fast'],
+      ["/srv/hermes/profiles/research", "/srv/hermes/profiles/research --fast"],
+    ];
+    for (const [folder, a] of refused) expect([a, judged(folder, a)]).toEqual([a, "refused"]);
+    const allowed: [string, string][] = [
+      [posix, "/home/lena/My Bots/profiles/research-2/run"],
+      [posix, '"/home/lena/My Bots/profiles/researcher/run"'],
+      [posix, "/home/lena/My /profiles/research/run"],
+      [windows, "C:\\Users\\John Doe\\.hermes\\profiles\\research-2\\run"],
+      [windows, '"C:\\Users\\John Doe\\.hermes\\profiles\\research2\\run.py"'],
+    ];
+    for (const [folder, a] of allowed) expect([a, judged(folder, a)]).toEqual([a, "copy"]);
+  });
+
   it("names an OAuth server, a plugin's, one whose name can't be sent and one Hermes can't say how it connects, without adding them", () => {
     expect(mcpOffer(sources, "github")).toMatchObject({ kind: "refused", why: "oauth" });
     expect(mcpOffer(sources, "linear", "Research")).toMatchObject({ kind: "refused", why: "oauth" });

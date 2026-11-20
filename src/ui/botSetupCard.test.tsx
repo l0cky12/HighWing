@@ -359,6 +359,37 @@ describe("MCP servers on the card", { timeout: 30_000 }, () => {
     expect(server.mcp.servers.default["brave-search"]?.env).toEqual({ BRAVE_API_KEY: "fresh-key-99" });
   });
 
+  it("keeps Set it up off, the card's and a row's, while Reload MCP servers runs", async () => {
+    const { server, user } = await inBotChat(interview(mcpCard), (s) => {
+      withMcp(s);
+      s.liveSessions = [{ id: "rt-other", session_key: "side", status: "working", last_active: Math.floor(Date.now() / 1000) }];
+    });
+    await waitCard();
+    await user.click(within(liveCard()!).getByRole("button", { name: t.setUp }));
+    const reload = await within(row("airbnb")).findByRole("button", { name: t.reloadMcp }, { timeout: 5000 });
+    endReply(server);
+    server.liveSessions = [];
+    await user.click(within(row("brave-search")).getByRole("button", { name: t.connect }));
+    await user.type(within(row("brave-search")).getByLabelText("BRAVE_API_KEY"), "fresh-key-55{Enter}");
+
+    const sent = server.handlers["reload.mcp"];
+    let release!: () => void;
+    const held = new Promise<void>((go) => (release = go));
+    server.handlers["reload.mcp"] = (r) => void held.then(() => sent(r));
+    await waitFor(() => expect((reload as HTMLButtonElement).disabled).toBe(false));
+    await user.click(reload);
+    await waitFor(() => expect(server.requests.filter((r) => r.method === "reload.mcp")).toHaveLength(1));
+    const rowSetUp = within(row("brave-search")).getByRole("button", { name: t.setUp }) as HTMLButtonElement;
+    expect(rowSetUp.disabled).toBe(true);
+    const cardSetUp = liveCard()!.querySelector<HTMLButtonElement>(".btn.primary")!;
+    expect([cardSetUp.textContent?.trim(), cardSetUp.disabled]).toEqual([t.setUp, true]);
+
+    server.handlers["reload.mcp"] = sent;
+    release();
+    await waitFor(() => expect(within(row("airbnb")).getByText(t.mcpReloaded)).toBeTruthy());
+    expect([rowSetUp.disabled, cardSetUp.disabled]).toEqual([false, false]);
+  });
+
   it("keeps Reload MCP servers off while Set it up still runs", async () => {
     let writes = 0;
     let open!: () => void;

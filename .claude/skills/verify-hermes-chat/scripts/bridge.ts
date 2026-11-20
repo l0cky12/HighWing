@@ -95,7 +95,7 @@
 // answers as FakeHermes does.
 // HV_SETTLING=<command>: a profile delete answers `settlement_pending` with that `retry_command` (empty: none).
 // HV_MODEL_ERROR=<text>: a profile create makes the profile but not its model, and answers `model_error` with the text.
-// `default`'s messaging gateway runs (FakeGateways), with Telegram and Discord off, so a Telegram token saved with the
+// `default`'s messaging gateway runs (FakeGateways), with Telegram, Discord and Slack off, so a Telegram token saved with the
 // switch on, or an MCP server edited under the same name, shows Restart gateway (ADR 0205). The restart succeeds and
 // connects the platforms waiting for it. HV_ACTIVE_AGENTS=<n> makes the gateway report n replies running, so the button
 // asks before cutting them off.

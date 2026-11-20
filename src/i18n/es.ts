@@ -453,7 +453,7 @@ export const es: Catalogue = {
       voice: "Dictado, Leer en voz alta y conversaciones de voz.",
       toolsets: "Qué herramientas ofrece Hermes al modelo.",
       mcp: "Herramientas de otros programas y servicios que Hermes ofrece al modelo.",
-      gateways: "Habla con el Hermes de este perfil desde Telegram o Discord.",
+      gateways: "Habla con el Hermes de este perfil desde Telegram, Discord o Slack.",
       profiles: "Cada perfil de este servidor: crearlo, cambiarle el nombre, describirlo, darle un modelo o borrarlo.",
       memory: "Lo que Hermes recuerda de un chat a otro.",
       skills: "Instrucciones que Hermes carga para un tipo de tarea. Los cambios valen para todos los clientes de este perfil.",

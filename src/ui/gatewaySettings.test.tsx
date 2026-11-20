@@ -3,7 +3,7 @@
 // (fakeGateways.ts): the platform given (picked in Settings' tree, ADR 0160), the state, token rows that keep, replace or
 // remove, the switch, Save with its read back, a change on the server meanwhile, Check status, the three problems in
 // their own words, answers for another profile dropped, and Restart gateway beside a change the running gateway hasn't
-// picked up (ADR 0205). Every token here is synthetic.
+// picked up (ADR 0205), and Slack's card with its setup guide and home channel (ADR 0238). Every token here is synthetic.
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode, useState } from "react";
@@ -14,7 +14,7 @@ import { GatewayRestartApi } from "../hermes/gatewayRestart";
 import { fakeClock } from "../hermes/fakeGateways";
 import type { RestMethod } from "../hermes/pipe";
 import { appearanceStore } from "./appearance";
-import { GatewaySettings } from "./GatewaySettings";
+import { GatewaySettings, SLACK_GUIDE } from "./GatewaySettings";
 import { SettingsScreen } from "./Settings";
 
 beforeAll(() => {
@@ -88,6 +88,8 @@ describe("Settings → Gateways", () => {
     expect(screen.queryByRole("heading", { name: "Telegram" })).toBeNull();
     expect(within(rowOf("Status")).getByText("Off")).toBeTruthy();
     expect(within(rowOf("Discord bot token")).getByText("Not set.")).toBeTruthy();
+    // Only Slack's card has the row about making its app.
+    expect(screen.queryByText("Slack app")).toBeNull();
   });
 
   it("saves the switch alone without touching the token, and says Hermes reads it back", async () => {
@@ -310,7 +312,7 @@ describe("Settings → Gateways", () => {
     await user.click(screen.getByRole("tab", { name: "Gateways" }));
     // The platforms are the tab's sections in the tree; the page header names the one shown under its page.
     const platforms = await screen.findByRole("group", { name: "Gateways: sections" });
-    expect(within(platforms).getAllByRole("button").map((b) => b.textContent)).toEqual(["Telegram", "Discord"]);
+    expect(within(platforms).getAllByRole("button").map((b) => b.textContent)).toEqual(["Telegram", "Discord", "Slack"]);
     expect(within(platforms).getByRole("button", { name: "Telegram" }).getAttribute("aria-current")).toBe("page");
     const head = document.querySelector("header.page-head") as HTMLElement;
     expect(head.querySelector(".page-eyebrow")!.textContent).toBe("Gateways");
@@ -326,6 +328,99 @@ describe("Settings → Gateways", () => {
     expect(within(platforms).getByRole("button", { name: "Discord" }).getAttribute("aria-current")).toBe("page");
     expect(within(document.querySelector("header.page-head") as HTMLElement).getByRole("heading", { level: 2 }).textContent).toBe("Discord");
     await screen.findByText("«redacted:bot-...oken»");
+  });
+});
+
+describe("Settings → Gateways: Slack", () => {
+  const SLACK_BOT = ["xoxb", "1234567890", "0987654321", "dummydummydummydummy"].join("-");
+  const SLACK_APP = ["xapp", "1", "A0123456789", "1234567890", "dummydummydummydummy"].join("-");
+
+  async function slack(s = server()) {
+    const hermes = await connect(s.openPipe, "default");
+    running.push(hermes);
+    const openUrl = vi.fn();
+    const user = userEvent.setup();
+    const view = render(
+      <StrictMode>
+        <GatewaySettings api={hermes.gateways} restart={await quickRestart(s)} profile="default" connected openUrl={openUrl} platform="slack" />
+      </StrictMode>,
+    );
+    await screen.findByRole("heading", { name: "Slack" });
+    return { s, user, view, openUrl };
+  }
+  const paste = async (user: ReturnType<typeof userEvent.setup>, label: string, value: string) => {
+    await user.click(screen.getByRole("button", { name: `Add ${label}` }));
+    await user.click(screen.getByLabelText(label));
+    await user.paste(value);
+  };
+
+  it("shows both tokens, the member IDs and the home channel, and links Hermes's guide to making the Slack app", async () => {
+    const { user, openUrl } = await slack();
+    expect(within(rowOf("Status")).getByText("Off")).toBeTruthy();
+    expect(within(rowOf("Slack Bot Token (xoxb-...)")).getByText("Not set.")).toBeTruthy();
+    expect(within(rowOf("Slack App Token (xapp-...)")).getByText("Not set.")).toBeTruthy();
+    expect(screen.getByLabelText("Allowed Slack member IDs")).toBeTruthy();
+    expect(within(rowOf("Home channel")).getByText("Not set")).toBeTruthy();
+    expect(within(rowOf("Home channel")).getByText(/Send \/sethome in the chat or channel/)).toBeTruthy();
+    // The Slack app row links Hermes's guide, and its (i) has the short version: Socket Mode and the two tokens.
+    await user.click(within(rowOf("Slack app")).getByRole("button", { name: "Hermes's Slack guide" }));
+    expect(openUrl).toHaveBeenCalledWith(SLACK_GUIDE);
+    const more = within(rowOf("Slack app")).getByRole("button", { name: "About Slack app" });
+    await user.click(more);
+    const panel = document.getElementById(more.getAttribute("aria-controls")!)!;
+    expect(panel.hidden).toBe(false);
+    expect(within(panel).getByText(/Turn on Socket Mode, and make an app-level token with the connections:write scope/)).toBeTruthy();
+    // Check status is Hermes's test route, which works for Slack as for the others.
+    await user.click(screen.getByRole("button", { name: "Check status" }));
+    expect(await within(rowOf("Check status")).findByText("Slack is disabled. Enable it, then restart the gateway.")).toBeTruthy();
+  });
+
+  it("saves the two tokens and the member IDs, and never shows a token back", async () => {
+    const { s, user, view } = await slack();
+    await paste(user, "Slack Bot Token (xoxb-...)", SLACK_BOT);
+    await paste(user, "Slack App Token (xapp-...)", SLACK_APP);
+    await user.type(screen.getByLabelText("Allowed Slack member IDs"), "U01ABC2DEF3");
+    await user.click(screen.getByRole("switch", { name: "Turned on" }));
+    await user.click(save());
+    await within(commit()).findByText("Saved, and Hermes reads it back that way.");
+    expect(s.gateways.env.default).toMatchObject({ SLACK_BOT_TOKEN: SLACK_BOT, SLACK_APP_TOKEN: SLACK_APP, SLACK_ALLOWED_USERS: "U01ABC2DEF3" });
+    expect(within(rowOf("Slack Bot Token (xoxb-...)")).getByText("«redacted:xoxb...ummy»")).toBeTruthy();
+    expect(within(rowOf("Status")).getByText("Gateway stopped")).toBeTruthy();
+    expect(view.container.innerHTML).not.toContain(SLACK_BOT);
+    expect(view.container.innerHTML).not.toContain(SLACK_APP);
+  });
+
+  it("shows Hermes's words for a token in the wrong field on the Slack card, and says where the tokens come from", async () => {
+    const { s, user, view } = await slack();
+    await paste(user, "Slack Bot Token (xoxb-...)", SLACK_APP);
+    await user.click(save());
+    const alert = await within(commit()).findByRole("alert");
+    expect(alert.textContent).toContain("Token turned down: Slack Bot Token must start with xoxb-. Paste the bot token from OAuth & Permissions.");
+    expect(alert.textContent).toContain("the App Token (xapp-) under Basic Information → App-Level Tokens");
+    expect(s.gateways.env.default.SLACK_BOT_TOKEN).toBeUndefined();
+    // The refusal keeps the field to fix, and what was typed doesn't show anywhere but the masked field.
+    expect((screen.getByLabelText("Slack Bot Token (xoxb-...)") as HTMLInputElement).type).toBe("password");
+    expect(view.container.innerHTML.replace(/value="[^"]*"/g, "")).not.toContain(SLACK_APP);
+  });
+
+  it("shows the home channel /sethome saved, and Restart gateway after a token change the running gateway hasn't picked up", async () => {
+    const s = server();
+    s.gateways.env.default = { SLACK_BOT_TOKEN: SLACK_BOT, SLACK_APP_TOKEN: SLACK_APP };
+    s.gateways.enabled.default = { slack: true };
+    s.gateways.home.default = { slack: { chat_id: "C01234567890", name: "general" } };
+    s.gateways.gateway.default = { running: true, platforms: { slack: { state: "connected" } } };
+    const { user } = await slack(s);
+    expect(within(rowOf("Status")).getByText("Connected")).toBeTruthy();
+    expect(within(rowOf("Home channel")).getByText("C01234567890")).toBeTruthy();
+    expect(within(rowOf("Home channel")).getByText(/general/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Replace Slack Bot Token (xoxb-...)" }));
+    await user.click(screen.getByLabelText("Slack Bot Token (xoxb-...)"));
+    await user.paste(`${SLACK_BOT}2`);
+    await user.click(save());
+    await within(commit()).findByText(/keeps its old Slack settings until it restarts/);
+    await user.click(within(rowOf("Status")).getByRole("button", { name: "Restart gateway" }));
+    await within(rowOf("Status")).findByText("Gateway restarted.");
+    expect(s.gateways.restarts.default).toBe(1);
   });
 });
 

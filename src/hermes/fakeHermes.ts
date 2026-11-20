@@ -630,7 +630,7 @@ export class FakeHermes {
   /** The profiles' external memory providers, as Settings → Memory → External memory reads and writes them. */
   /** The profile's MCP servers (fakeMcp.ts, ADR 0121). */
   readonly mcp = new FakeMcp((p) => p === "default" || p in this.otherProfiles);
-  /** The profile's Telegram and Discord gateways (fakeGateways.ts, ADR 0073). */
+  /** The profile's Telegram, Discord and Slack gateways (fakeGateways.ts, ADR 0073, ADR 0238). */
   readonly gateways = new FakeGateways((p) => p === "default" || p in this.otherProfiles);
   /** Settings → Providers' subscription sign-ins and custom endpoints (ADR 0133). */
   readonly accounts = new FakeAccounts((p) => p === "default" || p in this.otherProfiles);

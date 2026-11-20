@@ -1,6 +1,7 @@
 // Settings → Gateways' reads and writes (gateways.ts, ADR 0073) through the transport, against the fake dashboard's
 // messaging routes (fakeGateways.ts): the list, keep / replace / remove of a token, the switch, the read before a save
-// and the read after it, the status check, and the three problems told apart. Every token here is synthetic.
+// and the read after it, the status check, the three problems told apart, and Slack's two tokens, allowlist and home
+// channel (ADR 0238). Every token here is synthetic.
 import { describe, expect, it } from "vitest";
 import { FakeHermes } from "./fakeHermes";
 import { connect } from "./transport";
@@ -10,6 +11,8 @@ const TOKEN = "123456789:AAAAdummydummydummydummydummydummy00";
 const NEW_TOKEN = "987654321:BBBBnewnewnewnewnewnewnewnewnewnew11";
 // Built at run time: a literal in this shape trips GitHub's push protection.
 const DISCORD_SHAPED = ["MTIzNDU2Nzg5MDEyMzQ1Njc4", "GabcDE", "abcdefghijklmnopqrstuvwxyz0123"].join(".");
+const SLACK_BOT = ["xoxb", "1234567890", "0987654321", "dummydummydummydummy"].join("-");
+const SLACK_APP = ["xapp", "1", "A0123456789", "1234567890", "dummydummydummydummy"].join("-");
 
 async function setUp() {
   const server = new FakeHermes();
@@ -25,10 +28,10 @@ const tg = async (api: Awaited<ReturnType<typeof setUp>>["api"], profile = "defa
 const draft = (g: Gateway, d: Partial<Draft> = {}): Draft => ({ enabled: g.enabled, edits: {}, ...d });
 
 describe("Gateways: reading", () => {
-  it("lists only Telegram and Discord, with a redacted preview of each token and never the token", async () => {
+  it("lists only Telegram, Discord and Slack, with a redacted preview of each token and never the token", async () => {
     const { api } = await setUp();
     const list = await api.list("default");
-    expect(list.gateways.map((g) => g.id)).toEqual(["telegram", "discord"]);
+    expect(list.gateways.map((g) => g.id)).toEqual(["telegram", "discord", "slack"]);
     expect(list.startCommand).toBe("hermes -p default gateway start");
     const [telegram, discord] = list.gateways;
     expect(telegram).toMatchObject({ enabled: true, configured: true, gatewayRunning: false, state: "gateway_stopped" });
@@ -253,5 +256,90 @@ describe("Gateways: redaction", () => {
     expect(redact("Rejected credential abc (about abc.)", ["abc"])).toBe("Rejected credential [redacted] (about [redacted].)");
     expect(redact("key sk-ant-abcdefghijklmnop1234")).toBe("key [redacted key]");
     expect(redact("«redacted:1234...my00» kept")).toBe("«redacted:1234...my00» kept");
+  });
+});
+
+describe("Gateways: Slack", () => {
+  const slack = async (api: Awaited<ReturnType<typeof setUp>>["api"], profile = "default") => (await api.list(profile)).gateways.find((g) => g.id === "slack")!;
+
+  it("lists Slack's two tokens as write-only and its member IDs as a value, with no home channel setting", async () => {
+    const { api } = await setUp();
+    const g = await slack(api);
+    expect(g).toMatchObject({ name: "Slack", enabled: false, configured: false, state: "disabled", docsUrl: "https://api.slack.com/apps", homeChannel: undefined });
+    expect(g.fields.map((f) => [f.key, f.secret, f.required])).toEqual([
+      ["SLACK_BOT_TOKEN", true, true],
+      ["SLACK_APP_TOKEN", true, true],
+      ["SLACK_ALLOWED_USERS", false, false],
+    ]);
+  });
+
+  it("saves both tokens, the member IDs and the switch in one write, and reads back only previews", async () => {
+    const { api, fake } = await setUp();
+    const g = await slack(api, "bot");
+    const r = await api.save("bot", g, {
+      enabled: true,
+      edits: { SLACK_BOT_TOKEN: { kind: "replace", value: SLACK_BOT }, SLACK_APP_TOKEN: { kind: "replace", value: ` ${SLACK_APP} ` }, SLACK_ALLOWED_USERS: { kind: "replace", value: "U01ABC2DEF3" } },
+    });
+    expect(r.kind).toBe("saved");
+    expect(fake.writes.at(-1)).toEqual({
+      profile: "bot",
+      what: "put slack",
+      body: { enabled: true, env: { SLACK_BOT_TOKEN: SLACK_BOT, SLACK_APP_TOKEN: SLACK_APP, SLACK_ALLOWED_USERS: "U01ABC2DEF3" } },
+    });
+    expect(fake.env.bot).toEqual({ SLACK_BOT_TOKEN: SLACK_BOT, SLACK_APP_TOKEN: SLACK_APP, SLACK_ALLOWED_USERS: "U01ABC2DEF3" });
+    expect(fake.env.default.SLACK_BOT_TOKEN).toBeUndefined();
+    const after = r.kind === "saved" ? r.list.gateways.find((x) => x.id === "slack")! : undefined;
+    expect(after).toMatchObject({ enabled: true, configured: true, state: "gateway_stopped" });
+    expect(after?.fields.find((f) => f.key === "SLACK_BOT_TOKEN")?.preview).toBe(`«redacted:xoxb...ummy»`);
+    const shown = JSON.stringify(r);
+    expect(shown).not.toContain(SLACK_BOT);
+    expect(shown).not.toContain(SLACK_APP);
+  });
+
+  it("a token in the wrong field is turned down with Hermes's words, and nothing is written", async () => {
+    const { api, fake } = await setUp();
+    const g = await slack(api);
+    // The app token pasted where the bot token goes.
+    const r = await api.save("default", g, { enabled: true, edits: { SLACK_BOT_TOKEN: { kind: "replace", value: SLACK_APP }, SLACK_APP_TOKEN: { kind: "replace", value: SLACK_APP } } });
+    expect(r).toMatchObject({ kind: "refused", problem: { kind: "invalid-token", text: "Slack Bot Token must start with xoxb-. Paste the bot token from OAuth & Permissions." } });
+    expect(fake.env.default.SLACK_APP_TOKEN).toBeUndefined();
+    expect(JSON.stringify(r)).not.toContain(SLACK_APP);
+    // A member ID list Hermes doesn't take is refused too, as a plain problem.
+    const ids = await api.save("default", g, { enabled: false, edits: { SLACK_ALLOWED_USERS: { kind: "replace", value: "lena" } } });
+    expect(ids).toMatchObject({ kind: "refused", problem: { kind: "other", text: "Slack allowed user IDs must be comma-separated member IDs like U01ABC2DEF3." } });
+  });
+
+  it("checks Slack's status through Hermes's test route, and a running gateway needs a restart for a new token", async () => {
+    const { api, fake } = await setUp();
+    fake.env.default = { ...fake.env.default, SLACK_BOT_TOKEN: SLACK_BOT, SLACK_APP_TOKEN: SLACK_APP };
+    fake.enabled.default = { ...fake.enabled.default, slack: true };
+    fake.gateway.default = { running: true, platforms: { slack: { state: "retrying", error_message: "failed to connect" } } };
+    const { check, list } = await api.check("default", "slack");
+    expect(fake.writes.at(-1)).toEqual({ profile: "default", what: "test slack" });
+    expect(check).toMatchObject({ ok: false, text: "failed to connect", problem: undefined });
+    expect(list?.gateways.find((g) => g.id === "slack")).toMatchObject({ state: "retrying", error: { kind: "other", text: "failed to connect" } });
+    const g = await slack(api);
+    const r = await api.save("default", g, { enabled: true, edits: { SLACK_BOT_TOKEN: { kind: "replace", value: `${SLACK_BOT}2` } } });
+    expect(r).toMatchObject({ kind: "saved", restart: true });
+  });
+
+  it("a missing slack-bolt reads as missing on the server", async () => {
+    const { api, fake } = await setUp();
+    fake.env.default = { SLACK_BOT_TOKEN: SLACK_BOT, SLACK_APP_TOKEN: SLACK_APP };
+    fake.gateway.default = { running: true, platforms: { slack: { state: "fatal", error_code: "missing_dependency", error_message: "slack-bolt not installed" } } };
+    expect((await slack(api)).error).toEqual({ kind: "missing-dependency", text: "slack-bolt not installed" });
+  });
+
+  it("reads the home channel /sethome saved in config.yaml, for any platform", async () => {
+    const { api, fake } = await setUp();
+    fake.home.default = { slack: { chat_id: "C01234567890", name: "general" }, telegram: { chat_id: -1001234567890, name: "Home" } };
+    const list = await api.list("default");
+    expect(list.gateways.find((g) => g.id === "slack")?.homeChannel).toEqual({ id: "C01234567890", name: "general" });
+    expect(list.gateways.find((g) => g.id === "telegram")?.homeChannel).toEqual({ id: "-1001234567890", name: "Home" });
+    expect(list.gateways.find((g) => g.id === "discord")?.homeChannel).toBeUndefined();
+  });
+
+  it("takes a Slack token, either kind, out of Hermes's text", () => {
+    expect(redact(`auth failed for ${SLACK_BOT} and ${SLACK_APP}`)).not.toMatch(/xoxb-|xapp-1-A/);
   });
 });

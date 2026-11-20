@@ -3870,7 +3870,7 @@ div.export-preview.export-page { height: auto; padding: 10px 12px; background: v
 /* Settings → Snapshots (SnapshotSettings.tsx): a snapshot that needs the owner's attention says so in warning colour. */
 .snapshot-row.expired .set-hint, .snapshot-row.changed .set-hint, .snapshot-row.unrevoked .set-hint { color: var(--warn); }
 
-/* ---------- Settings → Gateways (GatewaySettings.tsx, ADR 0073) and Providers (ProviderSettings.tsx, ADR 0095) ---------- */
+/* ---------- Settings → Gateways (GatewaySettings.tsx, ADR 0073, ADR 0238) and Providers (ProviderSettings.tsx, ADR 0095) ---------- */
 .gw-input, .pk-input {
   width: 100%; background: var(--raised); border: 1px solid var(--line-2); border-radius: 9px; padding: 9px 12px; outline: none; color: var(--text);
   font-family: var(--mono); font-size: calc(13rem / 14);
@@ -3882,6 +3882,8 @@ div.export-preview.export-page { height: auto; padding: 10px 12px; background: v
 .gw-line.warn { color: var(--warn); }
 .gw-line.bad, .pk-line.bad, .gw-problem { color: var(--bad); }
 .gw-problem.missing-dependency, .gw-problem.permission { color: var(--warn); }
+/* Slack's short setup guide (ADR 0238), in a row's More. */
+.set-more .gw-steps { margin: 0 0 8px; padding-left: 20px; line-height: 1.6; }
 /* Restart gateway (RestartGateway.tsx, ADR 0205): what waits for the restart, then the button, on one line. */
 .gw-restart { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .gw-restart-why { color: var(--muted); }

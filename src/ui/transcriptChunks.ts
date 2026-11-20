@@ -6,7 +6,7 @@ function fnv1a(s: string): number {
 }
 
 /** About how many blocks a chunk holds. */
-const CHUNK_SIZE = 64;
+const CHUNK_SIZE = 16;
 
 /**
  * The transcript's blocks in chunks of about `CHUNK_SIZE`. A chunk starts at a block whose id hashes to a multiple of

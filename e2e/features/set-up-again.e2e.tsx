@@ -129,7 +129,7 @@ async function keepHistory(scheme: "dark" | "light") {
   await expect.element(about.getByText("Plans trips: flights, trains and places to stay.")).toHaveClass("bot-setup-was");
   await expect.element(app.getByRole("region", { name: "Skills" }).getByText("Off → On")).toBeVisible();
   await expect.element(app.getByRole("region", { name: "Tools" }).getByText("On → Off")).toBeVisible();
-  await expect.element(about.getByRole("button", { name: "2 more that don't change" })).toBeVisible();
+  await expect.element(about.getByRole("button", { name: "3 more that don't change" })).toBeVisible();
   await expect.element(app.getByRole("region", { name: "Skills" }).getByRole("button", { name: "2 more that don't change" })).toBeVisible();
   await expect.element(app.getByText("4 changes. Nothing changes until you press Set it up.")).toBeVisible();
   about.element().closest(".msg.returned")!.scrollIntoView({ block: "start" });
@@ -139,7 +139,7 @@ async function keepHistory(scheme: "dark" | "light") {
   const now = about.getByRole("group", { name: "The persona now" });
   await expect.element(now).toMatchTextContent("Check first before you email anyone.");
   await expect.element(now).not.toMatchTextContent("Prefer trains");
-  await about.getByRole("button", { name: "2 more that don't change" }).click();
+  await about.getByRole("button", { name: "3 more that don't change" }).click();
   await expect.element(about.getByRole("checkbox", { name: "Model" })).toBeDisabled();
   about.element().closest(".msg.returned")!.scrollIntoView({ block: "start" });
   await shot(`${scheme}-card-unfolded`);

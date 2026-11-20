@@ -3,7 +3,7 @@
 #   wd.mjs: `wait` times out with exit 2, a bad [ms] is rejected, `gone` returns at once on no match,
 #           `wait|gone <css> <digits>` with no [ms] is refused with the `"" <ms>` form.
 #   hv up:  a failed start stops every process it started (and a child its driver left behind) and deletes its run dir;
-#           an interrupted start (TERM) does the same;
+#           an interrupted start (TERM) does the same, and leaves no dbus-daemon running on the run's bus.conf;
 #           its private D-Bus activates nothing (no Secret Service with the owner's HOME) and runs with the run's HOME.
 #   bridge: the stand-in survives a WebSocket closed or reset while it writes to it, and keeps serving.
 # Runs under a throwaway HV_HOME with a fake app and a fake tauri-driver, so it never touches a real run.
@@ -87,7 +87,8 @@ case ${FAKE_DRIVER:-} in
     echo "fake tauri-driver: failing on purpose" >&2
     exit 1 ;;
   foreign)
-    setsid python3 "$serve" "$port" </dev/null >/dev/null 2>&1 &
+    # Another program's: it doesn't carry this run's HV_STARTED_BY, so hv down leaves it alone.
+    env -u HV_STARTED_BY setsid python3 "$serve" "$port" </dev/null >/dev/null 2>&1 &
     echo $! >"$FAKE_FOREIGN"
     exec python3 "$serve" "$native" ;;
 esac
@@ -125,11 +126,14 @@ kill -TERM "${LAUNCHERS[0]}"
 code=0; wait "${LAUNCHERS[0]}" || code=$?
 LAUNCHERS=()
 st=$(ls "$HV_HOME"/evidence/*/state.env 2>/dev/null | head -1 || true)
+# A daemon state.env never named (#97) is found by its config file, which lives in the run dir.
+run_dir=$([ -n "$st" ] && . "$st" && echo "$RUN" || true)
+bus_left=$([ -n "$run_dir" ] && pgrep -af -- "dbus-daemon --config-file=$run_dir/" || true)
 # shellcheck disable=SC2046
-if [ "$code" = 130 ] && [ -n "$st" ] && [ -z "$(ls -A "$HV_HOME/runs")" ] && dead $(pids_of "$st"); then
-  pass "hv up interrupted with TERM stopped what it had started ($(pids_of "$st"))"
+if [ "$code" = 130 ] && [ -n "$st" ] && [ -z "$(ls -A "$HV_HOME/runs")" ] && dead $(pids_of "$st") && [ -z "$bus_left" ]; then
+  pass "hv up interrupted with TERM stopped what it had started ($(pids_of "$st")), and no dbus-daemon runs on its bus.conf"
 else
-  fail "interrupted hv up: exit $code, state ${st:-missing}, pids $([ -n "$st" ] && pids_of "$st"), runs: $(ls "$HV_HOME/runs"); log: $(tail -3 "$T/int.log")"
+  fail "interrupted hv up: exit $code, state ${st:-missing}, pids $([ -n "$st" ] && pids_of "$st"), runs: $(ls "$HV_HOME/runs"), dbus-daemon left: ${bus_left:-none}; log: $(tail -3 "$T/int.log")"
 fi
 rm -rf "$HV_HOME/evidence"
 

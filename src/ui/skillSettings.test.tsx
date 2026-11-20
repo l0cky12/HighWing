@@ -422,9 +422,22 @@ describe("Settings → Skills New skill (ADR 0235)", () => {
     await user.type(nameBox(), "triage");
     await setText(user, TRIAGE);
     await user.click(button("Create skill"));
-    expect((await screen.findByText(/^Created triage at/)).textContent).toMatch(/It's off: the profile's skills\.disabled list already names triage\. Turn it on with its switch\.$/);
+    expect((await screen.findByText(/^Created triage at/)).textContent).toMatch(/Created triage at .*, and read back from Hermes\. It's off: the profile's skills\.disabled list already names triage\. Turn it on with its switch, and new chats list it\.$/);
     expect(within(rowOf("triage")).getByRole("switch", { name: "triage" }).getAttribute("aria-checked")).toBe("false");
     expect(s.restRequests.some((r) => r.path === "/api/skills/toggle")).toBe(false);
+  });
+
+  it("doesn't promise the composer a skill a per-platform list keeps off in this app's chats", async () => {
+    const s = server();
+    s.skills.platformDisabled.default = { tui: ["triage"] };
+    const { user } = await shown({ s });
+    await startNew(user);
+    await user.type(nameBox(), "triage");
+    await setText(user, TRIAGE);
+    await user.click(button("Create skill"));
+    const note = (await screen.findByText(/^Created triage at/)).textContent!;
+    expect(note).toMatch(/New chats list it, but the profile's skills\.platform_disabled\.tui list keeps it off in the chats Highwing starts, so the composer doesn't offer it\.$/);
+    expect(note).not.toContain("runs it as");
   });
 
   it("asks before dropping a draft, and goes straight back when nothing was written", async () => {

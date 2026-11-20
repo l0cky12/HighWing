@@ -590,6 +590,17 @@ describe("a new skill's text", () => {
     expect(newSkillProblems({ name: "triage", category: "ops", content })).toEqual([]);
   });
 
+  it("refuses a name or bare description Hermes's YAML 1.1 reads as a yes/no, number or date, which Hermes leaves out of its list", () => {
+    for (const name of ["yes", "off", "y", "null", "1", "1_000", "1.0", "0x1f", "1e5", "2024-01-02"]) {
+      const problems = newSkillProblems({ name, content: skill(name, "Sort a ticket.") });
+      expect(problems, name).toEqual([`Hermes reads name: ${name} as a yes/no, number or date, not as a name, and leaves such a skill out of its list. Add a word to it, such as ${name}-skill.`]);
+    }
+    for (const name of ["yes-please", "1.2.3", "v1", "2024-q1", "onboarding"]) expect(newSkillProblems({ name, content: skill(name, "Sort a ticket.") }), name).toEqual([]);
+    expect(newSkillProblems({ name: "triage", content: skill("triage", "yes") })[0]).toMatch(/^Hermes reads description: yes as a yes\/no/);
+    expect(newSkillProblems({ name: "triage", content: skill("triage", "'yes'") })).toEqual([]);
+    expect(newSkillProblems({ name: "triage", content: skill("triage", "Yes, sort it.") })).toEqual([]);
+  });
+
   it("asks for the front matter name to be the skill's name, without calling it a rename", () => {
     const [problem] = newSkillProblems({ name: "triage", content: skill("sorting", "Sort a ticket.") });
     expect(problem).toBe('The front matter says name: sorting, but the skill is named "triage". Chats run a skill by the name its front matter gives, so make them the same.');

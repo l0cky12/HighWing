@@ -364,17 +364,17 @@ export function SkillSettings({
       }
       if (!alive.current) return;
       const row = next?.skills.find((r) => r.name === at.name);
-      const after =
-        next && !row
+      const offHere = row && next && Object.hasOwn(next.offFor, row.name) ? next.offFor[row.name] : undefined;
+      const now = !next
+        ? ""
+        : !row
           ? " The skill list read back doesn't show it yet; Reload to check."
-          : row && !row.enabled
-            ? ` It's off: the profile's skills.disabled list already names ${at.name}. Turn it on with its switch.`
-            : "";
-      setRowNote({
-        name: next && !row ? "" : at.name,
-        kind: "ok",
-        text: `Created ${at.name} at ${file.path}, and read back from Hermes. New chats list it, and the composer runs it as /${skillSlug(at.name)}.${after}`,
-      });
+          : !row.enabled
+            ? ` It's off: the profile's skills.disabled list already names ${at.name}. Turn it on with its switch, and new chats list it.`
+            : offHere
+              ? ` New chats list it, but the profile's skills.platform_disabled.${offHere.join("/")} list keeps it off in the chats Highwing starts, so the composer doesn't offer it.`
+              : ` New chats list it, and the composer runs it as /${skillSlug(at.name)}.`;
+      setRowNote({ name: next && !row ? "" : at.name, kind: "ok", text: `Created ${at.name} at ${file.path}, and read back from Hermes.${now}` });
       setCreating(undefined);
       setNotice(undefined);
       setQuery("");

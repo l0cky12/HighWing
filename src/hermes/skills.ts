@@ -169,24 +169,25 @@ const murkyYaml = (yaml: string) =>
  * its last, as PyYAML's `safe_load` reads it. `murky`: the front matter has a form `murkyYaml` names, so no key can be
  * read for certain.
  */
-function field(yaml: string, key: string): { value?: string; murky?: boolean; blank?: boolean } | undefined {
+function field(yaml: string, key: string): { value?: string; murky?: boolean; blank?: boolean; quoted?: boolean } | undefined {
   if (murkyYaml(yaml)) return { murky: true };
   const re = new RegExp(`^(["']?)${key}\\1[ \\t]*:(.*)$`);
   const lines = yaml.split("\n");
-  let found: { value?: string; blank?: boolean } | undefined;
+  let found: { value?: string; blank?: boolean; quoted?: boolean } | undefined;
   lines.forEach((line, i) => {
     const m = re.exec(line);
     if (!m) return;
     let v: string | undefined = m[2].replace(/[ \t]+#.*$/, "").trim();
     // An indented line after it continues the value over several lines.
     const continued = /^[ \t]+\S/.test(lines[i + 1] ?? "");
-    // Nothing after the colon is YAML's null, which Hermes would take as the text "None".
+    // Nothing after the colon is YAML's null, not text.
     const blank = !v && !continued;
+    const quoted = /^["']/.test(v);
     // Block scalars, anchors, aliases, tags and flow values aren't read here, nor a double-quoted value with an escape.
     if (!v || continued || /^[|>&*!{[]/.test(v)) v = undefined;
     else if (v.startsWith('"')) v = /^"([^"\\]*)"$/.exec(v)?.[1];
     else if (v.startsWith("'")) v = /^'((?:[^']|'')*)'$/.exec(v)?.[1]?.replace(/''/g, "'");
-    found = { value: v, blank };
+    found = { value: v, blank, quoted };
   });
   return found;
 }
@@ -237,6 +238,8 @@ export function skillProblems(content: string, name: string, fresh = false): str
       );
     if (!d) out.push("The front matter needs a description: field, which the agent reads to decide when to use the skill.");
     else if (fresh && d.blank) out.push("Write the description after description: as one sentence saying when to use the skill. The agent reads it to decide.");
+    else if (fresh && !d.quoted && d.value !== undefined && yamlNotText(d.value))
+      out.push(`Hermes reads description: ${d.value} as a yes/no, number or date, not as text, and leaves such a skill out of its list. Write a sentence, or put it in quotes.`);
     else if (!d.murky && d.value !== undefined && chars(d.value) > MAX_DESCRIPTION_CHARS)
       out.push(`The description is ${chars(d.value).toLocaleString("en-US")} characters; Hermes takes at most ${MAX_DESCRIPTION_CHARS.toLocaleString("en-US")}. Move detail into the body.`);
     if (!pyStrip(fm.body)) out.push("There's nothing after the front matter. Hermes needs the skill's instructions there.");
@@ -248,6 +251,18 @@ export function skillProblems(content: string, name: string, fresh = false): str
     out.push(`Merge markers are still in the text (${MINE_MARK}). Settle each one, keeping the lines you want, then save.`);
   return out;
 }
+
+/**
+ * Whether Hermes reads a bare front matter value as something other than text. Hermes parses front matter as YAML 1.1
+ * (`hermes_yaml.py`, ruamel), where `yes`, `off`, `y`, `null`, `1_000`, `1.0` or `2024-01-02` is a yes/no, null, number or
+ * date. A skill whose `name:` or `description:` is one of these is left out of Hermes's list (`_skill_catalog` slices it as
+ * a string, fails, and skips the skill).
+ */
+const yamlNotText = (v: string) =>
+  /^(?:y|Y|n|N|yes|Yes|YES|no|No|NO|true|True|TRUE|false|False|FALSE|on|On|ON|off|Off|OFF|~|null|Null|NULL)$/.test(v) ||
+  /^[-+]?(?:0b[01_]+|0x[0-9a-fA-F_]+|[0-9][0-9_]*(?:\.[0-9_]*)?(?:[eE][-+]?[0-9]+)?|\.[0-9_]+(?:[eE][-+]?[0-9]+)?|\.(?:inf|Inf|INF)|[0-9][0-9_]*(?::[0-5]?[0-9])+(?:\.[0-9_]*)?)$/.test(v) ||
+  /^\.(?:nan|NaN|NAN)$/.test(v) ||
+  /^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}(?:(?:[Tt]|[ \t]+).*)?$/.test(v);
 
 /** The words Hermes's rule for a new skill's folder name or category comes to (`VALID_NAME_RE`, at most 64 characters). */
 const NAME_RULE = "at most 64 lowercase letters, digits, dots, dashes and underscores, starting with a letter or digit";
@@ -282,6 +297,8 @@ export function newSkillProblems(skill: NewSkill): string[] {
   const out: string[] = [];
   if (!skill.name) out.push("Give the skill a name. Chats run it as /name.");
   else if (!creatableName(skill.name)) out.push(`Hermes takes a skill name of ${NAME_RULE}.`);
+  else if (yamlNotText(skill.name))
+    out.push(`Hermes reads name: ${skill.name} as a yes/no, number or date, not as a name, and leaves such a skill out of its list. Add a word to it, such as ${skill.name}-skill.`);
   if (skill.category && !creatableName(skill.category)) out.push(`Hermes takes a category of ${NAME_RULE}: one folder name. Leave it empty for none.`);
   return [...out, ...skillProblems(skill.content, skill.name, true)];
 }

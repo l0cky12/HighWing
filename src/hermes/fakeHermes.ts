@@ -146,6 +146,25 @@ export type ToolTurnPlan = {
   costUsd: number;
 };
 
+/**
+ * What the model was shown as a turn started (its first call): the user rows it read, hidden ones too, the turn's own
+ * last with any note Hermes appended to it; the persona and tools of the agent that ran the turn; and the MCP tools
+ * `tool_search` and `tool_call` reach, which aren't in `tools` (Hermes defers them behind `tool_search`).
+ */
+export type ModelCall = { stored: string; profile: string; user: string[]; soul?: string; tools: string[]; mcp: string[] };
+
+/**
+ * The first-contact notes Hermes appends to the first turn of a profile's first chat (`agent/onboarding.py` at
+ * ae2a81cc): the profile-build offer once, then the plain introduction. Each profile has its own state.db, so every
+ * new bot gets the offer (spikes/s2.out).
+ */
+export const PROFILE_BUILD_NOTE =
+  "[System note: This is the user's very first message ever. If this message is itself a real request or task, DO THE TASK FIRST -- call whatever tools it needs -- and only then, in the closing sentences of that same reply, do what this note asks. Never let this note replace or skip work the user actually asked for. What this note asks: after a one-sentence introduction (mention /help shows commands), OFFER — do not assume — to build a short profile of them so you can be more useful, and explain they can decline or do it later. If and ONLY IF they accept:\n  1. Ask for whatever they're comfortable sharing (name, what they do, how they like you to work). Volunteered facts come first.\n  2. Before ANY external lookup, say what you intend to look up and get explicit consent for that step. Never read their connected accounts (email, calendar, etc.) silently — ask each time.\n  3. With consent, you may use web_search to confirm public details (e.g. employer, public profiles) from the data points they gave.\n  4. Save each confirmed, durable fact with the memory tool using target=\"user\" — keep entries compact and high-signal.\nIf they decline at any point, stop immediately and continue normally. Keep the whole exchange light and conversational, not an interrogation.]";
+export const PLAIN_INTRO_NOTE =
+  "[System note: This is the user's very first message ever. If this message is itself a real request or task, DO THE TASK FIRST -- call whatever tools it needs -- and only then, in the closing sentences of that same reply, do what this note asks. Never let this note replace or skip work the user actually asked for. What this note asks: briefly introduce yourself and mention that /help shows available commands, in one or two sentences.]";
+/** What `_sync_bot_capabilities` tells a Bot Chat whose agent it rebuilt (`tui_gateway/model_switch.py` at ae2a81cc). */
+export const CAPABILITIES_UPDATED = "Capabilities updated — this bot's tools and prompt were refreshed.";
+
 /** A file on the owner's disk: its bytes as a string, a size alone for a file too big to make, or a folder. */
 export type FakeFile = string | { size: number } | { dir: true };
 
@@ -898,13 +917,27 @@ export class FakeHermes {
       this.runtime.set(runtimeId, stored);
       this.runtimeProfile.set(runtimeId, (r.params.profile as string | undefined) || "default");
       this.minted.set(stored, { source: String(r.params.source ?? "tui"), profile: r.params.profile as string | undefined });
-      this.created.set(runtimeId, {
+      const pending = {
         source: String(r.params.source ?? "tui"),
         profile: r.params.profile as string | undefined,
         ...(r.params.hidden === true && { hidden: true }),
         ...(typeof r.params.title === "string" && { title: r.params.title }),
+      };
+      // `_coerce_seed_history`: user, assistant and system rows with text, and `hidden` the one display kind a client
+      // may send. A seeded session's row is stored now, with its title unless another row holds it (`_seed_row`).
+      const seed = (Array.isArray(r.params.messages) ? (r.params.messages as Record<string, unknown>[]) : []).flatMap((m) => {
+        const text = m.content ?? m.text;
+        if (!["user", "assistant", "system"].includes(String(m.role)) || typeof text !== "string" || !text.trim()) return [];
+        return [{ role: m.role as TranscriptMessage["role"], text, ...(m.display_kind === "hidden" && { display_kind: "hidden" }) }];
       });
-      this.agentTools.set(runtimeId, this.offeredTools((r.params.profile as string | undefined) ?? "default"));
+      const store = this.store(pending.profile);
+      if (seed.length && store) {
+        const title = pending.title && !store.some((s) => s.title === pending.title) ? pending.title : null;
+        const preview = seed.find((m) => m.role === "user" && !m.display_kind)?.text ?? "";
+        store.push(row(stored, 0, { source: pending.source, title, preview, message_count: seed.length, ...(pending.hidden && { hidden: true }) }));
+        for (const m of seed) this.storeMessage(stored, m);
+      } else this.created.set(runtimeId, pending);
+      this.buildAgent(runtimeId, (r.params.profile as string | undefined) || "default");
       // `SessionCreateParams` `model` / `provider` / `reasoning_effort` / `fast`: the session's own overrides.
       const base = this.defaultModel(r.params.profile as string | undefined);
       const p = r.params;
@@ -917,7 +950,9 @@ export class FakeHermes {
       this.sessionModel.set(stored, info);
       const cwd = typeof p.cwd === "string" && this.serverDirs.has(p.cwd) ? p.cwd : this.hermesHome;
       this.sessionCwd.set(runtimeId, cwd);
-      this.respond(r.id, { session_id: runtimeId, stored_session_id: stored, message_count: 0, messages: [], info: { ...this.sessionInfo, ...info, cwd } });
+      // Hidden seed rows aren't sent, or counted (`_history_to_messages`).
+      const shown = shownHistory(this.transcripts[stored] ?? []);
+      this.respond(r.id, { session_id: runtimeId, stored_session_id: stored, message_count: shown.length, messages: shown, info: { ...this.sessionInfo, ...info, cwd } });
     },
     "session.resume": (r) => {
       const stored = String(r.params.session_id);
@@ -935,7 +970,7 @@ export class FakeHermes {
       if (open.length) {
         const sid = open[0][1].sid;
         this.runtime.set(sid, stored);
-        const messages = this.transcripts[stored] ?? [];
+        const messages = shownHistory(this.transcripts[stored] ?? []);
         return this.respond(r.id, { session_id: sid, stored_session_id: stored, message_count: messages.length, messages, info: this.sessionInfo, running: true, open_requests: this.openRequestsOf(sid) });
       }
       const busy = this.reattachTurns && [...this.inflight].find(([sid, t]) => t.stored === stored && this.turns.has(sid));
@@ -950,10 +985,25 @@ export class FakeHermes {
         // Hermes answers on its own task, so the app is already waiting on the resume when these frames reach it.
         return queueMicrotask(() => (before(sid), answer()));
       }
-      const runtimeId = `rt-r${++this.resumed}`;
-      this.runtime.set(runtimeId, stored);
-      this.runtimeProfile.set(runtimeId, (r.params.profile as string | undefined) || "default");
-      this.agentTools.set(runtimeId, this.offeredTools((r.params.profile as string | undefined) ?? "default"));
+      // Hermes keeps a session live after its connection goes until `session.close`, and a resume attaches that one
+      // session, its agent and what its last turn saw (`_resume_reuse_live`); only a session not live is built anew.
+      const live = [...this.agents.keys()].find((id) => this.runtime.get(id) === stored);
+      const runtimeId = live ?? `rt-r${++this.resumed}`;
+      if (!live) {
+        // A closed connection's session is parked in Hermes, not gone, so a Bot Chat changed meanwhile is still told
+        // once (spikes/s1v2.out). This fake reopens it under a new id with a fresh agent, as other suites expect, and
+        // keeps the one thing a Bot Chat's next turn compares against: the fingerprint it saw.
+        const parked = [...this.agents].find(([, a]) => a.stored === stored);
+        if (parked) {
+          this.agents.delete(parked[0]);
+          this.agentTools.delete(parked[0]);
+        }
+        this.runtime.set(runtimeId, stored);
+        this.runtimeProfile.set(runtimeId, (r.params.profile as string | undefined) || "default");
+        this.buildAgent(runtimeId, (r.params.profile as string | undefined) || "default", parked?.[1].capsSeen);
+      }
+      // The row exists now, so the live session's first prompt doesn't add another.
+      this.created.delete(runtimeId);
       const messages = shownHistory(this.transcripts[stored] ?? []);
       const info = { ...this.sessionInfo, ...this.sessionModel.get(stored) };
       this.respond(r.id, { session_id: runtimeId, stored_session_id: stored, message_count: messages.length, messages, info, running: false });
@@ -995,7 +1045,7 @@ export class FakeHermes {
       // The branch is written to the parent's profile and runs on that profile's model (`_branch_live`).
       const profile = this.profileOf(parent);
       this.runtimeProfile.set(runtimeId, profile);
-      this.agentTools.set(runtimeId, this.offeredTools(profile));
+      this.buildAgent(runtimeId, profile);
       if (key) this.branchKeys.set(key, { stored, runtimeId });
       if (drop === "stored") return this.drop();
       if (this.branchError) return this.fail(r.id, this.branchError.code, this.branchError.message);
@@ -1027,10 +1077,13 @@ export class FakeHermes {
       if (drop === "lost") return this.drop();
       if (this.rejectPrompt) return this.fail(r.id, this.rejectPrompt.code, this.rejectPrompt.message);
       const runtimeId = String(r.params.session_id);
+      // `hidden` is the one display kind a client may send (`methods_prompt.py` at ae2a81cc); `session.resume` leaves the row out (spikes/s2.out).
+      const hidden = r.params.display_kind === "hidden" ? { display_kind: "hidden" } : {};
       const created = this.created.get(runtimeId);
       if (created) {
         this.created.delete(runtimeId);
-        const stored = row(this.runtime.get(runtimeId)!, 0, { source: created.source, title: created.title ?? null, preview: String(r.params.text), message_count: 1, ...(created.hidden && { hidden: true }) });
+        const preview = hidden.display_kind ? "" : String(r.params.text);
+        const stored = row(this.runtime.get(runtimeId)!, 0, { source: created.source, title: created.title ?? null, preview, message_count: 1, ...(created.hidden && { hidden: true }) });
         this.store(created.profile)?.push(stored);
       }
       const stored = this.runtime.get(runtimeId);
@@ -1050,7 +1103,8 @@ export class FakeHermes {
       }
       const images = this.attachedImages.get(runtimeId) ?? [];
       this.attachedImages.delete(runtimeId);
-      if (stored) this.storeMessage(stored, { role: "user", text: imageDisplayText(String(r.params.text), images), row_id: this.userRowId });
+      if (stored) this.startTurn(runtimeId, stored, this.runtimeProfile.get(runtimeId) ?? "default", String(r.params.text ?? ""));
+      if (stored) this.storeMessage(stored, { role: "user", text: imageDisplayText(String(r.params.text), images), row_id: this.userRowId, ...hidden });
       if (drop === "stored") return this.drop();
       this.turns.add(runtimeId);
       if (stored) this.inflight.set(runtimeId, { stored, user: String(r.params.text ?? ""), assistant: "" });
@@ -1062,6 +1116,7 @@ export class FakeHermes {
       const userRow = this.userRowId ?? (fileTurn ? this.transcripts[stored!].at(-1)?.row_id : undefined);
       this.respond(r.id, { status: "streaming", ...(userRow !== undefined && { user_row_id: userRow }) });
       if (fileTurn) queueMicrotask(() => this.fileReply(runtimeId, stored!));
+      else if (stored && /searchtools:\S|calltool:\S+ \{/.test(prompt)) queueMicrotask(() => this.toolReply(runtimeId, stored, prompt));
       else if (stored && /dispatch/i.test(prompt)) queueMicrotask(() => this.kanban.dispatchReply(runtimeId, stored, prompt));
       else if (stored && /background/i.test(prompt)) queueMicrotask(() => this.backgroundReply(runtimeId, stored));
     },
@@ -1558,7 +1613,29 @@ export class FakeHermes {
       this.sessionCwd.set(sid, cwd);
       this.respond(r.id, { ...this.sessionInfo, cwd });
     },
-    "session.close": (r) => this.respond(r.id, { closed: true }),
+    // `_pop_session_by_id`: the session and its agent are gone, and a later resume builds a new one.
+    "session.close": (r) => {
+      const sid = String(r.params.session_id ?? "");
+      this.agents.delete(sid);
+      this.agentTools.delete(sid);
+      this.respond(r.id, { closed: true });
+    },
+    // `reload.mcp` (`tui_gateway/methods_tools.py` at ae2a81cc): without `confirm: true` it asks first, unless
+    // `approvals.mcp_reload_confirm` is off. Then it reconnects the servers of the launch profile and of every profile
+    // with a live session, whichever session it names, and refreshes every live session's tools. Nothing else makes a
+    // server added mid-chat reachable, and a profile whose config lacks it never reaches it (spikes/s1mcp_v2.out).
+    "reload.mcp": (r) => {
+      if (r.params.confirm !== true && this.mcpReloadConfirm)
+        return this.respond(r.id, {
+          status: "confirm_required",
+          message: "⚠️  /reload-mcp invalidates the prompt cache (next message re-sends full input tokens). Reply `/reload-mcp now` to proceed, or `/reload-mcp always` to proceed and silence this prompt permanently.",
+        });
+      const profileOf = (id: string) => this.runtimeProfile.get(id) ?? "default";
+      for (const p of new Set(["default", ...[...this.agents.keys()].map(profileOf)])) this.mcpLoaded[p] = this.configuredMcp(p);
+      for (const [id, agent] of this.agents) agent.mcp = this.reachableMcp(profileOf(id));
+      this.mcpReloads.push(String(r.params.session_id ?? ""));
+      this.respond(r.id, { status: "reloaded", loaded_rev: `rev-${this.mcpReloads.length}` });
+    },
     // `tui_gateway/methods_tools.py:1123-1183` at `bf0203a`, as measured on a real Hermes (ADR 0180).
     "rollback.list": (r) =>
       this.rollback(r, (folder) => this.respond(r.id, this.checkpoints.on ? { enabled: true, checkpoints: this.checkpoints.list(folder) } : { enabled: false, checkpoints: [] })),
@@ -1871,6 +1948,27 @@ export class FakeHermes {
 
   /** Runtime session id -> the tool names its agent was built with, from its profile's list then (`tools.show`). */
   readonly agentTools = new Map<string, Set<string>>();
+  /**
+   * Runtime session id -> the rest of what its agent was built with: the persona, the MCP tools it reaches, the
+   * capability fingerprint its first turn saw (`bot_caps_seen`), and its stored session (`session_key`). The stored
+   * session is kept here because opening a new connection clears `runtime` while the session stays live.
+   */
+  private readonly agents = new Map<string, { soul?: string; mcp: string[]; capsSeen?: string; stored?: string }>();
+  /** What each turn's model was shown, in order. */
+  readonly modelCalls: ModelCall[] = [];
+  /** The profiles whose first-contact offer has been made (`onboarding.seen.profile_build_offered`). */
+  readonly profileBuildOffered = new Set<string>();
+  /**
+   * The MCP servers the dashboard process has connected, by profile. A profile not here is read from its config when
+   * its first agent is built; after that only `reload.mcp` reads it again (spikes/s1mcp_v2.out).
+   */
+  mcpLoaded: Record<string, Set<string>> = {};
+  /** False: `approvals.mcp_reload_confirm` is off, so `reload.mcp` without `confirm` reloads. */
+  mcpReloadConfirm = true;
+  /** The `session_id` of every `reload.mcp` that reloaded. */
+  readonly mcpReloads: string[] = [];
+  /** What an MCP tool answers a call with; this one echoes `text`, as the spikes' echo server does (spikes/echo_mcp.py). */
+  mcpToolResult: (tool: string, args: Record<string, unknown>) => unknown = (_tool, args) => args.text ?? args;
   /** Whether the socket has `tools.show`. */
   toolsShowMethod = true;
   /** Platforms whose toolset list each profile has saved; any other inherits Hermes's default. A change saves it. */
@@ -1880,6 +1978,95 @@ export class FakeHermes {
     const on = this.enabledToolsets(profile);
     const off = (n: string) => this.toolsetSuppressed.has(n) || !!this.toolsetDisabledEverywhere[profile]?.includes(n);
     return new Set(this.toolsetCatalog.filter((t) => t.platform === "cli" && on.has(t.name) && !off(t.name)).flatMap((t) => t.tools));
+  }
+
+  /** The servers in `profile`'s config that are on. */
+  private configuredMcp(profile: string): Set<string> {
+    return new Set(Object.entries(this.mcp.servers[profile] ?? {}).flatMap(([name, cfg]) => (cfg.enabled === false ? [] : [name])));
+  }
+
+  /** The MCP tools a chat in `profile` built now reaches: the connected servers its config still has on, with the tools a Test finds. */
+  private reachableMcp(profile: string): string[] {
+    const loaded = (this.mcpLoaded[profile] ??= this.configuredMcp(profile));
+    const on = this.configuredMcp(profile);
+    return [...loaded].filter((s) => on.has(s)).flatMap((s) => (this.mcp.probes[s]?.tools ?? []).map((t) => `mcp__${s}__${t.name}`));
+  }
+
+  /** Builds a live session's agent from its profile as it is now. */
+  private buildAgent(runtimeId: string, profile: string, capsSeen?: string) {
+    const agent = { soul: this.souls[profile], mcp: this.reachableMcp(profile), capsSeen, stored: this.runtime.get(runtimeId) };
+    this.agentTools.set(runtimeId, this.offeredTools(profile));
+    this.agents.set(runtimeId, agent);
+    return agent;
+  }
+
+  /** `capability_fingerprint` (`tools/bot_mode_probe.py` at ae2a81cc), over what this fake has of it: toolsets, SOUL.md, MCP config. */
+  private capabilities(profile: string): string {
+    return JSON.stringify([[...this.offeredTools(profile)].sort(), this.souls[profile] ?? "", this.mcp.servers[profile] ?? {}]);
+  }
+
+  /**
+   * What `_prepare_turn_input` does before the model is called (`tui_gateway/prompt_turn.py` at ae2a81cc), recorded in
+   * `modelCalls`. A Bot Chat whose capabilities changed since its last turn gets a fresh agent and a notice
+   * (`_sync_bot_capabilities`; spikes/s1v2.out); its first turn only notes them. The first turn of a profile's only
+   * chat, with nothing stored before it, gets a first-contact note (`_stage_first_contact_onboarding_note`); a seeded
+   * row counts as stored, so seeding stops it (spikes/s2c.out). The note isn't stored.
+   */
+  private startTurn(runtimeId: string, stored: string, profile: string, prompt: string) {
+    let agent = this.agents.get(runtimeId) ?? this.buildAgent(runtimeId, profile);
+    if (this.store(profile)?.find((s) => s.id === stored)?.title === "Bot Chat") {
+      const seen = agent.capsSeen;
+      agent.capsSeen = this.capabilities(profile);
+      if (seen !== undefined && seen !== agent.capsSeen) {
+        agent = this.buildAgent(runtimeId, profile, agent.capsSeen);
+        // In the turn, after `prompt.submit` has answered.
+        queueMicrotask(() => this.emit(runtimeId, "notice", { message: CAPABILITIES_UPDATED }));
+      }
+    }
+    const history = this.transcripts[stored] ?? [];
+    const firstChat = !(this.store(profile) ?? []).some((s) => s.id !== stored);
+    let note: string | undefined;
+    if (!history.length && firstChat) {
+      note = this.profileBuildOffered.has(profile) ? PLAIN_INTRO_NOTE : PROFILE_BUILD_NOTE;
+      this.profileBuildOffered.add(profile);
+    }
+    this.modelCalls.push({
+      stored,
+      profile,
+      user: [...history.filter((m) => m.role === "user").map((m) => m.text ?? ""), note ? `${prompt}\n\n${note}` : prompt],
+      soul: agent.soul,
+      tools: [...this.agentTools.get(runtimeId)!],
+      mcp: agent.mcp,
+    });
+  }
+
+  /**
+   * A turn whose prompt asks the model for one tool call, as the spikes' stub model makes it (spikes/stub.py):
+   * `searchtools:<query>` calls `tool_search`, `calltool:<name> <json>` calls `tool_call` for that tool. The reply
+   * quotes the result. Hermes reaches an MCP tool only through `tool_call`, and answers a name its registry lacks
+   * with the error below (`tools/tool_search_validation.py`; spikes/s1mcp_v2.out).
+   */
+  private toolReply(runtimeId: string, stored: string, prompt: string) {
+    const reach = this.agents.get(runtimeId)?.mcp ?? [];
+    const search = /searchtools:(\S+)/.exec(prompt)?.[1];
+    const call = /calltool:(\S+) (\{.*\})/.exec(prompt);
+    const tool = call?.[1] ?? "";
+    const toolArgs = call ? (JSON.parse(call[2]) as Record<string, unknown>) : {};
+    const [name, args] = search !== undefined ? ["tool_search", { queries: [search] }] : ["tool_call", { calls: [{ name: tool, arguments: toolArgs }] }];
+    const result =
+      search !== undefined
+        ? { queries: [search], results: [{ query: search, matches: reach.filter((t) => t.includes(search)) }] }
+        : reach.includes(tool)
+          ? { result: this.mcpToolResult(tool, toolArgs) }
+          : { error: `'${tool}' is not a known tool name. Deferred tools must be invoked through tool_call by the exact name tool_search returns (e.g. mcp__<server>__{tool}). Use tool_search to find the exact name.` };
+    const id = `call_tool_${this.modelCalls.length}`;
+    this.event(runtimeId, "message.start");
+    this.storeMessage(stored, { role: "assistant", text: "", tool_calls: [{ id, type: "function", function: { name, arguments: JSON.stringify(args) } }] });
+    this.storeMessage(stored, { role: "tool", tool_call_id: id, name, args, result: JSON.stringify(result) });
+    const text = `${search !== undefined ? "SEARCH" : "TOOL"} RESULT: ${JSON.stringify(result)}`;
+    this.event(runtimeId, "message.delta", { text });
+    this.storeMessage(stored, { role: "assistant", text });
+    this.event(runtimeId, "message.complete", { text, status: "complete" });
   }
 
   /** The toolsets every profile lists (plugins aside, the catalog is the same for each). */
@@ -3650,6 +3837,9 @@ export class FakeHermes {
     s.runtime_revision = (s.runtime_revision ?? 0) + 1;
     if (typeof body.pinned === "boolean") s.pinned = body.pinned;
     if (typeof body.archived === "boolean") s.archived = body.archived;
+    // Archiving the Bot Chat retires its name: the title is cleared and the row unhidden, so a new Bot Chat can take
+    // it, and unarchiving doesn't give it back (`_retire_canonical_bot_chat_in_transaction` at ae2a81cc; spikes/s3.out).
+    if (body.archived === true && s.title === "Bot Chat") Object.assign(s, { title: null, hidden: false });
     if (typeof body.hidden === "boolean") s.hidden = body.hidden;
     if (typeof body.unread === "boolean") s.last_read_at = body.unread ? 0 : now();
     if (typeof body.title === "string") {

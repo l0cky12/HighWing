@@ -202,6 +202,9 @@ function imagePage(chat: Chat, exportedAt: Date, choice: Omit<ExportChoice, "red
       case "clarify":
       case "sudo":
       case "secret":
+      case "vault.unlock_prompt":
+      case "vault.save_login":
+      case "vault.code":
       case "error":
         return [];
     }
@@ -388,6 +391,9 @@ function block(i: Item, attachments: boolean): string[] {
     case "clarify":
     case "sudo":
     case "secret":
+    case "vault.unlock_prompt":
+    case "vault.save_login":
+    case "vault.code":
       return [];
     case "error":
       // The app's own notices, not the conversation; they can name the connection.

@@ -3210,6 +3210,21 @@ export class FakeHermes {
     this.commandAllowlist[profile] = [...new Set([...list, name])].sort();
   }
 
+  /** A `vault.unlock_prompt` request as `agent_callbacks` sends it at `be787439`: the master password of a password manager. */
+  askVaultUnlock(sid: string, over: Record<string, unknown> = {}) {
+    return this.ask(sid, "vault.unlock_prompt", { backend: "bitwarden", display_name: "Bitwarden", ...over });
+  }
+
+  /** A `vault.save_login` request: a sign-in page at `origin` with no login saved for it. Answered with JSON `{identifier, password}`. */
+  askVaultSaveLogin(sid: string, over: Record<string, unknown> = {}) {
+    return this.ask(sid, "vault.save_login", { origin: "https://github.com", site: "github.com", ...over });
+  }
+
+  /** A `vault.code` request: a one-time code `site` asks for. Hermes sends an empty `hint` at `be787439`. */
+  askVaultCode(sid: string, over: Record<string, unknown> = {}) {
+    return this.ask(sid, "vault.code", { site: "github.com", hint: "", ...over });
+  }
+
   /** An `approval` request as `server._approval_request_payload` renders it: the command redacted, the choices set. */
   askApproval(sid: string, over: Record<string, unknown> = {}) {
     const params = {

@@ -1496,7 +1496,14 @@ const BlockView = memo(
     if (block.kind === "returned") return block.setup ? <SetupLine item={block} /> : <ReturnedCard item={block} query={query} date={date} />;
     if (block.kind === "approval")
       return <ApprovalCard item={block} offline={offline} movedAt={movedAt} onAnswer={(c, confirmed) => onAnswer(block.id, c, confirmed)} />;
-    if (block.kind === "clarify" || block.kind === "sudo" || block.kind === "secret")
+    if (
+      block.kind === "clarify" ||
+      block.kind === "sudo" ||
+      block.kind === "secret" ||
+      block.kind === "vault.unlock_prompt" ||
+      block.kind === "vault.save_login" ||
+      block.kind === "vault.code"
+    )
       return <QuestionCard item={block} offline={offline} movedAt={movedAt} onAnswer={(a) => onQuestion(block.id, a)} />;
     if (block.kind === "sent") return <SentCard block={block} query={query} />;
     if (block.kind === "cu-run") return <ComputerUseCard run={block} offline={offline} movedAt={movedAt} onAnswer={onAnswer} />;

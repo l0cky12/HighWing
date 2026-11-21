@@ -1,5 +1,6 @@
-// A Clarify, Sudo password or Secret card (#390): what Hermes asks, and the owner's answer. A password or secret lives
-// only in the card's masked DOM field until it goes to Hermes; the card then keeps only that it was answered (ADR 0146).
+// A card for any Question but an Approval (#390, #26): what Hermes asks, and the owner's answer. A password, secret,
+// code or login lives only in the card's DOM fields until it goes to Hermes; the card then keeps only that it was
+// answered (ADR 0146, ADR 0244).
 import { useCallback, useId, useRef, useState, type KeyboardEvent } from "react";
 import { KeyRound, MessageCircleQuestion } from "lucide-react";
 import { endedNote, type ClarifyQuestion, type QuestionAnswer, type QuestionItem } from "../hermes/model";
@@ -31,8 +32,30 @@ const onEnter = (act: () => void) => (e: KeyboardEvent) => {
 };
 
 /** What a waiting card asks, in its head. */
-const asking = (i: Card) => (i.kind === "secret" ? `Hermes needs a value for ${i.envVar}` : i.kind === "sudo" ? "Hermes needs the sudo password" : "Hermes is asking");
-const ANSWERED: Record<Card["kind"], string> = { clarify: "Answered", sudo: "Password sent", secret: "Value sent" };
+function asking(i: Card): string {
+  switch (i.kind) {
+    case "clarify":
+      return "Hermes is asking";
+    case "sudo":
+      return "Hermes needs the sudo password";
+    case "secret":
+      return `Hermes needs a value for ${i.envVar}`;
+    case "vault.unlock_prompt":
+      return `Hermes needs your ${visible(i.displayName)} master password`;
+    case "vault.save_login":
+      return `Save a login for ${visible(i.site)}?`;
+    case "vault.code":
+      return i.site ? `Hermes needs a one-time code for ${visible(i.site)}` : "Hermes needs a one-time code";
+  }
+}
+const ANSWERED: Record<Card["kind"], string> = {
+  clarify: "Answered",
+  sudo: "Password sent",
+  secret: "Value sent",
+  "vault.unlock_prompt": "Password sent",
+  "vault.save_login": "Login sent",
+  "vault.code": "Code sent",
+};
 
 /**
  * A card takes no focus when it arrives, so typing elsewhere never answers it; it answers only from its own buttons and
@@ -153,68 +176,142 @@ function ClarifyAnswer({ q, offline, deliberate, keepFocus, lock }: Pick<Parts, 
   );
 }
 
-/** A Sudo password or Secret: what it is for, and while it waits, the masked field. */
-function Masked({ item, open, ...parts }: Parts & { item: Exclude<Card, { kind: "clarify" }> }) {
-  return (
-    <>
-      {item.kind === "sudo" ? (
-        item.command && <pre className="approval-cmd">{visible(item.command)}</pre>
-      ) : (
+type ValueCard = Exclude<Card, { kind: "clarify" }>;
+
+/** A field a card takes its answer in. `masked`: a password field. */
+type Field = { label: string; placeholder: string; masked: boolean };
+
+/**
+ * What a card takes its answer in: its fields, the answer they make, the button that sends it, and where the answer
+ * goes. Every field must be filled to send.
+ */
+type Form = { fields: Field[]; answer: (values: string[]) => QuestionAnswer; sendLabel: string; note: string };
+
+const one = (field: Field, note: string): Form => ({ fields: [field], answer: ([value]) => ({ kind: "value", value }), sendLabel: "Send", note });
+
+function formOf(item: ValueCard): Form {
+  switch (item.kind) {
+    case "sudo":
+      return one(
+        { label: "Sudo password", placeholder: "Sudo password", masked: true },
+        "It goes only to Hermes, which keeps it in memory for this chat's later sudo commands. Highwing doesn't keep it.",
+      );
+    case "secret":
+      return one(
+        { label: `Value for ${item.envVar}`, placeholder: item.envVar, masked: true },
+        `Hermes saves it as ${item.envVar} in this profile on the server. Highwing doesn't keep it.`,
+      );
+    case "vault.unlock_prompt": {
+      const name = visible(item.displayName);
+      return one(
+        { label: `${name} master password`, placeholder: "Master password", masked: true },
+        `It goes only to ${name} on the server, which stays unlocked for this chat. Hermes's model never sees it, and Highwing doesn't keep it.`,
+      );
+    }
+    case "vault.save_login":
+      return {
+        fields: [
+          { label: "User name or email", placeholder: "User name or email", masked: false },
+          { label: "Password", placeholder: "Password", masked: true },
+        ],
+        answer: ([identifier, password]) => ({ kind: "login", identifier, password }),
+        sendLabel: "Save",
+        note: "Hermes saves it encrypted on the server and fills it into the page. Hermes's model never sees the password, and Highwing keeps neither.",
+      };
+    case "vault.code":
+      return one(
+        { label: "One-time code", placeholder: "One-time code", masked: false },
+        "Hermes types it into the page. Hermes's model never sees it, and Highwing doesn't keep it.",
+      );
+  }
+}
+
+/** What a card's question is for, above its fields. */
+function About({ item }: { item: ValueCard }) {
+  switch (item.kind) {
+    case "sudo":
+      return item.command ? <pre className="approval-cmd">{visible(item.command)}</pre> : null;
+    case "secret":
+      return (
         <>
           {item.prompt && <div className="approval-desc question-prompt">{visible(item.prompt)}</div>}
           {item.skill && <div className="approval-desc">For the {visible(item.skill)} skill.</div>}
         </>
-      )}
-      {open && <MaskedField item={item} {...parts} />}
+      );
+    case "vault.unlock_prompt":
+      return <div className="approval-desc">Hermes wants to sign in to a site with a login saved in {visible(item.displayName)}.</div>;
+    case "vault.save_login":
+      return <div className="approval-desc">Hermes reached a sign-in page at {visible(item.origin)} and has no login saved for it.</div>;
+    case "vault.code":
+      return (
+        <>
+          <div className="approval-desc">The site asks for a one-time code from a text message, an email or an authenticator app.</div>
+          {item.hint && <div className="approval-desc question-prompt">{visible(item.hint)}</div>}
+        </>
+      );
+  }
+}
+
+/** A question answered with a value or a login: what it is for, and while it waits, its fields. */
+function Masked({ item, open, ...parts }: Parts & { item: ValueCard }) {
+  return (
+    <>
+      <About item={item} />
+      {open && <ValueFields item={item} {...parts} />}
     </>
   );
 }
 
 /**
- * The masked field, whose value goes to Hermes and nowhere else. The field is uncontrolled, so the value is only in the
- * DOM field, never in React's state or props; React knows only whether it is empty. It shows only while the card
- * waits, so the value goes however the card closes, and Send clears it as it goes.
+ * The fields, whose values go to Hermes and nowhere else. They are uncontrolled, so a value is only in its DOM field,
+ * never in React's state or props; React knows only whether every field is filled. They show only while the card
+ * waits, so the values go however the card closes, and Send clears them as it goes.
  */
-function MaskedField({ item, offline, deliberate, keepFocus, send }: Omit<Parts, "open"> & { item: Exclude<Card, { kind: "clarify" }> }) {
-  const field = useRef<HTMLInputElement>(null);
+function ValueFields({ item, offline, deliberate, keepFocus, send }: Omit<Parts, "open"> & { item: ValueCard }) {
+  const form = formOf(item);
+  const fields = useRef<(HTMLInputElement | null)[]>([]);
   const [filled, setFilled] = useState(false);
-  const fieldId = useId();
+  const baseId = useId();
+  const values = () => fields.current.slice(0, form.fields.length).map((f) => f?.value ?? "");
+  const complete = () => values().every((v, n) => (form.fields[n].masked ? v !== "" : v.trim() !== ""));
   const go = () => {
-    const input = field.current;
-    if (offline || !input?.value) return;
-    send({ kind: "value", value: input.value });
-    input.value = "";
+    if (offline || !complete()) return;
+    send(form.answer(values()));
+    for (const f of fields.current) if (f) f.value = "";
     setFilled(false);
   };
+  const last = form.fields.length - 1;
   return (
     <div className="question-masked" ref={keepFocus}>
-      <label htmlFor={fieldId} className="sr-only">
-        {item.kind === "sudo" ? "Sudo password" : `Value for ${item.envVar}`}
-      </label>
-      <div className="question-own">
-        <input
-          ref={field}
-          id={fieldId}
-          className="question-field"
-          type="password"
-          autoComplete="off"
-          spellCheck={false}
-          placeholder={item.kind === "sudo" ? "Sudo password" : item.envVar}
-          onInput={(e) => setFilled(!!e.currentTarget.value)}
-          onKeyDown={onEnter(go)}
-        />
-        <button className="btn primary" aria-disabled={offline || !filled || undefined} onClick={deliberate(go)}>
-          Send
-        </button>
-        <button className="btn" aria-disabled={offline || undefined} onClick={deliberate(() => send({ kind: "skip" }))}>
-          Skip
-        </button>
-      </div>
-      <div className="approval-desc question-note">
-        {item.kind === "sudo"
-          ? "It goes only to Hermes, which keeps it in memory for this chat's later sudo commands. Highwing doesn't keep it."
-          : `Hermes saves it as ${item.envVar} in this profile on the server. Highwing doesn't keep it.`}
-      </div>
+      {form.fields.map((field, n) => (
+        <div className="question-own" key={field.label}>
+          <label htmlFor={`${baseId}-${n}`} className="sr-only">
+            {field.label}
+          </label>
+          <input
+            ref={(el) => void (fields.current[n] = el)}
+            id={`${baseId}-${n}`}
+            className="question-field"
+            type={field.masked ? "password" : "text"}
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={field.placeholder}
+            onInput={() => setFilled(complete())}
+            onKeyDown={onEnter(go)}
+          />
+          {n === last && (
+            <>
+              <button className="btn primary" aria-disabled={offline || !filled || undefined} onClick={deliberate(go)}>
+                {form.sendLabel}
+              </button>
+              <button className="btn" aria-disabled={offline || undefined} onClick={deliberate(() => send({ kind: "skip" }))}>
+                Skip
+              </button>
+            </>
+          )}
+        </div>
+      ))}
+      <div className="approval-desc question-note">{form.note}</div>
     </div>
   );
 }

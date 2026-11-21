@@ -261,3 +261,99 @@ describe("Sudo password and Secret cards", () => {
     }
   });
 });
+
+describe("Password manager cards", () => {
+  /** What this computer keeps: the snapshot and everything in localStorage. */
+  const kept = (s: Awaited<ReturnType<typeof replying>>) => [JSON.stringify(s.hermes.getSnapshot()), ...Object.keys(localStorage).map((k) => localStorage.getItem(k) ?? "")].join("\n");
+
+  it("takes the master password in a masked field, sends it on Enter, and keeps none of it", async () => {
+    const s = await replying();
+    const id = await s.ask(() => s.server.askVaultUnlock(s.runtime));
+    const card = within(cardOf(id));
+    expect(card.getByText("Hermes needs your Bitwarden master password")).toBeTruthy();
+    expect(card.getByText("Hermes wants to sign in to a site with a login saved in Bitwarden.")).toBeTruthy();
+    const field = card.getByLabelText<HTMLInputElement>("Bitwarden master password");
+    expect(field.type).toBe("password");
+    expect(field.autocomplete).toBe("off");
+
+    await s.user.type(field, "correct horse battery");
+    expect(reactHolds("correct horse battery")).toBe(false);
+    await s.user.keyboard("{Enter}");
+    await settle(s.hermes);
+    expect(s.server.settled).toEqual([{ id, method: "vault.unlock_prompt", result: { value: "correct horse battery" }, via: "request.answer" }]);
+    expect(card.getByText("Password sent")).toBeTruthy();
+    expect(document.body.innerHTML).not.toContain("correct horse battery");
+    expect(kept(s)).not.toContain("correct horse battery");
+  });
+
+  it("saves a login only with a user name and a password, sends them as Hermes's JSON, and keeps neither", async () => {
+    const s = await replying();
+    const id = await s.ask(() => s.server.askVaultSaveLogin(s.runtime));
+    const card = within(cardOf(id));
+    expect(card.getByText("Save a login for github.com?")).toBeTruthy();
+    expect(card.getByText("Hermes reached a sign-in page at https://github.com and has no login saved for it.")).toBeTruthy();
+    const name = card.getByLabelText<HTMLInputElement>("User name or email");
+    const password = card.getByLabelText<HTMLInputElement>("Password");
+    expect(name.type).toBe("text");
+    expect(name.autocomplete).toBe("off");
+    expect(password.type).toBe("password");
+    const save = card.getByRole("button", { name: "Save" });
+
+    await s.user.type(name, "lena@example.com{Enter}");
+    expect(save.getAttribute("aria-disabled")).toBe("true");
+    await s.user.type(password, "Tr0ub4dor&3");
+    expect(reactHolds("lena@example.com")).toBe(false);
+    expect(reactHolds("Tr0ub4dor&3")).toBe(false);
+    expect(save.getAttribute("aria-disabled")).toBeNull();
+    expect(s.server.settled).toEqual([]);
+
+    save.focus();
+    await s.user.keyboard("{Enter}");
+    await settle(s.hermes);
+    expect(s.server.settled).toEqual([{ id, method: "vault.save_login", result: { value: '{"identifier":"lena@example.com","password":"Tr0ub4dor&3"}' }, via: "request.answer" }]);
+    expect(card.getByText("Login sent")).toBeTruthy();
+    expect(document.body.innerHTML).not.toMatch(/lena@example\.com|Tr0ub4dor/);
+    expect(kept(s)).not.toMatch(/lena@example\.com|Tr0ub4dor/);
+  });
+
+  it("declines to save a login with Skip, and keeps nothing typed", async () => {
+    const s = await replying();
+    const id = await s.ask(() => s.server.askVaultSaveLogin(s.runtime));
+    const card = within(cardOf(id));
+    await s.user.type(card.getByLabelText("User name or email"), "lena-typed");
+    await s.user.type(card.getByLabelText("Password"), "pw-typed-then-skipped");
+
+    card.getByRole("button", { name: "Skip" }).focus();
+    await s.user.keyboard("{Enter}");
+    await settle(s.hermes);
+    expect(s.server.settled).toEqual([{ id, method: "vault.save_login", result: { value: "" }, via: "request.answer" }]);
+    expect(card.getByText("Skipped")).toBeTruthy();
+    expect(card.queryByLabelText("Password")).toBeNull();
+    expect(reactHolds("pw-typed-then-skipped")).toBe(false);
+  });
+
+  it("takes a one-time code in a plain field, with the site and Hermes's hint, and keeps none of it", async () => {
+    const s = await replying();
+    const id = await s.ask(() => s.server.askVaultCode(s.runtime, { hint: "Use the code from your authenticator app" }));
+    const card = within(cardOf(id));
+    expect(card.getByText("Hermes needs a one-time code for github.com")).toBeTruthy();
+    expect(card.getByText("Use the code from your authenticator app")).toBeTruthy();
+    const field = card.getByLabelText<HTMLInputElement>("One-time code");
+    expect(field.type).toBe("text");
+    expect(field.autocomplete).toBe("off");
+
+    await s.user.type(field, "482913");
+    expect(reactHolds("482913")).toBe(false);
+    await s.user.keyboard("{Enter}");
+    await settle(s.hermes);
+    expect(s.server.settled).toEqual([{ id, method: "vault.code", result: { value: "482913" }, via: "request.answer" }]);
+    expect(card.getByText("Code sent")).toBeTruthy();
+    expect(kept(s)).not.toContain("482913");
+  });
+
+  it("asks for a code without naming a site when Hermes names none", async () => {
+    const s = await replying();
+    const id = await s.ask(() => s.server.askVaultCode(s.runtime, { site: null }));
+    expect(within(cardOf(id)).getByText("Hermes needs a one-time code")).toBeTruthy();
+  });
+});

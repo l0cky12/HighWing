@@ -1,5 +1,7 @@
 # Clarify, sudo and secret questions share the Approval card's lifecycle, and their values are never kept
 
+> **Partly superseded by [ADR 0244](0244-a-password-managers-questions-show-as-cards-and-their-values-are-never-kept.md).** A password manager's questions (`vault.unlock_prompt`, `vault.save_login`, `vault.code`) show as cards too, with this ADR's lifecycle and its rule that a value is never kept. `theme.pick` still doesn't show. The rest of this ADR stands.
+
 Hermes Chat showed Approvals and no other question from Hermes (#390). Since #313 it leaves a `clarify`, `sudo` or `secret` request unanswered on a Hermes that shares chats, so the official app can answer it. When Hermes Chat is the only client on the chat, nothing answers: the reply waits for Hermes's deadline (3600 s for a clarify by default, 120 s for sudo, 300 s for a secret) or for Stop.
 
 The contracts are in `tui_gateway/contracts/server_requests.py`, the same at `bf0203a` and `f0d94882`: `ClarifyRequestParams {questions: [{qid, question, choices, multi_select}], answers?}` with `ClarifyResult {answers?, outcome?}`, `SudoRequestParams {command}`, `SecretRequestParams {env_var, prompt, metadata?}`, and `ValueResult {value}`, where an empty value is a skip. A clarify's answers lock one question at a time with the `clarify.lock` RPC, and the last lock settles the request. A reconnect's `open_requests` carries a clarify's locked answers as `answers`.

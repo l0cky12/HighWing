@@ -322,6 +322,7 @@ export const NOTICES = {
   finished: { title: "Hermes finished a reply", body: "Open Highwing to read it." },
   approval: { title: "Hermes is asking for approval", body: "A command is waiting for your answer in Highwing." },
   question: { title: "Hermes has a question", body: "A question is waiting for your answer in Highwing." },
+  vault: { title: "Hermes needs help to sign in", body: "A password manager question is waiting for your answer in Highwing." },
   notDenied: { title: "The approval wasn't denied", body: "Open Highwing to see where it stands and answer there." },
   /**
    * A scheduled job's run finished (#28). It names the job and its bot, which the owner set up, and how Hermes recorded
@@ -446,19 +447,30 @@ type SessionEvent = Extract<Inbound, { kind: "event" }>;
  * The Questions the app shows as cards, by the request's method (`tui_gateway/contracts/server_requests.py`). `card`: the
  * card a request makes, or none when its params don't parse. `skip`: the result a Skip answers with (`ClarifyResult`
  * without `answers` is cancel-all; an empty `ValueResult` is skipped), none for a kind that can't be skipped. `value`:
- * the result for a password or secret (`ValueResult`). `notice`: what a desktop notification says. `named`: what the
- * chat calls it when an answer is lost. A method not here is one the app doesn't show (`unshownAnswer`).
+ * the result for a password, secret or code (`ValueResult`). `login`: the result for a login to save, the JSON
+ * `{identifier, password}` Hermes reads from `ValueResult`. `notice`: what a desktop notification says. `named`: what
+ * the chat calls it when an answer is lost. A method not here is one the app doesn't show (`unshownAnswer`).
  */
 const QUESTIONS: { [K in QuestionKind]: QuestionSpec<Extract<QuestionItem, { kind: K }>> } = {
   approval: { card: approvalItem, notice: NOTICES.approval, named: (i) => `“${i.command}”` },
   clarify: { card: clarifyItem, skip: {}, notice: NOTICES.question, named: () => "Hermes's question" },
   sudo: { card: sudoItem, skip: { value: "" }, value: (value) => ({ value }), notice: NOTICES.question, named: () => "the sudo password question" },
   secret: { card: secretItem, skip: { value: "" }, value: (value) => ({ value }), notice: NOTICES.question, named: (i) => `the question for ${i.envVar}` },
+  "vault.unlock_prompt": { card: vaultUnlockItem, skip: { value: "" }, value: (value) => ({ value }), notice: NOTICES.vault, named: (i) => `the ${i.displayName} master password question` },
+  "vault.save_login": {
+    card: vaultSaveLoginItem,
+    skip: { value: "" },
+    login: (identifier, password) => ({ value: JSON.stringify({ identifier, password }) }),
+    notice: NOTICES.vault,
+    named: (i) => `the question to save a login for ${i.site}`,
+  },
+  "vault.code": { card: vaultCodeItem, skip: { value: "" }, value: (value) => ({ value }), notice: NOTICES.vault, named: (i) => (i.site ? `the one-time code question for ${i.site}` : "the one-time code question") },
 };
 type QuestionSpec<Q extends QuestionItem> = {
   card: (r: ServerRequest) => Q | undefined;
   skip?: Record<string, unknown>;
   value?: (value: string) => Record<string, unknown>;
+  login?: (identifier: string, password: string) => Record<string, unknown>;
   notice: { title: string; body: string };
   named: (i: Q) => string;
 };
@@ -4713,10 +4725,11 @@ export class Hermes {
   }
 
   /**
-   * Answers a waiting Clarify, Sudo password or Secret card for the owner: locks one Clarify answer (`clarify.lock`, the
-   * last lock answers the whole Clarify), sends a password or secret, or skips. A card already answered, or that Hermes
-   * stopped waiting for, is left alone, and so is a question locked already and an empty value, which Hermes would read
-   * as skipped. The value goes to Hermes and nowhere else: the card keeps only that it was answered (ADR 0146).
+   * Answers a waiting Question other than an Approval for the owner: locks one Clarify answer (`clarify.lock`, the last
+   * lock answers the whole Clarify), sends a password, secret, code or login to save, or skips. A card already answered,
+   * or that Hermes stopped waiting for, is left alone, and so is a question locked already, an empty value, which Hermes
+   * would read as skipped, and a login without a user name or password. The value goes to Hermes and nowhere else: the
+   * card keeps only that it was answered (ADR 0146, ADR 0244).
    */
   async answerQuestion(chatId: string, itemId: string, a: QuestionAnswer): Promise<void> {
     const card = this.snapshot.chats.find((c) => c.id === chatId)?.items.find((i) => i.id === itemId);
@@ -4728,10 +4741,13 @@ export class Hermes {
       const result = spec.skip;
       return this.answerCard(chatId, card, { show: () => ({ answer: "skipped" }), undo: reopen, stale: "expired" }, (runtimeId) => settle(runtimeId, result));
     }
-    if (a.kind === "value" && spec.value && a.value) {
-      const result = spec.value(a.value);
-      return this.answerCard(chatId, card, { show: () => ({ answer: "answered" }), undo: reopen, stale: "expired" }, (runtimeId) => settle(runtimeId, result));
-    }
+    const result =
+      a.kind === "value" && spec.value && a.value
+        ? spec.value(a.value)
+        : a.kind === "login" && spec.login && a.identifier.trim() && a.password
+          ? spec.login(a.identifier.trim(), a.password)
+          : undefined;
+    if (result) return this.answerCard(chatId, card, { show: () => ({ answer: "answered" }), undo: reopen, stale: "expired" }, (runtimeId) => settle(runtimeId, result));
     if (a.kind !== "lock" || card.kind !== "clarify" || !card.questions.some((q) => q.qid === a.qid) || a.qid in card.locked) return;
     const { qid, answer } = a;
     const all = (locked: Record<string, unknown>) => card.questions.every((q) => q.qid in locked);
@@ -4786,7 +4802,7 @@ export class Hermes {
 
   /**
    * Asks Hermes which requests it still waits on in the chat's session (`open_requests`), and once it lists none, closes
-   * the Clarify, Sudo password and Secret cards that were waiting when the read went out. Hermes withdraws a request it
+   * the cards of every Question but an Approval that were waiting when the read went out. Hermes withdraws a request it
    * stops waiting on itself with `request.cancel`, so one it dropped without a word was answered in another Hermes
    * client, which Hermes tells no other client of (#390). A list with any request in it closes nothing: with turn
    * isolation Hermes lists a child process's request only while the parent has none of its own (`server._open_requests`),
@@ -4803,8 +4819,9 @@ export class Hermes {
   }
 
   /**
-   * `settleQuestions` for every chat with a Clarify, Sudo password or Secret card waiting, so a card another app answered
-   * closes in a chat where no tool call finishes or turn ends after it, such as a plugin command's in an idle chat.
+   * `settleQuestions` for every chat with a card waiting for a Question other than an Approval, so a card another app
+   * answered closes in a chat where no tool call finishes or turn ends after it, such as a plugin command's in an idle
+   * chat.
    */
   private settleAllQuestions(): Promise<unknown> {
     const asking = this.snapshot.chats.filter((c) => c.runtimeId && c.items.some((i) => isWaiting(i) && i.kind !== "approval"));
@@ -7143,9 +7160,21 @@ function answeredHow(q: QuestionItem): string {
 
 /** One line for what a Question asks, for its step in the Run view. */
 function questionSummary(q: QuestionItem): string {
-  if (q.kind === "approval" || q.kind === "sudo") return q.command;
-  if (q.kind === "clarify") return q.questions.map((x) => x.question).join(" · ");
-  return q.envVar;
+  switch (q.kind) {
+    case "approval":
+    case "sudo":
+      return q.command;
+    case "clarify":
+      return q.questions.map((x) => x.question).join(" · ");
+    case "secret":
+      return q.envVar;
+    case "vault.unlock_prompt":
+      return q.displayName;
+    case "vault.save_login":
+      return q.site;
+    case "vault.code":
+      return q.site ?? "";
+  }
 }
 
 /** A card for an `approval` request. Choices this app doesn't know are dropped; it never makes one up. */
@@ -7196,12 +7225,36 @@ function secretItem(r: ServerRequest): Extract<QuestionItem, { kind: "secret" }>
   return { kind: "secret", id: r.id, envVar, prompt, ...(typeof skill === "string" && skill && { skill }) };
 }
 
+/** A string param as Hermes sent it, or empty for any other value. */
+const stringOf = (v: unknown) => (typeof v === "string" ? v : "");
+
+/** A card for a `vault.unlock_prompt` request (`VaultUnlockRequestParams`); none without the password manager it unlocks. */
+function vaultUnlockItem(r: ServerRequest): Extract<QuestionItem, { kind: "vault.unlock_prompt" }> | undefined {
+  const backend = stringOf(r.params.backend);
+  const displayName = stringOf(r.params.display_name) || backend;
+  return displayName ? { kind: "vault.unlock_prompt", id: r.id, backend, displayName } : undefined;
+}
+
+/** A card for a `vault.save_login` request (`VaultSaveLoginRequestParams`); none without the page it is for. */
+function vaultSaveLoginItem(r: ServerRequest): Extract<QuestionItem, { kind: "vault.save_login" }> | undefined {
+  const origin = stringOf(r.params.origin);
+  const site = stringOf(r.params.site) || origin;
+  return site ? { kind: "vault.save_login", id: r.id, origin, site } : undefined;
+}
+
+/** A card for a `vault.code` request (`VaultCodeRequestParams`), whose site and hint are both optional. */
+function vaultCodeItem(r: ServerRequest): Extract<QuestionItem, { kind: "vault.code" }> {
+  const site = stringOf(r.params.site);
+  const hint = stringOf(r.params.hint);
+  return { kind: "vault.code", id: r.id, ...(site && { site }), ...(hint && { hint }) };
+}
+
 /** Closes the waiting cards, or those of them `which` picks, with Hermes's reason. */
 const endWaiting = (items: Item[], ended: string, which = (_: QuestionItem) => true) => items.map((i): Item => (isWaiting(i) && which(i) ? { ...i, ended } : i));
 
 /**
- * Closes the waiting Approvals with `ended`. A Clarify, Sudo password or Secret question closes only once Hermes stops
- * listing it (`settleQuestions`), since the turn that ends may not be the one that asked it.
+ * Closes the waiting Approvals with `ended`. Any other Question closes only once Hermes stops listing
+ * it (`settleQuestions`), since the turn that ends may not be the one that asked it.
  */
 const endApprovals = (items: Item[], ended: string) => endWaiting(items, ended, (i) => i.kind === "approval");
 

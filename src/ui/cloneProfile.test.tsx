@@ -107,7 +107,7 @@ describe("Clone a profile", () => {
     await user.click(within(dialog).getByRole("button", { name: "Clone" }));
 
     const done = await within(dialog).findByRole("table", { name: "What default-copy has" });
-    expect(creates(server)).toEqual([{ name: "default-copy", soul: "You are Hermes.\n", provider: "openrouter", model: "anthropic/claude-sonnet-4.5" }]);
+    expect(creates(server)).toEqual([{ name: "default-copy", soul: "You are Hermes.\n", provider: "openrouter", model: "anthropic/claude-sonnet-4.5", mirror_credentials: false }]);
     expect(server.profileEnv["default-copy"]).toEqual({});
     expect(server.memory["default-copy"]).toBeUndefined();
     expect(within(done).getAllByRole("row").map((r) => r.textContent)).toEqual([

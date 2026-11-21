@@ -2643,11 +2643,16 @@ export class FakeHermes {
 
   /**
    * `POST /api/profiles` at `f0d94882` (`create_profile_endpoint`, `profiles.create_profile`): refuses an invalid, reserved
-   * or taken name and an unknown source (400), then makes the whole profile at once. Fresh, it has an empty `.env`, the
-   * body's SOUL.md (else Hermes's default) and its model if Hermes's check takes it. `clone_from` copies the source's
-   * `.env` without bot tokens, SOUL.md, model, skill folders and memory. Chats and scheduled jobs are never copied.
+   * or taken name and an unknown source (400), then makes the whole profile at once. Fresh, it has the body's SOUL.md
+   * (else Hermes's default) and its model if Hermes's check takes it. `clone_from` copies the source's `.env` without bot
+   * tokens, SOUL.md, model, skill folders and memory. Chats and scheduled jobs are never copied.
+   *
+   * From Hermes 0.23.2 (`profile_provision.py` at `fe7e28b843e6`), unless the body has `mirror_credentials: false`, a
+   * fresh profile also gets the launch profile's `.env` without bot tokens and, when the body doesn't name both a provider
+   * and a model, its model. With `mirror_credentials: false` its `.env` is empty, as it always was at `f0d94882`.
    */
   private createProfile(body: Record<string, unknown>): unknown {
+    const withoutBotTokens = (env: Record<string, string> = {}) => Object.fromEntries(Object.entries(env).filter(([k]) => !/_BOT_TOKEN$/.test(k)));
     const refuse = (detail: string) => new RestError(400, JSON.stringify({ detail }));
     this.beforeProfileCreate?.();
     if (this.profileCreateError) throw thrown(this.profileCreateError);
@@ -2665,7 +2670,7 @@ export class FakeHermes {
     let modelSet = false;
     let modelError = "";
     if (source !== undefined) {
-      this.profileEnv[name] = Object.fromEntries(Object.entries(this.profileEnv[source] ?? {}).filter(([k]) => !/_BOT_TOKEN$/.test(k)));
+      this.profileEnv[name] = withoutBotTokens(this.profileEnv[source]);
       if (source in this.souls) this.souls[name] = this.souls[source];
       if (this.profileModel[source]) this.profileModel[name] = { ...this.profileModel[source] };
       for (const skill of this.skills.folders[source] ?? []) {
@@ -2674,7 +2679,8 @@ export class FakeHermes {
       }
       if (this.memory[source]) this.memory[name] = { memory: [...this.memory[source].memory], profile: [...this.memory[source].profile] };
     } else {
-      this.profileEnv[name] = {};
+      const mirror = body.mirror_credentials !== false;
+      this.profileEnv[name] = mirror ? withoutBotTokens(this.profileEnv[this.servedProfile]) : {};
       this.souls[name] = typeof body.soul === "string" ? body.soul : "You are Hermes, a helpful assistant.\n";
       // `seed_profile_skills`: Hermes's bundled skills, here the ones `default` has as bundled.
       for (const skill of (this.skills.folders.default ?? []).filter((s) => s.source === "bundled")) {
@@ -2689,7 +2695,7 @@ export class FakeHermes {
           this.profileModel[name] = { model, provider, reasoning_effort: "medium", fast: false };
           modelSet = true;
         }
-      }
+      } else if (mirror && this.profileModel[this.servedProfile]) this.profileModel[name] = { ...this.profileModel[this.servedProfile] };
     }
     if (typeof body.description === "string" && body.description.trim()) this.profileMeta[name] = { ...this.profileMeta[name], description: body.description.trim() };
     if (this.profileCreateLost) throw new Error(this.profileCreateLost);

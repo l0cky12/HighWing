@@ -21,6 +21,8 @@ async function signedIn() {
   const server = new FakeHermes();
   server.otherProfiles = { work: [] };
   server.souls = { default: "You are Hermes.\n", work: "You are Work, a terse release engineer.\n" };
+  server.profileEnv.default = { OPENROUTER_API_KEY: "sk-or-synthetic-launch", DISCORD_BOT_TOKEN: "111:synthetic" };
+  server.profileModel.default = { model: "openai/gpt-5", provider: "openrouter", reasoning_effort: "medium", fast: false };
   server.profileModel.work = { model: "anthropic/claude-sonnet-4.5", provider: "openrouter", reasoning_effort: "medium", fast: false };
   server.profileMeta.work = { description: "Release engineering agent" };
   server.profileEnv.work = { OPENROUTER_API_KEY: "sk-or-synthetic-91", TELEGRAM_BOT_TOKEN: "000:synthetic" };
@@ -59,8 +61,10 @@ describe("cloning a profile", () => {
 
     const out = made(await api.clone(fresh(["persona", "model", "skills"]), source, onStage));
 
-    expect(creates(server)).toEqual([{ name: "work-2", soul: "You are Work, a terse release engineer.\n", provider: "openrouter", model: "anthropic/claude-sonnet-4.5" }]);
     expect(server.profileEnv["work-2"]).toEqual({});
+    expect(creates(server)).toEqual([
+      { name: "work-2", soul: "You are Work, a terse release engineer.\n", provider: "openrouter", model: "anthropic/claude-sonnet-4.5", mirror_credentials: false },
+    ]);
     expect(server.souls["work-2"]).toBe("You are Work, a terse release engineer.\n");
     expect(server.skills.folders["work-2"].map((s) => s.dir)).toEqual([`${HOME}/profiles/work-2/skills/ops/release-notes`, `${HOME}/profiles/work-2/skills/triage`]);
     expect(server.memory["work-2"]).toBeUndefined();
@@ -82,7 +86,10 @@ describe("cloning a profile", () => {
     const { server, api } = await signedIn();
     const source = await api.source("work", api.profiles());
     const out = made(await api.clone(fresh(["description"]), source, () => {}));
-    expect(creates(server)).toEqual([{ name: "work-2", description: "Release engineering agent" }]);
+    expect(server.profileEnv["work-2"]).toEqual({});
+    expect(server.profileModel["work-2"]).toBeUndefined();
+    expect(creates(server)).toEqual([{ name: "work-2", description: "Release engineering agent", mirror_credentials: false }]);
+    expect(stateOf(out, "model")).toMatchObject({ state: "left", note: "Not picked: Hermes's default model setting went in" });
     expect(stateOf(out, "description")).toMatchObject({ state: "copied", note: "Release engineering agent" });
     expect(stateOf(out, "persona")).toMatchObject({ state: "left", note: "Not picked: Hermes's default SOUL.md went in" });
     expect(stateOf(out, "skills")).toMatchObject({ state: "left" });
@@ -143,14 +150,14 @@ describe("cloning a profile", () => {
     const none = await api.source("work", api.profiles());
     expect(preview({ kind: "fresh", parts: new Set<Part>(["persona"]) }, none).persona).toMatchObject({ copied: false, available: false });
     const out = made(await api.clone(fresh(["persona"]), none, () => {}));
-    expect(creates(server)).toEqual([{ name: "work-2" }]);
+    expect(creates(server)).toEqual([{ name: "work-2", mirror_credentials: false }]);
     expect(server.souls["work-2"]).toBe("You are Hermes, a helpful assistant.\n");
     expect(stateOf(out, "persona")).toMatchObject({ state: "left", note: "The source has none, so Hermes's default went in" });
 
     server.souls.work = "";
     const empty = await api.source("work", api.profiles());
     const again = made(await api.clone(fresh(["persona"], "work-3"), empty, () => {}));
-    expect(creates(server)[1]).toEqual({ name: "work-3", soul: "" });
+    expect(creates(server)[1]).toEqual({ name: "work-3", soul: "", mirror_credentials: false });
     expect(server.souls["work-3"]).toBe("");
     expect(stateOf(again, "persona").state).toBe("copied");
   });

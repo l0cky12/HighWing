@@ -120,9 +120,9 @@ class FakeScreen implements ScreenApi {
 }
 
 /** The tab as App.tsx mounts it, reading who holds the screen from the snapshot. */
-function Tab({ api, ...props }: Omit<ComponentProps<typeof ScreenTab>, "screen" | "api"> & { api: FakeScreen }) {
+function Tab({ api, ...props }: Omit<ComponentProps<typeof ScreenTab>, "screen" | "api" | "who"> & { api: FakeScreen }) {
   const shownScreen = useSyncExternalStore(api.subscribe, api.shownScreen);
-  return <ScreenTab api={api} screen={shownScreen} {...props} />;
+  return <ScreenTab api={api} screen={shownScreen} who="default" {...props} />;
 }
 
 function show(api = new FakeScreen()) {

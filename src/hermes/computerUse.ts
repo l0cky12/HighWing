@@ -94,8 +94,11 @@ export type CuRun = {
   state: RunState;
 };
 
-/** The last turn's use of the Bot Desktop, for follow mode and the banner. `key`: its last run's id. */
-export type ScreenUse = { key: string; running: boolean; steps: number; since?: number; refused?: string };
+/**
+ * The last turn's use of the Bot Desktop, for follow mode, the banner and the Screen. `key`: its last run's id. `ended`:
+ * how many of its calls have an outcome; Hermes starts the screen inside a call, so the Screen asks again after each.
+ */
+export type ScreenUse = { key: string; running: boolean; steps: number; ended: number; since?: number; refused?: string };
 
 const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
@@ -256,6 +259,7 @@ export function screenUse(chat: Pick<Chat, "items" | "running" | "turnAfter">): 
     key: lastRun.id,
     running: !!chat.running,
     steps: calls.length,
+    ended: calls.filter((c, i) => stepOf(c, i + 1)!.outcome.kind !== "pending").length,
     ...(calls[0].at !== undefined && { since: calls[0].at }),
     ...(end.kind === "refused" && { refused: end.why }),
   };

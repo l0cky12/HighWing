@@ -87,6 +87,10 @@
 // HV_COMPUTER_USE=ready|toolset-off|degraded|human gives `default` a Bot Desktop and a server machine for Settings →
 // Diagnostics' Computer use rows (ADR 0215). `ready` (or 1) shows every row green. `toolset-off` leaves the computer_use
 // toolset off, `degraded` has doctor fail its X11 checks, and `human` has a person hold the screen.
+// HV_DESKTOP=sandbox gives `default` a stopped Bot Desktop placed in the terminal's sandbox (`terminal:docker`), which
+// the first computer_use call of a `computer use` turn starts inside the call, as Hermes's `ensure_started_for_tool`
+// does (#143). HV_DESKTOP_START_ERROR=<text> makes `display.start` fail with that text, as Hermes does when it can't
+// get the profile's sandbox ("the terminal backend's sandbox could not be started, …").
 // HV_DELAY_MS=<ms> holds each /api/ answer that long, as a distant server's round trip would.
 // HV_FAIL_PATCH=<id>,<id> answers 503 to every edit (PATCH) of those sessions, as a server that fails a write does.
 // HV_MEMORY_URL=<url> is the address `default`'s Honcho gives for its documentation and its API key's "Get one" link.
@@ -289,6 +293,18 @@ if (cuSeed) {
   if (cuSeed !== "toolset-off") server.toolsetsOn.default = new Set([...server.enabledToolsets("default"), "computer_use"]);
 }
 
+const sandboxDesktop = process.env.HV_DESKTOP === "sandbox";
+if (sandboxDesktop) {
+  server.display = {
+    status: { supported: true, installed: true, missing: [], running: false, geometry: "1280x800", placement: "terminal:docker", browser: null, memory_available_mb: null, memory_limit_mb: null },
+    lease: { holder: "agent", viewer_hash: null, since: 1, epoch: 0 },
+    minted: new Set(),
+  };
+  for (const p of ["default", ...Object.keys(server.otherProfiles)]) server.toolsetsOn[p] = new Set([...server.enabledToolsets(p), "computer_use"]);
+}
+const startError = process.env.HV_DESKTOP_START_ERROR;
+if (startError) server.handlers["display.start"] = (r) => server.fail(r.id, 5300, startError);
+
 if (process.env.HV_SETTLING !== undefined) server.profileSettlementPending = process.env.HV_SETTLING;
 if (process.env.HV_MODEL_ERROR) server.profileModelError = process.env.HV_MODEL_ERROR;
 
@@ -462,7 +478,11 @@ function computerUse(sid: string, prompt: string) {
   setLease(/takeover/i.test(prompt) ? "human" : (server.display?.lease.holder ?? "agent"));
   server.cuGrants.always.add("cua:key:foreground");
   cuTurns.add(sid);
-  const sleep = (seconds: number) => new Promise<void>((done) => setTimeout(done, Math.min(seconds, 1) * 600));
+  const sleep = (seconds: number) => {
+    // A sandbox screen comes up inside the first call, before it ends.
+    if (sandboxDesktop && server.display) server.display.status.running = true;
+    return new Promise<void>((done) => setTimeout(done, Math.min(seconds, 1) * 600));
+  };
   const turn = /takeover/i.test(prompt)
     ? { steps: [CU.capture()], reply: "Someone has taken over the Bot Desktop, so I stopped. Hand it back and I'll carry on." }
     : /deny/i.test(prompt)
@@ -690,6 +710,13 @@ const http = createServer(async (req, res) => {
 });
 http.on("upgrade", async (req, sock: Socket) => {
   const url = new URL(req.url!, "http://x");
+  // The stand-in has no screen to stream. Turned down, so the Screen's stream never takes the app's own socket's place.
+  if (url.pathname === "/api/display/ws") {
+    console.log(new Date().toISOString(), "WS /api/display/ws refused: the stand-in has no screen stream");
+    sock.on("error", () => {});
+    sock.end("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+    return;
+  }
   const accept = createHash("sha1").update(`${req.headers["sec-websocket-key"]}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest("base64");
   // Node drops its own `error` handler from an upgraded socket, so without this an app that closes the WebSocket
   // mid-write (EPIPE, ECONNRESET) takes the stand-in down (#432). The socket is destroyed; the app reconnects.

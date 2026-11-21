@@ -3927,6 +3927,8 @@ export function Main({
                       shown={shown}
                       connected={status === "connected"}
                       screen={screenState}
+                      who={shownName ?? profile}
+                      activity={shownUse && `${shownUse.key}:${shownUse.ended}`}
                       system={target ? (password) => screenApps(target, password) : undefined}
                     />
                   );

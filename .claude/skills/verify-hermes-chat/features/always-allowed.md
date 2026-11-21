@@ -14,24 +14,26 @@ Settings → Approvals lists, for the profile picked, the kinds of command Herme
 ## How to get to it (user POV)
 
 - Settings (Ctrl+,) → Agent → **Approvals**.
-- An Approval card → **Always allow**: the confirm says where the list is.
+- An Approval card → **Always allow…**: the confirm says where the list is.
 
 ## Driving it with wd.mjs
 
 Preconditions:
 
-- A real Hermes, since the stand-in neither saves an Always allow to a config file nor asks again: `$S/real-hermes up "$HOME/.cache/hermes-verify/rh-allowlist"`, then `$S/hv up --dashboard "$(cat "$RH_DIR/url")"`, `$S/wd.mjs open`, and sign in per [sign-in.md](sign-in.md) with that URL, user `verify` and password `verify-pass`. Skip Model providers.
-- The model stub answers `danger <tag>` with `rm -rf work/junk-<tag>`, which Hermes flags as "recursive delete" ([approval-mode.md](approval-mode.md)).
+- The stand-in covers every sub-feature but `asks-again`: it saves an Always allow into the profile's `command_allowlist` and serves the list through `GET` and `PUT /api/config`, but asks on every prompt with `approval` in it without reading the list. Start `HV_BOTS=1 $S/hv up` (so the profile `ada` exists), `$S/wd.mjs open`, sign in per [sign-in.md](sign-in.md), and `. $HV_RUN/state.env`.
+- `asks-again` needs a real Hermes: `$S/real-hermes up "$HOME/.cache/hermes-verify/rh-allowlist"`, run the `export RH_DIR=…` line it prints, then `$S/hv up --dashboard "$(cat "$RH_DIR/url")"`, `$S/wd.mjs open`, and sign in with that URL, user `verify` and password `verify-pass`. Its model stub answers `danger <tag>` with `rm -rf work/junk-<tag>`, which Hermes flags as "recursive delete" ([approval-mode.md](approval-mode.md)).
+- An Approval card's buttons, and its confirm step's, ignore a click for 400 ms after they show or move. Run `sleep 0.5` before each click on the card.
 
-- **Grant.** `$S/wd.mjs press Control+n`, `$S/wd.mjs click 'textarea[data-composer]'`, `$S/wd.mjs keys 'danger a1\n'`, `$S/wd.mjs wait button "Always allow" 60000`, then `$S/wd.mjs click button "Always allow"`. `$S/wd.mjs text .approval-confirm` ends "Settings → Approvals lists what is always allowed, and can take it back." Click `button "Yes, always allow"`. `grep -A2 command_allowlist "$RH_DIR/home/.hermes/config.yaml"` shows `- recursive delete`. Send `danger a2`: no card comes, and `$RH_DIR/work/junk-a2` is gone.
+- **Grant.** `$S/wd.mjs press Control+n`, `$S/wd.mjs click 'textarea[data-composer]'`, `$S/wd.mjs keys 'approval please\n'` (on a real Hermes, `danger a1`), `$S/wd.mjs wait '.approval button' "Always allow…" 20000`, `sleep 0.5`, then `$S/wd.mjs click '.approval button' "Always allow…"`. `$S/wd.mjs text .approval-confirm` ends "Settings → Approvals lists what is always allowed, and can take it back." `sleep 0.5` again (the confirm's buttons are new), then click `'.approval button' "Yes, always allow"`: the card reads "Always allowed". `curl -s "$DASHBOARD_URL/api/config?profile=default"` has `"command_allowlist": ["recursive delete"]` (on a real Hermes, `grep -A2 command_allowlist "$RH_DIR/home/.hermes/config.yaml"`).
 - **List.** `$S/wd.mjs press Control+,`, `$S/wd.mjs click '[role=tab]' Approvals`, `$S/wd.mjs wait '[role=list]' "recursive delete" 20000`.
-- **Changed meanwhile.** Add a line under the list by hand: `sed -i 's/^  - recursive delete$/  - recursive delete\n  - git force push/' "$RH_DIR/home/.hermes/config.yaml"`. Click `button "Remove recursive delete"`. `$S/wd.mjs wait '[role=alert]' "Nothing was removed"`. The page now lists both, and config.yaml still has both.
-- **Remove.** Click `button "Remove recursive delete"` again. `$S/wd.mjs wait '[role=status]' "Removed “recursive delete”"`. The page lists only `git force push`, and so does config.yaml.
-- **Asks again.** `$S/wd.mjs click button "Back to chat"`, `$S/wd.mjs press Control+n`, send `danger a4`, and `$S/wd.mjs wait button "Always allow" 60000`: Hermes asks again. Deny it, and `$RH_DIR/work/junk-a4` stays.
-- **Profile.** In Approvals, `$S/wd.mjs select select "Profile whose always-allowed commands are shown" -- ada`. The page reads ada's list (empty on a fresh `up`).
+- **Changed meanwhile.** Change the list on the server: `curl -s -XPUT "$DASHBOARD_URL/api/config?profile=default" -H 'content-type: application/json' -d '{"config":{"command_allowlist":["git force push","recursive delete"]}}'` (on a real Hermes, `sed -i 's/^  - recursive delete$/  - recursive delete\n  - git force push/' "$RH_DIR/home/.hermes/config.yaml"`). Click `button "Remove recursive delete"`. `$S/wd.mjs wait '[role=alert]' "Nothing was removed"`. The page now lists both, and the server still has both.
+- **Remove.** Click `button "Remove recursive delete"` again. `$S/wd.mjs wait '[role=status]' "Removed “recursive delete”"`. The page lists only `git force push`, and so does the server.
+- **Asks again** (real Hermes). `$S/wd.mjs click button "Back to chat"`, `$S/wd.mjs press Control+n`, send `danger a4`, and `$S/wd.mjs wait button "Always allow" 60000`: Hermes asks again. Deny it, and `$RH_DIR/work/junk-a4` stays. Before Remove, `danger a2` asks nothing and `$RH_DIR/work/junk-a2` is gone.
+- **Profile.** In Approvals, `$S/wd.mjs select select "Profile whose always-allowed commands are shown" -- ada`. The page reads "Nothing is in this profile's list."
 
 ## Gotchas
 
 - Hermes's Always allow also allows the command for the rest of the chat that answered it, in memory. Sending `danger a3` in that same chat after Remove runs without asking until Hermes closes the chat. Use a new chat to see Hermes ask again.
+- On the stand-in, the `approval please` reply never ends after the Approval is answered, so that chat stays in Working. Start each check that needs a quiet list in a new chat.
 - The page compares lists as sets: Hermes saves the list sorted, so a reorder alone isn't a change.
 - `hv build` again after any edit to `src/` before `hv up`, or `hv doctor` fails on the stale build.

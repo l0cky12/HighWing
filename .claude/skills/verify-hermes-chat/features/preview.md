@@ -1,6 +1,6 @@
 # Preview
 
-The side panel's Preview tab is a small browser only the owner drives. One toolbar row holds Back, Forward, Reload, an address box with a location badge inside it (Server, This computer, Web, Tool output), Open in your browser and a ⋯ menu. With nothing open it shows "Nothing open" and the dev servers listening on the Hermes server and on this computer. A link clicked inside the page moves the address and adds to Back. Hermes can't drive it: its `preview.read` and `preview.act` requests are turned down.
+The side panel's Preview tab is a small browser only the owner drives. One toolbar row holds Back, Forward, Reload, an address box with a location badge inside it (Server, This computer, Web, Tool output), Open in your browser and a ⋯ menu. With nothing open it shows "Nothing open" and the dev servers listening on the Hermes server and on this computer. A link clicked inside the page moves the address and adds to Back. A `.csv` or `.tsv` file opens as a table with its header row kept on top, a summary line, and an **Open as text** / **Open as table** switch (ADR 0245). Hermes can't drive it: its `preview.read` and `preview.act` requests are turned down.
 
 ## Sub-features
 
@@ -10,6 +10,7 @@ The side panel's Preview tab is a small browser only the owner drives. One toolb
 - `preview-back-forward-reload`: Back and Forward go back and forward in the same page view (the page comes from the page cache, no new request); Reload loads it again.
 - `preview-badge`: clicking the badge of a loopback page opens it from the other side.
 - `preview-second-view`: after a file in between, Back makes a new page view; keys, Escape and a menu over the page still work.
+- `preview-table`: a `.csv` or `.tsv` file shows as a grid (`[role=grid][aria-label=Table]`) under a summary line such as "CSV · 5.9 KB · 300 rows · 4 columns" ("Tab-separated · …" for a `.tsv`). A big file shows "Showing the first 500 rows of 1,500.", **Open as text** shows the file's text, and a range of cells can be selected with Shift and the arrow keys.
 - `preview-hermes-asks`: the stand-in asks the app `preview.read` and every `preview.act` action; each answer is 4404, "No Hermes Chat window shows this chat's preview, terminal or tour.", and the page doesn't move.
 
 ## How to get to it (user POV)
@@ -17,6 +18,7 @@ The side panel's Preview tab is a small browser only the owner drives. One toolb
 - The chat header's **Open the side panel**. With no tab chosen yet it opens on "Open a surface"; pick **Preview** there (or press `P`).
 - A link in a reply (opens it in the Preview), or a tool call's page or file chip.
 - In the empty Preview: a **Dev servers** row, the address box, or **Open a file on this computer…**.
+- A path to a file on the Hermes server typed into the address box.
 
 ## Driving it with wd.mjs
 
@@ -32,6 +34,7 @@ Preconditions:
 - **Back, Forward, Reload.** Run `$S/wd.mjs click button Back`, then `Forward`, then `Reload`, reading the toolbar after each. Back and Forward make no request to the dev server (its log shows none, and a page that prints its load time shows the earlier time); Reload makes one.
 - **Bare port.** Typed over the `localhost:5180` page, `5180` stays on This computer, with no alert. Leave that origin first: `$S/wd.mjs fill input Address -- /etc/hostname`, `$S/wd.mjs press Enter` (a Server file). Then run `$S/wd.mjs fill input Address -- 5180` and `$S/wd.mjs press Enter`. The badge reads `Server`; on the stand-in, `$S/wd.mjs wait [role=alert] "No SSH target"`, then `$S/wd.mjs click button "Open on this computer instead"` switches the badge to `This computer`.
 - **Second view.** Run `$S/wd.mjs fill input Address -- /etc/hostname`, `$S/wd.mjs press Enter` (a file, which ends the page view), then `$S/wd.mjs click button Back`. The page loads again. Run `$S/wd.mjs click button More` and `$S/hv shot`: the menu is drawn over the page. Press inside the page's text field with `$S/hv x` and run `$S/hv x type "typed by the owner"`: the text shows in the page. Run `$S/hv x key Escape`: the panel stays open and `document.activeElement` is `.preview-web-frame`. A second `$S/hv x key Escape` closes the panel.
+- **Table.** Start `hv up` with `HV_DISK=<folder>`, a folder of your own on this computer that the stand-in serves at its own full path. Put in it a `sales.csv` of 300 rows with a quoted field such as `"Acme, Inc."`, a `wide.csv` of 1,500 rows, and a small `notes.tsv`. In the Preview, run `$S/wd.mjs fill input Address -- <folder>/sales.csv` and `$S/wd.mjs press Enter`, then `$S/wd.mjs wait '[role=grid][aria-label=Table]' "" 20000` and `$S/wd.mjs text .preview-foot` ("CSV · 5.9 KB · 300 rows · 4 columns"). The badge reads Server, `thead` holds the header row, and `"Acme, Inc."` is one cell. Run `$S/wd.mjs click '[role=grid] td' "Acme, Inc."`, `$S/wd.mjs press Shift+ArrowDown` and `$S/wd.mjs press Shift+ArrowRight`: `count '[role=grid] [aria-selected=true]'` prints 4. Run `$S/wd.mjs click button "Open as text"`, `$S/wd.mjs gone '[role=grid][aria-label=Table]'`, then `$S/wd.mjs click button "Open as table"`. Open `<folder>/wide.csv` the same way: it reads "Showing the first 500 rows of 1,500.". `<folder>/notes.tsv` reads "Tab-separated · 24 B · 2 rows · 2 columns".
 - **Hermes asks.** Open a chat so it has a live session (`$S/wd.mjs click button Archived`, `$S/wd.mjs click button "Nightly backup failing"`), and reopen the Preview. Then for each method and action run `curl -s -XPOST "$DASHBOARD_URL/__ask?chat=backup&method=preview.act" -d '{"action":"click","ref":"e1"}'` (and `method=preview.read`). It prints the request's id. `curl -s $DASHBOARD_URL/__state` lists each under `answers` with `"code": 4404` (the stand-in tells the app it takes declines). The address, Back and Forward read as before, the dev server's log shows no request, and `hv shot` shows the same page.
 - **Proof.** Keep the numbered `hv shot` images, the dev server's log, and `/__state` saved after the asks.
 

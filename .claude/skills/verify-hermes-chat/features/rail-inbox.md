@@ -1,18 +1,21 @@
 # Rail inbox
 
-The tray's Open Inbox opens a list of what needs the owner or has finished, in every profile: Approvals, failures, running replies and Unread chats. Each entry can be dismissed by hand. Clear done dismisses every completed entry shown. Settings → Chats, Rail inbox, "Days of inactivity before auto-dismiss" dismisses completed entries older than that many days on their own. Dismissals are kept on this computer only.
+The tray's Open Inbox opens a list of what needs the owner or has finished, in every profile: Approvals, failures, running replies and Unread chats. Filter buttons narrow it, an Approval can be answered in its row, and a row opens its chat. Every entry but a running one can be dismissed by hand. Clear done dismisses every completed entry shown. Settings → General → Chats, Rail inbox, "Days of inactivity before auto-dismiss" dismisses completed entries older than that many days on their own. Dismissals are kept on this computer only.
 
 ## Sub-features
 
 - `open`: the tray's Open Inbox opens the list, and the rail has no Inbox button. Check now reads the other profiles again.
-- `dismiss`: an entry's × dismisses that one.
+- `filters`: **All**, **Needs approval**, **Failed**, **Completed** and **Running**, each with its count, show only that kind.
+- `answer`: a waiting Approval's row carries the chat's Approval card, and answering it there takes the row out of Needs approval.
+- `open-row`: a click on a row opens its chat and closes the inbox; Escape or **Close the inbox** closes it too.
+- `dismiss`: an entry's × (`Dismiss “<title>” from the inbox`) dismisses that one.
 - `clear-done`: Clear done, in the header, dismisses the completed entries under the current filter.
 - `auto-dismiss`: a days field, empty (Off) by default. Whole days from 1 to 365 save on Enter, on leaving the field, or when Settings closes. Any other value isn't saved, and an alert says what is still in effect.
 
 ## How to get to it (user POV)
 
 - The tray menu's Open Inbox (ADR 0097). The rail has no Inbox button.
-- Settings (Ctrl+,) → Chats → Rail inbox, for the auto-dismiss setting.
+- Settings (Ctrl+,) → General → Chats → Rail inbox, for the auto-dismiss setting.
 
 ## Driving it with wd.mjs
 
@@ -22,9 +25,13 @@ Preconditions:
 
 - **A failure and an Approval.** Run `$S/wd.mjs press Control+n`, `$S/wd.mjs click 'textarea[data-composer]'`, `$S/wd.mjs keys 'fail this one\n'` and `$S/wd.mjs wait .msg overloaded`. Then do the same with `'needs approval to run\n'`, but wait with `$S/wd.mjs wait .approval "Approve once" 20000`: that prompt asks for an Approval and shows no error. The rail has no Inbox button: `$S/wd.mjs eval 'return document.querySelectorAll(".rail [aria-label^=Inbox]").length'` prints 0.
 - **Open.** The tray menu isn't available under Xvfb, and the frontend opens the inbox on the Tauri event `tray-open-inbox` that Rust emits when Open Inbox is picked (`src/hermes/tauriTray.ts`). The stand-in for that pick is one `eval` that emits the same event, the one place this feature goes around the real user path: `$S/wd.mjs eval 'window.__TAURI_INTERNALS__.invoke("plugin:event|emit", { event: "tray-open-inbox", payload: null }); return true'`. Then `$S/wd.mjs wait '[role=dialog]' Inbox` and `$S/wd.mjs click button "Check now"`. List the rows with `$S/wd.mjs eval 'return [...document.querySelectorAll(".inbox-row")].map(r=>r.className+" | "+r.querySelector(".inbox-title").textContent).join("\n")'`. There are four: approval, failed, and two completed. The ones that need you are `$S/wd.mjs count '.inbox-row:not(.kind-running):not(.is-ended)'`, which is 4.
+- **Filters.** Run `$S/wd.mjs click '[role=dialog] button' Failed1`: one row shows. `$S/wd.mjs click '[role=dialog] button' All` shows the four again.
 - **Auto-dismiss.** Run `$S/wd.mjs press Escape`, `$S/wd.mjs press Control+,`, `$S/wd.mjs click button General`, `$S/wd.mjs click button Chats`, `$S/wd.mjs fill 'input[aria-labelledby=inbox-auto-dismiss-label]' -- 2` and `$S/wd.mjs press Enter`. Typing `14` first and pressing Enter changes nothing, because the `1` on the way is never saved. Open the inbox again as in Open, and press Check now. `$S/wd.mjs count '.inbox-row:not(.kind-running):not(.is-ended)'` is 3. "Morning brief, Monday" is gone, and the other three stay.
 - **It is stored.** Read `$S/wd.mjs eval 'return Object.entries(localStorage).filter(([k])=>k.startsWith("hermes-chat.inbox-dismissed.")).map(([k,v])=>v).join("\n")'`. It shows `completed work brief` with `[its time, now]`. Clear the field and press Enter to set it back to Off, then `$S/wd.mjs close`, `$S/wd.mjs open` and sign in again. The entry is still gone.
 - **Clear done.** With the inbox open, run `$S/wd.mjs click button "Clear done"`. Every completed row goes, Approvals and failures stay, and the button is gone.
+- **Answer in the row.** The relaunch in It is stored drops the failure (see Gotchas), so first make a failure and an Approval again as in the first step. With the inbox open, `sleep 0.5`, then `$S/wd.mjs click '.inbox-row.kind-approval button' "Approve once"`. `$S/wd.mjs count .inbox-row.kind-approval` prints 0; the chat now shows as Running.
+- **Close and open a row.** `$S/wd.mjs press Escape`, then `$S/wd.mjs gone '[role=dialog]' Inbox`. Open the inbox again as in Open, and `$S/wd.mjs click .inbox-row.kind-failed`: the inbox closes and `.chat-title` reads "fail this one".
+- **Dismiss one.** Open the inbox again and `$S/wd.mjs click button 'Dismiss “fail this one” from the inbox'`: that row goes. A running row has no Dismiss.
 - **Nothing reaches Hermes.** `bridge.log` has no PATCH for `brief` or `convert`.
 
 ## Gotchas

@@ -8,13 +8,15 @@ Search finds chats by title or message text across every chat, Archived ones inc
 - `search-body`: a word from a message finds its chat, including an Archived one.
 - `search-open-hit`: Enter on the selected hit opens that chat and closes the palette.
 - `search-empty`: a query with no hits shows "No matches".
-- `search-close`: Escape closes the palette.
+- `search-close`: Escape, or Ctrl+K again, closes the palette.
+- `search-saved-filter`: **Save filter…** names the search, and its row under the list's Saved filters opens the palette with it.
 
 ## How to get to it (user POV)
 
 - Keyboard: Ctrl+K.
 - Rail: the magnifier button, `aria-label` "Search all chats (Ctrl+K)".
 - List panel: **Search chats** with the `Ctrl K` hint.
+- List panel: a row under **Saved filters**, titled `Search with the saved filter "<name>"`.
 
 ## Driving it with wd.mjs
 
@@ -28,6 +30,8 @@ Preconditions:
 - **Open the hit.** Run `$S/wd.mjs press Enter`, then `$S/wd.mjs gone '[role=dialog][aria-label="Search chats"]'`, then `$S/wd.mjs wait .msg.assistant "MTU = 1380"`. The selected tab `button.tab-open[aria-selected=true]` reads "Why is the VPN slow", and Find in chat is open on "MTU" with its first match `mark.current`.
 - **Miss.** Run `$S/wd.mjs press Control+k`, `$S/wd.mjs keys volcano` and `$S/wd.mjs wait '[role=dialog][aria-label="Search chats"]' "No matches"`.
 - **Close.** Run `$S/wd.mjs press Escape`, then `$S/wd.mjs gone '[role=dialog][aria-label="Search chats"]'`.
+- **Ctrl+K toggles.** Run `$S/wd.mjs press Control+k` twice: the second press closes the palette (`$S/wd.mjs gone '[role=dialog][aria-label="Search chats"]'`).
+- **Saved filter.** Open the palette, `$S/wd.mjs keys MTU`, `$S/wd.mjs wait .hit-row "Why is the VPN slow"`, then `$S/wd.mjs click button "Save filter…"`, `$S/wd.mjs fill input "Name this filter" -- "vpn mtu"` and `$S/wd.mjs click '[role=dialog] button' Save`. `$S/wd.mjs text .palette-note` reads `Saved as "vpn mtu". It's in the list's Saved filters.` Press Escape, then `$S/wd.mjs click 'button.row-open[title^="Search with the saved filter"]'`: the palette opens with the same hit.
 - **Rail and list entries.** Run `$S/wd.mjs click button "Search all chats (Ctrl+K)"` and, after Escape, `$S/wd.mjs click button "Search chatsCtrl K"`. Each opens the same dialog.
 - **Proof.** Keep the hit shot and the opened chat's shot. `bridge.log` shows `GET /api/sessions/search`.
 
@@ -47,4 +51,4 @@ The scope switch **This profile** / **Everywhere** beside the words searches eve
 - Results come from the server after a short delay. Wait for `.hit-row` or "No matches", not a fixed time.
 - `.hit-row.sel` marks the hit Enter will open. With several hits, check which one is selected first.
 - Typing `keys` with the palette closed sends the text to whatever has focus. Open the palette first.
-- The palette also has **Filters**, **Save filter…** and **Tag N results…**, which this recipe doesn't cover.
+- The palette also has **Filters** and **Tag N results…**, which this recipe doesn't cover.

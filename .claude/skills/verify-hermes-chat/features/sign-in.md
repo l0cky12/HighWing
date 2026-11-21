@@ -14,7 +14,7 @@ On first launch, Setup walks the owner from Welcome to a saved connection: they 
 
 - First launch with no saved connection: Welcome → **Get started**.
 - A launch with a saved connection and no keyring password: the Sign in screen, with **Connect**, **Run setup again…**, **Remove this connection…** and **Set up a new connection…**.
-- Signed in: Settings → General → Connection → **Add connection** (Setup over the main window).
+- Signed in: Settings → General → Connection → **Add connection** (Setup over the main window), or the rail's connection button → **Switch connection** → **Add connection**.
 
 ## Driving it with wd.mjs
 

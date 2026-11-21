@@ -177,7 +177,7 @@ export interface SessionProtocol {
 
 /**
  * Lets `negotiate` pick the canonical protocol, which is otherwise refused. Only tests open it, until the step of ADR
- * 0174 that lifts the refusal removes it (ADR 0244).
+ * 0174 that lifts the refusal removes it (ADR 0247).
  */
 export const canonicalGate = { open: false };
 

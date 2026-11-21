@@ -106,7 +106,7 @@ export const APP_METHODS = [
 
 export type AppMethod = (typeof APP_METHODS)[number];
 
-/** Methods only the canonical protocol sends, in place of session methods it refused or moved (ADR 0244). They have no
+/** Methods only the canonical protocol sends, in place of session methods it refused or moved (ADR 0247). They have no
  * row in `APP_VERBS`, which maps the app's legacy frames, and `Hermes.request` can't send them. */
 export const CANONICAL_METHODS = ["clarify.respond", "session.detach", "session.info"] as const;
 

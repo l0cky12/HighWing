@@ -1,4 +1,5 @@
-import type { AppMethod } from "./canonicalVerbs";
+import type { AppMethod, WireMethod } from "./canonicalVerbs";
+import { CanonicalProtocol } from "./canonicalProtocol";
 import { CapabilityUnsupportedError, type Protocol } from "./capabilities";
 import type { ApprovalChoice, Attachment, QuestionItem, SentImage } from "./model";
 import type { ModelPick } from "./models";
@@ -36,7 +37,7 @@ const MiB = 1024 * 1024;
  * needs `pdftoppm`, which the live server doesn't have. */
 export const LIMITS = { image: { bytes: 25 * MiB, what: "images" }, file: { bytes: 256 * MiB, what: "files" } };
 /** What the official desktop app asks when an image is sent with no text. */
-const IMAGE_ONLY_PROMPT = "What do you see in this image?";
+export const IMAGE_ONLY_PROMPT = "What do you see in this image?";
 /** Stands in for a file's base64 in a frame; the pipe swaps the bytes in. JSON can't hold a raw NUL. */
 export const FILE_MARK = "\u0000file\u0000";
 
@@ -77,7 +78,7 @@ export type ServerRequest = { id: string; method: string; params: Record<string,
 export type Inbound = { kind: "ask"; req: ServerRequest } | { kind: "event"; type: string; sessionId?: string; payload: Record<string, unknown> };
 
 export type Port = {
-  call<T = unknown>(method: AppMethod, params: Record<string, unknown>, options?: { file?: { path: string; maxBytes: number }; observe?: boolean; read?: (result: unknown) => T }): Promise<T>;
+  call<T = unknown>(method: WireMethod, params: Record<string, unknown>, options?: { file?: { path: string; maxBytes: number }; observe?: boolean; read?: (result: unknown) => T }): Promise<T>;
   /** A response frame to a server→client request. Throws when nothing is connected. */
   reply(id: string, result: Record<string, unknown>): Promise<void>;
   /** Whether Hermes said this Approval is in its own queue (`approval.received` acknowledged). */
@@ -174,16 +175,23 @@ export interface SessionProtocol {
   approvalProbe(name: string): Promise<unknown>;
 }
 
+/**
+ * Lets `negotiate` pick the canonical protocol, which is otherwise refused. Only tests open it, until the step of ADR
+ * 0174 that lifts the refusal removes it (ADR 0244).
+ */
+export const canonicalGate = { open: false };
+
 export function negotiate(ready: Record<string, unknown>, port: Port): SessionProtocol {
-  if (ready.session_authority) throw new ProtocolMismatchError();
-  return new LegacyProtocol(port);
+  if (!ready.session_authority) return new LegacyProtocol(port);
+  if (!canonicalGate.open) throw new ProtocolMismatchError();
+  return new CanonicalProtocol(port);
 }
 
 const obj = (v: unknown) => (isObj(v) ? v : undefined);
 
 const hiddenRows = (seeded: readonly string[]) => seeded.length > 0 && { messages: seeded.map((content) => ({ role: "user", content, display_kind: "hidden" })) };
 
-const unconfirmed = (e: unknown) => {
+export const unconfirmed = (e: unknown) => {
   throw e instanceof ConnectionLostError ? new PromptUnconfirmedError(e.message) : e;
 };
 
@@ -209,6 +217,21 @@ const attached = (res: LegacySession): Attached => ({
   info: res.info,
   usage: res.usage,
 });
+
+/**
+ * Answers an open request with `result` by `request.answer`, which says whether Hermes still waited: false when it had
+ * stopped, as when another Hermes client answered first. A Hermes without it gets a response frame to the request, as
+ * the official app sends, which Hermes drops without a word once it has stopped waiting.
+ */
+export async function settleRequest(port: Port, id: string, result: Record<string, unknown>): Promise<AnswerOutcome> {
+  try {
+    return obj(await port.call("request.answer", { id, result }))?.status !== "expired" ? "taken" : "stale";
+  } catch (e) {
+    if (!(e instanceof CapabilityUnsupportedError) && !(e instanceof RpcError && e.code === NO_SUCH_METHOD)) throw e;
+  }
+  await port.reply(id, result);
+  return "taken";
+}
 
 export class LegacyProtocol implements SessionProtocol {
   readonly kind = "legacy";
@@ -306,7 +329,7 @@ export class LegacyProtocol implements SessionProtocol {
   }
 
   answer(runtimeId: string, card: QuestionItem, a: CardAnswer): Promise<AnswerOutcome> {
-    if (a.kind === "settle") return this.settleRequest(card.id, a.result);
+    if (a.kind === "settle") return settleRequest(this.port, card.id, a.result);
     if (a.kind === "approval") return this.settleApproval(runtimeId, card, a.choice);
     return this.port.call(
       "clarify.lock",
@@ -320,21 +343,6 @@ export class LegacyProtocol implements SessionProtocol {
         },
       },
     );
-  }
-
-  /**
-   * Answers an open request with `result` by `request.answer`, which says whether Hermes still waited: false when it had
-   * stopped, as when another Hermes client answered first. A Hermes without it gets a response frame to the request, as
-   * the official app sends, which Hermes drops without a word once it has stopped waiting.
-   */
-  private async settleRequest(id: string, result: Record<string, unknown>): Promise<AnswerOutcome> {
-    try {
-      return obj(await this.port.call("request.answer", { id, result }))?.status !== "expired" ? "taken" : "stale";
-    } catch (e) {
-      if (!(e instanceof CapabilityUnsupportedError) && !(e instanceof RpcError && e.code === NO_SUCH_METHOD)) throw e;
-    }
-    await this.port.reply(id, result);
-    return "taken";
   }
 
   /**

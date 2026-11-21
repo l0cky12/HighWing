@@ -3,12 +3,13 @@
 // row in canonicalVerbs.ts saying what that protocol does with it.
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, expectTypeOf, it } from "vitest";
-import { APP_METHODS, APP_VERBS, CANONICAL_READY, type AppMethod } from "./canonicalVerbs";
+import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
+import { APP_METHODS, APP_VERBS, CANONICAL_METHODS, CANONICAL_READY, type AppMethod, type WireMethod } from "./canonicalVerbs";
 import { protocolOf } from "./capabilities";
 import { FakeHermes } from "./fakeHermes";
 import type { QuestionItem } from "./model";
-import { LegacyProtocol, SESSION_METHODS, negotiate, type Port, type SessionMethod } from "./sessionProtocol";
+import { withContext } from "./projectContext";
+import { LegacyProtocol, SESSION_METHODS, canonicalGate, negotiate, type Port, type SessionMethod } from "./sessionProtocol";
 import { explainSignIn, signInError } from "./setup";
 import type { SignInDetails } from "./tauriPipe";
 import { ProtocolMismatchError, RpcError, connect, type Hermes } from "./transport";
@@ -70,7 +71,8 @@ describe("the canonical session protocol", () => {
 
 describe("the map of what the canonical protocol does with the app's JSON-RPC methods", () => {
   it("has a row for every method the app sends", () => {
-    expectTypeOf<Parameters<Port["call"]>[0]>().toEqualTypeOf<AppMethod>();
+    expectTypeOf<Parameters<Port["call"]>[0]>().toEqualTypeOf<WireMethod>();
+    expect(CANONICAL_METHODS.filter((m) => (APP_METHODS as readonly string[]).includes(m))).toEqual([]);
     expect(APP_METHODS.filter((m) => !mapped.includes(m)), "add a row to APP_VERBS in canonicalVerbs.ts (ADR 0174)").toEqual([]);
   });
 
@@ -239,3 +241,121 @@ describe("the seam a session's frames leave by", () => {
     await hermes.close();
   });
 });
+
+describe("the canonical protocol's core, behind the gate", () => {
+  afterEach(() => void vi.restoreAllMocks());
+  const SID = "local-1";
+  const snapshot = {
+    session_id: SID,
+    stored_session_id: SID,
+    messages: [],
+    running: true,
+    subscription_id: "sub-1",
+    revision: 3,
+    execution_generation: 2,
+    replay_epoch: "e1",
+    last_sequence: 9,
+    pending: [{ status: "started", text: "Clean up the logs" }],
+    prompts: [{ kind: "approval", prompt_id: "p-1", execution_generation: 2, command: "rm -rf /tmp/x", description: "delete", choices: ["once", "deny"] }],
+    open_requests: [{ id: "srq-1", method: "sudo", params: { session_id: SID, command: "sudo ls" } }],
+  };
+  const canonical = (answers: Record<string, unknown> = {}) => {
+    const recorded = recordingPort(answers);
+    canonicalGate.open = true;
+    try {
+      return { ...recorded, protocol: negotiate(CANONICAL_READY, recorded.port) };
+    } finally {
+      canonicalGate.open = false;
+    }
+  };
+  const card = (kind: string, id: string, requestId = id) => ({ kind, id, requestId }) as unknown as QuestionItem;
+  const event = (type: string, payload: Record<string, unknown>, envelope: Record<string, unknown> = {}) => ({ method: "event", params: { type, session_id: SID, payload, ...envelope } });
+
+  it("is closed unless a test opens it, and no app code opens it", () => {
+    expect(canonicalGate.open).toBe(false);
+    expect(canonical().protocol.kind).toBe("canonical");
+    expect(APP_SOURCE_TEXT.filter((text) => /canonicalGate\.open\s*=/.test(text))).toEqual([]);
+  });
+
+  it("words each core operation in the canonical protocol's frames", async () => {
+    const { protocol, sent } = canonical({
+      "session.create": snapshot,
+      "session.resume": snapshot,
+      "prompt.submit": { admission_id: "a-1", status: "queued" },
+      "session.interrupt": { execution_state: "running" },
+      "approval.respond": { status: "resolved", prompt_id: "p-1" },
+      "clarify.respond": { status: "resolved", prompt_id: "p-2" },
+    });
+    vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000000");
+    await protocol.open({ kind: "bot", profile: "p", source: "gui", title: "Bot Chat", seeded: [] });
+    const opened = await protocol.open({ kind: "chat", profile: "p", source: "gui", folder: "/srv", model: { provider: "custom", model: "fake", effort: "low", fast: false }, seeded: ["Be brief"] });
+    expect(opened).toMatchObject({ runtimeId: SID, storedId: SID, running: true, inflightUser: "Clean up the logs", asking: [{ id: "p-1", method: "approval" }, { id: "srq-1", method: "sudo" }] });
+    expect(opened.asking[0].params).toMatchObject({ request_id: "p-1", allow_session: false, allow_permanent: false });
+    await protocol.resume(SID, "p");
+    expect(await protocol.submit(SID, { profile: "p", text: "hi", attachments: [], hold: true, context: [] }, () => {})).toEqual({ held: true });
+    expect(await protocol.submit(SID, { profile: "p", text: "again", attachments: [], hold: false, context: [] }, () => {})).toEqual({ held: true });
+    await protocol.submitHidden(SID, "p", "begin");
+    expect(await protocol.stop(SID)).toBe(true);
+    expect(await protocol.answer(SID, card("approval", "p-1"), { kind: "approval", choice: "once" })).toBe("taken");
+    protocol.inbound(event("clarify.request", { kind: "clarify", prompt_id: "p-2", execution_generation: 2, question: "Which?", choices: ["a"] }));
+    expect(await protocol.answer(SID, card("clarify", "p-2"), { kind: "lock", qid: "p-2", answer: "a" })).toBe("done");
+    expect(await protocol.answer(SID, card("approval", "p-9"), { kind: "approval", choice: "once" })).toBe("stale");
+    expect(await protocol.openRequests(SID)).toBeUndefined();
+    await protocol.info(SID);
+    await protocol.leave(SID);
+    expect(await protocol.stop(SID)).toBe(false);
+    await expect(protocol.edit(SID, { op: "rename", title: "x" })).rejects.toThrow("isn't supported on Hermes's canonical session protocol yet");
+    await expect(protocol.approvalProbe("probe")).rejects.toThrow("isn't supported on Hermes's canonical session protocol yet");
+    const uuid = "00000000-0000-4000-8000-000000000000";
+    expect(sent).toEqual([
+      'session.create {"profile":"p","title":"Bot Chat","hidden":true,"follow_profile_config":true,"source":"gui"}',
+      'session.create {"profile":"p","source":"gui","cwd":"/srv","cwd_explicit":true,"model":"fake","provider":"custom"}',
+      `session.resume {"session_id":"${SID}","profile":"p"}`,
+      `prompt.submit {"session_id":"${SID}","profile":"p","queued":true,"text":${JSON.stringify(withContext("hi", ["Be brief"]))},"submission_id":"${uuid}"}`,
+      `prompt.submit {"session_id":"${SID}","profile":"p","text":"again","submission_id":"${uuid}"}`,
+      `prompt.submit {"session_id":"${SID}","profile":"p","display_kind":"hidden","text":"begin","submission_id":"${uuid}"}`,
+      `session.interrupt {"session_id":"${SID}","execution_generation":2}`,
+      `approval.respond {"session_id":"${SID}","execution_generation":2,"prompt_id":"p-1","choice":"once"}`,
+      `clarify.respond {"session_id":"${SID}","execution_generation":2,"prompt_id":"p-2","answer":"a"}`,
+      `session.info {"session_id":"${SID}"}`,
+      `session.detach {"session_id":"${SID}","subscription_id":"sub-1"}`,
+    ]);
+  });
+
+  it("reads Approvals and Clarify questions from events, closes them when settled, and stops the generation it last heard", async () => {
+    const { protocol, sent } = canonical({ "session.create": { ...snapshot, prompts: [], running: false }, "session.interrupt": { execution_state: "idle" } });
+    await protocol.open({ kind: "chat", profile: "p", source: "gui", seeded: [] });
+    expect(protocol.inbound(event("message.start", {}, { execution_generation: 3, seq: 10, admission_id: "a-1" }))).toEqual([{ kind: "event", type: "message.start", sessionId: SID, payload: {} }]);
+    expect(protocol.inbound(event("approval.request", { kind: "approval", prompt_id: "p-3", execution_generation: 3, command: "ls", choices: ["once", "session", "deny"] }))).toEqual([
+      {
+        kind: "ask",
+        req: {
+          id: "p-3",
+          method: "approval",
+          params: { kind: "approval", prompt_id: "p-3", execution_generation: 3, command: "ls", choices: ["once", "session", "deny"], session_id: SID, request_id: "p-3", allow_session: true, allow_permanent: false },
+        },
+      },
+    ]);
+    expect(protocol.inbound(event("clarify.request", { kind: "clarify", prompt_id: "p-4", execution_generation: 3, question: "Which?", choices: ["a", "b"], multi_select: false }))).toEqual([
+      { kind: "ask", req: { id: "p-4", method: "clarify", params: { session_id: SID, questions: [{ qid: "p-4", question: "Which?", choices: ["a", "b"], multi_select: false }] } } },
+    ]);
+    expect(protocol.inbound(event("approval.settled", { prompt_id: "p-3", execution_generation: 3 }))).toEqual([{ kind: "event", type: "request.cancel", sessionId: SID, payload: { id: "p-3", reason: "withdrawn" } }]);
+    expect(await protocol.answer(SID, card("approval", "p-3"), { kind: "approval", choice: "once" })).toBe("stale");
+    expect(await protocol.stop(SID)).toBe(false);
+    expect(sent.at(-1)).toBe(`session.interrupt {"session_id":"${SID}","execution_generation":3}`);
+    expect(protocol.inbound({ id: "srq-2", method: "secret", params: { session_id: SID } })).toEqual([{ kind: "ask", req: { id: "srq-2", method: "secret", params: { session_id: SID } } }]);
+    expect(protocol.inbound(event("message.delta", { text: "x" }, { session_id: "local-other" }))).toEqual([{ kind: "event", type: "message.delta", sessionId: "local-other", payload: { text: "x" } }]);
+  });
+
+  it("reads an answer to a turn that is over as stale", async () => {
+    const { port, sent } = recordingPort({ "session.create": snapshot });
+    const stale = new RpcError(4001, "stale_generation", { reason: "stale_generation" });
+    canonicalGate.open = true;
+    const protocol = negotiate(CANONICAL_READY, { ...port, call: ((method: string, params: Record<string, unknown>, options?: object) => (method === "approval.respond" ? Promise.reject(stale) : port.call(method as never, params, options))) as Port["call"] });
+    canonicalGate.open = false;
+    await protocol.open({ kind: "chat", profile: "p", source: "gui", seeded: [] });
+    expect(await protocol.answer(SID, card("approval", "p-1"), { kind: "approval", choice: "once" })).toBe("stale");
+    expect(sent).toHaveLength(1);
+  });
+});
+

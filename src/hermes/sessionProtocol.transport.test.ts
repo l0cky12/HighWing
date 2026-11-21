@@ -1,4 +1,4 @@
-// The transport's session core, run once per protocol (ADR 0174 step 4, ADR 0244): the same flows through the app's
+// The transport's session core, run once per protocol (ADR 0174 step 4, ADR 0248): the same flows through the app's
 // own transport against FakeHermes as a legacy dashboard and as a canonical gateway, asserting what the owner sees.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeHermes } from "./fakeHermes";

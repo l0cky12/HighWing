@@ -1,4 +1,4 @@
-// The canonical session protocol's core: sessions, turns, Approvals, Clarify and Stop (ADR 0174, ADR 0244). Shapes are
+// The canonical session protocol's core: sessions, turns, Approvals, Clarify and Stop (ADR 0174, ADR 0248). Shapes are
 // Hermes v0.23.2's, as `canonicalFlows.ts` holds a real gateway and `fakeCanonical.ts` to them. `negotiate` picks it
 // only while `canonicalGate` is open, which no app code does.
 import type { QuestionItem, SentImage } from "./model";

@@ -11,6 +11,7 @@ A reply that hands work to another agent and ends its turn leaves its chat in **
 - `subagents`: a `background` prompt keeps the chat in Working until both subagents have ended.
 - `inbox`: the Rail inbox's Running entry.
 - `relaunch`: after a relaunch the waiting state is rebuilt from the board.
+- `task-card`: the `kanban_create` call shows as a **Task for @researcher** card whose lines follow the task as Hermes reads it, and **Open in Work** opens its sheet (ADR 0248).
 - `relaunch-subagents`: after a relaunch, a chat whose background subagents still run stays in Working from Hermes's `subagent.roster` counts, without being opened, until they end and its wake turn ends (issue #311).
 
 ## How to get to it (user POV)
@@ -37,7 +38,15 @@ Preconditions:
 
 - **Relaunch with subagents running.** Send `do it in the background` in a new chat as **Subagents** does, then open a different chat so the waiting one isn't reopened at launch. `$S/wd.mjs close`, `$S/wd.mjs open`, sign in, and wait for the list. The row is in Working with `.row-wait[aria-label="Waiting on 2 subagents"]`, and `bridge.log` shows `WS subagent.roster` and no `WS session.resume` for that chat. End both subagents with `/__subagent` as above, and start its wake turn with `curl -s -X POST "http://127.0.0.1:$BRIDGE_PORT/__live?profile=default&id=<chat id>&status=working"` (the chat id is the row's `data-chat`). After the next check (15 s) the row is still in Working. `…&status=end` ends the wake turn, and within 15 s the chat is in the Inbox.
 
+- **Task card.** In the **Waiting** chat, the reply's `kanban_create` call is a card: `$S/wd.mjs wait '.msg.returned.task .returned-title' "Task for @researcher"`. Its lines (`.msg.returned.task .delivery li`) read "Created for @researcher, in Ready.", "Hermes tells this chat when it's done or blocked.", "Ready. No worker has claimed it yet." and "Read from Hermes just now.". The card's `data-task` is the task id. Take `$S/wd.mjs shot`.
+  - Start a run, a heartbeat and a comment: `curl -s -X POST "http://127.0.0.1:$BRIDGE_PORT/__kanban?id=<task>&status=running"`, then `…/__kanban?id=<task>&beat=1&comment=The%20NAS%20share%20is%20read-only.&author=researcher`. Within 30 s the card reads "Running.", "@researcher started a run at …", "Last heartbeat just now. A heartbeat says the worker is alive, not how far it got." and "researcher commented at …: The NAS share is read-only.". Take `$S/wd.mjs shot`.
+  - Block it: `…/__kanban?id=<task>&status=blocked&summary=Needs%20the%20NAS%20admin%20password.`. The card reads "Blocked: Needs the NAS admin password." at once (the `status.update` names the task), and "@researcher's run ended at …: blocked.". Take `$S/wd.mjs shot`.
+  - `$S/wd.mjs click '.msg.returned.task .preview-chip' "Open in Work"`: the Work page opens with the task's sheet (`[role=dialog]` named for the task). Take `$S/wd.mjs shot`.
+  - Close and reopen the app, sign in, and open the chat: the card shows the same first lines, read back from the call's stored row (`GET /api/sessions/<id>/messages` in `bridge.log`), and reads the task again.
+
 ## Gotchas
+
+- The card never says a task succeeded, how far it got, or a percentage: Hermes sends none of these. "Marked done." is the board's status, and the summary is what the run recorded.
 
 - The stand-in's `background` subagents are `sa-N` numbered across the whole run, after any `delegate` chat's. Read the ids from the reply text.
 - The 30 s task poll and the 5 min board scan are real time. A relaunch reads the board once the chat list has loaded, so wait for the list before reading the row.

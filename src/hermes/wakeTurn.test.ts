@@ -153,10 +153,8 @@ describe("A dispatched task's wake turn, against the stand-in's kanban poller", 
     running.push(reloaded);
     await reloaded.sync();
     await reloaded.open(id);
-    // The stand-in stores no row for the dispatching reply's tool call, so the messages are compared.
-    const messages = (shown: unknown[][]) => shown.filter(([kind]) => kind === "user" || kind === "assistant");
-    expect(messages(shownIn(reloaded, id))).toEqual(messages(live));
-    expect(messages(live)).toHaveLength(4);
+    expect(shownIn(reloaded, id)).toEqual(live);
+    expect(live.filter(([kind]) => kind === "user" || kind === "assistant")).toHaveLength(4);
   });
 
   it("shows the notice of a wake turn a message from here waited on, and leaves that message's own turn its stored rows", async () => {

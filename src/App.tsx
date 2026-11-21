@@ -67,6 +67,7 @@ import { searchEverywhere, type EverywhereFilter, type EverywhereOutcome, type E
 import { LiveConnections, attention as attentionOf, withoutServer, type ChatRef, type LiveSummary } from "./hermes/liveConnections";
 import { handoffs as handoffsOf, nextHandoffChange, outstandingIds, type Handoff, type StopWaiting } from "./hermes/dispatched";
 import { ChatPane, TeammatesContext, type Comparing, type FollowUpHost, type JumpTarget, type Teammates } from "./ui/ChatPane";
+import { TaskCardsContext, type TaskCards } from "./ui/TaskCard";
 import type { AskHost } from "./ui/AskCard";
 import { askedIn } from "./hermes/asks";
 import { withPicks, withoutPick } from "./hermes/mentionPicker";
@@ -1424,6 +1425,8 @@ export function Main({
   }, [connection.id]);
   // The Work page, the kanban board of bot work (Work.tsx, ADR 0171), covers the chat panes too.
   const [workOpen, setWorkOpen] = useState(false);
+  /** The task a chat's task card asked Work to open (ADR 0248). */
+  const [workTask, setWorkTask] = useState<{ id: string }>();
   const usageIo = useMemo(() => hermes.usageIo(), [hermes]);
   // The Preview's server side is the open connection's, which Rust finds by the name it was opened under (ADR 0125).
   const previewWeb = useMemo<WebPages>(() => ({ ...webPages, devServers: () => webPages.devServers(hermes.connectionId) }), [webPages, hermes]);
@@ -3369,11 +3372,24 @@ export function Main({
     [bots?.roster, profile],
   );
 
+  const openTaskInWork = useRef<(id: string) => void>(() => {});
+  openTaskInWork.current = (id) =>
+    guard(() => {
+      setProjectOpen(false);
+      setSettingsOpen(false);
+      setJobsOpen(false);
+      setUsageOpen(false);
+      setWorkTask({ id });
+      setWorkOpen(true);
+    });
+  const taskCards = useMemo<TaskCards>(() => ({ reads: hermes.taskReads, openInWork: (id) => openTaskInWork.current(id) }), [hermes]);
+
   return (
     <LinksProvider preview={openPreview} path={openPath} web={webPages} onToast={(text) => setToast({ text, at: Date.now() })}>
     <ModelListScope value={writingScope}>
     <ScreenDeskProvider value={screenDesk}>
     <TeammatesContext value={teammates}>
+    <TaskCardsContext value={taskCards}>
     <SentImageReader.Provider value={sentImages}>
     <div className="app" inert={covered || restarting}>
       <Rail
@@ -3418,6 +3434,7 @@ export function Main({
                   setSettingsOpen(false);
                   setJobsOpen(false);
                   setUsageOpen(false);
+                  setWorkTask(undefined);
                   setWorkOpen((o) => !o);
                 })
         }
@@ -3827,6 +3844,7 @@ export function Main({
             api={hermes.kanban}
             connected={status === "connected"}
             lacks={workLacks}
+            openTask={workTask}
             onClose={() => {
               flushSync(() => setWorkOpen(false));
               focusPane(active.key);
@@ -4082,6 +4100,7 @@ export function Main({
         )}
     </div>
     </SentImageReader.Provider>
+    </TaskCardsContext>
     </TeammatesContext>
     </ScreenDeskProvider>
     </ModelListScope>

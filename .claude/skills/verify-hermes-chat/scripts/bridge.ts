@@ -41,6 +41,9 @@
 //   `POST /__kanban?id=<task id>&status=<running|done|blocked|review|archived>` moves a task as a worker would (a test's
 //   control). `done`, `blocked` and `review` send the chat a `status.update` naming the task and, 2 s later,
 //   a streamed wake turn when the chat is live, subscribed, not stopped, and no turn runs, as Hermes's poller does.
+//   `&summary=<text>` is what the run hands off: a block's reason, or a completion's summary and result.
+//   `&comment=<text>&author=<profile>` adds a comment as that worker, and `&beat=1` a heartbeat to the open run; with
+//   either and no `status`, the task isn't moved.
 //   `POST /__ask?chat=<chat id>&method=<method>` with a JSON body of params asks the app something, as a Hermes tool's
 //   server request does (`preview.act`, `preview.read`), in that chat's live session (a test's control). It answers
 //   the request's id; the app's answer shows in `/__state` under `answers`.
@@ -624,7 +627,12 @@ const http = createServer(async (req, res) => {
   }
   if (url.pathname === "/__kanban" && req.method === "POST") {
     const id = url.searchParams.get("id") ?? "";
-    const moved = server.kanban.move(id, url.searchParams.get("status") ?? "done");
+    const q = (k: string) => url.searchParams.get(k) ?? undefined;
+    const comment = q("comment");
+    if (comment !== undefined) server.kanban.comment(id, q("author") ?? "worker", comment);
+    if (q("beat")) server.kanban.work(id);
+    const status = q("status") ?? (comment === undefined && !q("beat") ? "done" : undefined);
+    const moved = status ? server.kanban.move(id, status, q("summary")) : !!server.kanban.find(id);
     save();
     return moved ? json(200, { ok: true, task: server.kanban.find(id) }) : json(404, { detail: `No stand-in task ${id}` });
   }

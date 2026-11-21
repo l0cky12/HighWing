@@ -88,7 +88,7 @@ Each run's evidence folder is `~/.cache/hermes-verify/evidence/<run>/`. `hv up` 
 - `wd.mjs shot <name>`: the webview, as `<name>.png`.
 - `hv shot <name>`: the whole X screen, including the window frame and any native dialog.
 - `wd.mjs html <name>`: the DOM at that moment.
-- `bridge.log`: every request the stand-in received. `server-state.json` is the stand-in's final sessions and transcripts. `driver.log` and `xvfb.log` are also kept.
+- `bridge.log`: every request the stand-in received. `server-state.json` is the stand-in's final sessions and transcripts. `driver.log`, `xvfb.log`, `openbox.log` and `dbus.log` are also kept.
 
 A proof:
 
@@ -103,7 +103,7 @@ A proof:
 $S/hv down
 ```
 
-This ends the WebDriver session and kills the process groups this run started: tauri-driver with WebKitWebDriver, the app and any `ssh` it spawned, the stand-in, openbox and Xvfb. It also kills the D-Bus daemon by its PID and any app process still on this run's display, then deletes the run dir. It copies `state.env` (display, ports, PIDs) into the evidence and lists what it kept. It never kills by process name, so other sessions' apps and servers on this box are safe. After `hv down`, check that the evidence folder still lists your shots. Run `hv down` after every failed attempt too, so displays and ports aren't stranded.
+This ends the WebDriver session and kills the process groups this run started: tauri-driver with WebKitWebDriver, the app and any `ssh` it spawned, the stand-in, openbox, the D-Bus daemon and Xvfb. It also kills every process that carries this run's `HV_STARTED_BY`, which `hv up` gives each program it starts, so a process a killed `hv up` never recorded is stopped too, and any app process still on this run's display. Each gets up to 5 s to exit before KILL. When Xvfb had to be killed, `hv down` removes the display's lock and socket if the lock names this run's server. Then it deletes the run dir. It copies `state.env` (display, ports, PIDs) into the evidence and lists what it kept. It never kills by process name, so other sessions' apps and servers on this box are safe. After `hv down`, check that the evidence folder still lists your shots. Run `hv down` after every failed attempt too, so displays and ports aren't stranded.
 
 ## Gotchas
 

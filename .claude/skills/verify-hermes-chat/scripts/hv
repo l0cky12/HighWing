@@ -22,6 +22,7 @@ APP=$TARGET/debug/hermes-chat
 CARGO=$(command -v cargo || echo "$HOME/.cargo/bin/cargo")
 DEB_PKGS="xvfb xdotool libxdo3 x11-apps x11-xkb-utils xkb-data xserver-common libunwind8 libxfont2 libfontenc1
   openbox libobrender32v5 libobt2v5 libimlib2t64 libstartup-notification0 libxcb-util1 webkitgtk-webdriver"
+PORT_HOLDER_PID=""
 
 die() { echo "hv: $*" >&2; exit 1; }
 # A tool from PATH, else from the private root.
@@ -39,31 +40,52 @@ load() {
 }
 # The stand-in's bundle needs this worktree's node_modules: without them rolldown still exits 0, leaving imports node can't load.
 deps_current() { [ "$REPO/node_modules/.package-lock.json" -nt "$REPO/package-lock.json" ]; }
-free_port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])'; }
 alive() { [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null; }
 # Process group $1 still has a member, even if its leader has exited (a driver whose WebKitWebDriver outlived it).
 # The kernel doesn't hand out a PID still in use as a group ID, so its members are still the ones we started.
 group_alive() { [ -n "${1:-}" ] && pgrep -g "$1" >/dev/null 2>&1; }
+# The listeners a connection to 127.0.0.1:$1 reaches: on that address or a wildcard that takes IPv4. One on ::1, an
+# IPv6-only wildcard or another address can share the port number without ever answering this run's clients.
+listeners() { ss -ltnpeH "sport = :$1" 2>/dev/null | awk '$4 ~ /^(127\.0\.0\.1|0\.0\.0\.0|\*|\[::\]):[0-9]+$/ && !/ v6only:1 /'; }
+port_held_by_group() {
+  local line p found=""
+  while read -r line; do
+    [[ $line == *pid=* ]] || return 1
+    for p in $(grep -o 'pid=[0-9]*' <<<"$line"); do
+      [ "$(ps -o pgid= -p "${p#pid=}" 2>/dev/null | tr -d ' ')" = "$2" ] || return 1
+    done
+    found=1
+  done < <(listeners "$1")
+  [ -n "$found" ]
+}
+listened() { [ -n "$(listeners "$1")" ]; }
+port_who() {
+  local who; who=$(listeners "$1" | awk '{print match($0, /users:.*/) ? substr($0, RSTART) : "a process of another user"}' | tr '\n' ' ')
+  echo "${who:-nothing}"
+}
 # Waits up to $2 seconds for command $1 to succeed.
 wait_for() { local i; for ((i = 0; i < $2 * 5; i++)); do eval "$1" >/dev/null 2>&1 && return 0; sleep 0.2; done; return 1; }
 # Display $1 is served by the X server in process group $2: its socket exists and its lock file names a member of
 # that group. Another run's server on the same number fails this, so a lost race is never taken for our own start.
 xvfb_ours() {
   local lock_pid
-  lock_pid=$(tr -d ' \n' <"/tmp/.X$1-lock" 2>/dev/null) && [ -n "$lock_pid" ] && [ -S "/tmp/.X11-unix/X$1" ] &&
+  lock_pid=$(tr -d ' \n' 2>/dev/null <"/tmp/.X$1-lock") && [ -n "$lock_pid" ] && [ -S "/tmp/.X11-unix/X$1" ] &&
     [ "$(ps -o pgid= -p "$lock_pid" 2>/dev/null | tr -d ' ')" = "$2" ]
 }
-# Starts Xvfb (1400x900, 24-bit) on display $1 in its own process group, logging to $2, and prints the group's PID.
-# A private Xvfb looks for xkbcomp in its compiled-in /usr/bin: overlay ours there.
-start_xvfb() {
-  local xvfb; xvfb=$(tool Xvfb)
-  if [ "$xvfb" = "$ROOT/usr/bin/Xvfb" ]; then
-    setsid bwrap --dev-bind / / --overlay-src /usr/bin --overlay-src "$ROOT/usr/bin" --ro-overlay /usr/bin \
-      "$xvfb" ":$1" -screen 0 1400x900x24 -nolisten tcp -xkbdir "$ROOT/usr/share/X11/xkb" >>"$2" 2>&1 </dev/null &
-  else
-    setsid "$xvfb" ":$1" -screen 0 1400x900x24 -nolisten tcp >>"$2" 2>&1 </dev/null &
-  fi
-  echo $!
+# The processes `hv up` started for run $1, found by the HV_STARTED_BY each one carries, recorded in state.env or not.
+started_by() { grep -lzxF "HV_STARTED_BY=$1" /proc/[0-9]*/environ 2>/dev/null | cut -d/ -f3 || true; }
+# Starts command $4... in its own process group, with stdout appended to $2 and stderr to $3, and stores its PID in the
+# variable named $1 and in state.env. A TERM or INT that lands in between is held until both are written, or the
+# cleanup would miss the process (#97, #104). Reads cmd_up's locals, as save_state does.
+spawn() {
+  local var=$1 out=$2 err=$3 held=""
+  shift 3
+  trap 'held=1' INT TERM
+  HV_STARTED_BY=$run setsid "$@" >>"$out" 2>>"$err" </dev/null 3>&- &
+  printf -v "$var" %s "$!"
+  save_state
+  trap 'exit 130' INT TERM
+  [ -z "$held" ] || exit 130
 }
 # Everything a later command, or the cleanup of a failed `hv up`, needs. Rewritten as each process starts.
 # Reads cmd_up's locals. Written to a temp file and renamed, so a reader never sees half of it.
@@ -88,19 +110,29 @@ DRIVER_PID='$driver_pid'
 STATE
   mv -f "$run/state.env.tmp" "$run/state.env"
 }
-# The EXIT trap of a failed `hv up`: stop what it started and delete its run dir, as `hv down` does.
+# The EXIT trap of a failed `hv up` for run dir $1 and evidence dir $2: stop what it started and delete its run dir, as
+# `hv down` does. A run dir with no state.env yet has nothing running, so it's just deleted.
 up_failed() {
   local code=$?
   trap - EXIT INT TERM
-  echo "hv: up failed; stopping what this run started" >&2
-  (HV_RUN=$1 cmd_down >&2) || true
+  kill "$PORT_HOLDER_PID" 2>/dev/null || true
+  # The caller's stderr: a TERM during a redirected command (wait_for's checks) runs this with both on /dev/null (#100).
+  exec >&3 2>&3
+  if [ -f "$1/state.env" ]; then
+    echo "hv: up failed; stopping what this run started" >&2
+    (HV_RUN=$1 cmd_down >&2) || true
+  else
+    echo "hv: up failed before it started anything" >&2
+    rm -rf "$1"
+    rmdir "$2" 2>/dev/null || true
+  fi
   exit "$code"
 }
 
 cmd_bootstrap() {
   local missing=() t
   for t in Xvfb xwd xdotool openbox WebKitWebDriver; do [ -n "$(tool $t)" ] || missing+=("$t"); done
-  for t in node npm dbus-daemon bwrap python3; do command -v $t >/dev/null || die "$t is not installed; install it with the system package manager"; done
+  for t in node npm dbus-daemon bwrap python3 ss; do command -v $t >/dev/null || die "$t is not installed; install it with the system package manager"; done
   [ -x "$CARGO" ] || die "cargo not found (not on PATH, not at ~/.cargo/bin/cargo)"
   if [ ${#missing[@]} -gt 0 ]; then
     if command -v apt-get >/dev/null; then
@@ -162,38 +194,68 @@ cmd_up() {
   [ -x "$driver" ] && [ -n "$(tool WebKitWebDriver)" ] && [ -n "$(tool Xvfb)" ] || die "tools missing; run \`hv bootstrap\`"
   local name; name=$(date +%m%d-%H%M%S)-$$
   local run=$HV_HOME/runs/$name ev=$HV_HOME/evidence/$name
+  local display="" url="" bridge_port="" driver_port="" native_port="" dbus_addr="" xvfb_pid="" wm_pid="" dbus_pid="" bridge_pid="" driver_pid=""
+  # Kept for up_failed, and closed in every process this run starts so none holds the caller's stderr open.
+  exec 3>&2
+  # From here on, any failure (or Ctrl-C) stops what this run started, through the same path as `hv down`. Set before
+  # the run dir exists, so a TERM can't leave one behind (#100).
+  # shellcheck disable=SC2064
+  trap "up_failed '$run' '$ev'" EXIT
+  trap 'exit 130' INT TERM
   mkdir -p "$run"/{home,data,config,cache} "$ev"
   install -d -m 700 "$run/runtime"
-  local display="" url="" bridge_port driver_port native_port dbus_addr="" xvfb_pid="" wm_pid="" dbus_pid="" bridge_pid="" driver_pid=""
-  bridge_port=$(free_port); driver_port=$(free_port); native_port=$(free_port)
   save_state
-  # From here on, any failure (or Ctrl-C) stops what this run started, through the same path as `hv down`.
-  # shellcheck disable=SC2064
-  trap "up_failed '$run'" EXIT
-  trap 'exit 130' INT TERM
   xenv
 
-  # X server. Another run can take a free-looking display between our check and Xvfb's lock, so the display is ours
-  # only once our Xvfb holds its lock. Otherwise our Xvfb exits (or is killed here) and we try the next number.
+  # bind(0) never hands out a bound port, and a program that sets SO_REUSEADDR (tauri-driver, WebKitWebDriver, node)
+  # can still bind and listen on it (#88).
+  local want_ports; read -ra want_ports <<<"${HV_TEST_PORTS:-0 0 0}"
+  local holder_out
+  exec {holder_out}< <(exec python3 -c 'import os, signal, socket, sys, time
+signal.signal(signal.SIGINT, signal.SIG_IGN)
+socks = []
+for p in sys.argv[2:]:
+    s = socket.socket()
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        s.bind(("127.0.0.1", int(p)))
+    except OSError as e:
+        sys.exit(f"port {p} is in use by another process ({e.strerror})")
+    socks.append(s)
+print(*(s.getsockname()[1] for s in socks), flush=True)
+while os.getppid() == int(sys.argv[1]):
+    time.sleep(0.1)' "$$" "${want_ports[@]}" 2>"$run/ports.err" 3>&-)
+  PORT_HOLDER_PID=$!
+  read -r -t 10 -u "$holder_out" driver_port native_port bridge_port ||
+    die "couldn't hold this run's ports: $(tail -1 "$run/ports.err" | grep . || echo "the holder printed none in 10 s")"
+  exec {holder_out}<&-
+  save_state
+
+  # X server (1400x900, 24-bit). Another run can take a free-looking display between our check and Xvfb's lock, so the
+  # display is ours only once our Xvfb holds its lock. Otherwise our Xvfb exits (or is killed here) and we try the next
+  # number. A private Xvfb looks for xkbcomp in its compiled-in /usr/bin: overlay ours there.
+  local xvfb; xvfb=("$(tool Xvfb)")
+  [ "${xvfb[0]}" != "$ROOT/usr/bin/Xvfb" ] || xvfb=(bwrap --dev-bind / / --overlay-src /usr/bin --overlay-src "$ROOT/usr/bin"
+    --ro-overlay /usr/bin "${xvfb[0]}" -xkbdir "$ROOT/usr/share/X11/xkb")
   for n in $(seq 140 199); do
     { [ -e "/tmp/.X11-unix/X$n" ] || [ -e "/tmp/.X$n-lock" ]; } && continue
     echo "hv: trying display :$n" >>"$ev/xvfb.log"
-    xvfb_pid=$(start_xvfb "$n" "$ev/xvfb.log")
+    # Recorded before the start, so a `hv down` after `hv up` is killed here knows which display to check (#104).
+    display=:$n
     save_state
+    spawn xvfb_pid "$ev/xvfb.log" "$ev/xvfb.log" "${xvfb[@]}" ":$n" -screen 0 1400x900x24 -nolisten tcp
     if wait_for "xvfb_ours $n $xvfb_pid || ! alive $xvfb_pid" 15 && xvfb_ours "$n" "$xvfb_pid"; then
-      display=:$n
       break
     fi
     kill -KILL -- "-$xvfb_pid" 2>/dev/null || true
-    xvfb_pid=""
+    display="" xvfb_pid=""
   done
   [ -n "$display" ] || die "no display in :140-:199 came up for this run; see $ev/xvfb.log"
   save_state
 
   # A window manager, so GTK dialogs get focus; its theme lives in the private root when installed there.
-  XDG_DATA_DIRS="$ROOT/usr/share:/usr/share" XDG_CONFIG_DIRS="$ROOT/etc/xdg:/etc/xdg" DISPLAY=$display setsid "$(tool openbox)" >"$ev/openbox.log" 2>&1 &
-  wm_pid=$!
-  save_state
+  spawn wm_pid "$ev/openbox.log" "$ev/openbox.log" \
+    env XDG_DATA_DIRS="$ROOT/usr/share:/usr/share" XDG_CONFIG_DIRS="$ROOT/etc/xdg:/etc/xdg" DISPLAY="$display" "$(tool openbox)"
 
   # A private session bus: the app never reaches the owner's keyring, notifications or another Hermes Chat. Its config
   # names no service directories, so it activates nothing: the standard session config would start a Secret Service
@@ -215,34 +277,38 @@ cmd_up() {
   </policy>
 </busconfig>
 XML
-  local dbus_out
-  dbus_out=$(env HOME="$run/home" XDG_DATA_HOME="$run/data" XDG_CONFIG_HOME="$run/config" XDG_CACHE_HOME="$run/cache" \
-    XDG_RUNTIME_DIR="$run/runtime" dbus-daemon --config-file="$run/bus.conf" --fork --print-address=1 --print-pid=1) ||
-    die "the private D-Bus daemon didn't start"
-  dbus_addr=$(sed -n 1p <<<"$dbus_out"); dbus_pid=$(sed -n 2p <<<"$dbus_out")
+  # Not --fork: the daemon's PID is recorded before it runs, as every other process's is (#97).
+  spawn dbus_pid "$run/bus.addr" "$ev/dbus.log" env HOME="$run/home" XDG_DATA_HOME="$run/data" XDG_CONFIG_HOME="$run/config" \
+    XDG_CACHE_HOME="$run/cache" XDG_RUNTIME_DIR="$run/runtime" dbus-daemon --config-file="$run/bus.conf" --nofork --print-address=1
+  wait_for "grep -qE '^unix:.*guid=[0-9a-f]{32}\$' '$run/bus.addr' || ! alive $dbus_pid" 10 || true
+  dbus_addr=$(grep -E '^unix:.*guid=[0-9a-f]{32}$' "$run/bus.addr" || true)
+  [ -n "$dbus_addr" ] || die "the private D-Bus daemon didn't start; see $ev/dbus.log"
   save_state
 
   if [ -z "$dashboard" ]; then
     (cd "$REPO" && npx rolldown "$HERE/bridge.ts" --platform node -o "$run/bridge.mjs" >/dev/null 2>&1) || die "bundling the stand-in failed: cd $REPO && npx rolldown $HERE/bridge.ts --platform node -o $run/bridge.mjs"
-    setsid node "$run/bridge.mjs" "$bridge_port" "$ev/server-state.json" >"$ev/bridge.log" 2>&1 &
-    bridge_pid=$!
-    save_state
+    spawn bridge_pid "$ev/bridge.log" "$ev/bridge.log" node "$run/bridge.mjs" "$bridge_port" "$ev/server-state.json"
     wait_for "grep -q 'stand-in dashboard ready' '$ev/bridge.log'" 20 || die "stand-in didn't start; see $ev/bridge.log"
+    port_held_by_group "$bridge_port" "$bridge_pid" || die "port $bridge_port: want this run's stand-in, found $(port_who "$bridge_port")"
     url=http://127.0.0.1:$bridge_port
   else
     url=$dashboard
   fi
 
   # tauri-driver passes its environment through WebKitWebDriver to the app it launches.
-  env DISPLAY="$display" DBUS_SESSION_BUS_ADDRESS="$dbus_addr" HOME="$run/home" XDG_DATA_HOME="$run/data" \
+  spawn driver_pid "$ev/driver.log" "$ev/driver.log" \
+    env DISPLAY="$display" DBUS_SESSION_BUS_ADDRESS="$dbus_addr" HOME="$run/home" XDG_DATA_HOME="$run/data" \
     XDG_CONFIG_HOME="$run/config" XDG_CACHE_HOME="$run/cache" XDG_RUNTIME_DIR="$run/runtime" \
     WEBKIT_DISABLE_DMABUF_RENDERER=1 HERMES_CHAT_NEW_INSTANCE=1 LIBGL_ALWAYS_SOFTWARE=1 NO_AT_BRIDGE=1 \
-    setsid "$driver" --port "$driver_port" --native-port "$native_port" --native-driver "$(tool WebKitWebDriver)" >"$ev/driver.log" 2>&1 &
-  driver_pid=$!
-  save_state
+    "$driver" --port "$driver_port" --native-port "$native_port" --native-driver "$(tool WebKitWebDriver)"
+  wait_for "{ listened $driver_port && listened $native_port; } || ! { alive $driver_pid || group_alive $driver_pid; }" 20 || true
+  for n in "$driver_port" "$native_port"; do
+    port_held_by_group "$n" "$driver_pid" || die "port $n: want this run's tauri-driver, found $(port_who "$n"); see $ev/driver.log"
+  done
   wait_for "curl -sf http://127.0.0.1:$driver_port/status" 20 || die "tauri-driver didn't answer; see $ev/driver.log"
 
   trap - EXIT INT TERM
+  kill "$PORT_HOLDER_PID" 2>/dev/null || true
   echo "hv: up. Run this in every later command (each shell starts fresh):"
   echo "export HV_RUN=$run"
   echo "dashboard: $url$([ -z "$dashboard" ] && echo "  (stand-in: username verify, password verify-pass)")"
@@ -260,16 +326,18 @@ cmd_doctor() {
   owns "$DBUS_PID" dbus-daemon && ok "private D-Bus (pid $DBUS_PID)" || no "private D-Bus not running"
   if [ "$STANDIN" = yes ]; then
     owns "$BRIDGE_PID" bridge.mjs && curl -sf "$DASHBOARD_URL/__state" >/dev/null && ok "stand-in dashboard $DASHBOARD_URL (pid $BRIDGE_PID)" || no "stand-in dashboard $DASHBOARD_URL not answering"
-    ss -ltnpH "sport = :$BRIDGE_PORT" 2>/dev/null | grep -q "pid=$BRIDGE_PID," && ok "port $BRIDGE_PORT is ours" || no "port $BRIDGE_PORT is not held by our stand-in"
+    port_held_by_group "$BRIDGE_PORT" "$BRIDGE_PID" && ok "port $BRIDGE_PORT is ours" || no "port $BRIDGE_PORT is not held by our stand-in"
   else
     curl -s -o /dev/null -w '%{http_code}' "$DASHBOARD_URL/api/status" | grep -q '^[23]' && ok "dashboard $DASHBOARD_URL answers /api/status" || no "dashboard $DASHBOARD_URL doesn't answer /api/status"
   fi
-  owns "$DRIVER_PID" tauri-driver && curl -sf "http://127.0.0.1:$DRIVER_PORT/status" >/dev/null && ok "tauri-driver :$DRIVER_PORT (pid $DRIVER_PID)" || no "tauri-driver :$DRIVER_PORT not answering"
+  owns "$DRIVER_PID" tauri-driver && port_held_by_group "$DRIVER_PORT" "$DRIVER_PID" && port_held_by_group "$NATIVE_PORT" "$DRIVER_PID" &&
+    curl -sf "http://127.0.0.1:$DRIVER_PORT/status" >/dev/null && ok "tauri-driver :$DRIVER_PORT (pid $DRIVER_PID)" ||
+    no "tauri-driver :$DRIVER_PORT not answering, or :$DRIVER_PORT/:$NATIVE_PORT not held by its group"
   [ "$BUILD_REV" = "$(source_rev)" ] && ok "build $BUILD_REV matches the source" || no "build $BUILD_REV != source $(source_rev): run \`hv down\`, \`hv build\`, \`hv up\`"
   if [ -s "$RUN/session" ]; then
     local sid; sid=$(cat "$RUN/session")
     curl -sf "http://127.0.0.1:$DRIVER_PORT/session/$sid/title" | grep -q '"value"' && ok "WebDriver session $sid answers (window title $(curl -s "http://127.0.0.1:$DRIVER_PORT/session/$sid/title" | python3 -c 'import json,sys; print(repr(json.load(sys.stdin)["value"]))'))" || no "WebDriver session $sid is dead: \`wd.mjs close\` then \`wd.mjs open\`"
-    local app_pid; app_pid=$(ps -eo pid=,args= | awk -v a="$APP" '$2 == a {print $1}' | while read -r p; do grep -qz "^DISPLAY=$DISPLAY_NUM$" "/proc/$p/environ" 2>/dev/null && echo "$p"; done | head -1)
+    local app_pid; app_pid=$(ps -eo pid=,args= | awk -v a="$APP" '$2 == a {print $1}' | while read -r p; do grep -qz "^DISPLAY=$DISPLAY_NUM$" "/proc/$p/environ" 2>/dev/null && echo "$p"; done | head -1) || true
     [ -n "$app_pid" ] && ok "app pid $app_pid on $DISPLAY_NUM" || no "no app process on $DISPLAY_NUM"
   else
     echo "--   no WebDriver session yet (\`wd.mjs open\` launches the app)"
@@ -305,19 +373,37 @@ cmd_down() {
   load
   if [ -s "$RUN/session" ]; then curl -s -X DELETE "http://127.0.0.1:$DRIVER_PORT/session/$(cat "$RUN/session")" >/dev/null || true; fi
   # Each was started with setsid, so its process group holds what it spawned (WebKitWebDriver, the app, the app's ssh).
-  local pid
-  for pid in "$DRIVER_PID" "$BRIDGE_PID" "$WM_PID" "$XVFB_PID"; do
-    group_alive "$pid" && kill -TERM -- "-$pid" 2>/dev/null || true
-  done
-  alive "$DBUS_PID" && kill -TERM "$DBUS_PID" 2>/dev/null || true
-  sleep 1
-  for pid in "$DRIVER_PID" "$BRIDGE_PID" "$WM_PID" "$XVFB_PID"; do
-    group_alive "$pid" && kill -KILL -- "-$pid" 2>/dev/null || true
-  done
-  # The app's own processes, if any escaped the group: only ones on this run's display.
-  [ -z "$DISPLAY_NUM" ] || ps -eo pid=,args= | awk -v a="$APP" '$2 == a {print $1}' | while read -r pid; do
+  # The strays are every process started for this run, which finds one a killed `hv up` never recorded (#104).
+  local pid groups=("$DRIVER_PID" "$BRIDGE_PID" "$WM_PID" "$DBUS_PID" "$XVFB_PID") strays n=${DISPLAY_NUM#:} lock_pid=""
+  strays=$(started_by "$RUN")
+  # The display's lock, kept only if it names this run's X server. Read now: once that server is dead, nothing tells
+  # whose lock it was.
+  [ -z "$n" ] || lock_pid=$(tr -d ' \n' 2>/dev/null <"/tmp/.X$n-lock") || true
+  { [ -n "$XVFB_PID" ] && xvfb_ours "$n" "$XVFB_PID"; } || grep -qx -- "$lock_pid" <<<"$strays" || lock_pid=""
+  # One pgrep for all the groups: a pgrep per group per tick made the wait take twice as long as it says.
+  local group_list; group_list=$(printf '%s\n' "${groups[@]}" | grep . | paste -sd, || true)
+  running() {
+    local p
+    [ -n "$group_list" ] && pgrep -g "$group_list" >/dev/null 2>&1 && return 0
+    for p in $strays; do alive "$p" && return 0; done
+    return 1
+  }
+  for pid in "${groups[@]}"; do group_alive "$pid" && kill -TERM -- "-$pid" 2>/dev/null || true; done
+  for pid in $strays; do kill -TERM "$pid" 2>/dev/null || true; done
+  # A slow X server killed before it exits leaves its display's lock and socket (#103), so each gets a few seconds.
+  wait_for "! running" 5 || true
+  for pid in "${groups[@]}"; do group_alive "$pid" && kill -KILL -- "-$pid" 2>/dev/null || true; done
+  for pid in $strays; do kill -KILL "$pid" 2>/dev/null || true; done
+  # The app's own processes, if any escaped the group: only ones on this run's display, and only if the display is
+  # this run's. DISPLAY_NUM is recorded before Xvfb holds it, and a lost race leaves another run's number there.
+  [ -z "$lock_pid" ] || ps -eo pid=,args= | awk -v a="$APP" '$2 == a {print $1}' | while read -r pid; do
     grep -qz "^DISPLAY=$DISPLAY_NUM$" "/proc/$pid/environ" 2>/dev/null && kill -KILL "$pid" 2>/dev/null || true
   done
+  # A server that died by KILL leaves its lock and socket, and later runs would skip the display for good. Removed
+  # only while the lock still names this run's server.
+  if [ -n "$lock_pid" ] && wait_for "! alive $lock_pid" 2 && [ "$(tr -d ' \n' 2>/dev/null <"/tmp/.X$n-lock")" = "$lock_pid" ]; then
+    rm -f "/tmp/.X11-unix/X$n" "/tmp/.X$n-lock"
+  fi
   # Kept with the evidence: the display, ports and PIDs this run had.
   cp "$RUN/state.env" "$EVIDENCE/state.env" 2>/dev/null || true
   case "$RUN" in "$HV_HOME"/runs/*) rm -rf "$RUN" ;; *) die "refusing to delete $RUN: not under $HV_HOME/runs" ;; esac

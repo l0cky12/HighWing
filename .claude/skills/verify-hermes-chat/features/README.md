@@ -18,7 +18,7 @@ This folder is the maintained source for verifying what the owner sees and does 
 
 - Find handles with `wd.mjs handles` on each new screen. Prefer aria-labels, `<label>` text and button text, then the app's data attributes and classes. Never use coordinates.
 - Drive only with `click`, `fill`, `select`, `press` and `keys`. Use `eval` only to read state.
-- Use `wait` and `gone` instead of `sleep`. The reply stream, sign-in and search are all asynchronous.
+- Use `wait` and `gone` instead of `sleep`. The reply stream, sign-in and search are all asynchronous. The one exception: an Approval card's buttons, and the buttons of the confirm step it opens, ignore a click for 400 ms after they show or move (`ARM_MS` in `src/ui/ApprovalCard.tsx`). Run `sleep 0.5` before each click on a card, or the click is lost without an error.
 - Treat every command as literal. Quoted names are the app's exact text, and they are case-sensitive.
 - A run's chats and messages live on its own stand-in, so a mutation needs no restore: `hv down` discards it.
 
@@ -50,7 +50,7 @@ Each feature file starts with an H1 and one paragraph describing the behaviour t
 - [Connections](connections.md): Settings → General → Connection, Test a saved connection, and Sign out.
 - [Approval mode](approval-mode.md): the composer's pill: Smart, Manual, YOLO with its warning, "YOLO · all chats", and the narrow face, against a real Hermes from `scripts/real-hermes up`, whose model stub's `danger <tag>` prompt asks to run a flagged command.
 - [Always allowed](always-allowed.md): Settings → Approvals lists what Hermes always allows for a profile, and Remove makes Hermes ask again; needs a real Hermes.
-- [Preview](preview.md): the empty Preview's dev servers, a bare port, following a link in the page, Back, Forward and Reload in one view, the badge's switch, a second view under a menu and Escape, and Hermes's `preview.act` turned down through `/__ask`.
+- [Preview](preview.md): the empty Preview's dev servers, a CSV or TSV file as a table (the `HV_DISK` seed), a bare port, following a link in the page, Back, Forward and Reload in one view, the badge's switch, a second view under a menu and Escape, and Hermes's `preview.act` turned down through `/__ask`.
 - [Dispatched work](dispatched-work.md): a reply that dispatches a kanban task or background subagents keeps its chat in Working with the waiting icon, the wake turn, the Inbox hand-off, a blocked task, Stop waiting, the Rail inbox state, and a relaunch rebuilt from the board.
 - [Computer use](computer-use.md): a computer-use run as one card with a line per action, cua Approvals under their steps, Watch live, Follow computer use, the refusal note while someone else holds the screen, the same steps reopened from Hermes (the stand-in's `computer use` prompt), and Settings → Diagnostics → Computer use's six prerequisites, green or red with Hermes's own reason (the `HV_COMPUTER_USE` seed).
 - [Slash commands](slash-commands.md): the "/" menu with Hermes's own commands, `/mod` resolving to `/model` and its Models list, bare `/model`, picking a model, `/kanban` subcommands run through `slash.exec`, an unclear prefix, the "Runs /steer." hint, and `/undo` refused with why.

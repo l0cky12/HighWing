@@ -26,6 +26,7 @@ Settings → Diagnostics also has a Computer use section under Bot Desktop. For 
 - `stop-flag`: `hermes-chat --stop` from outside the app does the same.
 - `saved`: the Saved copy holds no screenshot.
 - `reopened`: a chat read back from Hermes shows the same steps, each "not recorded".
+- `desktop-off`: in a Bot Chat whose bot has desktop control (the `computer_use` toolset) off, a note above the composer says "This bot can't use its Bot Desktop: desktop control is off for it." with **Turn on** and **Not now**. Turn on asks first when Hermes reports cautions, then reads "Desktop control is on." (ADR 0230).
 - `cu-ready`: every row reads Ready, and the line above says "Ready: the agent can use the Bot Desktop."
 - `cu-toolset-off`: the Computer use tool row is red, and **Open Toolsets** opens Settings → Toolsets.
 - `cu-driver-red`: the cua-driver row shows doctor's failing checks and its first hint.
@@ -38,10 +39,11 @@ Settings → Diagnostics also has a Computer use section under Bot Desktop. For 
 - The card's "Watch live" chip, or the note's "Open the Screen" button, opens the side panel's Screen.
 - Settings → General → Chats → "Bot Desktop" → "Follow computer use" switch.
 - The note shows above the composer by itself after a refused step.
+- The desktop-control-off note shows by itself in a Bot Chat whose bot has desktop control off.
 - Stop: the card's **Stop** chip while the run is live, or the composer's square Stop button.
 - Ctrl+. from anywhere in the app, the composer included. Settings → **Keyboard Shortcuts** lists it as "Stop computer use and take the Bot Desktop".
 - `hermes-chat --stop` from a desktop key; here, `$S/hv app --stop`.
-- Diagnostics: the rail's the gear button, then **Diagnostics** under the sidebar's Server group (below the fold; scroll the sidebar). The **Computer use** section follows **Bot Desktop**.
+- Diagnostics: the rail's gear button, then **Diagnostics** under the sidebar's Server group (below the fold; scroll the sidebar). The **Computer use** section follows **Bot Desktop**.
 - Diagnostics: Settings → General → Connection → **Connection diagnostics** opens the same page.
 
 ## Driving it with wd.mjs
@@ -70,6 +72,7 @@ Preconditions:
 - **`hermes-chat --stop`.** Start a third run the same way and wait for its Approval, then run `$S/hv app --stop`. It exits at once, since the running app takes the request over the run's bus. The same notice shows (`shot 26-desktop-stop`), and the lease is `human`. Run it again with no reply running: the notice reads "No reply was using the Bot Desktop. You already hold the Bot Desktop.", and `stopCalls` gains nothing.
 - **Reopened from Hermes.** Run `$S/wd.mjs close`, `$S/wd.mjs open`, sign in again ([sign-in.md](sign-in.md), "Sign in again"), and `$S/wd.mjs click button "computer use: check /srv"`. Once Hermes's history is read, each run's card has 20 lines and every line reads "not recorded": `$S/wd.mjs eval 'return [...document.querySelectorAll(".cu-run")].map(c => c.querySelectorAll(".cu-step.unrecorded").length)'`.
 - **Proof on the server.** `$S/hv state | python3 -c 'import json,sys; t=json.load(sys.stdin)["transcripts"]; print({m["name"] for v in t.values() for m in v if m["role"]=="tool"})'` prints `{'tool_call'}`: each call is stored as Hermes stores computer use, with its call in `args.calls` and no result. `grep approval.respond $EVIDENCE/bridge.log` lists each Approval answered with its choice and request id, such as `{"choice":"session","request_id":"cua-rt-1-2"}`: after the steps above, `session`, `once` and `always`, and `deny` after Deny.
+- **Desktop control off.** Start `HV_BOTS=1 $S/hv up` without `HV_COMPUTER_USE` or `HV_DESKTOP`: the stand-in leaves `computer_use` off for every profile. Sign in, open a bot's Bot Chat (`$S/wd.mjs click '[role=tab][data-mode=bots]'`, `$S/wd.mjs click '.bots-row[data-profile=ada] .bots-open'`), and `$S/wd.mjs wait .cu-banner "desktop control is off" 20000` (`shot 35-desktop-off`). Run `$S/wd.mjs click '.cu-banner button' "Turn on"`: the stand-in reports cua_driver as not installed, so the note asks "Turn on desktop control?" with **Turn on anyway** and **Keep it off**. Run `$S/wd.mjs click button "Turn on anyway"`, then `$S/wd.mjs wait .cu-banner "Desktop control is on."`. `$S/hv state` lists `{"profile": "ada", "name": "computer_use", "enabled": true}` under `toolsetWrites`, and `computer_use` in `toolsetsOn.ada`.
 - **Diagnostics: open the section.** Run `$S/wd.mjs click button Settings`, then `$S/wd.mjs click button "Connection diagnostics"`, then `$S/wd.mjs wait '#diag-computer-use'`, then `$S/wd.mjs eval 'document.getElementById("diag-computer-use").scrollIntoView();1'`.
 - **Diagnostics: ready.** With `ready`, run `$S/wd.mjs wait 'section [role=status]' "Ready: the agent can use the Bot Desktop."`, then `$S/wd.mjs shot 11-computer-use-ready`. All six rows show a green Ready badge.
 - **Diagnostics: red with a reason.** Relaunch with `HV_COMPUTER_USE=degraded`. The cua-driver row reads "X11 is not reachable; UI inspection and event injection will fail." and "Set DISPLAY (X11). Under Wayland, run via XWayland or expose XDG_SESSION_TYPE=x11." Take `$S/wd.mjs shot 12-computer-use-driver-red`.

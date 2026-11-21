@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { documentFormatOf, looksLike, zipUnpacked } from "./documents";
+import { asTsv, delimiterOf, documentFormatOf, looksLike, parseDelimited, parseTable, zipUnpacked } from "./documents";
 import { fakeZip } from "./fakeZip";
 
 const plan = new Uint8Array(readFileSync("src/ui/fixtures/plan.docx"));
@@ -43,5 +43,68 @@ describe("Document formats", () => {
     expect(await zipUnpacked(misplaced, 1e6)).toBeUndefined();
     const half = big.slice(0, 2000);
     expect(await zipUnpacked(await fakeZip([{ name: "a.xml", data: half }, { name: "b.xml", data: half }]), 3999)).toBe("over");
+  });
+});
+
+describe("CSV and TSV files (issue #30)", () => {
+  const rows = (text: string, d: "," | "\t" | ";" = ",") => parseDelimited(text, d).rows;
+
+  it("splits rows and fields, with CRLF, LF or CR line ends", () => {
+    expect(rows("a,b,c\r\n1,2,3\r\n")).toEqual([["a", "b", "c"], ["1", "2", "3"]]);
+    expect(rows("a,b\n1,2")).toEqual([["a", "b"], ["1", "2"]]);
+    expect(rows("a,b\r1,2\r")).toEqual([["a", "b"], ["1", "2"]]);
+    expect(rows("a,,\n,,")).toEqual([["a", "", ""], ["", "", ""]]);
+  });
+
+  it("keeps commas, quotes and line breaks inside a quoted field in that field", () => {
+    const text = 'name,note,qty\r\n"Smith, Jo","said ""hi""\r\nthen left",3\r\n"",x,""\r\n';
+    expect(rows(text)).toEqual([
+      ["name", "note", "qty"],
+      ["Smith, Jo", 'said "hi"\r\nthen left', "3"],
+      ["", "x", ""],
+    ]);
+  });
+
+  it("reads a file that breaks the rules without losing text", () => {
+    expect(rows('a b"c,d')).toEqual([['a b"c', "d"]]);
+    expect(rows('"ab"cd,e')).toEqual([["abcd", "e"]]);
+    expect(rows('x,"never closed\nstill here')).toEqual([["x", "never closed\nstill here"]]);
+    expect(rows("\ufeffa,b\n\n\n1,2\n\n")).toEqual([["a", "b"], ["1", "2"]]);
+    // A one-column file writes an empty field as "", which is a row; a blank line isn't.
+    expect(rows('name\n""\n\nnext\n""')).toEqual([["name"], [""], ["next"], [""]]);
+  });
+
+  it("says whether the text stops at the end of a row", () => {
+    expect(parseDelimited("a,b\n1,2\n", ",").ended).toBe(true);
+    expect(parseDelimited("a,b\n1,2", ",").ended).toBe(false);
+    expect(parseDelimited('a,b\n1,"2\n', ",").ended).toBe(false);
+  });
+
+  it("tells a tab or semicolon file from a comma one", () => {
+    expect(delimiterOf("data.csv", "a,b,c\n1,2,3\n")).toBe(",");
+    expect(delimiterOf("data.csv", "a\tb\tc\n1\t2\t3\n")).toBe("\t");
+    // Excel's CSV where a comma is the decimal mark.
+    expect(delimiterOf("prices.csv", "item;price;qty\napple;1,50;3\npear;0,75;10\n")).toBe(";");
+    // A comma inside quotes doesn't count.
+    expect(delimiterOf("x.csv", 'a;b\n"1,2,3";4\n')).toBe(";");
+    // Every row the same width beats a header that splits further.
+    expect(delimiterOf("x.csv", "a,b;c;d\n1,2;3\n4,5;6\n")).toBe(",");
+    expect(delimiterOf("one column.csv", "name\nJo\n")).toBe(",");
+    // A whole file's last row counts though no line break ends it.
+    expect(delimiterOf("x.csv", "Name, as entered;Score\nAlice;10")).toBe(";");
+    expect(delimiterOf("data.tsv", "a,b,c\n1,2,3\n")).toBe("\t");
+  });
+
+  it("drops the last row of a file read only in part, unless the read stopped at a row's end", () => {
+    expect(parseTable("x.csv", "a,b\n1,2\n3,", true)).toEqual({ delimiter: ",", rows: [["a", "b"], ["1", "2"]], width: 2, cut: true });
+    expect(parseTable("x.csv", "a,b\n1,2\n", true).rows).toEqual([["a", "b"], ["1", "2"]]);
+    expect(parseTable("x.csv", "a,b\n1,2\n3,", false).rows).toEqual([["a", "b"], ["1", "2"], ["3", ""]]);
+    expect(parseTable("x.csv", "a\n1,2,3\n", false).width).toBe(3);
+  });
+
+  it("copies cells as tab-separated text that pastes back cell for cell", () => {
+    expect(asTsv([["a", "b"], ["1", "2"]])).toBe("a\tb\n1\t2");
+    expect(asTsv([['say "hi"', "two\nlines", "x\ty"]])).toBe('"say ""hi"""\t"two\nlines"\t"x\ty"');
+    expect(rows(asTsv([['say "hi"', "two\nlines", "x\ty"]]), "\t")).toEqual([['say "hi"', "two\nlines", "x\ty"]]);
   });
 });
